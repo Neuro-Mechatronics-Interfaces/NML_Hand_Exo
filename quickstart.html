@@ -22,7 +22,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Usage Guide" href="usage.html" />
+    <link rel="next" title="Python API Usage Guide" href="usage.html" />
     <link rel="prev" title="Welcome to the NML Hand Exoskeleton Docs!" href="index.html" /> 
 </head>
 
@@ -53,14 +53,13 @@
 <li class="toctree-l2"><a class="reference internal" href="#step-1-connect-the-device">Step 1. Connect the Device</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#step-2-launch-serial-terminal">Step 2. Launch Serial Terminal</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#step-3-send-a-test-command">Step 3. Send a Test Command</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#step-4-optional-use-the-python-api">Step 4. (Optional) Use the Python API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#next-steps">Next Steps</a></li>
 </ul>
 </li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Guides</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Usage Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Python API Usage Guide</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Additional Resources</span></p>
 <ul>
@@ -69,7 +68,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="cpp_api.html">C++ API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="python_api.html">Python API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="python_api.html">Python API Reference</a></li>
 </ul>
 
         </div>
@@ -122,66 +121,27 @@ you get the system up and running in just a few steps.</p>
 <ol class="arabic simple">
 <li><p>Open your preferred serial terminal program.</p></li>
 <li><p>Set the baud rate to <strong>57600</strong> (default).</p></li>
-<li><p>Select the correct serial port (COMx on Windows, <cite>/dev/ttyUSBx</cite> on Linux).</p></li>
+<li><p>Select the correct serial port (COMx on Windows, <cite>/dev/ttyUSBx</cite> on Linux, or ‘dev.usbmodemxxx’ on MacOS).</p></li>
 <li><p>Connect and open the terminal.</p></li>
 </ol>
 </section>
 <section id="step-3-send-a-test-command">
 <h2>Step 3. Send a Test Command<a class="headerlink" href="#step-3-send-a-test-command" title="Link to this heading"></a></h2>
-<p>Once connected, try sending a simple command to test communication:</p>
-<ul>
-<li><p>To enable a motor:</p>
+<p>Once connected, try sending a simple command to make sure you can communicate with the dynamixel motors. See if the led can turn on:</p>
 <blockquote>
-<div><p>enable:1</p>
+<div><div class="highlight-text notranslate"><div class="highlight"><pre><span></span>len:1:on
+</pre></div>
+</div>
 </div></blockquote>
-</li>
-<li><p>To move a motor to a specific angle:</p>
-<blockquote>
-<div><p>set_angle:1:45</p>
-</div></blockquote>
-</li>
-<li><p>To home all motors:</p>
-<blockquote>
-<div><p>home:all</p>
-</div></blockquote>
-</li>
-</ul>
-<p>The device should respond with debug messages if <cite>VERBOSE</cite> is set to <cite>true</cite>.</p>
-</section>
-<section id="step-4-optional-use-the-python-api">
-<h2>Step 4. (Optional) Use the Python API<a class="headerlink" href="#step-4-optional-use-the-python-api" title="Link to this heading"></a></h2>
-<p>For more advanced use cases or scripting, you can use the provided <strong>Python API</strong>.</p>
-<ol class="arabic">
-<li><p>Install the API in your environment:</p>
-<blockquote>
-<div><p>pip install ./python  # Or your installation method</p>
-</div></blockquote>
-</li>
-<li><p>Import and connect:
-.. code-block:: python</p>
-<blockquote>
-<div><p>from hand_exo import HandExo
-exo = HandExo(‘COM3’, baudrate=57600)  # Replace ‘COM3’ with your port</p>
-</div></blockquote>
-</li>
-<li><p>Send commands:
-.. code-block:: python</p>
-<blockquote>
-<div><p>exo.enable_motor(1)
-exo.set_motor_angle(1, 45)</p>
-</div></blockquote>
-</li>
-</ol>
-<p>For more details, refer to the <a class="reference internal" href="python_api.html"><span class="doc">Python API</span></a> documentation.</p>
+<p>If it turns on, you are good to go! If not, check your connections and ensure the device is powered on.</p>
 </section>
 <section id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading"></a></h2>
 <ul class="simple">
-<li><p>Check out the <a class="reference internal" href="usage.html"><span class="doc">Usage Guide</span></a> guide for more detailed instructions on wearing
+<li><p>Check out the <a class="reference internal" href="usage.html"><span class="doc">Python API Usage Guide</span></a> guide for more detailed instructions on wearing
 and operating the exoskeleton safely.</p></li>
-<li><p>Dive into the <a class="reference internal" href="cpp_api.html"><span class="doc">C++ API Reference</span></a> or <a class="reference internal" href="python_api.html"><span class="doc">Python API</span></a> documentation for deeper integration.</p></li>
+<li><p>Dive into the <a class="reference internal" href="cpp_api.html"><span class="doc">C++ API Reference</span></a> or <a class="reference internal" href="python_api.html"><span class="doc">Python API Reference</span></a> documentation for deeper integration.</p></li>
 </ul>
-<p>Happy hacking!</p>
 </section>
 </section>
 
@@ -190,7 +150,7 @@ and operating the exoskeleton safely.</p></li>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="index.html" class="btn btn-neutral float-left" title="Welcome to the NML Hand Exoskeleton Docs!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="usage.html" class="btn btn-neutral float-right" title="Usage Guide" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="usage.html" class="btn btn-neutral float-right" title="Python API Usage Guide" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

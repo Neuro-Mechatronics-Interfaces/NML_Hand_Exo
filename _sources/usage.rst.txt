@@ -1,215 +1,182 @@
-Usage Guide
-===========
+Python API Usage Guide
+=======================
 
-This guide explains how to safely wear, operate, and troubleshoot the **NML Hand Exoskeleton**.
+This section shows how to use the Python API to communicate with the NML Hand Exoskeleton. Each function sends a specific serial command to the device, which is also documented here for transparency and debugging.
 
-Wearing the Exoskeleton
------------------------
-
-1. Inspect the exoskeleton for damage or loose components before use.
-2. Place the device on your hand and wrist, ensuring a snug but comfortable fit.
-3. Fasten all straps securely.
-4. Make sure the device is powered off during fitting.
-
-Connecting to the Device
-------------------------
-
-1. Connect the device to your computer via USB.
-2. Confirm that it appears in your operating system as a serial device (COMx on Windows, `/dev/ttyUSBx` on Linux).
-3. Use a serial terminal or the provided Python API to communicate with the device.
-
-Recommended Serial Settings:
-- Baud rate: **57600**
-- Data bits: **8**
-- Parity: **None**
-- Stop bits: **1**
-
-Supported Commands
-------------------
-
-Below is a complete list of supported commands that can be sent over the serial interface:
-
-- **enable:** *ID*
-  Enable torque for the specified motor.
-
-  Example::
-
-      enable:1
-
-- **disable:** *ID*
-  Disable torque for the specified motor.
-
-  Example::
-
-      disable:1
-
-- **set_baud:** *ID:VALUE*
-  Set the baud rate for a specific motor.
-
-  Example::
-
-      set_baud:1:57600
-
-- **get_baud:** *ID*
-  Get the current baud rate of the specified motor.
-
-  Example::
-
-      get_baud:1
-
-- **set_vel:** *ID:VALUE*
-  Set the velocity limit for a specific motor.
-
-  Example::
-
-      set_vel:1:300
-
-- **get_vel:** *ID*
-  Get the current velocity limit of the specified motor.
-
-  Example::
-
-      get_vel:1
-
-- **set_acc:** *ID:VALUE*
-  Set the acceleration limit for a specific motor.
-
-  Example::
-
-      set_acc:1:500
-
-- **get_acc:** *ID*
-  Get the current acceleration limit of the specified motor.
-
-  Example::
-
-      get_acc:1
-
-- **set_angle:** *ID:ANGLE*
-  Set the relative angle (in degrees) of a specific motor.
-
-  Example::
-
-      set_angle:1:45
-
-- **get_angle:** *ID*
-  Get the relative angle of a specific motor.
-
-  Example::
-
-      get_angle:1
-
-- **get_absangle:** *ID*
-  Get the absolute angle of a specific motor.
-
-  Example::
-
-      get_absangle:1
-
-- **get_current:** *ID*
-  Get the current draw from a specific motor (in mA).
-
-  Example::
-
-      get_current:1
-
-- **get_torque:** *ID*
-  Get the torque output reading from a specific motor (in N·m).
-
-  Example::
-
-      get_torque:1
-
-- **led:** *ID/NAME/ALL:ON/OFF*
-  Turn the LED on or off for a specific motor or all motors.
-
-  Examples::
-
-      led:1:on
-      led:all:off
-
-- **debug:** *ON/OFF*
-  Toggle verbose debug messages on or off.
-
-  Examples::
-
-      debug:on
-      debug:off
-
-- **reboot:** *ID*
-  Reboot a specific motor.
-
-  Example::
-
-      reboot:1
-
-- **home:** *ID/ALL*
-  Move a specific motor or all motors to their stored home position.
-
-  Examples::
-
-      home:1
-      home:all
-
-- **set_zero:** *ID/ALL*
-  Set the current position of a motor (or all motors) as the new zero offset.
-
-  Examples::
-
-      set_zero:1
-      set_zero:all
-
-- **get_zero:** *ID*
-  Get the stored zero offset for a specific motor.
-
-  Example::
-
-      get_zero:1
-
-- **info**
-  Retrieve device information including version, motor IDs, angles, and torque.
-
-  Example::
-
-      info
-
-- **help**
-  Prints a list of all supported commands.
-
-  Example::
-
-      help
-
-Python API Integration
-----------------------
-
-Use the provided Python API for more advanced scripting.
-
-1. Import the module:
-
-    .. code-block:: python
-
-        from hand_exo import HandExo
-
-2. Connect to the device:
-
-    .. code-block:: python
-
-        exo = HandExo('COM3', baudrate=57600)
-
-3. Move a motor:
-
-    .. code-block:: python
-
-        exo.set_motor_angle(1, 30)
-
-For details, see the :doc:`python_api` page.
-
-Safety Notes
+Installation
 ------------
 
-- Always power off the exoskeleton before putting it on or taking it off.
-- Never exceed the documented joint limits.
-- Stop using the device immediately if you experience pain or unusual resistance.
+Install the package locally using:
 
-For more details on specific commands, refer to the :doc:`cpp_api` and :doc:`python_api` references.
+.. code-block:: bash
+
+   git clone https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo.git
+   cd NML_Hand_Exo
+   pip install -e .
+
+
+Creating an Instance
+--------------------
+
+To connect to the device:
+
+.. code-block:: python
+
+   from hand_exo import HandExo
+
+   exo = HandExo(port='COM3', baudrate=57600, verbose=True)
+
+Common Commands
+---------------
+
+Below is a list of common Python methods and the serial commands they send:
+
+First lets see if we can see the motor LED turn on:
+
+.. code-block:: python
+
+   exo.enable_led(1) # Sends "led:1:on"
+
+If this works the LED on that motor will now be on. Let's turn it off and enable the motor torque for the motor with the ID 1:
+
+.. code-block:: python
+
+   exo.disable_led(1)   # Sends "led:1:off"
+   exo.enable_torque(1) # Sends "enable:1"
+
+You should feel the motor engage. If you want to disable the torque, you can do so with:
+
+.. code-block:: python
+
+   exo.disable_torque(1) # Sends "disable:1"
+
+Let's keep the torque enabled for now. We can get the motor's current position relatve to the zero position offset (different from the absolute position):
+
+.. code-block:: python
+
+   angle = exo.get_motor_angle(1) # Sends "get_angle:1"
+
+To reset the motor position to its zero position, you can use the home command:
+
+.. code-block:: python
+
+   exo.home(1) # Sends "home:1",
+
+   # You can also reset all motor positions
+   # exo.home('all')
+
+To set the motor to a specific angle, you can use:
+
+.. code-block:: python
+
+   exo.set_motor_angle(1, 45) # Sends "set_angle:1:45" # Counter-Clockwise
+   exo.set_motor_angle(1, -45) # Sends "set_angle:1:-45" # Clockwise
+
+.. note::
+
+   - The angle is relative to the zero position offset, not the absolute position.
+   - There are joint limits configured in the Arduino code that will prevent the angle commands from moving past these limits.
+
+The zero position for every motor configured on the microcontroller is stored in the firmware. You can see what the current value is with:
+
+.. code-block:: python
+
+   zero_position = exo.get_zero(1) # Sends "get_zero:1"
+
+If you want to set the current position as the new zero position, you can use:
+
+.. code-block:: python
+
+   exo.set_zero(1) # Sends "set_zero:1"
+
+Now the home command will set the motor to this new zero position.
+
+If you want to see the absolute position of the motor, you can use:
+
+.. code-block:: python
+
+   abs_angle = exo.get_absolute_motor_angle(1) # Sends "get_absangle:1"
+
+Setting the absolute position of the motor is possible too:
+
+.. code-block:: python
+
+   exo.set_absolute_motor_angle(1, 90) # Sends "set_absangle:1:90"
+
+.. warning::
+
+   - Setting the absolute angle will not change the zero position offset. Please be careful when using this command after installing motors to prevent damage.
+
+All motors have a default velocity and acceleration component to them
+
+.. code-block:: python
+
+   vel = exo.get_motor_velocity(1)  # Sends "get_vel:1"
+   accel = exo.get_motor_acceleration(1)  # Sends "get_accel:1"
+
+We can adjust the speed and acceleration of the motors. Let's increase both by 20%
+
+.. code-block:: python
+
+    vel = vel + 0.2*vel
+    accel = accel + 0.2*accel
+    exo.set_motor_velocity(1, vel)  # Sends "set_vel:1:{vel}"
+    exo.set_motor_acceleration(1, accel)  # Sends "set_accel:1:{accel}"
+
+The motors can also provide torque and current readings. You can retrieve these values with:
+
+  .. code-block:: python
+
+     torque = exo.get_motor_torque(1)
+     current = exo.get_motor_current(1)
+
+If the motor reaches its stall torque and disables itself, the LED will begin flashing every second. The only way to continue using the motor is to reboot it. You can do this with:
+
+  .. code-block:: python
+
+     exo.reboot_motor(1)  # Sends "reboot:1"
+
+
+All the information regarding the status info of the exo can be retrieved with:
+
+.. code-block:: python
+
+   info = exo.info()  # Sends "info"
+
+This returns a dictionary with the following keys:
+
+- `version`: Firmware version
+- `n_motors`: Number of motors connected
+- `motor_xx`: Dictionary with motor information, created for each motor ID
+
+  - `id`: Motor ID
+  - `angle`: Current angle of the motor
+  - `zero`: Zero position offset
+  - `velocity`: Current velocity setting
+  - `acceleration`: Current acceleration setting
+  - `torque`: Current torque reading
+  - `current`: Current current reading
+
+
+Anytime you need to know which commands are available you can use the help command:
+
+  .. code-block:: python
+
+     help_text = exo.help()
+
+This returns a string with all available commands and their descriptions.
+
+When you're all done with the exoskeleton, you can close the connection:
+
+  .. code-block:: python
+
+     exo.close()  # No command is sent to the device.
+
+---
+
+Additional Notes
+----------------
+
+- The `verbose=True` option prints sent and received commands to the terminal with debugging output. Enable this upon initialization or by sending the `debug:on` command.
+- The `port` parameter should be set to the correct serial port for your device (e.g., 'COM3' on Windows, '/dev/ttyUSB0' on Linux).
+- The `baudrate` parameter should match the baud rate set in the firmware (default is 57600).
