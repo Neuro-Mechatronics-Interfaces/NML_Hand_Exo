@@ -9,6 +9,7 @@
   <title>C++ API Reference &mdash; NML Hand Exoskeleton 0.0.2 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
@@ -16,6 +17,8 @@
       <script src="_static/documentation_options.js?v=e3a6060d"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -57,7 +60,52 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">C++ API Reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">C++ API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#_CPPv410NMLHandExo"><code class="docutils literal notranslate"><span class="pre">NMLHandExo</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo10NMLHandExoEPK7uint8_t7uint8_tA_AL2E_KfPKf"><code class="docutils literal notranslate"><span class="pre">NMLHandExo()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16initializeSerialEi"><code class="docutils literal notranslate"><span class="pre">initializeSerial()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16initializeMotorsEv"><code class="docutils literal notranslate"><span class="pre">initializeMotors()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo10getMotorIDERK6String"><code class="docutils literal notranslate"><span class="pre">getMotorID()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12getIndexByIdE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getIndexById()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16getMotorIDByNameERK6String"><code class="docutils literal notranslate"><span class="pre">getMotorIDByName()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16getNameByMotorIDE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getNameByMotorID()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12angleToTicksEfi"><code class="docutils literal notranslate"><span class="pre">angleToTicks()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13setZeroOffsetE7uint8_t"><code class="docutils literal notranslate"><span class="pre">setZeroOffset()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13getZeroOffsetE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getZeroOffset()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13resetAllZerosEv"><code class="docutils literal notranslate"><span class="pre">resetAllZeros()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13getDeviceInfoEv"><code class="docutils literal notranslate"><span class="pre">getDeviceInfo()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16getRelativeAngleE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getRelativeAngle()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16setRelativeAngleE7uint8_tf"><code class="docutils literal notranslate"><span class="pre">setRelativeAngle()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16getAbsoluteAngleE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getAbsoluteAngle()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16setAbsoluteAngleE7uint8_tf"><code class="docutils literal notranslate"><span class="pre">setAbsoluteAngle()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12getZeroAngleE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getZeroAngle()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo7setHomeE7uint8_t"><code class="docutils literal notranslate"><span class="pre">setHome()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13homeAllMotorsEv"><code class="docutils literal notranslate"><span class="pre">homeAllMotors()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12setAngleByIdE7uint8_tf"><code class="docutils literal notranslate"><span class="pre">setAngleById()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo15setAngleByAliasERK6Stringf"><code class="docutils literal notranslate"><span class="pre">setAngleByAlias()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12enableTorqueE7uint8_tb"><code class="docutils literal notranslate"><span class="pre">enableTorque()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo10getCurrentE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getCurrent()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo9getTorqueE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getTorque()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16setVelocityLimitE7uint8_t8uint32_t"><code class="docutils literal notranslate"><span class="pre">setVelocityLimit()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16getVelocityLimitE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getVelocityLimit()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo20setAccelerationLimitE7uint8_t8uint32_t"><code class="docutils literal notranslate"><span class="pre">setAccelerationLimit()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo20getAccelerationLimitE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getAccelerationLimit()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo11rebootMotorE7uint8_t"><code class="docutils literal notranslate"><span class="pre">rebootMotor()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12getMotorInfoE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getMotorInfo()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo11setBaudRateE7uint8_t8uint32_t"><code class="docutils literal notranslate"><span class="pre">setBaudRate()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo11getBaudRateE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getBaudRate()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo11setMotorLEDE7uint8_tb"><code class="docutils literal notranslate"><span class="pre">setMotorLED()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo14setAllMotorLEDEb"><code class="docutils literal notranslate"><span class="pre">setAllMotorLED()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo7VERSIONE"><code class="docutils literal notranslate"><span class="pre">VERSION</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo4dxl_E"><code class="docutils literal notranslate"><span class="pre">dxl_</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo4ids_E"><code class="docutils literal notranslate"><span class="pre">ids_</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo10numMotors_E"><code class="docutils literal notranslate"><span class="pre">numMotors_</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12jointLimits_E"><code class="docutils literal notranslate"><span class="pre">jointLimits_</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12zeroOffsets_E"><code class="docutils literal notranslate"><span class="pre">zeroOffsets_</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="python_api.html">Python API</a></li>
 </ul>
 
@@ -88,10 +136,493 @@
   <section id="c-api-reference">
 <h1>C++ API Reference<a class="headerlink" href="#c-api-reference" title="Link to this heading"></a></h1>
 <p>This section describes the C++ API of the <strong>NML Hand Exoskeleton</strong>.</p>
-<div class="admonition warning">
-<p class="admonition-title">Warning</p>
-<p>doxygenclass: Cannot find file: /home/runner/work/NML_Hand_Exo/NML_Hand_Exo/docs/build/doxygen/xml/index.xml</p>
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv410NMLHandExo">
+<span id="_CPPv310NMLHandExo"></span><span id="_CPPv210NMLHandExo"></span><span id="NMLHandExo"></span><span class="target" id="classNMLHandExo"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">NMLHandExo</span></span></span><a class="headerlink" href="#_CPPv410NMLHandExo" title="Link to this definition"></a><br /></dt>
+<dd><p>Class to manage the NML Hand Exoskeleton, providing initialization, motor control, and telemetry. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo10NMLHandExoEPK7uint8_t7uint8_tA_AL2E_KfPKf">
+<span id="_CPPv3N10NMLHandExo10NMLHandExoEPK7uint8_t7uint8_tA_AL2E_KfPKf"></span><span id="_CPPv2N10NMLHandExo10NMLHandExoEPK7uint8_t7uint8_tA_A2_KfPKf"></span><span id="NMLHandExo::NMLHandExo__uint8_tCP.uint8_t.floatCAA.floatCP"></span><span class="target" id="classNMLHandExo_1a5f0008c876662bef170d953537291669"></span><span class="sig-name descname"><span class="n"><span class="pre">NMLHandExo</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">ids</span></span>, <span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">numMotors</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">jointLimits</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">2</span></span><span class="p"><span class="pre">]</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">homeState</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">nullptr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo10NMLHandExoEPK7uint8_t7uint8_tA_AL2E_KfPKf" title="Link to this definition"></a><br /></dt>
+<dd><p>Constructor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>ids</strong> – Pointer to array of motor IDs. </p></li>
+<li><p><strong>numMotors</strong> – Number of motors in the device. </p></li>
+<li><p><strong>jointLimits</strong> – Pointer to 2D array defining [min, max] joint limits in degrees. </p></li>
+<li><p><strong>homeState</strong> – Optional array of home positions (in degrees). Defaults to zero offsets. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16initializeSerialEi">
+<span id="_CPPv3N10NMLHandExo16initializeSerialEi"></span><span id="_CPPv2N10NMLHandExo16initializeSerialEi"></span><span id="NMLHandExo::initializeSerial__i"></span><span class="target" id="classNMLHandExo_1ac8d3c6abc03ac182d628e86e830fa1ec"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">initializeSerial</span></span></span><span class="sig-paren">(</span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">baud</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16initializeSerialEi" title="Link to this definition"></a><br /></dt>
+<dd><p>Initialize the serial port for Dynamixel communication. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>baud</strong> – Baud rate to initialize. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16initializeMotorsEv">
+<span id="_CPPv3N10NMLHandExo16initializeMotorsEv"></span><span id="_CPPv2N10NMLHandExo16initializeMotorsEv"></span><span id="NMLHandExo::initializeMotors"></span><span class="target" id="classNMLHandExo_1a1a046135540546e01d150cf75bd18144"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">initializeMotors</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16initializeMotorsEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Initialize all motors: disables torque, sets position mode, then re-enables torque. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo10getMotorIDERK6String">
+<span id="_CPPv3N10NMLHandExo10getMotorIDERK6String"></span><span id="_CPPv2N10NMLHandExo10getMotorIDERK6String"></span><span id="NMLHandExo::getMotorID__StringCR"></span><span class="target" id="classNMLHandExo_1a5c9e0589f2a9517fa02bb37124085263"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getMotorID</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="p"><span class="pre">&amp;</span></span><span class="n sig-param"><span class="pre">token</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo10getMotorIDERK6String" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the motor ID from a user-supplied token (either name or ID as a string). </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>token</strong> – The token string (e.g. “WRIST” or “1”). </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The motor ID or -1 if not found. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo12getIndexByIdE7uint8_t">
+<span id="_CPPv3N10NMLHandExo12getIndexByIdE7uint8_t"></span><span id="_CPPv2N10NMLHandExo12getIndexByIdE7uint8_t"></span><span id="NMLHandExo::getIndexById__uint8_t"></span><span class="target" id="classNMLHandExo_1aec362a95e23f2842be47d15b56e6044c"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getIndexById</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo12getIndexByIdE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the index of a motor in the internal arrays from its ID. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – The motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The index in the motor array or -1 if not found. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16getMotorIDByNameERK6String">
+<span id="_CPPv3N10NMLHandExo16getMotorIDByNameERK6String"></span><span id="_CPPv2N10NMLHandExo16getMotorIDByNameERK6String"></span><span id="NMLHandExo::getMotorIDByName__StringCR"></span><span class="target" id="classNMLHandExo_1ac8bf2bfda3ceeab339c3abc4b72768af"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getMotorIDByName</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="p"><span class="pre">&amp;</span></span><span class="n sig-param"><span class="pre">name</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16getMotorIDByNameERK6String" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the motor ID by name. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>name</strong> – Name of the motor (e.g. “WRIST”). </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The motor ID or -1 if not found. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16getNameByMotorIDE7uint8_t">
+<span id="_CPPv3N10NMLHandExo16getNameByMotorIDE7uint8_t"></span><span id="_CPPv2N10NMLHandExo16getNameByMotorIDE7uint8_t"></span><span id="NMLHandExo::getNameByMotorID__uint8_t"></span><span class="target" id="classNMLHandExo_1aad9086aedd01fb5554de6bd27b7380fc"></span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getNameByMotorID</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16getNameByMotorIDE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the motor name from its ID. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – The motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The name of the motor. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo12angleToTicksEfi">
+<span id="_CPPv3N10NMLHandExo12angleToTicksEfi"></span><span id="_CPPv2N10NMLHandExo12angleToTicksEfi"></span><span id="NMLHandExo::angleToTicks__float.i"></span><span class="target" id="classNMLHandExo_1ac4d09e7d137f540cb39f3e8ee643c381"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">angleToTicks</span></span></span><span class="sig-paren">(</span><span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">angle_deg</span></span>, <span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">index</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo12angleToTicksEfi" title="Link to this definition"></a><br /></dt>
+<dd><p>Convert a relative angle (degrees) to Dynamixel tick counts. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>angle_deg</strong> – Angle in degrees. </p></li>
+<li><p><strong>index</strong> – Index of the motor. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Ticks equivalent to the angle. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo13setZeroOffsetE7uint8_t">
+<span id="_CPPv3N10NMLHandExo13setZeroOffsetE7uint8_t"></span><span id="_CPPv2N10NMLHandExo13setZeroOffsetE7uint8_t"></span><span id="NMLHandExo::setZeroOffset__uint8_t"></span><span class="target" id="classNMLHandExo_1ac1f4c9b2304e3ca142c4009a0a978dd4"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setZeroOffset</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo13setZeroOffsetE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Calibrate the zero offset for a motor by reading its current position. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo13getZeroOffsetE7uint8_t">
+<span id="_CPPv3N10NMLHandExo13getZeroOffsetE7uint8_t"></span><span id="_CPPv2N10NMLHandExo13getZeroOffsetE7uint8_t"></span><span id="NMLHandExo::getZeroOffset__uint8_t"></span><span class="target" id="classNMLHandExo_1a4314a5a5b18b92bbb8f6add9ce40f5a0"></span><span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getZeroOffset</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo13getZeroOffsetE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the stored zero offset for a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Zero offset in degrees. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo13resetAllZerosEv">
+<span id="_CPPv3N10NMLHandExo13resetAllZerosEv"></span><span id="_CPPv2N10NMLHandExo13resetAllZerosEv"></span><span id="NMLHandExo::resetAllZeros"></span><span class="target" id="classNMLHandExo_1a717ef5205071bb59d054482fc8be3894"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">resetAllZeros</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo13resetAllZerosEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Reset zero offsets for all motors using their current positions. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo13getDeviceInfoEv">
+<span id="_CPPv3N10NMLHandExo13getDeviceInfoEv"></span><span id="_CPPv2N10NMLHandExo13getDeviceInfoEv"></span><span id="NMLHandExo::getDeviceInfo"></span><span class="target" id="classNMLHandExo_1a65b2aff16b4221cc13ca1635af028c1b"></span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getDeviceInfo</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo13getDeviceInfoEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Get a string summarizing the device information. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Information string. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16getRelativeAngleE7uint8_t">
+<span id="_CPPv3N10NMLHandExo16getRelativeAngleE7uint8_t"></span><span id="_CPPv2N10NMLHandExo16getRelativeAngleE7uint8_t"></span><span id="NMLHandExo::getRelativeAngle__uint8_t"></span><span class="target" id="classNMLHandExo_1a475075258d12e6d789b8dab229f1a94b"></span><span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getRelativeAngle</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16getRelativeAngleE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the relative angle (degrees) of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Relative angle in degrees. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16setRelativeAngleE7uint8_tf">
+<span id="_CPPv3N10NMLHandExo16setRelativeAngleE7uint8_tf"></span><span id="_CPPv2N10NMLHandExo16setRelativeAngleE7uint8_tf"></span><span id="NMLHandExo::setRelativeAngle__uint8_t.float"></span><span class="target" id="classNMLHandExo_1a7369ef2a210cc48e40665c843385f6dd"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setRelativeAngle</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span>, <span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">angleDeg</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16setRelativeAngleE7uint8_tf" title="Link to this definition"></a><br /></dt>
+<dd><p>Command the motor to a relative angle. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> – Motor ID. </p></li>
+<li><p><strong>angleDeg</strong> – Relative angle in degrees. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16getAbsoluteAngleE7uint8_t">
+<span id="_CPPv3N10NMLHandExo16getAbsoluteAngleE7uint8_t"></span><span id="_CPPv2N10NMLHandExo16getAbsoluteAngleE7uint8_t"></span><span id="NMLHandExo::getAbsoluteAngle__uint8_t"></span><span class="target" id="classNMLHandExo_1a726ff67e5674aaf2625b342415580f3d"></span><span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getAbsoluteAngle</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16getAbsoluteAngleE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the absolute angle (degrees) of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Absolute angle in degrees. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16setAbsoluteAngleE7uint8_tf">
+<span id="_CPPv3N10NMLHandExo16setAbsoluteAngleE7uint8_tf"></span><span id="_CPPv2N10NMLHandExo16setAbsoluteAngleE7uint8_tf"></span><span id="NMLHandExo::setAbsoluteAngle__uint8_t.float"></span><span class="target" id="classNMLHandExo_1a5957aa907c3362273663841b75430a20"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setAbsoluteAngle</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span>, <span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">angleDeg</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16setAbsoluteAngleE7uint8_tf" title="Link to this definition"></a><br /></dt>
+<dd><p>Command the motor to an absolute angle. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> – Motor ID. </p></li>
+<li><p><strong>angleDeg</strong> – Absolute angle in degrees. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo12getZeroAngleE7uint8_t">
+<span id="_CPPv3N10NMLHandExo12getZeroAngleE7uint8_t"></span><span id="_CPPv2N10NMLHandExo12getZeroAngleE7uint8_t"></span><span id="NMLHandExo::getZeroAngle__uint8_t"></span><span class="target" id="classNMLHandExo_1a98c4b9754d945dd853135154e8f45861"></span><span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getZeroAngle</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo12getZeroAngleE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the stored zero angle of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Zero angle in degrees. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo7setHomeE7uint8_t">
+<span id="_CPPv3N10NMLHandExo7setHomeE7uint8_t"></span><span id="_CPPv2N10NMLHandExo7setHomeE7uint8_t"></span><span id="NMLHandExo::setHome__uint8_t"></span><span class="target" id="classNMLHandExo_1aadd83ade7caf6e099dc6574acb852575"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setHome</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo7setHomeE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Home the motor to its stored zero position. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo13homeAllMotorsEv">
+<span id="_CPPv3N10NMLHandExo13homeAllMotorsEv"></span><span id="_CPPv2N10NMLHandExo13homeAllMotorsEv"></span><span id="NMLHandExo::homeAllMotors"></span><span class="target" id="classNMLHandExo_1a39c8a5ffd57579a0e1e3ad83f6e31588"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">homeAllMotors</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo13homeAllMotorsEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Home all motors to their stored zero positions. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo12setAngleByIdE7uint8_tf">
+<span id="_CPPv3N10NMLHandExo12setAngleByIdE7uint8_tf"></span><span id="_CPPv2N10NMLHandExo12setAngleByIdE7uint8_tf"></span><span id="NMLHandExo::setAngleById__uint8_t.float"></span><span class="target" id="classNMLHandExo_1a59810a7540326024e08f34c739e7b9a9"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setAngleById</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span>, <span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">angleDeg</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo12setAngleByIdE7uint8_tf" title="Link to this definition"></a><br /></dt>
+<dd><p>Command the motor to an angle by ID. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> – Motor ID. </p></li>
+<li><p><strong>angleDeg</strong> – Angle in degrees. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo15setAngleByAliasERK6Stringf">
+<span id="_CPPv3N10NMLHandExo15setAngleByAliasERK6Stringf"></span><span id="_CPPv2N10NMLHandExo15setAngleByAliasERK6Stringf"></span><span id="NMLHandExo::setAngleByAlias__StringCR.float"></span><span class="target" id="classNMLHandExo_1a3a5f519586584029261b87821f1d821f"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setAngleByAlias</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="p"><span class="pre">&amp;</span></span><span class="n sig-param"><span class="pre">alias</span></span>, <span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">angleDeg</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo15setAngleByAliasERK6Stringf" title="Link to this definition"></a><br /></dt>
+<dd><p>Command a motor using an alias (name) and angle. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alias</strong> – Motor name (e.g. “WRIST”). </p></li>
+<li><p><strong>angleDeg</strong> – Angle in degrees. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo12enableTorqueE7uint8_tb">
+<span id="_CPPv3N10NMLHandExo12enableTorqueE7uint8_tb"></span><span id="_CPPv2N10NMLHandExo12enableTorqueE7uint8_tb"></span><span id="NMLHandExo::enableTorque__uint8_t.b"></span><span class="target" id="classNMLHandExo_1a6eb9ec2e8ea07dadd247d6d9bf2f7bde"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">enableTorque</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span>, <span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">enable</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo12enableTorqueE7uint8_tb" title="Link to this definition"></a><br /></dt>
+<dd><p>Enable or disable torque for a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> – Motor ID. </p></li>
+<li><p><strong>enable</strong> – True to enable torque, false to disable. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo10getCurrentE7uint8_t">
+<span id="_CPPv3N10NMLHandExo10getCurrentE7uint8_t"></span><span id="_CPPv2N10NMLHandExo10getCurrentE7uint8_t"></span><span id="NMLHandExo::getCurrent__uint8_t"></span><span class="target" id="classNMLHandExo_1a40ee91861bac9cbe428a7f76cc6063cf"></span><span class="n"><span class="pre">int16_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getCurrent</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo10getCurrentE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the current draw from a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Raw current value. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo9getTorqueE7uint8_t">
+<span id="_CPPv3N10NMLHandExo9getTorqueE7uint8_t"></span><span id="_CPPv2N10NMLHandExo9getTorqueE7uint8_t"></span><span id="NMLHandExo::getTorque__uint8_t"></span><span class="target" id="classNMLHandExo_1ad13cf09ceb78ee1cdfe9c424909cc7ae"></span><span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getTorque</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo9getTorqueE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the calculated torque in N·m for a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Torque in Newton-meters. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16setVelocityLimitE7uint8_t8uint32_t">
+<span id="_CPPv3N10NMLHandExo16setVelocityLimitE7uint8_t8uint32_t"></span><span id="_CPPv2N10NMLHandExo16setVelocityLimitE7uint8_t8uint32_t"></span><span id="NMLHandExo::setVelocityLimit__uint8_t.uint32_t"></span><span class="target" id="classNMLHandExo_1a95790acbd7260ff209f7db37b6fc2fa3"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setVelocityLimit</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span>, <span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">vel</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16setVelocityLimitE7uint8_t8uint32_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Set the velocity limit of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> – Motor ID. </p></li>
+<li><p><strong>vel</strong> – Velocity limit. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16getVelocityLimitE7uint8_t">
+<span id="_CPPv3N10NMLHandExo16getVelocityLimitE7uint8_t"></span><span id="_CPPv2N10NMLHandExo16getVelocityLimitE7uint8_t"></span><span id="NMLHandExo::getVelocityLimit__uint8_t"></span><span class="target" id="classNMLHandExo_1ab86d43c63d481dca10cb3e585bffb170"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getVelocityLimit</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16getVelocityLimitE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the velocity limit of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Velocity limit. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo20setAccelerationLimitE7uint8_t8uint32_t">
+<span id="_CPPv3N10NMLHandExo20setAccelerationLimitE7uint8_t8uint32_t"></span><span id="_CPPv2N10NMLHandExo20setAccelerationLimitE7uint8_t8uint32_t"></span><span id="NMLHandExo::setAccelerationLimit__uint8_t.uint32_t"></span><span class="target" id="classNMLHandExo_1afb1d445cf99e63d3a1c6e4441fa6dabd"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setAccelerationLimit</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span>, <span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">acc</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo20setAccelerationLimitE7uint8_t8uint32_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Set the acceleration limit of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> – Motor ID. </p></li>
+<li><p><strong>acc</strong> – Acceleration limit. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo20getAccelerationLimitE7uint8_t">
+<span id="_CPPv3N10NMLHandExo20getAccelerationLimitE7uint8_t"></span><span id="_CPPv2N10NMLHandExo20getAccelerationLimitE7uint8_t"></span><span id="NMLHandExo::getAccelerationLimit__uint8_t"></span><span class="target" id="classNMLHandExo_1a209a9b16871e435eb139d0e1def35997"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getAccelerationLimit</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo20getAccelerationLimitE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the acceleration limit of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Acceleration limit. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo11rebootMotorE7uint8_t">
+<span id="_CPPv3N10NMLHandExo11rebootMotorE7uint8_t"></span><span id="_CPPv2N10NMLHandExo11rebootMotorE7uint8_t"></span><span id="NMLHandExo::rebootMotor__uint8_t"></span><span class="target" id="classNMLHandExo_1ac9a95fbaa68f3ff51c3ede9d76447984"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">rebootMotor</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo11rebootMotorE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Reboot a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo12getMotorInfoE7uint8_t">
+<span id="_CPPv3N10NMLHandExo12getMotorInfoE7uint8_t"></span><span id="_CPPv2N10NMLHandExo12getMotorInfoE7uint8_t"></span><span id="NMLHandExo::getMotorInfo__uint8_t"></span><span class="target" id="classNMLHandExo_1a9c0289920e1d2fd7ae766be881eef330"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getMotorInfo</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo12getMotorInfoE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Ping a motor to verify communication. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo11setBaudRateE7uint8_t8uint32_t">
+<span id="_CPPv3N10NMLHandExo11setBaudRateE7uint8_t8uint32_t"></span><span id="_CPPv2N10NMLHandExo11setBaudRateE7uint8_t8uint32_t"></span><span id="NMLHandExo::setBaudRate__uint8_t.uint32_t"></span><span class="target" id="classNMLHandExo_1aedcbf077d22b20c6c642fee43b203ac2"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setBaudRate</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span>, <span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">baudrate</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo11setBaudRateE7uint8_t8uint32_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Set the baud rate of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> – Motor ID. </p></li>
+<li><p><strong>baudrate</strong> – New baud rate. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo11getBaudRateE7uint8_t">
+<span id="_CPPv3N10NMLHandExo11getBaudRateE7uint8_t"></span><span id="_CPPv2N10NMLHandExo11getBaudRateE7uint8_t"></span><span id="NMLHandExo::getBaudRate__uint8_t"></span><span class="target" id="classNMLHandExo_1a768f9ffc3910b81c2007c547b2eb51fe"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getBaudRate</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo11getBaudRateE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the baud rate of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Baud rate. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo11setMotorLEDE7uint8_tb">
+<span id="_CPPv3N10NMLHandExo11setMotorLEDE7uint8_tb"></span><span id="_CPPv2N10NMLHandExo11setMotorLEDE7uint8_tb"></span><span id="NMLHandExo::setMotorLED__uint8_t.b"></span><span class="target" id="classNMLHandExo_1a5e7574acaf3aeac53bdc7333d12cc8d0"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setMotorLED</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span>, <span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">state</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo11setMotorLEDE7uint8_tb" title="Link to this definition"></a><br /></dt>
+<dd><p>Set the LED state of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> – Motor ID. </p></li>
+<li><p><strong>state</strong> – True for on, false for off. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo14setAllMotorLEDEb">
+<span id="_CPPv3N10NMLHandExo14setAllMotorLEDEb"></span><span id="_CPPv2N10NMLHandExo14setAllMotorLEDEb"></span><span id="NMLHandExo::setAllMotorLED__b"></span><span class="target" id="classNMLHandExo_1ade477492ef2ad3062849d182bf65f59a"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setAllMotorLED</span></span></span><span class="sig-paren">(</span><span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">state</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo14setAllMotorLEDEb" title="Link to this definition"></a><br /></dt>
+<dd><p>Set the LED state of all motors. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>state</strong> – True for on, false for off. </p>
+</dd>
+</dl>
+</dd></dl>
+
 </div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-static-attributes">Public Static Attributes</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo7VERSIONE">
+<span id="_CPPv3N10NMLHandExo7VERSIONE"></span><span id="_CPPv2N10NMLHandExo7VERSIONE"></span><span id="NMLHandExo::VERSION__cCP"></span><span class="target" id="classNMLHandExo_1a21f2a007112d02fbbdd487d5d9a5defd"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><span class="k"><span class="pre">constexpr</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">VERSION</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="s"><span class="pre">&quot;1.2.1&quot;</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo7VERSIONE" title="Link to this definition"></a><br /></dt>
+<dd><p>Current software version. </p>
+</dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-private-members">Private Members</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo4dxl_E">
+<span id="_CPPv3N10NMLHandExo4dxl_E"></span><span id="_CPPv2N10NMLHandExo4dxl_E"></span><span id="NMLHandExo::dxl___Dynamixel2Arduino"></span><span class="target" id="classNMLHandExo_1af1a76dffb1d94dc787fdde3dd184807c"></span><span class="n"><span class="pre">Dynamixel2Arduino</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dxl_</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo4dxl_E" title="Link to this definition"></a><br /></dt>
+<dd><p>Dynamixel2Arduino object for motor communication. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo4ids_E">
+<span id="_CPPv3N10NMLHandExo4ids_E"></span><span id="_CPPv2N10NMLHandExo4ids_E"></span><span id="NMLHandExo::ids___uint8_tCP"></span><span class="target" id="classNMLHandExo_1ab6bd46234604c621c3d2a57f2e5b6ca3"></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">ids_</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo4ids_E" title="Link to this definition"></a><br /></dt>
+<dd><p>Pointer to array of motor IDs. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo10numMotors_E">
+<span id="_CPPv3N10NMLHandExo10numMotors_E"></span><span id="_CPPv2N10NMLHandExo10numMotors_E"></span><span id="NMLHandExo::numMotors___uint8_t"></span><span class="target" id="classNMLHandExo_1ad35bd969c955a95b17f20e5ec18f0fc6"></span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">numMotors_</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo10numMotors_E" title="Link to this definition"></a><br /></dt>
+<dd><p>Number of motors configured. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo12jointLimits_E">
+<span id="_CPPv3N10NMLHandExo12jointLimits_E"></span><span id="_CPPv2N10NMLHandExo12jointLimits_E"></span><span class="target" id="classNMLHandExo_1a2f4ebd91950980dab77fa9724924e5ac"></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">jointLimits_</span></span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">2</span></span><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo12jointLimits_E" title="Link to this definition"></a><br /></dt>
+<dd><p>Pointer to 2D array of joint limits [min, max] for each motor. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo12zeroOffsets_E">
+<span id="_CPPv3N10NMLHandExo12zeroOffsets_E"></span><span id="_CPPv2N10NMLHandExo12zeroOffsets_E"></span><span id="NMLHandExo::zeroOffsets___floatP"></span><span class="target" id="classNMLHandExo_1aeda576ee41c1e1c83071630ef9af51a1"></span><span class="kt"><span class="pre">float</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">zeroOffsets_</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo12zeroOffsets_E" title="Link to this definition"></a><br /></dt>
+<dd><p>Array of zero offsets for each motor. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
 </section>
 
 
