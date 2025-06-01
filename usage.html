@@ -1,0 +1,347 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Usage Guide &mdash; NML Hand Exoskeleton 0.0.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=e3a6060d"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Frequently Asked Questions (FAQ)" href="faq.html" />
+    <link rel="prev" title="Quickstart Guide" href="quickstart.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            NML Hand Exoskeleton
+              <img src="_static/LabLogoRedSquare.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart Guide</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Usage Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#wearing-the-exoskeleton">Wearing the Exoskeleton</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#connecting-to-the-device">Connecting to the Device</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#supported-commands">Supported Commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#python-api-integration">Python API Integration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#safety-notes">Safety Notes</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Additional Resources</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions (FAQ)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="cpp_api.html">C++ API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="python_api.html">Python API</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">NML Hand Exoskeleton</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Usage Guide</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/usage.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="usage-guide">
+<h1>Usage Guide<a class="headerlink" href="#usage-guide" title="Link to this heading"></a></h1>
+<p>This guide explains how to safely wear, operate, and troubleshoot the <strong>NML Hand Exoskeleton</strong>.</p>
+<section id="wearing-the-exoskeleton">
+<h2>Wearing the Exoskeleton<a class="headerlink" href="#wearing-the-exoskeleton" title="Link to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p>Inspect the exoskeleton for damage or loose components before use.</p></li>
+<li><p>Place the device on your hand and wrist, ensuring a snug but comfortable fit.</p></li>
+<li><p>Fasten all straps securely.</p></li>
+<li><p>Make sure the device is powered off during fitting.</p></li>
+</ol>
+</section>
+<section id="connecting-to-the-device">
+<h2>Connecting to the Device<a class="headerlink" href="#connecting-to-the-device" title="Link to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p>Connect the device to your computer via USB.</p></li>
+<li><p>Confirm that it appears in your operating system as a serial device (COMx on Windows, <cite>/dev/ttyUSBx</cite> on Linux).</p></li>
+<li><p>Use a serial terminal or the provided Python API to communicate with the device.</p></li>
+</ol>
+<p>Recommended Serial Settings:
+- Baud rate: <strong>57600</strong>
+- Data bits: <strong>8</strong>
+- Parity: <strong>None</strong>
+- Stop bits: <strong>1</strong></p>
+</section>
+<section id="supported-commands">
+<h2>Supported Commands<a class="headerlink" href="#supported-commands" title="Link to this heading"></a></h2>
+<p>Below is a complete list of supported commands that can be sent over the serial interface:</p>
+<ul>
+<li><p><strong>enable:</strong> <em>ID</em>
+Enable torque for the specified motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">enable</span><span class="p">:</span><span class="mi">1</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>disable:</strong> <em>ID</em>
+Disable torque for the specified motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">disable</span><span class="p">:</span><span class="mi">1</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>set_baud:</strong> <em>ID:VALUE</em>
+Set the baud rate for a specific motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">set_baud</span><span class="p">:</span><span class="mi">1</span><span class="p">:</span><span class="mi">57600</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>get_baud:</strong> <em>ID</em>
+Get the current baud rate of the specified motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">get_baud</span><span class="p">:</span><span class="mi">1</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>set_vel:</strong> <em>ID:VALUE</em>
+Set the velocity limit for a specific motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">set_vel</span><span class="p">:</span><span class="mi">1</span><span class="p">:</span><span class="mi">300</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>get_vel:</strong> <em>ID</em>
+Get the current velocity limit of the specified motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">get_vel</span><span class="p">:</span><span class="mi">1</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>set_acc:</strong> <em>ID:VALUE</em>
+Set the acceleration limit for a specific motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">set_acc</span><span class="p">:</span><span class="mi">1</span><span class="p">:</span><span class="mi">500</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>get_acc:</strong> <em>ID</em>
+Get the current acceleration limit of the specified motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">get_acc</span><span class="p">:</span><span class="mi">1</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>set_angle:</strong> <em>ID:ANGLE</em>
+Set the relative angle (in degrees) of a specific motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">set_angle</span><span class="p">:</span><span class="mi">1</span><span class="p">:</span><span class="mi">45</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>get_angle:</strong> <em>ID</em>
+Get the relative angle of a specific motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">get_angle</span><span class="p">:</span><span class="mi">1</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>get_absangle:</strong> <em>ID</em>
+Get the absolute angle of a specific motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">get_absangle</span><span class="p">:</span><span class="mi">1</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>get_current:</strong> <em>ID</em>
+Get the current draw from a specific motor (in mA).</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">get_current</span><span class="p">:</span><span class="mi">1</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>get_torque:</strong> <em>ID</em>
+Get the torque output reading from a specific motor (in N·m).</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">get_torque</span><span class="p">:</span><span class="mi">1</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>led:</strong> <em>ID/NAME/ALL:ON/OFF</em>
+Turn the LED on or off for a specific motor or all motors.</p>
+<p>Examples:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">led</span><span class="p">:</span><span class="mi">1</span><span class="p">:</span><span class="n">on</span>
+<span class="n">led</span><span class="p">:</span><span class="nb">all</span><span class="p">:</span><span class="n">off</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>debug:</strong> <em>ON/OFF</em>
+Toggle verbose debug messages on or off.</p>
+<p>Examples:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">debug</span><span class="p">:</span><span class="n">on</span>
+<span class="n">debug</span><span class="p">:</span><span class="n">off</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>reboot:</strong> <em>ID</em>
+Reboot a specific motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">reboot</span><span class="p">:</span><span class="mi">1</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>home:</strong> <em>ID/ALL</em>
+Move a specific motor or all motors to their stored home position.</p>
+<p>Examples:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">home</span><span class="p">:</span><span class="mi">1</span>
+<span class="n">home</span><span class="p">:</span><span class="nb">all</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>set_zero:</strong> <em>ID/ALL</em>
+Set the current position of a motor (or all motors) as the new zero offset.</p>
+<p>Examples:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">set_zero</span><span class="p">:</span><span class="mi">1</span>
+<span class="n">set_zero</span><span class="p">:</span><span class="nb">all</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>get_zero:</strong> <em>ID</em>
+Get the stored zero offset for a specific motor.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">get_zero</span><span class="p">:</span><span class="mi">1</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>info</strong>
+Retrieve device information including version, motor IDs, angles, and torque.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">info</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>help</strong>
+Prints a list of all supported commands.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">help</span>
+</pre></div>
+</div>
+</li>
+</ul>
+</section>
+<section id="python-api-integration">
+<h2>Python API Integration<a class="headerlink" href="#python-api-integration" title="Link to this heading"></a></h2>
+<p>Use the provided Python API for more advanced scripting.</p>
+<ol class="arabic">
+<li><p>Import the module:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">hand_exo</span><span class="w"> </span><span class="kn">import</span> <span class="n">HandExo</span>
+</pre></div>
+</div>
+</div></blockquote>
+</li>
+<li><p>Connect to the device:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span> <span class="o">=</span> <span class="n">HandExo</span><span class="p">(</span><span class="s1">&#39;COM3&#39;</span><span class="p">,</span> <span class="n">baudrate</span><span class="o">=</span><span class="mi">57600</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</li>
+<li><p>Move a motor:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">set_motor_angle</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">30</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</li>
+</ol>
+<p>For details, see the <a class="reference internal" href="python_api.html"><span class="doc">Python API</span></a> page.</p>
+</section>
+<section id="safety-notes">
+<h2>Safety Notes<a class="headerlink" href="#safety-notes" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>Always power off the exoskeleton before putting it on or taking it off.</p></li>
+<li><p>Never exceed the documented joint limits.</p></li>
+<li><p>Stop using the device immediately if you experience pain or unusual resistance.</p></li>
+</ul>
+<p>For more details on specific commands, refer to the <a class="reference internal" href="cpp_api.html"><span class="doc">C++ API Reference</span></a> and <a class="reference internal" href="python_api.html"><span class="doc">Python API</span></a> references.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="quickstart.html" class="btn btn-neutral float-left" title="Quickstart Guide" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="faq.html" class="btn btn-neutral float-right" title="Frequently Asked Questions (FAQ)" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Neuromechatronics Lab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
