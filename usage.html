@@ -177,6 +177,23 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li><p>Setting the absolute angle will not change the zero position offset. Please be careful when using this command after installing motors to prevent damage.</p></li>
 </ul>
 </div>
+<p>The exo firmware has a built-in safety feature that prevents the motors from moving past their limits. These limits can be accessed with:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">limits</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_motor_limits</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># Sends &quot;get_limits:1&quot;</span>
+</pre></div>
+</div>
+<p>This returns a tuple with the minimum and maximum angle limits for the motor, for example: (-90, 90))
+You can also set new limits for the motor:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">set_motor_upper_limit</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">90</span><span class="p">)</span>  <span class="c1"># Sends &quot;set_upper_limit:1:90&quot;</span>
+<span class="n">exo</span><span class="o">.</span><span class="n">set_motor_lower_limit</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">90</span><span class="p">)</span>  <span class="c1"># Sends &quot;set_lower_limit:1:-90&quot;</span>
+<span class="n">exo</span><span class="o">.</span><span class="n">set_motor_limits</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>  <span class="c1"># Sends &quot;set_limits:1:-100:100&quot;</span>
+</pre></div>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<ul class="simple">
+<li><p>The programatic joint limits are set to prevent the motors from colliding with the exo device. Please be careful when using this command after installing motors to prevent damage.</p></li>
+</ul>
+</div>
 <p>All motors have a default velocity and acceleration component to them</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">vel</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_motor_velocity</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># Sends &quot;get_vel:1&quot;</span>
 <span class="n">accel</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_motor_acceleration</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># Sends &quot;get_accel:1&quot;</span>

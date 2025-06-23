@@ -4,7 +4,7 @@ Quickstart Guide
 Welcome to the **NML Hand Exoskeleton Quickstart Guide**! This guide will help
 you get the system up and running in just a few steps.
 
-What You’ll Need
+Prerequisites
 ----------------
 
 - A compatible microcontroller (e.g. OpenRB-150) flashed with the firmware.
@@ -34,7 +34,7 @@ Once connected, try sending a simple command to make sure you can communicate wi
 
    .. code-block:: text
 
-       len:1:on
+       led:1:on
 
 If it turns on, you are good to go! If not, check your connections and ensure the device is powered on.
 

@@ -107,6 +107,27 @@ Setting the absolute position of the motor is possible too:
 
    - Setting the absolute angle will not change the zero position offset. Please be careful when using this command after installing motors to prevent damage.
 
+The exo firmware has a built-in safety feature that prevents the motors from moving past their limits. These limits can be accessed with:
+
+.. code-block:: python
+
+   limits = exo.get_motor_limits(1)  # Sends "get_limits:1"
+
+This returns a tuple with the minimum and maximum angle limits for the motor, for example: (-90, 90))
+You can also set new limits for the motor:
+
+.. code-block:: python
+
+   exo.set_motor_upper_limit(1, 90)  # Sends "set_upper_limit:1:90"
+   exo.set_motor_lower_limit(1, -90)  # Sends "set_lower_limit:1:-90"
+   exo.set_motor_limits(1, -100, 100)  # Sends "set_limits:1:-100:100"
+
+
+.. warning::
+
+   - The programatic joint limits are set to prevent the motors from colliding with the exo device. Please be careful when using this command after installing motors to prevent damage.
+
+
 All motors have a default velocity and acceleration component to them
 
 .. code-block:: python

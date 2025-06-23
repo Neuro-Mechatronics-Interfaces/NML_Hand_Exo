@@ -97,15 +97,15 @@
 <span class="sd">    Class to control the NML Hand Exoskeleton via serial communication.</span>
 
 <span class="sd">    Features:</span>
-<span class="sd">    - Enable/disable motors</span>
-<span class="sd">    - Move motors to specific angles</span>
-<span class="sd">    - Query status (angle, torque, current)</span>
-<span class="sd">    - Configure velocity and acceleration</span>
-<span class="sd">    - Retrieve device information</span>
-<span class="sd">    - Send low-level serial commands</span>
-
+<span class="sd">      - Enable/disable motors</span>
+<span class="sd">      - Move motors to specific angles</span>
+<span class="sd">      - Query status (angle, torque, current)</span>
+<span class="sd">      - Configure velocity and acceleration</span>
+<span class="sd">      - Retrieve device information</span>
+<span class="sd">      - Send low-level serial commands</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
+
 <div class="viewcode-block" id="HandExo.__init__">
 <a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;NMLHandExo&#39;</span><span class="p">,</span> <span class="n">port</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">baudrate</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">57600</span><span class="p">,</span> <span class="n">command_delimiter</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">send_delay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
@@ -114,8 +114,8 @@
 <span class="sd">        Initializes the HandExo interface.</span>
 <span class="sd">        </span>
 <span class="sd">        Args:</span>
-<span class="sd">            name  (str): Name of the exoskeleton instance.</span>
-<span class="sd">            port  (str): Serial port to connect to (e.g., &#39;COM3&#39; or &#39;/dev/ttyUSB0&#39;).</span>
+<span class="sd">            name (str): Name of the exoskeleton instance.</span>
+<span class="sd">            port (str): Serial port to connect to (e.g., &#39;COM3&#39; or &#39;/dev/ttyUSB0&#39;).</span>
 <span class="sd">            baudrate (int): Baud rate for the serial connection (default is 57600).</span>
 <span class="sd">            command_delimiter (str): Delimiter used to separate commands (default is &#39;\n&#39;).</span>
 <span class="sd">            send_delay (float): Delay in seconds after sending a command to allow processing (default is 0.01).</span>
@@ -505,6 +505,116 @@
         <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">):</span>
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response for motor </span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="k">return</span> <span class="mf">0.0</span></div>
+
+
+<div class="viewcode-block" id="HandExo.get_motor_status">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_status">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">))</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves the status of the specified motor, including angle, torque, current, velocity, and acceleration.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to query.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            dict: A dictionary containing the motor&#39;s status.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;get_status:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">response</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">parts</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="p">)</span>
+                <span class="n">status</span><span class="p">[</span><span class="s1">&#39;angle&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+                <span class="n">status</span><span class="p">[</span><span class="s1">&#39;torque&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+                <span class="n">status</span><span class="p">[</span><span class="s1">&#39;current&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+                <span class="n">status</span><span class="p">[</span><span class="s1">&#39;velocity&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+                <span class="n">status</span><span class="p">[</span><span class="s1">&#39;acceleration&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+                <span class="k">return</span> <span class="n">status</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">):</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response for motor </span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{}</span></div>
+
+
+<div class="viewcode-block" id="HandExo.get_motor_limits">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_limits">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_limits</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">))</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves the limits for the specified motor, including minimum and maximum angles.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to query.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            tuple: A tuple containing the minimum and maximum angles of the motor.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;get_motor_limits:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span> <span class="c1"># Should get &quot;Motor {id} limits:[{val},{val}]&quot;</span>
+        <span class="n">limits</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">response</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">parts</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;Motor&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">parts</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;limits&quot;</span><span class="p">:</span>
+                    <span class="n">limits</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">parts</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s1">&#39;[]&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="p">)))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response for motor </span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">):</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Failed to parse limits for motor </span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">limits</span> <span class="k">if</span> <span class="n">limits</span> <span class="k">else</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HandExo.set_motor_upper_limit">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_upper_limit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_motor_upper_limit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">),</span> <span class="n">upper_limit</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the upper limit for the specified motor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to set the upper limit for.</span>
+<span class="sd">            upper_limit (float): Desired upper limit in degrees.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_upper_limit:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">upper_limit</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HandExo.set_motor_lower_limit">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_lower_limit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_motor_lower_limit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">),</span> <span class="n">lower_limit</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the lower limit for the specified motor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to set the lower limit for.</span>
+<span class="sd">            lower_limit (float): Desired lower limit in degrees.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_lower_limit:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">lower_limit</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HandExo.set_motor_limits">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_limits">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_motor_limits</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">),</span> <span class="n">lower_limit</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">upper_limit</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets both the lower and upper limits for the specified motor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to set the limits for.</span>
+<span class="sd">            lower_limit (float): Desired lower limit in degrees.</span>
+<span class="sd">            upper_limit (float): Desired upper limit in degrees.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_limits:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">lower_limit</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">upper_limit</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="HandExo.reboot_motor">

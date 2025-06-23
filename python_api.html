@@ -80,6 +80,11 @@
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_acceleration"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_acceleration()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_torque"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_torque()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_current"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_current()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_status"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_status()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_limits"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_limits()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_upper_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_upper_limit()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_lower_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_lower_limit()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_limits"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_limits()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.reboot_motor"><code class="docutils literal notranslate"><span class="pre">HandExo.reboot_motor()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.enable_led"><code class="docutils literal notranslate"><span class="pre">HandExo.enable_led()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.disable_led"><code class="docutils literal notranslate"><span class="pre">HandExo.disable_led()</span></code></a></li>
@@ -123,13 +128,17 @@
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">HandExo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'NMLHandExo'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">baudrate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">57600</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">command_delimiter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'\\n'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">send_delay</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
 <p>Class to control the NML Hand Exoskeleton via serial communication.</p>
-<p>Features:
-- Enable/disable motors
-- Move motors to specific angles
-- Query status (angle, torque, current)
-- Configure velocity and acceleration
-- Retrieve device information
-- Send low-level serial commands</p>
+<dl class="simple">
+<dt>Features:</dt><dd><ul class="simple">
+<li><p>Enable/disable motors</p></li>
+<li><p>Move motors to specific angles</p></li>
+<li><p>Query status (angle, torque, current)</p></li>
+<li><p>Configure velocity and acceleration</p></li>
+<li><p>Retrieve device information</p></li>
+<li><p>Send low-level serial commands</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -147,8 +156,8 @@
 <dd><blockquote>
 <div><p>Initializes the HandExo interface.</p>
 <dl class="simple">
-<dt>Args:</dt><dd><p>name  (str): Name of the exoskeleton instance.
-port  (str): Serial port to connect to (e.g., ‘COM3’ or ‘/dev/ttyUSB0’).
+<dt>Args:</dt><dd><p>name (str): Name of the exoskeleton instance.
+port (str): Serial port to connect to (e.g., ‘COM3’ or ‘/dev/ttyUSB0’).
 baudrate (int): Baud rate for the serial connection (default is 57600).
 command_delimiter (str): Delimiter used to separate commands (default is ‘</p>
 </dd>
@@ -433,6 +442,92 @@ verbose (bool): If True, enables verbose logging of commands and responses (defa
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_motor_status">
+<span class="sig-name descname"><span class="pre">get_motor_status</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_motor_status"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_motor_status" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the status of the specified motor, including angle, torque, current, velocity, and acceleration.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to query.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A dictionary containing the motor’s status.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_motor_limits">
+<span class="sig-name descname"><span class="pre">get_motor_limits</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_motor_limits"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_motor_limits" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the limits for the specified motor, including minimum and maximum angles.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to query.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A tuple containing the minimum and maximum angles of the motor.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_motor_upper_limit">
+<span class="sig-name descname"><span class="pre">set_motor_upper_limit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upper_limit</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_motor_upper_limit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_motor_upper_limit" title="Link to this definition"></a></dt>
+<dd><p>Sets the upper limit for the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to set the upper limit for.</p></li>
+<li><p><strong>upper_limit</strong> (<em>float</em>) – Desired upper limit in degrees.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_motor_lower_limit">
+<span class="sig-name descname"><span class="pre">set_motor_lower_limit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lower_limit</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_motor_lower_limit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_motor_lower_limit" title="Link to this definition"></a></dt>
+<dd><p>Sets the lower limit for the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to set the lower limit for.</p></li>
+<li><p><strong>lower_limit</strong> (<em>float</em>) – Desired lower limit in degrees.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_motor_limits">
+<span class="sig-name descname"><span class="pre">set_motor_limits</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lower_limit</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upper_limit</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_motor_limits"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_motor_limits" title="Link to this definition"></a></dt>
+<dd><p>Sets both the lower and upper limits for the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to set the limits for.</p></li>
+<li><p><strong>lower_limit</strong> (<em>float</em>) – Desired lower limit in degrees.</p></li>
+<li><p><strong>upper_limit</strong> (<em>float</em>) – Desired upper limit in degrees.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
 </dd>
 </dl>
 </dd></dl>
