@@ -49,9 +49,10 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart Guide</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Python API Usage Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Python HandExo Class</a></li>
+<li class="toctree-l1"><a class="reference internal" href="button_state_machine.html">Manual Button State Machine</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Additional Resources</span></p>
 <ul>
@@ -66,29 +67,43 @@
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.logger"><code class="docutils literal notranslate"><span class="pre">HandExo.logger()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.connect"><code class="docutils literal notranslate"><span class="pre">HandExo.connect()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.send_command"><code class="docutils literal notranslate"><span class="pre">HandExo.send_command()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.home"><code class="docutils literal notranslate"><span class="pre">HandExo.home()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.info"><code class="docutils literal notranslate"><span class="pre">HandExo.info()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.enable_motor"><code class="docutils literal notranslate"><span class="pre">HandExo.enable_motor()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.disable_motor"><code class="docutils literal notranslate"><span class="pre">HandExo.disable_motor()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_angle()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_angle()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_absolute_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.get_absolute_motor_angle()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_absolute_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.set_absolute_motor_angle()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.enable_led"><code class="docutils literal notranslate"><span class="pre">HandExo.enable_led()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.disable_led"><code class="docutils literal notranslate"><span class="pre">HandExo.disable_led()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.help"><code class="docutils literal notranslate"><span class="pre">HandExo.help()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.home"><code class="docutils literal notranslate"><span class="pre">HandExo.home()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.info"><code class="docutils literal notranslate"><span class="pre">HandExo.info()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_baudrate"><code class="docutils literal notranslate"><span class="pre">HandExo.get_baudrate()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_velocity"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_velocity()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_velocity"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_velocity()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_acceleration"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_acceleration()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_acceleration"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_acceleration()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_angle()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_angle()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_absolute_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.get_absolute_motor_angle()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_absolute_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.set_absolute_motor_angle()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_home"><code class="docutils literal notranslate"><span class="pre">HandExo.get_home()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_home"><code class="docutils literal notranslate"><span class="pre">HandExo.set_home()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_torque"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_torque()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_current"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_current()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_current_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_current_limit()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_current_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.set_current_limit()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_status"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_status()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_limits"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_limits()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_upper_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_upper_limit()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_lower_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_lower_limit()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_limits"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_limits()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.reboot_motor"><code class="docutils literal notranslate"><span class="pre">HandExo.reboot_motor()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.enable_led"><code class="docutils literal notranslate"><span class="pre">HandExo.enable_led()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.disable_led"><code class="docutils literal notranslate"><span class="pre">HandExo.disable_led()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.help"><code class="docutils literal notranslate"><span class="pre">HandExo.help()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_motor_mode"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_mode()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_motor_mode"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_mode()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_exo_mode"><code class="docutils literal notranslate"><span class="pre">HandExo.get_exo_mode()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_exo_mode"><code class="docutils literal notranslate"><span class="pre">HandExo.set_exo_mode()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_gesture"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.set_gesture"><code class="docutils literal notranslate"><span class="pre">HandExo.set_gesture()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_gesture_list"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_list()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.cycle_gesture"><code class="docutils literal notranslate"><span class="pre">HandExo.cycle_gesture()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.cycle_gesture_state"><code class="docutils literal notranslate"><span class="pre">HandExo.cycle_gesture_state()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.close"><code class="docutils literal notranslate"><span class="pre">HandExo.close()</span></code></a></li>
 </ul>
 </li>
@@ -221,6 +236,76 @@ verbose (bool): If True, enables verbose logging of commands and responses (defa
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.enable_motor">
+<span class="sig-name descname"><span class="pre">enable_motor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.enable_motor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.enable_motor" title="Link to this definition"></a></dt>
+<dd><p>Enables the torque output for the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to enable.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.disable_motor">
+<span class="sig-name descname"><span class="pre">disable_motor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.disable_motor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.disable_motor" title="Link to this definition"></a></dt>
+<dd><p>Disables the torque output for the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to disable.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.enable_led">
+<span class="sig-name descname"><span class="pre">enable_led</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.enable_led"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.enable_led" title="Link to this definition"></a></dt>
+<dd><p>Enables the LED for the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to enable the LED for.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.disable_led">
+<span class="sig-name descname"><span class="pre">disable_led</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.disable_led"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.disable_led" title="Link to this definition"></a></dt>
+<dd><p>Disables the LED for the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to disable the LED for.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.help">
+<span class="sig-name descname"><span class="pre">help</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.help"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.help" title="Link to this definition"></a></dt>
+<dd><p>Sends a help command to the exoskeleton to retrieve available commands.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A string containing the help information from the exoskeleton.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.home">
 <span class="sig-name descname"><span class="pre">home</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.home"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.home" title="Link to this definition"></a></dt>
 <dd><p>Sends a home command to all motors, unless a specific motor ID is provided.</p>
@@ -249,12 +334,46 @@ verbose (bool): If True, enables verbose logging of commands and responses (defa
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.enable_motor">
-<span class="sig-name descname"><span class="pre">enable_motor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.enable_motor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.enable_motor" title="Link to this definition"></a></dt>
-<dd><p>Enables the torque output for the specified motor.</p>
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_baudrate">
+<span class="sig-name descname"><span class="pre">get_baudrate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_baudrate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_baudrate" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the current baud rate of the serial connection.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The current baud rate.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_motor_velocity">
+<span class="sig-name descname"><span class="pre">get_motor_velocity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_motor_velocity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_motor_velocity" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the current velocity of the specified motor.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to enable.</p>
+<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to query.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Current velocity of the motor in degrees per second.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_motor_velocity">
+<span class="sig-name descname"><span class="pre">set_motor_velocity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">velocity</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_motor_velocity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_motor_velocity" title="Link to this definition"></a></dt>
+<dd><p>Sets the velocity for the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to set the velocity for.</p></li>
+<li><p><strong>velocity</strong> (<em>float</em>) – Desired velocity in degrees per second.</p></li>
+</ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
 <dd class="field-even"><p>None</p>
@@ -263,12 +382,32 @@ verbose (bool): If True, enables verbose logging of commands and responses (defa
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.disable_motor">
-<span class="sig-name descname"><span class="pre">disable_motor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.disable_motor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.disable_motor" title="Link to this definition"></a></dt>
-<dd><p>Disables the torque output for the specified motor.</p>
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_motor_acceleration">
+<span class="sig-name descname"><span class="pre">get_motor_acceleration</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_motor_acceleration"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_motor_acceleration" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the current acceleration of the specified motor.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to disable.</p>
+<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to query.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Current acceleration of the motor in degrees per second squared.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_motor_acceleration">
+<span class="sig-name descname"><span class="pre">set_motor_acceleration</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">acceleration</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_motor_acceleration"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_motor_acceleration" title="Link to this definition"></a></dt>
+<dd><p>Sets the acceleration for the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to set the acceleration for.</p></li>
+<li><p><strong>acceleration</strong> (<em>float</em>) – Desired acceleration in degrees per second squared.</p></li>
+</ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
 <dd class="field-even"><p>None</p>
@@ -345,15 +484,15 @@ verbose (bool): If True, enables verbose logging of commands and responses (defa
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_motor_velocity">
-<span class="sig-name descname"><span class="pre">get_motor_velocity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_motor_velocity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_motor_velocity" title="Link to this definition"></a></dt>
-<dd><p>Retrieves the current velocity of the specified motor.</p>
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_home">
+<span class="sig-name descname"><span class="pre">get_home</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_home"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_home" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the home angle of the specified motor.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to query.</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>Current velocity of the motor in degrees per second.</p>
+<dd class="field-even"><p>Home angle of the motor in degrees.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>float</p>
@@ -362,48 +501,14 @@ verbose (bool): If True, enables verbose logging of commands and responses (defa
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_motor_velocity">
-<span class="sig-name descname"><span class="pre">set_motor_velocity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">velocity</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_motor_velocity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_motor_velocity" title="Link to this definition"></a></dt>
-<dd><p>Sets the velocity for the specified motor.</p>
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_home">
+<span class="sig-name descname"><span class="pre">set_home</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">home_angle</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_home"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_home" title="Link to this definition"></a></dt>
+<dd><p>Sets the home angle for the specified motor.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to set the velocity for.</p></li>
-<li><p><strong>velocity</strong> (<em>float</em>) – Desired velocity in degrees per second.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>None</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_motor_acceleration">
-<span class="sig-name descname"><span class="pre">get_motor_acceleration</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_motor_acceleration"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_motor_acceleration" title="Link to this definition"></a></dt>
-<dd><p>Retrieves the current acceleration of the specified motor.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to query.</p>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>Current acceleration of the motor in degrees per second squared.</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>float</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_motor_acceleration">
-<span class="sig-name descname"><span class="pre">set_motor_acceleration</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">acceleration</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_motor_acceleration"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_motor_acceleration" title="Link to this definition"></a></dt>
-<dd><p>Sets the acceleration for the specified motor.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to set the acceleration for.</p></li>
-<li><p><strong>acceleration</strong> (<em>float</em>) – Desired acceleration in degrees per second squared.</p></li>
+<li><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to set the home angle for.</p></li>
+<li><p><strong>home_angle</strong> (<em>float</em>) – Desired home angle in degrees.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
@@ -442,6 +547,40 @@ verbose (bool): If True, enables verbose logging of commands and responses (defa
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_motor_current_limit">
+<span class="sig-name descname"><span class="pre">get_motor_current_limit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_motor_current_limit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_motor_current_limit" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the current limit of the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to query.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Current limit of the motor in Amperes.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_current_limit">
+<span class="sig-name descname"><span class="pre">set_current_limit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">current_limit</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_current_limit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_current_limit" title="Link to this definition"></a></dt>
+<dd><p>Sets the current limit for the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to set the current limit for.</p></li>
+<li><p><strong>current_limit</strong> (<em>float</em>) – Desired current limit in Amperes.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
 </dd>
 </dl>
 </dd></dl>
@@ -547,43 +686,127 @@ verbose (bool): If True, enables verbose logging of commands and responses (defa
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.enable_led">
-<span class="sig-name descname"><span class="pre">enable_led</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.enable_led"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.enable_led" title="Link to this definition"></a></dt>
-<dd><p>Enables the LED for the specified motor.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to enable the LED for.</p>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>None</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.disable_led">
-<span class="sig-name descname"><span class="pre">disable_led</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.disable_led"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.disable_led" title="Link to this definition"></a></dt>
-<dd><p>Disables the LED for the specified motor.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to disable the LED for.</p>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>None</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.help">
-<span class="sig-name descname"><span class="pre">help</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.help"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.help" title="Link to this definition"></a></dt>
-<dd><p>Sends a help command to the exoskeleton to retrieve available commands.</p>
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_motor_mode">
+<span class="sig-name descname"><span class="pre">get_motor_mode</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_motor_mode"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_motor_mode" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the current control mode of the specified motor.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A string containing the help information from the exoskeleton.</p>
+<dd class="field-odd"><p>Current mode of the motor (e.g., “position”, “velocity”, “current_position”).</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_motor_mode">
+<span class="sig-name descname"><span class="pre">set_motor_mode</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">motor_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mode</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_motor_mode"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_motor_mode" title="Link to this definition"></a></dt>
+<dd><p>Sets the control mode for the specified motor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>motor_id</strong> (<em>int</em><em> or </em><em>str</em>) – ID of the motor to set the mode for.</p></li>
+<li><p><strong>mode</strong> (<em>str</em>) – Desired control mode (e.g., “position”, “velocity”, “current_position”).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_exo_mode">
+<span class="sig-name descname"><span class="pre">get_exo_mode</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_exo_mode"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_exo_mode" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the current operating mode of the exoskeleton.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Current mode of the exoskeleton (e.g., “manual”, “autonomous”).</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_exo_mode">
+<span class="sig-name descname"><span class="pre">set_exo_mode</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mode</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_exo_mode"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_exo_mode" title="Link to this definition"></a></dt>
+<dd><p>Sets the operating mode for the exoskeleton.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>mode</strong> (<em>str</em>) – Desired operating mode (e.g., “manual”, “autonomous”).</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_gesture">
+<span class="sig-name descname"><span class="pre">get_gesture</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_gesture"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_gesture" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the current gesture recognized by the exoskeleton.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Current gesture (e.g., “open”, “close”, “pinch”).</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.set_gesture">
+<span class="sig-name descname"><span class="pre">set_gesture</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gesture</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">state</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'default'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.set_gesture"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.set_gesture" title="Link to this definition"></a></dt>
+<dd><p>Sets the gesture for the exoskeleton.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>gesture</strong> (<em>str</em>) – Desired gesture (e.g., “open”, “close”, “pinch”).</p></li>
+<li><p><strong>state</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_gesture_list">
+<span class="sig-name descname"><span class="pre">get_gesture_list</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_gesture_list"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_gesture_list" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the list of available gestures for the exoskeleton.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A list of available gestures.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.cycle_gesture">
+<span class="sig-name descname"><span class="pre">cycle_gesture</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.cycle_gesture"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.cycle_gesture" title="Link to this definition"></a></dt>
+<dd><p>Cycles through the available gestures for the exoskeleton.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.cycle_gesture_state">
+<span class="sig-name descname"><span class="pre">cycle_gesture_state</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.cycle_gesture_state"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.cycle_gesture_state" title="Link to this definition"></a></dt>
+<dd><p>Cycles through the states of the current gesture for the exoskeleton.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
 </dd>
 </dl>
 </dd></dl>

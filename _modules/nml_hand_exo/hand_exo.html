@@ -47,9 +47,10 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart Guide</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../usage.html">Python API Usage Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../usage.html">Python HandExo Class</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../button_state_machine.html">Manual Button State Machine</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Additional Resources</span></p>
 <ul>
@@ -216,6 +217,84 @@
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Failed to read response: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="s2">&quot;&quot;</span>
 
+<div class="viewcode-block" id="HandExo.enable_motor">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.enable_motor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">enable_motor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">)):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Enables the torque output for the specified motor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to enable.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;enable:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HandExo.disable_motor">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.disable_motor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">disable_motor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">)):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Disables the torque output for the specified motor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to disable.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;disable:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HandExo.enable_led">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.enable_led">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">enable_led</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">)):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Enables the LED for the specified motor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to enable the LED for.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;led:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:on&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HandExo.disable_led">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.disable_led">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">disable_led</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">)):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Disables the LED for the specified motor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to disable the LED for.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;led:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:off&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HandExo.help">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.help">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">help</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sends a help command to the exoskeleton to retrieve available commands.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str: A string containing the help information from the exoskeleton.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="s2">&quot;help&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span></div>
+
+
 <div class="viewcode-block" id="HandExo.home">
 <a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.home">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">home</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">)):</span>
@@ -267,36 +346,99 @@
                 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Failed to parse info: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="HandExo.enable_motor">
-<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.enable_motor">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">enable_motor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">)):</span>
+<div class="viewcode-block" id="HandExo.get_baudrate">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_baudrate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_baudrate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Enables the torque output for the specified motor.</span>
+<span class="sd">        Retrieves the current baud rate of the serial connection.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            int: The current baud rate.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">is_open</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">baudrate</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[ERROR] Serial device is not connected.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="HandExo.get_motor_velocity">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_velocity">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_velocity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">))</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves the current velocity of the specified motor.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            motor_id (int or str): ID of the motor to enable.</span>
+<span class="sd">            motor_id (int or str): ID of the motor to query.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            float: Current velocity of the motor in degrees per second.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;get_vel:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response for motor </span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="mf">0.0</span></div>
+
+
+<div class="viewcode-block" id="HandExo.set_motor_velocity">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_velocity">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_motor_velocity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">),</span> <span class="n">velocity</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the velocity for the specified motor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to set the velocity for.</span>
+<span class="sd">            velocity (float): Desired velocity in degrees per second.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            None</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;enable:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_vel:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">velocity</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="HandExo.disable_motor">
-<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.disable_motor">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">disable_motor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">)):</span>
+<div class="viewcode-block" id="HandExo.get_motor_acceleration">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_acceleration">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_acceleration</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">))</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Disables the torque output for the specified motor.</span>
+<span class="sd">        Retrieves the current acceleration of the specified motor.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            motor_id (int or str): ID of the motor to disable.</span>
+<span class="sd">            motor_id (int or str): ID of the motor to query.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            float: Current acceleration of the motor in degrees per second squared.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;get_accel:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response for motor </span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="mf">0.0</span></div>
+
+
+<div class="viewcode-block" id="HandExo.set_motor_acceleration">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_acceleration">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_motor_acceleration</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">),</span> <span class="n">acceleration</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the acceleration for the specified motor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to set the acceleration for.</span>
+<span class="sd">            acceleration (float): Desired acceleration in degrees per second squared.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            None</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;disable:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_accel:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">acceleration</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="HandExo.get_motor_angle">
@@ -385,20 +527,20 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="HandExo.get_motor_velocity">
-<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_velocity">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_velocity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">))</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<div class="viewcode-block" id="HandExo.get_home">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_home">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_home</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">))</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Retrieves the current velocity of the specified motor.</span>
+<span class="sd">        Retrieves the home angle of the specified motor.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            motor_id (int or str): ID of the motor to query.</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            float: Current velocity of the motor in degrees per second.</span>
+<span class="sd">            float: Home angle of the motor in degrees.</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;get_vel:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;get_home:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
@@ -407,60 +549,21 @@
             <span class="k">return</span> <span class="mf">0.0</span></div>
 
 
-<div class="viewcode-block" id="HandExo.set_motor_velocity">
-<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_velocity">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">set_motor_velocity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">),</span> <span class="n">velocity</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<div class="viewcode-block" id="HandExo.set_home">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_home">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_home</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">),</span> <span class="n">home_angle</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Sets the velocity for the specified motor.</span>
+<span class="sd">        Sets the home angle for the specified motor.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            motor_id (int or str): ID of the motor to set the velocity for.</span>
-<span class="sd">            velocity (float): Desired velocity in degrees per second.</span>
+<span class="sd">            motor_id (int or str): ID of the motor to set the home angle for.</span>
+<span class="sd">            home_angle (float): Desired home angle in degrees.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            None</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_vel:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">velocity</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
-
-
-<div class="viewcode-block" id="HandExo.get_motor_acceleration">
-<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_acceleration">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_acceleration</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">))</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Retrieves the current acceleration of the specified motor.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            motor_id (int or str): ID of the motor to query.</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            float: Current acceleration of the motor in degrees per second squared.</span>
-
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;get_accel:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
-        <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">):</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response for motor </span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="k">return</span> <span class="mf">0.0</span></div>
-
-
-<div class="viewcode-block" id="HandExo.set_motor_acceleration">
-<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_acceleration">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">set_motor_acceleration</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">),</span> <span class="n">acceleration</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Sets the acceleration for the specified motor.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            motor_id (int or str): ID of the motor to set the acceleration for.</span>
-<span class="sd">            acceleration (float): Desired acceleration in degrees per second squared.</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            None</span>
-
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_accel:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">acceleration</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_home:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">home_angle</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="HandExo.get_motor_torque">
@@ -505,6 +608,45 @@
         <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">):</span>
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response for motor </span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="k">return</span> <span class="mf">0.0</span></div>
+
+
+<div class="viewcode-block" id="HandExo.get_motor_current_limit">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_current_limit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_current_limit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">))</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves the current limit of the specified motor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to query.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            float: Current limit of the motor in Amperes.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;get_current_lim:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response for motor </span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="mf">0.0</span></div>
+
+
+<div class="viewcode-block" id="HandExo.set_current_limit">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_current_limit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_current_limit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">),</span> <span class="n">current_limit</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the current limit for the specified motor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            motor_id (int or str): ID of the motor to set the current limit for.</span>
+<span class="sd">            current_limit (float): Desired current limit in Amperes.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_current_lim:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">current_limit</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="HandExo.get_motor_status">
@@ -614,7 +756,7 @@
 <span class="sd">            None</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_limits:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">lower_limit</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">upper_limit</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_motor_limits:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">lower_limit</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">upper_limit</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="HandExo.reboot_motor">
@@ -630,53 +772,165 @@
 <span class="sd">            None</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;reboot:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+        <span class="k">if</span> <span class="n">motor_id</span> <span class="o">==</span> <span class="s1">&#39;all&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="s2">&quot;reboot:all&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;reboot:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="HandExo.enable_led">
-<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.enable_led">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">enable_led</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">)):</span>
+<div class="viewcode-block" id="HandExo.get_motor_mode">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_mode">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_mode</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Enables the LED for the specified motor.</span>
+<span class="sd">        Retrieves the current control mode of the specified motor.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str: Current mode of the motor (e.g., &quot;position&quot;, &quot;velocity&quot;, &quot;current_position&quot;).</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;get_motor_mode&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">response</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="HandExo.set_motor_mode">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_mode">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_motor_mode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">),</span> <span class="n">mode</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the control mode for the specified motor.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            motor_id (int or str): ID of the motor to enable the LED for.</span>
+<span class="sd">            motor_id (int or str): ID of the motor to set the mode for.</span>
+<span class="sd">            mode (str): Desired control mode (e.g., &quot;position&quot;, &quot;velocity&quot;, &quot;current_position&quot;).</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            None</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;led:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:on&quot;</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_motor_mode:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">mode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="HandExo.disable_led">
-<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.disable_led">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">disable_led</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">:</span> <span class="p">(</span><span class="nb">int</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">)):</span>
+<div class="viewcode-block" id="HandExo.get_exo_mode">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_exo_mode">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exo_mode</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Disables the LED for the specified motor.</span>
+<span class="sd">        Retrieves the current operating mode of the exoskeleton.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str: Current mode of the exoskeleton (e.g., &quot;manual&quot;, &quot;autonomous&quot;).</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="s2">&quot;get_exo_mode&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">response</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="HandExo.set_exo_mode">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_exo_mode">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_exo_mode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mode</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the operating mode for the exoskeleton.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            motor_id (int or str): ID of the motor to disable the LED for.</span>
+<span class="sd">            mode (str): Desired operating mode (e.g., &quot;manual&quot;, &quot;autonomous&quot;).</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            None</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;led:</span><span class="si">{</span><span class="n">motor_id</span><span class="si">}</span><span class="s2">:off&quot;</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_exo_mode:</span><span class="si">{</span><span class="n">mode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="HandExo.help">
-<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.help">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">help</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<div class="viewcode-block" id="HandExo.get_gesture">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_gesture">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_gesture</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Sends a help command to the exoskeleton to retrieve available commands.</span>
+<span class="sd">        Retrieves the current gesture recognized by the exoskeleton.</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            str: A string containing the help information from the exoskeleton.</span>
+<span class="sd">            str: Current gesture (e.g., &quot;open&quot;, &quot;close&quot;, &quot;pinch&quot;).</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="s2">&quot;help&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="s2">&quot;get_gesture&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">response</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="HandExo.set_gesture">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.set_gesture">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_gesture</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gesture</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;default&quot;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the gesture for the exoskeleton.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            gesture (str): Desired gesture (e.g., &quot;open&quot;, &quot;close&quot;, &quot;pinch&quot;).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_gesture:</span><span class="si">{</span><span class="n">gesture</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">state</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HandExo.get_gesture_list">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.get_gesture_list">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_gesture_list</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves the list of available gestures for the exoskeleton.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            list: A list of available gestures.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="s2">&quot;gesture_list&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_receive</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">response</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Invalid response&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[]</span></div>
+
+
+<div class="viewcode-block" id="HandExo.cycle_gesture">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.cycle_gesture">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cycle_gesture</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Cycles through the available gestures for the exoskeleton.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="s2">&quot;cycle_gesture&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HandExo.cycle_gesture_state">
+<a class="viewcode-back" href="../../python_api.html#nml_hand_exo.hand_exo.HandExo.cycle_gesture_state">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cycle_gesture_state</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Cycles through the states of the current gesture for the exoskeleton.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="s2">&quot;cycle_gesture_state&quot;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="HandExo.close">

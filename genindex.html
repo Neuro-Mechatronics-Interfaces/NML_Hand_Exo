@@ -47,9 +47,10 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart Guide</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Python API Usage Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Python HandExo Class</a></li>
+<li class="toctree-l1"><a class="reference internal" href="button_state_machine.html">Manual Button State Machine</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Additional Resources</span></p>
 <ul>
@@ -115,9 +116,13 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.close">close() (HandExo method)</a>
 </li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.connect">connect() (HandExo method)</a>
+</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.connect">connect() (HandExo method)</a>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.cycle_gesture">cycle_gesture() (HandExo method)</a>
+</li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.cycle_gesture_state">cycle_gesture_state() (HandExo method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -151,15 +156,29 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_absolute_motor_angle">get_absolute_motor_angle() (HandExo method)</a>
 </li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_baudrate">get_baudrate() (HandExo method)</a>
+</li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_exo_mode">get_exo_mode() (HandExo method)</a>
+</li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_gesture">get_gesture() (HandExo method)</a>
+</li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_gesture_list">get_gesture_list() (HandExo method)</a>
+</li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_home">get_home() (HandExo method)</a>
+</li>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_acceleration">get_motor_acceleration() (HandExo method)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_angle">get_motor_angle() (HandExo method)</a>
 </li>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_current">get_motor_current() (HandExo method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_current_limit">get_motor_current_limit() (HandExo method)</a>
+</li>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_limits">get_motor_limits() (HandExo method)</a>
+</li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_mode">get_motor_mode() (HandExo method)</a>
 </li>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.get_motor_status">get_motor_status() (HandExo method)</a>
 </li>
@@ -227,11 +246,29 @@
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo12angleToTicksEfi">NMLHandExo::angleToTicks (C++ function)</a>
 </li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo16beginCalibrationEbi">NMLHandExo::beginCalibration (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo11buttonStateE">NMLHandExo::buttonState (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo19calibrationDurationE">NMLHandExo::calibrationDuration (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo20calibrationStartTimeE">NMLHandExo::calibrationStartTime (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo20calibrationTimedModeE">NMLHandExo::calibrationTimedMode (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo28checkModeSwitchButtonPressedEv">NMLHandExo::checkModeSwitchButtonPressed (C++ function)</a>
+</li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo14currentLimits_E">NMLHandExo::currentLimits_ (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo21cycleExoOperatingModeEv">NMLHandExo::cycleExoOperatingMode (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo13debounceDelayE">NMLHandExo::debounceDelay (C++ member)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo4dxl_E">NMLHandExo::dxl_ (C++ member)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo12enableTorqueE7uint8_tb">NMLHandExo::enableTorque (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo8exoMode_E">NMLHandExo::exoMode_ (C++ member)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo16getAbsoluteAngleE7uint8_t">NMLHandExo::getAbsoluteAngle (C++ function)</a>
 </li>
@@ -241,11 +278,19 @@
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo10getCurrentE7uint8_t">NMLHandExo::getCurrent (C++ function)</a>
 </li>
-      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo13getDeviceInfoEv">NMLHandExo::getDeviceInfo (C++ function)</a>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo19getExoOperatingModeEv">NMLHandExo::getExoOperatingMode (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo23getExoOperatingModeEnumEv">NMLHandExo::getExoOperatingModeEnum (C++ function)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo12getIndexByIdE7uint8_t">NMLHandExo::getIndexById (C++ function)</a>
 </li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo19getMotorControlModeE7uint8_t">NMLHandExo::getMotorControlMode (C++ function)</a>, <a href="cpp_api.html#_CPPv4N10NMLHandExo19getMotorControlModeEv">[1]</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo13getMotorCountEv">NMLHandExo::getMotorCount (C++ function)</a>
+</li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo10getMotorIDERK6String">NMLHandExo::getMotorID (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo17getMotorIDByIndexEKi">NMLHandExo::getMotorIDByIndex (C++ function)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo16getMotorIDByNameERK6String">NMLHandExo::getMotorIDByName (C++ function)</a>
 </li>
@@ -253,7 +298,9 @@
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo14getMotorLimitsE7uint8_t">NMLHandExo::getMotorLimits (C++ function)</a>
 </li>
-      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo16getNameByMotorIDE7uint8_t">NMLHandExo::getNameByMotorID (C++ function)</a>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo12getMotorModeEv">NMLHandExo::getMotorMode (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo16getMotorNameByIDE7uint8_t">NMLHandExo::getMotorNameByID (C++ function)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo16getRelativeAngleE7uint8_t">NMLHandExo::getRelativeAngle (C++ function)</a>
 </li>
@@ -267,19 +314,37 @@
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo13homeAllMotorsEv">NMLHandExo::homeAllMotors (C++ function)</a>
 </li>
-      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo4ids_E">NMLHandExo::ids_ (C++ member)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo16initializeMotorsEv">NMLHandExo::initializeMotors (C++ function)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo16initializeSerialEi">NMLHandExo::initializeSerial (C++ function)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo13isCalibratingE">NMLHandExo::isCalibrating (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo16isExoCalibratingEv">NMLHandExo::isExoCalibrating (C++ function)</a>
+</li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo12jointLimits_E">NMLHandExo::jointLimits_ (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo15lastButtonStateE">NMLHandExo::lastButtonState (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo16lastDebounceTimeE">NMLHandExo::lastDebounceTime (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo14modeSwitchFlagE">NMLHandExo::modeSwitchFlag (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo13modeSwitchPinE">NMLHandExo::modeSwitchPin (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo17motorControlMode_E">NMLHandExo::motorControlMode_ (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo9motorIds_E">NMLHandExo::motorIds_ (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo11motorNames_E">NMLHandExo::motorNames_ (C++ member)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo10NMLHandExoEPK7uint8_t7uint8_tA_AL2E_KfPKf">NMLHandExo::NMLHandExo (C++ function)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo10numMotors_E">NMLHandExo::numMotors_ (C++ member)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo15printDeviceInfoER6Stream">NMLHandExo::printDeviceInfo (C++ function)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo11rebootMotorE7uint8_t">NMLHandExo::rebootMotor (C++ function)</a>
 </li>
@@ -299,13 +364,23 @@
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo15setCurrentLimitE7uint8_t8uint16_t">NMLHandExo::setCurrentLimit (C++ function)</a>
 </li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo19setExoOperatingModeERK6String">NMLHandExo::setExoOperatingMode (C++ function)</a>
+</li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo7setHomeE7uint8_t">NMLHandExo::setHome (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo19setModeSwitchButtonEi">NMLHandExo::setModeSwitchButton (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo19setMotorControlModeE7uint8_tRK6String">NMLHandExo::setMotorControlMode (C++ function)</a>, <a href="cpp_api.html#_CPPv4N10NMLHandExo19setMotorControlModeERK6String">[1]</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo11setMotorLEDE7uint8_tb">NMLHandExo::setMotorLED (C++ function)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo14setMotorLimitsE7uint8_tff">NMLHandExo::setMotorLimits (C++ function)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo18setMotorLowerBoundE7uint8_tf">NMLHandExo::setMotorLowerBound (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo12setMotorModeERK6String">NMLHandExo::setMotorMode (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo13setMotorNamesEPPCKc">NMLHandExo::setMotorNames (C++ function)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo18setMotorUpperBoundE7uint8_tf">NMLHandExo::setMotorUpperBound (C++ function)</a>
 </li>
@@ -316,6 +391,10 @@
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo16setVelocityLimitE7uint8_t8uint32_t">NMLHandExo::setVelocityLimit (C++ function)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo13setZeroOffsetE7uint8_t">NMLHandExo::setZeroOffset (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo6updateEv">NMLHandExo::update (C++ function)</a>
+</li>
+      <li><a href="cpp_api.html#_CPPv4N10NMLHandExo17updateCalibrationEv">NMLHandExo::updateCalibration (C++ function)</a>
 </li>
       <li><a href="cpp_api.html#_CPPv4N10NMLHandExo7VERSIONE">NMLHandExo::VERSION (C++ member)</a>
 </li>
@@ -341,15 +420,25 @@
 </li>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.set_absolute_motor_angle">set_absolute_motor_angle() (HandExo method)</a>
 </li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.set_current_limit">set_current_limit() (HandExo method)</a>
+</li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.set_exo_mode">set_exo_mode() (HandExo method)</a>
+</li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.set_gesture">set_gesture() (HandExo method)</a>
+</li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.set_home">set_home() (HandExo method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_acceleration">set_motor_acceleration() (HandExo method)</a>
 </li>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_angle">set_motor_angle() (HandExo method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_limits">set_motor_limits() (HandExo method)</a>
 </li>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_lower_limit">set_motor_lower_limit() (HandExo method)</a>
+</li>
+      <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_mode">set_motor_mode() (HandExo method)</a>
 </li>
       <li><a href="python_api.html#nml_hand_exo.hand_exo.HandExo.set_motor_upper_limit">set_motor_upper_limit() (HandExo method)</a>
 </li>

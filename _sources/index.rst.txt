@@ -12,10 +12,11 @@ the hardware or an end user running code, you’ll find all the information you 
    quickstart
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Guides
+   :maxdepth: 1
+   :caption: Examples
 
    usage
+   button_state_machine
 
 .. toctree::
    :maxdepth: 2

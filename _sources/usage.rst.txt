@@ -1,4 +1,4 @@
-Python API Usage Guide
+Python HandExo Class
 =======================
 
 This section shows how to use the Python API to communicate with the NML Hand Exoskeleton. Each function sends a specific serial command to the device, which is also documented here for transparency and debugging.
@@ -77,19 +77,19 @@ To set the motor to a specific angle, you can use:
    - The angle is relative to the zero position offset, not the absolute position.
    - There are joint limits configured in the Arduino code that will prevent the angle commands from moving past these limits.
 
-The zero position for every motor configured on the microcontroller is stored in the firmware. You can see what the current value is with:
+The home/zero position for every motor configured on the microcontroller is stored in the firmware. You can see what the current value is with:
 
 .. code-block:: python
 
-   zero_position = exo.get_zero(1) # Sends "get_zero:1"
+   m1_home_pos = exo.get_home(1) # Sends "get_home:1"
 
-If you want to set the current position as the new zero position, you can use:
+If you want to set the current position as the new home/zero position, you can use:
 
 .. code-block:: python
 
-   exo.set_zero(1) # Sends "set_zero:1"
+   exo.set_home(1) # Sends "set_home:1"
 
-Now the home command will set the motor to this new zero position.
+Now the home command will set the motor to this new home/zero position.
 
 If you want to see the absolute position of the motor, you can use:
 
@@ -193,7 +193,48 @@ When you're all done with the exoskeleton, you can close the connection:
 
      exo.close()  # No command is sent to the device.
 
----
+Gesture Control
+---------------
+
+The NML Hand Exoskeleton supports pre-programmed gestures within the firmware. However, setting the exo to gestures requires the exo operating mode to be in either `GESTURE_FIXED` or `GESTURE_CONTINUOUS`. Let's check the current exo operating mode:
+
+  .. code-block:: python
+
+     mode = exo.get_exo_mode()  # Sends "get_exo_mode"
+
+If it returns `FREE`, then we need to switch it. To set the operating mode to `GESTURE_FIXED`, you can use:
+
+    .. code-block:: python
+
+         exo.set_exo_mode('GESTURE_FIXED')  # Sends "set_exo_mode:GESTURE_FIXED"
+
+Now that the mode is configured, we can command the exo to execute a gesture. Gestures usually have at least one state we need to declare too. Let's command a grasping gesture with the initial state as "open":
+
+  .. code-block:: python
+
+     exo.set_gesture("grasp", 'open')  # Sends "set_gesture:grasp:open"
+
+To change the gesture state, you can simply call the same method with a different state:
+
+    .. code-block:: python
+
+     exo.set_gesture("grasp", 'close')  # Sends "set_gesture:grasp:close"
+
+What if we don't know the exact current gesture name? We can call the `get_gesture` command to get the currently assigned gesture. We can also use the `gesture_list` to find all programmed gestures:
+
+  .. code-block:: python
+
+     cur_gesture = exo.get_gesture()  # Sends "get_gesture" to return the currently set gesture, or ...
+     all_gestures = exo.gesture_list()  # Sends "gesture_list" to return the full programmed list of gestures and states
+
+This returns a list of available gestures along with the motor positions. Gestures and states can be cycled through just as easily:
+
+  .. code-block:: python
+
+     exo.cycle_gesture()  # Sends "cycle_gesture" to cycle through the next gesture in the list
+     exo.cycle_gesture_state()  # Sends "cycle_gesture_state" to cycle through the next state of the current gesture
+
+
 
 Additional Notes
 ----------------

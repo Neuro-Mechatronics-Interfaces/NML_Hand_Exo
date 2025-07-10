@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Python API Usage Guide &mdash; NML Hand Exoskeleton 0.0.2 documentation</title>
+  <title>Python HandExo Class &mdash; NML Hand Exoskeleton 0.0.2 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -22,7 +22,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Frequently Asked Questions (FAQ)" href="faq.html" />
+    <link rel="next" title="Manual Button State Machine" href="button_state_machine.html" />
     <link rel="prev" title="Quickstart Guide" href="quickstart.html" /> 
 </head>
 
@@ -50,15 +50,17 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart Guide</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Python API Usage Guide</a><ul>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Python HandExo Class</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#installation">Installation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#creating-an-instance">Creating an Instance</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#common-commands">Common Commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#gesture-control">Gesture Control</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#additional-notes">Additional Notes</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="button_state_machine.html">Manual Button State Machine</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Additional Resources</span></p>
 <ul>
@@ -84,7 +86,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Python API Usage Guide</li>
+      <li class="breadcrumb-item active">Python HandExo Class</li>
       <li class="wy-breadcrumbs-aside">
             <a href="_sources/usage.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -94,8 +96,8 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="python-api-usage-guide">
-<h1>Python API Usage Guide<a class="headerlink" href="#python-api-usage-guide" title="Link to this heading"></a></h1>
+  <section id="python-handexo-class">
+<h1>Python HandExo Class<a class="headerlink" href="#python-handexo-class" title="Link to this heading"></a></h1>
 <p>This section shows how to use the Python API to communicate with the NML Hand Exoskeleton. Each function sends a specific serial command to the device, which is also documented here for transparency and debugging.</p>
 <section id="installation">
 <h2>Installation<a class="headerlink" href="#installation" title="Link to this heading"></a></h2>
@@ -154,15 +156,15 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li><p>There are joint limits configured in the Arduino code that will prevent the angle commands from moving past these limits.</p></li>
 </ul>
 </div>
-<p>The zero position for every motor configured on the microcontroller is stored in the firmware. You can see what the current value is with:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">zero_position</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_zero</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># Sends &quot;get_zero:1&quot;</span>
+<p>The home/zero position for every motor configured on the microcontroller is stored in the firmware. You can see what the current value is with:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">m1_home_pos</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_home</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># Sends &quot;get_home:1&quot;</span>
 </pre></div>
 </div>
-<p>If you want to set the current position as the new zero position, you can use:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">set_zero</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># Sends &quot;set_zero:1&quot;</span>
+<p>If you want to set the current position as the new home/zero position, you can use:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">set_home</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># Sends &quot;set_home:1&quot;</span>
 </pre></div>
 </div>
-<p>Now the home command will set the motor to this new zero position.</p>
+<p>Now the home command will set the motor to this new home/zero position.</p>
 <p>If you want to see the absolute position of the motor, you can use:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">abs_angle</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_absolute_motor_angle</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># Sends &quot;get_absangle:1&quot;</span>
 </pre></div>
@@ -252,7 +254,47 @@ You can also set new limits for the motor:</p>
 </pre></div>
 </div>
 </div></blockquote>
-<p>—</p>
+</section>
+<section id="gesture-control">
+<h2>Gesture Control<a class="headerlink" href="#gesture-control" title="Link to this heading"></a></h2>
+<p>The NML Hand Exoskeleton supports pre-programmed gestures within the firmware. However, setting the exo to gestures requires the exo operating mode to be in either <cite>GESTURE_FIXED</cite> or <cite>GESTURE_CONTINUOUS</cite>. Let’s check the current exo operating mode:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mode</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_exo_mode</span><span class="p">()</span>  <span class="c1"># Sends &quot;get_exo_mode&quot;</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>If it returns <cite>FREE</cite>, then we need to switch it. To set the operating mode to <cite>GESTURE_FIXED</cite>, you can use:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">set_exo_mode</span><span class="p">(</span><span class="s1">&#39;GESTURE_FIXED&#39;</span><span class="p">)</span>  <span class="c1"># Sends &quot;set_exo_mode:GESTURE_FIXED&quot;</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Now that the mode is configured, we can command the exo to execute a gesture. Gestures usually have at least one state we need to declare too. Let’s command a grasping gesture with the initial state as “open”:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">set_gesture</span><span class="p">(</span><span class="s2">&quot;grasp&quot;</span><span class="p">,</span> <span class="s1">&#39;open&#39;</span><span class="p">)</span>  <span class="c1"># Sends &quot;set_gesture:grasp:open&quot;</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>To change the gesture state, you can simply call the same method with a different state:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">set_gesture</span><span class="p">(</span><span class="s2">&quot;grasp&quot;</span><span class="p">,</span> <span class="s1">&#39;close&#39;</span><span class="p">)</span>  <span class="c1"># Sends &quot;set_gesture:grasp:close&quot;</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>What if we don’t know the exact current gesture name? We can call the <cite>get_gesture</cite> command to get the currently assigned gesture. We can also use the <cite>gesture_list</cite> to find all programmed gestures:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">cur_gesture</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_gesture</span><span class="p">()</span>  <span class="c1"># Sends &quot;get_gesture&quot; to return the currently set gesture, or ...</span>
+<span class="n">all_gestures</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">gesture_list</span><span class="p">()</span>  <span class="c1"># Sends &quot;gesture_list&quot; to return the full programmed list of gestures and states</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>This returns a list of available gestures along with the motor positions. Gestures and states can be cycled through just as easily:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">cycle_gesture</span><span class="p">()</span>  <span class="c1"># Sends &quot;cycle_gesture&quot; to cycle through the next gesture in the list</span>
+<span class="n">exo</span><span class="o">.</span><span class="n">cycle_gesture_state</span><span class="p">()</span>  <span class="c1"># Sends &quot;cycle_gesture_state&quot; to cycle through the next state of the current gesture</span>
+</pre></div>
+</div>
+</div></blockquote>
 </section>
 <section id="additional-notes">
 <h2>Additional Notes<a class="headerlink" href="#additional-notes" title="Link to this heading"></a></h2>
@@ -269,7 +311,7 @@ You can also set new limits for the motor:</p>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="quickstart.html" class="btn btn-neutral float-left" title="Quickstart Guide" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="faq.html" class="btn btn-neutral float-right" title="Frequently Asked Questions (FAQ)" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="button_state_machine.html" class="btn btn-neutral float-right" title="Manual Button State Machine" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

@@ -13,6 +13,7 @@ Prerequisites
 - Python 3.x (optional, for higher-level scripting).
 - A serial terminal program (e.g. PuTTY, Arduino Serial Monitor) or the provided Python API.
 
+
 Step 1. Connect the Device
 --------------------------
 

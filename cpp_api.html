@@ -50,9 +50,10 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart Guide</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Python API Usage Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Python HandExo Class</a></li>
+<li class="toctree-l1"><a class="reference internal" href="button_state_machine.html">Manual Button State Machine</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Additional Resources</span></p>
 <ul>
@@ -66,15 +67,30 @@
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExoD0Ev"><code class="docutils literal notranslate"><span class="pre">~NMLHandExo()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16initializeSerialEi"><code class="docutils literal notranslate"><span class="pre">initializeSerial()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16initializeMotorsEv"><code class="docutils literal notranslate"><span class="pre">initializeMotors()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo17getMotorIDByIndexEKi"><code class="docutils literal notranslate"><span class="pre">getMotorIDByIndex()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo19getMotorControlModeEv"><code class="docutils literal notranslate"><span class="pre">getMotorControlMode()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo19setMotorControlModeERK6String"><code class="docutils literal notranslate"><span class="pre">setMotorControlMode()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo10getMotorIDERK6String"><code class="docutils literal notranslate"><span class="pre">getMotorID()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12getIndexByIdE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getIndexById()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16getMotorIDByNameERK6String"><code class="docutils literal notranslate"><span class="pre">getMotorIDByName()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16getNameByMotorIDE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getNameByMotorID()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13setMotorNamesEPPCKc"><code class="docutils literal notranslate"><span class="pre">setMotorNames()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16getMotorNameByIDE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getMotorNameByID()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12angleToTicksEfi"><code class="docutils literal notranslate"><span class="pre">angleToTicks()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13setZeroOffsetE7uint8_t"><code class="docutils literal notranslate"><span class="pre">setZeroOffset()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13getZeroOffsetE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getZeroOffset()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13resetAllZerosEv"><code class="docutils literal notranslate"><span class="pre">resetAllZeros()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13getDeviceInfoEv"><code class="docutils literal notranslate"><span class="pre">getDeviceInfo()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo15printDeviceInfoER6Stream"><code class="docutils literal notranslate"><span class="pre">printDeviceInfo()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13getMotorCountEv"><code class="docutils literal notranslate"><span class="pre">getMotorCount()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16beginCalibrationEbi"><code class="docutils literal notranslate"><span class="pre">beginCalibration()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo17updateCalibrationEv"><code class="docutils literal notranslate"><span class="pre">updateCalibration()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16isExoCalibratingEv"><code class="docutils literal notranslate"><span class="pre">isExoCalibrating()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo19setModeSwitchButtonEi"><code class="docutils literal notranslate"><span class="pre">setModeSwitchButton()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo19setExoOperatingModeERK6String"><code class="docutils literal notranslate"><span class="pre">setExoOperatingMode()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo19getExoOperatingModeEv"><code class="docutils literal notranslate"><span class="pre">getExoOperatingMode()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo23getExoOperatingModeEnumEv"><code class="docutils literal notranslate"><span class="pre">getExoOperatingModeEnum()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo28checkModeSwitchButtonPressedEv"><code class="docutils literal notranslate"><span class="pre">checkModeSwitchButtonPressed()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo6updateEv"><code class="docutils literal notranslate"><span class="pre">update()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo21cycleExoOperatingModeEv"><code class="docutils literal notranslate"><span class="pre">cycleExoOperatingMode()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16getRelativeAngleE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getRelativeAngle()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16setRelativeAngleE7uint8_tf"><code class="docutils literal notranslate"><span class="pre">setRelativeAngle()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16getAbsoluteAngleE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getAbsoluteAngle()</span></code></a></li>
@@ -103,13 +119,30 @@
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo11getBaudRateE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getBaudRate()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo11setMotorLEDE7uint8_tb"><code class="docutils literal notranslate"><span class="pre">setMotorLED()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo14setAllMotorLEDEb"><code class="docutils literal notranslate"><span class="pre">setAllMotorLED()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo19setMotorControlModeE7uint8_tRK6String"><code class="docutils literal notranslate"><span class="pre">setMotorControlMode()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo19getMotorControlModeE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getMotorControlMode()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12setMotorModeERK6String"><code class="docutils literal notranslate"><span class="pre">setMotorMode()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12getMotorModeEv"><code class="docutils literal notranslate"><span class="pre">getMotorMode()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo7VERSIONE"><code class="docutils literal notranslate"><span class="pre">VERSION</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo4dxl_E"><code class="docutils literal notranslate"><span class="pre">dxl_</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo4ids_E"><code class="docutils literal notranslate"><span class="pre">ids_</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo9motorIds_E"><code class="docutils literal notranslate"><span class="pre">motorIds_</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo11motorNames_E"><code class="docutils literal notranslate"><span class="pre">motorNames_</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo10numMotors_E"><code class="docutils literal notranslate"><span class="pre">numMotors_</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12jointLimits_E"><code class="docutils literal notranslate"><span class="pre">jointLimits_</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12zeroOffsets_E"><code class="docutils literal notranslate"><span class="pre">zeroOffsets_</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo14currentLimits_E"><code class="docutils literal notranslate"><span class="pre">currentLimits_</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13modeSwitchPinE"><code class="docutils literal notranslate"><span class="pre">modeSwitchPin</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo15lastButtonStateE"><code class="docutils literal notranslate"><span class="pre">lastButtonState</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo11buttonStateE"><code class="docutils literal notranslate"><span class="pre">buttonState</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo16lastDebounceTimeE"><code class="docutils literal notranslate"><span class="pre">lastDebounceTime</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13debounceDelayE"><code class="docutils literal notranslate"><span class="pre">debounceDelay</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo17motorControlMode_E"><code class="docutils literal notranslate"><span class="pre">motorControlMode_</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo8exoMode_E"><code class="docutils literal notranslate"><span class="pre">exoMode_</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo13isCalibratingE"><code class="docutils literal notranslate"><span class="pre">isCalibrating</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo20calibrationTimedModeE"><code class="docutils literal notranslate"><span class="pre">calibrationTimedMode</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo20calibrationStartTimeE"><code class="docutils literal notranslate"><span class="pre">calibrationStartTime</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo19calibrationDurationE"><code class="docutils literal notranslate"><span class="pre">calibrationDuration</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo14modeSwitchFlagE"><code class="docutils literal notranslate"><span class="pre">modeSwitchFlag</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -190,6 +223,39 @@
 </dd></dl>
 
 <dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo17getMotorIDByIndexEKi">
+<span id="_CPPv3N10NMLHandExo17getMotorIDByIndexEKi"></span><span id="_CPPv2N10NMLHandExo17getMotorIDByIndexEKi"></span><span id="NMLHandExo::getMotorIDByIndex__iC"></span><span class="target" id="classNMLHandExo_1a4067cceb4eeccf846209d41f50a25c37"></span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getMotorIDByIndex</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">index</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo17getMotorIDByIndexEKi" title="Link to this definition"></a><br /></dt>
+<dd><p>Gets the motor ID according to the passed index. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>index</strong> – Index of array </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo19getMotorControlModeEv">
+<span id="_CPPv3N10NMLHandExo19getMotorControlModeEv"></span><span id="_CPPv2N10NMLHandExo19getMotorControlModeEv"></span><span id="NMLHandExo::getMotorControlMode"></span><span class="target" id="classNMLHandExo_1a5ff5efc8adf79850e3bab3cbacb39fcb"></span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getMotorControlMode</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo19getMotorControlModeEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the current operating mode of the motors. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The motor control mode. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo19setMotorControlModeERK6String">
+<span id="_CPPv3N10NMLHandExo19setMotorControlModeERK6String"></span><span id="_CPPv2N10NMLHandExo19setMotorControlModeERK6String"></span><span id="NMLHandExo::setMotorControlMode__StringCR"></span><span class="target" id="classNMLHandExo_1a5bb5b0d403c1e1540f3abede2fd4109f"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setMotorControlMode</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="p"><span class="pre">&amp;</span></span><span class="n sig-param"><span class="pre">name</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo19setMotorControlModeERK6String" title="Link to this definition"></a><br /></dt>
+<dd><p>Set the operating mode of the motors. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>name</strong> – Name of the mode (e.g. “position”, “current_position”, “velocity”). </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
 <dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo10getMotorIDERK6String">
 <span id="_CPPv3N10NMLHandExo10getMotorIDERK6String"></span><span id="_CPPv2N10NMLHandExo10getMotorIDERK6String"></span><span id="NMLHandExo::getMotorID__StringCR"></span><span class="target" id="classNMLHandExo_1a5c9e0589f2a9517fa02bb37124085263"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getMotorID</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="p"><span class="pre">&amp;</span></span><span class="n sig-param"><span class="pre">token</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo10getMotorIDERK6String" title="Link to this definition"></a><br /></dt>
 <dd><p>Get the motor ID from a user-supplied token (either name or ID as a string). </p>
@@ -232,8 +298,19 @@
 </dd></dl>
 
 <dl class="cpp function">
-<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16getNameByMotorIDE7uint8_t">
-<span id="_CPPv3N10NMLHandExo16getNameByMotorIDE7uint8_t"></span><span id="_CPPv2N10NMLHandExo16getNameByMotorIDE7uint8_t"></span><span id="NMLHandExo::getNameByMotorID__uint8_t"></span><span class="target" id="classNMLHandExo_1aad9086aedd01fb5554de6bd27b7380fc"></span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getNameByMotorID</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16getNameByMotorIDE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo13setMotorNamesEPPCKc">
+<span id="_CPPv3N10NMLHandExo13setMotorNamesEPPCKc"></span><span id="_CPPv2N10NMLHandExo13setMotorNamesEPPCKc"></span><span id="NMLHandExo::setMotorNames__cCPCP"></span><span class="target" id="classNMLHandExo_1a51d9c340f5f87a340f91425299975c3b"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setMotorNames</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">names</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo13setMotorNamesEPPCKc" title="Link to this definition"></a><br /></dt>
+<dd><p>Set the unique names for motors (Must match the number of IDs) </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>names</strong> – A list of “names” separated by comma. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16getMotorNameByIDE7uint8_t">
+<span id="_CPPv3N10NMLHandExo16getMotorNameByIDE7uint8_t"></span><span id="_CPPv2N10NMLHandExo16getMotorNameByIDE7uint8_t"></span><span id="NMLHandExo::getMotorNameByID__uint8_t"></span><span class="target" id="classNMLHandExo_1ab65ff07f4d54444d3de333bc96b9e4b3"></span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getMotorNameByID</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16getMotorNameByIDE7uint8_t" title="Link to this definition"></a><br /></dt>
 <dd><p>Get the motor name from its ID. </p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -294,14 +371,113 @@
 </dd></dl>
 
 <dl class="cpp function">
-<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo13getDeviceInfoEv">
-<span id="_CPPv3N10NMLHandExo13getDeviceInfoEv"></span><span id="_CPPv2N10NMLHandExo13getDeviceInfoEv"></span><span id="NMLHandExo::getDeviceInfo"></span><span class="target" id="classNMLHandExo_1a65b2aff16b4221cc13ca1635af028c1b"></span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getDeviceInfo</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo13getDeviceInfoEv" title="Link to this definition"></a><br /></dt>
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo15printDeviceInfoER6Stream">
+<span id="_CPPv3N10NMLHandExo15printDeviceInfoER6Stream"></span><span id="_CPPv2N10NMLHandExo15printDeviceInfoER6Stream"></span><span id="NMLHandExo::printDeviceInfo__StreamR"></span><span class="target" id="classNMLHandExo_1a69634a9202e63fa15fbfca3bf732c1dd"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">printDeviceInfo</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">Stream</span></span><span class="w"> </span><span class="p"><span class="pre">&amp;</span></span><span class="n sig-param"><span class="pre">out</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo15printDeviceInfoER6Stream" title="Link to this definition"></a><br /></dt>
 <dd><p>Get a string summarizing the device information. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo13getMotorCountEv">
+<span id="_CPPv3N10NMLHandExo13getMotorCountEv"></span><span id="_CPPv2N10NMLHandExo13getMotorCountEv"></span><span id="NMLHandExo::getMotorCount"></span><span class="target" id="classNMLHandExo_1a679ddf3f750e2d30bfbbc1118ada29f0"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getMotorCount</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo13getMotorCountEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the number of motors. </p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>Information string. </p>
+<dd class="field-odd"><p>integer, number of motors. </p>
 </dd>
 </dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16beginCalibrationEbi">
+<span id="_CPPv3N10NMLHandExo16beginCalibrationEbi"></span><span id="_CPPv2N10NMLHandExo16beginCalibrationEbi"></span><span id="NMLHandExo::beginCalibration__b.i"></span><span class="target" id="classNMLHandExo_1a6c87c7244643150c14a289bfaed6c9fd"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">beginCalibration</span></span></span><span class="sig-paren">(</span><span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">enableTimedCalibration</span></span>, <span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">duration</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16beginCalibrationEbi" title="Link to this definition"></a><br /></dt>
+<dd><p>Start the calibration process for the exoskeleton. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>enableTimedCalibration</strong> – If true, enables timed calibration mode. </p></li>
+<li><p><strong>duration</strong> – Duration in seconds for timed calibration. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo17updateCalibrationEv">
+<span id="_CPPv3N10NMLHandExo17updateCalibrationEv"></span><span id="_CPPv2N10NMLHandExo17updateCalibrationEv"></span><span id="NMLHandExo::updateCalibration"></span><span class="target" id="classNMLHandExo_1a26b98d33b39897bcc776dee9457df2c8"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">updateCalibration</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo17updateCalibrationEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Update the calibration state, checking if the calibration is complete. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16isExoCalibratingEv">
+<span id="_CPPv3N10NMLHandExo16isExoCalibratingEv"></span><span id="_CPPv2N10NMLHandExo16isExoCalibratingEv"></span><span id="NMLHandExo::isExoCalibrating"></span><span class="target" id="classNMLHandExo_1a9508e99bad426549c4a3b1e4bfd0bb48"></span><span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">isExoCalibrating</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo16isExoCalibratingEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Check if the exoskeleton is currently calibrating. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>True if in calibration mode, false otherwise. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo19setModeSwitchButtonEi">
+<span id="_CPPv3N10NMLHandExo19setModeSwitchButtonEi"></span><span id="_CPPv2N10NMLHandExo19setModeSwitchButtonEi"></span><span id="NMLHandExo::setModeSwitchButton__i"></span><span class="target" id="classNMLHandExo_1af28b2e3a0f43ae74fb209b4e3a0d44a0"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setModeSwitchButton</span></span></span><span class="sig-paren">(</span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">pin</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo19setModeSwitchButtonEi" title="Link to this definition"></a><br /></dt>
+<dd><p>Assign pin for mode switch interrupt. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>pin</strong> – Interrupt pin. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo19setExoOperatingModeERK6String">
+<span id="_CPPv3N10NMLHandExo19setExoOperatingModeERK6String"></span><span id="_CPPv2N10NMLHandExo19setExoOperatingModeERK6String"></span><span id="NMLHandExo::setExoOperatingMode__StringCR"></span><span class="target" id="classNMLHandExo_1a8aceba1c7b07e63d54794dea7c445e29"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setExoOperatingMode</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="p"><span class="pre">&amp;</span></span><span class="n sig-param"><span class="pre">name</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo19setExoOperatingModeERK6String" title="Link to this definition"></a><br /></dt>
+<dd><p>Define the operating mode for exo. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>name</strong> – Operating mode (“GESTURE_FIXED”, “GESTURE_CONTINUOUS”, “FREE”) </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo19getExoOperatingModeEv">
+<span id="_CPPv3N10NMLHandExo19getExoOperatingModeEv"></span><span id="_CPPv2N10NMLHandExo19getExoOperatingModeEv"></span><span id="NMLHandExo::getExoOperatingMode"></span><span class="target" id="classNMLHandExo_1a084d6b1d59ae02b0a263268fa86101ae"></span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getExoOperatingMode</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo19getExoOperatingModeEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the current operating mode for exo. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The current operating mode as a string. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo23getExoOperatingModeEnumEv">
+<span id="_CPPv3N10NMLHandExo23getExoOperatingModeEnumEv"></span><span id="_CPPv2N10NMLHandExo23getExoOperatingModeEnumEv"></span><span id="NMLHandExo::getExoOperatingModeEnum"></span><span class="target" id="classNMLHandExo_1a50aa395fdb2a4fef05ccdf5f509aac06"></span><span class="n"><span class="pre">ExoOperatingMode</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getExoOperatingModeEnum</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo23getExoOperatingModeEnumEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the current operating mode as an enum. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The current operating mode as an ExoOperatingMode enum. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo28checkModeSwitchButtonPressedEv">
+<span id="_CPPv3N10NMLHandExo28checkModeSwitchButtonPressedEv"></span><span id="_CPPv2N10NMLHandExo28checkModeSwitchButtonPressedEv"></span><span id="NMLHandExo::checkModeSwitchButtonPressed"></span><span class="target" id="classNMLHandExo_1a191626cb707cbfee162b11b0a23ea038"></span><span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">checkModeSwitchButtonPressed</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo28checkModeSwitchButtonPressedEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Check if the mode switch button was pressed. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo6updateEv">
+<span id="_CPPv3N10NMLHandExo6updateEv"></span><span id="_CPPv2N10NMLHandExo6updateEv"></span><span id="NMLHandExo::update"></span><span class="target" id="classNMLHandExo_1a1b4b604b6082520ea0436568f86053c0"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">update</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo6updateEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Update the exo state, including checking for button pressed, mode switching, and internal routines. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo21cycleExoOperatingModeEv">
+<span id="_CPPv3N10NMLHandExo21cycleExoOperatingModeEv"></span><span id="_CPPv2N10NMLHandExo21cycleExoOperatingModeEv"></span><span id="NMLHandExo::cycleExoOperatingMode"></span><span class="target" id="classNMLHandExo_1ae9811c24991e1e62e52beb0777c716ed"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">cycleExoOperatingMode</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo21cycleExoOperatingModeEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Cycle through the exo operating modes. </p>
 </dd></dl>
 
 <dl class="cpp function">
@@ -507,7 +683,16 @@
 <dl class="cpp function">
 <dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo15setCurrentLimitE7uint8_t8uint16_t">
 <span id="_CPPv3N10NMLHandExo15setCurrentLimitE7uint8_t8uint16_t"></span><span id="_CPPv2N10NMLHandExo15setCurrentLimitE7uint8_t8uint16_t"></span><span id="NMLHandExo::setCurrentLimit__uint8_t.uint16_t"></span><span class="target" id="classNMLHandExo_1a07676c9aaa793914cd842ceafba777dc"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setCurrentLimit</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span>, <span class="n"><span class="pre">uint16_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">current_mA</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo15setCurrentLimitE7uint8_t8uint16_t" title="Link to this definition"></a><br /></dt>
-<dd></dd></dl>
+<dd><p>Set the current limit for a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> – Motor ID. </p></li>
+<li><p><strong>current_mA</strong> – Current limit in milliamps. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="cpp function">
 <dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo9setTorqueE7uint8_tf">
@@ -668,12 +853,62 @@
 </dl>
 </dd></dl>
 
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo19setMotorControlModeE7uint8_tRK6String">
+<span id="_CPPv3N10NMLHandExo19setMotorControlModeE7uint8_tRK6String"></span><span id="_CPPv2N10NMLHandExo19setMotorControlModeE7uint8_tRK6String"></span><span id="NMLHandExo::setMotorControlMode__uint8_t.StringCR"></span><span class="target" id="classNMLHandExo_1abbfc92abf424f35564035bab8110fbc2"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setMotorControlMode</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="p"><span class="pre">&amp;</span></span><span class="n sig-param"><span class="pre">mode</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo19setMotorControlModeE7uint8_tRK6String" title="Link to this definition"></a><br /></dt>
+<dd><p>Set the current control mode of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> – Motor ID. </p></li>
+<li><p><strong>mode</strong> – Control mode as a string (e.g. “POSITION”, “CURRENT_POSITION”, “VELOCITY”). </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo19getMotorControlModeE7uint8_t">
+<span id="_CPPv3N10NMLHandExo19getMotorControlModeE7uint8_t"></span><span id="_CPPv2N10NMLHandExo19getMotorControlModeE7uint8_t"></span><span id="NMLHandExo::getMotorControlMode__uint8_t"></span><span class="target" id="classNMLHandExo_1a7349db33a7e5081921cfb049dda47d3e"></span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getMotorControlMode</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo19getMotorControlModeE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the current control mode of a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Control mode as a string. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo12setMotorModeERK6String">
+<span id="_CPPv3N10NMLHandExo12setMotorModeERK6String"></span><span id="_CPPv2N10NMLHandExo12setMotorModeERK6String"></span><span id="NMLHandExo::setMotorMode__StringCR"></span><span class="target" id="classNMLHandExo_1ab38cafc7d9274481d169977dba7e1407"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setMotorMode</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="p"><span class="pre">&amp;</span></span><span class="n sig-param"><span class="pre">mode</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo12setMotorModeERK6String" title="Link to this definition"></a><br /></dt>
+<dd><p>Set the control mode for all motors. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>mode</strong> – Control mode as a string (e.g. “POSITION”, “CURRENT_POSITION”, “VELOCITY”). </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo12getMotorModeEv">
+<span id="_CPPv3N10NMLHandExo12getMotorModeEv"></span><span id="_CPPv2N10NMLHandExo12getMotorModeEv"></span><span id="NMLHandExo::getMotorMode"></span><span class="target" id="classNMLHandExo_1ab429160aad4f22f4b293b19ff55fdca0"></span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getMotorMode</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo12getMotorModeEv" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the current control mode of all motors. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Control mode as a string. </p>
+</dd>
+</dl>
+</dd></dl>
+
 </div>
 <div class="breathe-sectiondef docutils container">
 <p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-static-attributes">Public Static Attributes</p>
 <dl class="cpp var">
 <dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo7VERSIONE">
-<span id="_CPPv3N10NMLHandExo7VERSIONE"></span><span id="_CPPv2N10NMLHandExo7VERSIONE"></span><span id="NMLHandExo::VERSION__cCP"></span><span class="target" id="classNMLHandExo_1a21f2a007112d02fbbdd487d5d9a5defd"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><span class="k"><span class="pre">constexpr</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">VERSION</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="s"><span class="pre">&quot;1.2.3&quot;</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo7VERSIONE" title="Link to this definition"></a><br /></dt>
+<span id="_CPPv3N10NMLHandExo7VERSIONE"></span><span id="_CPPv2N10NMLHandExo7VERSIONE"></span><span id="NMLHandExo::VERSION__cCP"></span><span class="target" id="classNMLHandExo_1a21f2a007112d02fbbdd487d5d9a5defd"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><span class="k"><span class="pre">constexpr</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">VERSION</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="s"><span class="pre">&quot;0.2.6&quot;</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo7VERSIONE" title="Link to this definition"></a><br /></dt>
 <dd><p>Current software version. </p>
 </dd></dl>
 
@@ -687,14 +922,20 @@
 </dd></dl>
 
 <dl class="cpp var">
-<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo4ids_E">
-<span id="_CPPv3N10NMLHandExo4ids_E"></span><span id="_CPPv2N10NMLHandExo4ids_E"></span><span id="NMLHandExo::ids___uint8_tCP"></span><span class="target" id="classNMLHandExo_1ab6bd46234604c621c3d2a57f2e5b6ca3"></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">ids_</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo4ids_E" title="Link to this definition"></a><br /></dt>
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo9motorIds_E">
+<span id="_CPPv3N10NMLHandExo9motorIds_E"></span><span id="_CPPv2N10NMLHandExo9motorIds_E"></span><span id="NMLHandExo::motorIds___uint8_tCP"></span><span class="target" id="classNMLHandExo_1ad5cc0037fe1ffd14b2a41fec1c1382bf"></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">motorIds_</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo9motorIds_E" title="Link to this definition"></a><br /></dt>
 <dd><p>Pointer to array of motor IDs. </p>
 </dd></dl>
 
 <dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo11motorNames_E">
+<span id="_CPPv3N10NMLHandExo11motorNames_E"></span><span id="_CPPv2N10NMLHandExo11motorNames_E"></span><span id="NMLHandExo::motorNames___cCPCP"></span><span class="target" id="classNMLHandExo_1a86abb8f2c38f08024989bd747a60a310"></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">motorNames_</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo11motorNames_E" title="Link to this definition"></a><br /></dt>
+<dd><p>Pointer to array of motor names. </p>
+</dd></dl>
+
+<dl class="cpp var">
 <dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo10numMotors_E">
-<span id="_CPPv3N10NMLHandExo10numMotors_E"></span><span id="_CPPv2N10NMLHandExo10numMotors_E"></span><span id="NMLHandExo::numMotors___uint8_t"></span><span class="target" id="classNMLHandExo_1ad35bd969c955a95b17f20e5ec18f0fc6"></span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">numMotors_</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo10numMotors_E" title="Link to this definition"></a><br /></dt>
+<span id="_CPPv3N10NMLHandExo10numMotors_E"></span><span id="_CPPv2N10NMLHandExo10numMotors_E"></span><span id="NMLHandExo::numMotors___uint8_t"></span><span class="target" id="classNMLHandExo_1ad35bd969c955a95b17f20e5ec18f0fc6"></span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">numMotors_</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="m"><span class="pre">0</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo10numMotors_E" title="Link to this definition"></a><br /></dt>
 <dd><p>Number of motors configured. </p>
 </dd></dl>
 
@@ -714,6 +955,80 @@
 <dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo14currentLimits_E">
 <span id="_CPPv3N10NMLHandExo14currentLimits_E"></span><span id="_CPPv2N10NMLHandExo14currentLimits_E"></span><span id="NMLHandExo::currentLimits___uint16_tP"></span><span class="target" id="classNMLHandExo_1a8f6f0405b2da4061d273db40c95cf316"></span><span class="n"><span class="pre">uint16_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">currentLimits_</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo14currentLimits_E" title="Link to this definition"></a><br /></dt>
 <dd><p>Array of current limits for each motor. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo13modeSwitchPinE">
+<span id="_CPPv3N10NMLHandExo13modeSwitchPinE"></span><span id="_CPPv2N10NMLHandExo13modeSwitchPinE"></span><span id="NMLHandExo::modeSwitchPin__i"></span><span class="target" id="classNMLHandExo_1a186ec1415667645c007ef67b6bb12206"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">modeSwitchPin</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="o"><span class="pre">-</span></span><span class="m"><span class="pre">1</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo13modeSwitchPinE" title="Link to this definition"></a><br /></dt>
+<dd><p>Mode switch pin. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo15lastButtonStateE">
+<span id="_CPPv3N10NMLHandExo15lastButtonStateE"></span><span id="_CPPv2N10NMLHandExo15lastButtonStateE"></span><span id="NMLHandExo::lastButtonState__b"></span><span class="target" id="classNMLHandExo_1a5d86d8d751ba8c5ff95249869151ce8a"></span><span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">lastButtonState</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">false</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo15lastButtonStateE" title="Link to this definition"></a><br /></dt>
+<dd><p>Last interrupt time for mode switch button. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo11buttonStateE">
+<span id="_CPPv3N10NMLHandExo11buttonStateE"></span><span id="_CPPv2N10NMLHandExo11buttonStateE"></span><span id="NMLHandExo::buttonState__i"></span><span class="target" id="classNMLHandExo_1af68b8994779d43f81056a9f7373d6616"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">buttonState</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="n"><span class="pre">HIGH</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo11buttonStateE" title="Link to this definition"></a><br /></dt>
+<dd><p>Current state of the mode switch button. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo16lastDebounceTimeE">
+<span id="_CPPv3N10NMLHandExo16lastDebounceTimeE"></span><span id="_CPPv2N10NMLHandExo16lastDebounceTimeE"></span><span id="NMLHandExo::lastDebounceTime__unsigned-l"></span><span class="target" id="classNMLHandExo_1a79ddf7b93ac16408132bfdad55908b34"></span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">lastDebounceTime</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="m"><span class="pre">0</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo16lastDebounceTimeE" title="Link to this definition"></a><br /></dt>
+<dd><p>Last debounce time for mode switch button. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo13debounceDelayE">
+<span id="_CPPv3N10NMLHandExo13debounceDelayE"></span><span id="_CPPv2N10NMLHandExo13debounceDelayE"></span><span id="NMLHandExo::debounceDelay__unsigned-lC"></span><span class="target" id="classNMLHandExo_1a7976d65ee22719dad3f6dc3fd2474888"></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">debounceDelay</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="m"><span class="pre">50</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo13debounceDelayE" title="Link to this definition"></a><br /></dt>
+<dd><p>Debounce delay for mode switch button. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo17motorControlMode_E">
+<span id="_CPPv3N10NMLHandExo17motorControlMode_E"></span><span id="_CPPv2N10NMLHandExo17motorControlMode_E"></span><span id="NMLHandExo::motorControlMode___String"></span><span class="target" id="classNMLHandExo_1ae27a6951165314c3f384425c26dcbfc6"></span><span class="n"><span class="pre">String</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">motorControlMode_</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo17motorControlMode_E" title="Link to this definition"></a><br /></dt>
+<dd><p>Operating mode of motors. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo8exoMode_E">
+<span id="_CPPv3N10NMLHandExo8exoMode_E"></span><span id="_CPPv2N10NMLHandExo8exoMode_E"></span><span id="NMLHandExo::exoMode___ExoOperatingMode"></span><span class="target" id="classNMLHandExo_1a6399451e8a1cb0b5ff6084c285530e6c"></span><span class="n"><span class="pre">ExoOperatingMode</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">exoMode_</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="n"><span class="pre">FREE</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo8exoMode_E" title="Link to this definition"></a><br /></dt>
+<dd><p>Operating mode of exo. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo13isCalibratingE">
+<span id="_CPPv3N10NMLHandExo13isCalibratingE"></span><span id="_CPPv2N10NMLHandExo13isCalibratingE"></span><span id="NMLHandExo::isCalibrating__b"></span><span class="target" id="classNMLHandExo_1a3e9e1aebfc573f1cb6ae6e1363e1caca"></span><span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">isCalibrating</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">false</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo13isCalibratingE" title="Link to this definition"></a><br /></dt>
+<dd><p>brief Flag to indicate if the exoskeleton is currently calibrating. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo20calibrationTimedModeE">
+<span id="_CPPv3N10NMLHandExo20calibrationTimedModeE"></span><span id="_CPPv2N10NMLHandExo20calibrationTimedModeE"></span><span id="NMLHandExo::calibrationTimedMode__b"></span><span class="target" id="classNMLHandExo_1ab6fcf8cc4891474767d8c0525e56c5cd"></span><span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">calibrationTimedMode</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">false</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo20calibrationTimedModeE" title="Link to this definition"></a><br /></dt>
+<dd></dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo20calibrationStartTimeE">
+<span id="_CPPv3N10NMLHandExo20calibrationStartTimeE"></span><span id="_CPPv2N10NMLHandExo20calibrationStartTimeE"></span><span id="NMLHandExo::calibrationStartTime__unsigned-l"></span><span class="target" id="classNMLHandExo_1a7dc7975bcd1af6fd80f26753a63fd47c"></span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">calibrationStartTime</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo20calibrationStartTimeE" title="Link to this definition"></a><br /></dt>
+<dd><p>Start time for calibration. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo19calibrationDurationE">
+<span id="_CPPv3N10NMLHandExo19calibrationDurationE"></span><span id="_CPPv2N10NMLHandExo19calibrationDurationE"></span><span id="NMLHandExo::calibrationDuration__unsigned-l"></span><span class="target" id="classNMLHandExo_1a0accf57ba687a664ea355c5523ecb920"></span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">calibrationDuration</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo19calibrationDurationE" title="Link to this definition"></a><br /></dt>
+<dd><p>Duration for calibration in milliseconds. </p>
+</dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-private-static-attributes">Private Static Attributes</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo14modeSwitchFlagE">
+<span id="_CPPv3N10NMLHandExo14modeSwitchFlagE"></span><span id="_CPPv2N10NMLHandExo14modeSwitchFlagE"></span><span id="NMLHandExo::modeSwitchFlag__bV"></span><span class="target" id="classNMLHandExo_1a9de276765f9336bdea25d9ab3fc8a9d0"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><span class="k"><span class="pre">volatile</span></span><span class="w"> </span><span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">modeSwitchFlag</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo14modeSwitchFlagE" title="Link to this definition"></a><br /></dt>
+<dd><p>Mode switch flag for interrupt callback. </p>
 </dd></dl>
 
 </div>
