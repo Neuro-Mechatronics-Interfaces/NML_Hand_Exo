@@ -105,6 +105,8 @@
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.cycle_gesture"><code class="docutils literal notranslate"><span class="pre">HandExo.cycle_gesture()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.cycle_gesture_state"><code class="docutils literal notranslate"><span class="pre">HandExo.cycle_gesture_state()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.close"><code class="docutils literal notranslate"><span class="pre">HandExo.close()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_imu_data"><code class="docutils literal notranslate"><span class="pre">HandExo.get_imu_data()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nml_hand_exo.hand_exo.HandExo.get_imu_angles"><code class="docutils literal notranslate"><span class="pre">HandExo.get_imu_angles()</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -818,6 +820,44 @@ verbose (bool): If True, enables verbose logging of commands and responses (defa
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
 <dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_imu_data">
+<span class="sig-name descname"><span class="pre">get_imu_data</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_imu_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_imu_data" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the IMU data from the exoskeleton.</p>
+<dl class="simple">
+<dt>Receives a serial message with contents, as an example:</dt><dd><p>“Temp: 20.28 C; Accel: [-0.46, -0.42, 9.85]; Gyro: [-0.00, 0.01, -0.00];”</p>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A dictionary containing IMU data (e.g., accelerometer, gyroscope, magnetometer).</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.hand_exo.HandExo.get_imu_angles">
+<span class="sig-name descname"><span class="pre">get_imu_angles</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">degrees</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">raw</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/hand_exo.html#HandExo.get_imu_angles"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.hand_exo.HandExo.get_imu_angles" title="Link to this definition"></a></dt>
+<dd><p>Computes the orientation of the exo device based on the imu data received</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>degrees</strong> (<em>bool</em>) – If True, returns roll, pitch, and yaw in degrees. If False, returns in radians.</p></li>
+<li><p><strong>raw</strong> (<em>bool</em>) – If True, returns raw IMU data instead of computed orientation.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A dictionary containing orientation data (e.g., roll, pitch, yaw).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
 </dd>
 </dl>
 </dd></dl>

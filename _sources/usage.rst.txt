@@ -26,10 +26,8 @@ To connect to the device:
 
    exo = HandExo(port='COM3', baudrate=57600, verbose=True)
 
-Common Commands
+LED Control
 ---------------
-
-Below is a list of common Python methods and the serial commands they send:
 
 First lets see if we can see the motor LED turn on:
 
@@ -37,11 +35,19 @@ First lets see if we can see the motor LED turn on:
 
    exo.enable_led(1) # Sends "led:1:on"
 
-If this works the LED on that motor will now be on. Let's turn it off and enable the motor torque for the motor with the ID 1:
+If this works the LED on that motor will now be on. Let's turn it off:
 
 .. code-block:: python
 
    exo.disable_led(1)   # Sends "led:1:off"
+
+Motor Control
+----------------
+
+Enable the motor torque for the motor with the ID 1:
+
+.. code-block:: python
+
    exo.enable_torque(1) # Sends "enable:1"
 
 You should feel the motor engage. If you want to disable the torque, you can do so with:
@@ -50,7 +56,12 @@ You should feel the motor engage. If you want to disable the torque, you can do 
 
    exo.disable_torque(1) # Sends "disable:1"
 
-Let's keep the torque enabled for now. We can get the motor's current position relatve to the zero position offset (different from the absolute position):
+Let's keep the torque enabled for now.
+
+Position Control & Angles
+----------------------------
+
+We can get the motor's current position relatve to the zero position offset (different from the absolute position):
 
 .. code-block:: python
 
@@ -158,6 +169,9 @@ If the motor reaches its stall torque and disables itself, the LED will begin fl
      exo.reboot_motor(1)  # Sends "reboot:1"
 
 
+Exo Information
+----------------
+
 All the information regarding the status info of the exo can be retrieved with:
 
 .. code-block:: python
@@ -234,6 +248,16 @@ This returns a list of available gestures along with the motor positions. Gestur
      exo.cycle_gesture()  # Sends "cycle_gesture" to cycle through the next gesture in the list
      exo.cycle_gesture_state()  # Sends "cycle_gesture_state" to cycle through the next state of the current gesture
 
+
+IMU
+----------------
+The NML Hand Exoskeleton also has an IMU (Inertial Measurement Unit) that can be used to get the current orientation of the exoskeleton. To get the orientation of the exoskeleton, you can use:
+
+  .. code-block:: python
+
+     orientation = exo.get_imu_angles() # Returns a tuple with the roll, pitch, and yaw angles in degrees
+     orientation_rad = exo.get_imu_angles(degrees=False) # Returns a tuple with the roll, pitch, and yaw angles in degrees
+     imu_data = exo.get_imu_angles(raw=True) # Returns a tuple with the temperature accelerometer, gyroscope, and magnetometer data (if available) in raw format
 
 
 Additional Notes

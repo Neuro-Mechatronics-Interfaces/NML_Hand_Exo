@@ -55,8 +55,12 @@
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Python HandExo Class</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#installation">Installation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#creating-an-instance">Creating an Instance</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#common-commands">Common Commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#led-control">LED Control</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#motor-control">Motor Control</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#position-control-angles">Position Control &amp; Angles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#exo-information">Exo Information</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#gesture-control">Gesture Control</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#imu">IMU</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#additional-notes">Additional Notes</a></li>
 </ul>
 </li>
@@ -117,23 +121,32 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 </pre></div>
 </div>
 </section>
-<section id="common-commands">
-<h2>Common Commands<a class="headerlink" href="#common-commands" title="Link to this heading"></a></h2>
-<p>Below is a list of common Python methods and the serial commands they send:</p>
+<section id="led-control">
+<h2>LED Control<a class="headerlink" href="#led-control" title="Link to this heading"></a></h2>
 <p>First lets see if we can see the motor LED turn on:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">enable_led</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># Sends &quot;led:1:on&quot;</span>
 </pre></div>
 </div>
-<p>If this works the LED on that motor will now be on. Let’s turn it off and enable the motor torque for the motor with the ID 1:</p>
+<p>If this works the LED on that motor will now be on. Let’s turn it off:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">disable_led</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># Sends &quot;led:1:off&quot;</span>
-<span class="n">exo</span><span class="o">.</span><span class="n">enable_torque</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># Sends &quot;enable:1&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="motor-control">
+<h2>Motor Control<a class="headerlink" href="#motor-control" title="Link to this heading"></a></h2>
+<p>Enable the motor torque for the motor with the ID 1:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">enable_torque</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># Sends &quot;enable:1&quot;</span>
 </pre></div>
 </div>
 <p>You should feel the motor engage. If you want to disable the torque, you can do so with:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">disable_torque</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># Sends &quot;disable:1&quot;</span>
 </pre></div>
 </div>
-<p>Let’s keep the torque enabled for now. We can get the motor’s current position relatve to the zero position offset (different from the absolute position):</p>
+<p>Let’s keep the torque enabled for now.</p>
+</section>
+<section id="position-control-angles">
+<h2>Position Control &amp; Angles<a class="headerlink" href="#position-control-angles" title="Link to this heading"></a></h2>
+<p>We can get the motor’s current position relatve to the zero position offset (different from the absolute position):</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">angle</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_motor_angle</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># Sends &quot;get_angle:1&quot;</span>
 </pre></div>
 </div>
@@ -221,6 +234,9 @@ You can also set new limits for the motor:</p>
 </pre></div>
 </div>
 </div></blockquote>
+</section>
+<section id="exo-information">
+<h2>Exo Information<a class="headerlink" href="#exo-information" title="Link to this heading"></a></h2>
 <p>All the information regarding the status info of the exo can be retrieved with:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">info</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">info</span><span class="p">()</span>  <span class="c1"># Sends &quot;info&quot;</span>
 </pre></div>
@@ -292,6 +308,17 @@ You can also set new limits for the motor:</p>
 <blockquote>
 <div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exo</span><span class="o">.</span><span class="n">cycle_gesture</span><span class="p">()</span>  <span class="c1"># Sends &quot;cycle_gesture&quot; to cycle through the next gesture in the list</span>
 <span class="n">exo</span><span class="o">.</span><span class="n">cycle_gesture_state</span><span class="p">()</span>  <span class="c1"># Sends &quot;cycle_gesture_state&quot; to cycle through the next state of the current gesture</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="imu">
+<h2>IMU<a class="headerlink" href="#imu" title="Link to this heading"></a></h2>
+<p>The NML Hand Exoskeleton also has an IMU (Inertial Measurement Unit) that can be used to get the current orientation of the exoskeleton. To get the orientation of the exoskeleton, you can use:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">orientation</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_imu_angles</span><span class="p">()</span> <span class="c1"># Returns a tuple with the roll, pitch, and yaw angles in degrees</span>
+<span class="n">orientation_rad</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_imu_angles</span><span class="p">(</span><span class="n">degrees</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="c1"># Returns a tuple with the roll, pitch, and yaw angles in degrees</span>
+<span class="n">imu_data</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_imu_angles</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="c1"># Returns a tuple with the temperature accelerometer, gyroscope, and magnetometer data (if available) in raw format</span>
 </pre></div>
 </div>
 </div></blockquote>
