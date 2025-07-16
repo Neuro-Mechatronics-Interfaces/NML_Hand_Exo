@@ -15,16 +15,34 @@ Install the package locally using:
    pip install -e .
 
 
-Creating an Instance
---------------------
+USB Serial Connection
+--------------------------
 
-To connect to the device:
+We can connect to the device using a USB serial connection
 
 .. code-block:: python
 
-   from hand_exo import HandExo
+   from hand_exo import HandExo, SerialComm
 
-   exo = HandExo(port='COM3', baudrate=57600, verbose=True)
+   # Define serial communication parameters
+   com = SerialComm(port='COM3', baudrate=57600) # Change 'COM3' to your device's serial port
+
+   # Create an instance of the HandExo class
+   exo = HandExo(com)
+
+
+TCP/Wi-Fi Connection
+--------------------------
+
+If you want to connect to the device over TCP or Wi-Fi, you can use the `TCPComm` class instead of `SerialComm`. You can use the PicoW module as the server to handle client connections and exchange serial data. For setting up the pico server, check out the :doc:`wifi_server` documentation for more.
+
+.. code-block:: python
+
+   from hand_exo import HandExo, TCPComm
+
+   # Define TCP communication parameters
+   comm = TCPComm(ip="192.168.1.200", port=5001") # Default IP and port for the PicoW server, change as needed
+   exo = HandExo(comm)
 
 LED Control
 ---------------

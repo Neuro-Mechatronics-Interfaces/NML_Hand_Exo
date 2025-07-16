@@ -22,6 +22,7 @@ the hardware or an end user running code, you’ll find all the information you 
    :maxdepth: 2
    :caption: Additional Resources
 
+   wifi_server
    faq
 
 .. toctree::

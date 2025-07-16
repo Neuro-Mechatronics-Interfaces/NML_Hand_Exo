@@ -1,0 +1,242 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CircuitPython Wi-Fi Server &mdash; NML Hand Exoskeleton 0.0.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=e3a6060d"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Frequently Asked Questions (FAQ)" href="faq.html" />
+    <link rel="prev" title="Manual Button State Machine" href="button_state_machine.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            NML Hand Exoskeleton
+              <img src="_static/LabLogoRedSquare.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart Guide</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Python HandExo Class</a></li>
+<li class="toctree-l1"><a class="reference internal" href="button_state_machine.html">Manual Button State Machine</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Additional Resources</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">CircuitPython Wi-Fi Server</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#software-setup">Software Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hardware-setup">Hardware Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#http-webpage">HTTP Webpage</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions (FAQ)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="cpp_api.html">C++ API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="python_api.html">Python API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">NML Hand Exoskeleton</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">CircuitPython Wi-Fi Server</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/wifi_server.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="circuitpython-wi-fi-server">
+<h1>CircuitPython Wi-Fi Server<a class="headerlink" href="#circuitpython-wi-fi-server" title="Link to this heading"></a></h1>
+<p>This section describes how to set up a Wi-Fi server to exchange data with the NML Hand Exoskeleton. The server supports multiple TCP clients and enables real-time communication with a serially connected exoskeleton.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This server is designed for microcontrollers with Wi-Fi support, such as the Raspberry Pi Pico W. It was tested with Adafruit CircuitPython 9.2.4 (2025-01-29) on the Raspberry Pi Pico 2 W (RP2040).</p>
+</div>
+<section id="software-setup">
+<h2>Software Setup<a class="headerlink" href="#software-setup" title="Link to this heading"></a></h2>
+<ol class="arabic">
+<li><p><strong>Install CircuitPython</strong> on your Raspberry Pi Pico W.
+Visit the <a class="reference external" href="https://circuitpython.org/board/raspberry_pi_pico_w/">CircuitPython downloads page</a> to download the latest UF2 file. To enter bootloader mode, hold the <strong>BOOTSEL</strong> button while plugging the board into USB. The board will mount as a USB drive (e.g., <cite>RPI-RP2</cite>, <cite>CIRCUITPY</cite>, or <cite>BOOT</cite>).</p></li>
+<li><p><strong>Flash the board</strong> by dragging and dropping the downloaded <cite>.uf2</cite> file onto the mounted drive. The board will automatically reboot into CircuitPython.</p></li>
+<li><p><strong>Install the required libraries</strong> by either copying the <cite>lib/</cite> folder to the <cite>CIRCUITPY</cite> drive or downloading the latest CircuitPython library bundle from the <a class="reference external" href="https://circuitpython.org/libraries">library bundle page</a>. Minimum libraries include:</p>
+<ul class="simple">
+<li><p><cite>adafruit_ticks.py</cite></p></li>
+<li><p><cite>simpleio.py</cite></p></li>
+<li><p><strong>adafruit_httpserver</strong></p></li>
+<li><p><strong>asyncio</strong></p></li>
+<li><p><cite>rgbled.py</cite> # Custom</p></li>
+<li><p><cite>usbserialreader.py</cite> # Custom</p></li>
+<li><p><cite>webpage.py</cite> # Custom</p></li>
+</ul>
+</li>
+<li><p><strong>Configure Wi-Fi settings</strong> in the <cite>settings.toml</cite> file at the root of the <cite>CIRCUITPY</cite> drive:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="n">CIRCUITPYTHON_WIFI_SSID</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;your_wifi_ssid&quot;</span>
+<span class="n">CIRCUITPYTHON_WIFI_PASSWORD</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;your_wifi_password&quot;</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>(Optional) Set a static IP address</strong> by adding the following lines to <cite>settings.toml</cite>:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="n">CIRCUITPYTHON_WIFI_IP</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;192.168.1.200&quot;</span>
+<span class="n">CIRCUITPYTHON_WIFI_HTTP_PORT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">5000</span><span class="w">  </span><span class="c1"># Currently hardcoded in the codebase</span>
+<span class="n">CIRCUITPYTHON_WIFI_TCP_PORT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">5001</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If no static IP is specified, the Pico W will attempt to use DHCP. However, a static IP is recommended for stability in multi-client applications.</p>
+</div>
+</li>
+</ol>
+</section>
+<section id="hardware-setup">
+<h2>Hardware Setup<a class="headerlink" href="#hardware-setup" title="Link to this heading"></a></h2>
+<p>The exoskeleton communicates with the Pico W via UART (or USB). Below are the recommended wiring connections between the <strong>Raspberry Pi Pico W</strong> and <strong>OpenRB-150</strong>:</p>
+<p><strong>UART Serial Connection:</strong></p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Pico Pin</p></th>
+<th class="head"><p>OpenRB-150 Pin</p></th>
+<th class="head"><p>Function</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>GP16</p></td>
+<td><p>RX</p></td>
+<td><p>Serial Receive (RX)</p></td>
+</tr>
+<tr class="row-odd"><td><p>GP17</p></td>
+<td><p>TX</p></td>
+<td><p>Serial Transmit (TX)</p></td>
+</tr>
+<tr class="row-even"><td><p>GND</p></td>
+<td><p>GND</p></td>
+<td><p>Common Ground</p></td>
+</tr>
+<tr class="row-odd"><td><p>VBUS</p></td>
+<td><p>V</p></td>
+<td><p>5V Power Supply</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>RGB LED Status Indicator:</strong></p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Pico Pin</p></th>
+<th class="head"><p>LED Pin</p></th>
+<th class="head"><p>Function</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>GP10</p></td>
+<td><p>CATH</p></td>
+<td><p>RGB Common Cathode</p></td>
+</tr>
+<tr class="row-odd"><td><p>GP11</p></td>
+<td><p>R</p></td>
+<td><p>Red Channel</p></td>
+</tr>
+<tr class="row-even"><td><p>GP12</p></td>
+<td><p>G</p></td>
+<td><p>Green Channel</p></td>
+</tr>
+<tr class="row-odd"><td><p>GP13</p></td>
+<td><p>B</p></td>
+<td><p>Blue Channel</p></td>
+</tr>
+</tbody>
+</table>
+<p>The RGB LED provides server status feedback:
+- <strong>Green</strong>: Wi-Fi connected
+- <strong>Red</strong>: Disconnected or error
+- <strong>Blue</strong>: Client activity (optional)</p>
+</section>
+<section id="http-webpage">
+<h2>HTTP Webpage<a class="headerlink" href="#http-webpage" title="Link to this heading"></a></h2>
+<p>The server hosts a simple HTTP webpage that allows users to control the exoskeleton and view its status. The webpage is served at the root URL (<cite>/</cite>) and provides buttons for enabling/disabling motors, toggling LEDs, and viewing the current state of the exoskeleton.</p>
+<a class="reference internal image-reference" href="_images/pico_server_gui.jpg"><img alt="_images/pico_server_gui.jpg" class="align-center" src="_images/pico_server_gui.jpg" style="width: 600px;" />
+</a>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="button_state_machine.html" class="btn btn-neutral float-left" title="Manual Button State Machine" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="faq.html" class="btn btn-neutral float-right" title="Frequently Asked Questions (FAQ)" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Neuromechatronics Lab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

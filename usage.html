@@ -54,7 +54,8 @@
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Python HandExo Class</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#installation">Installation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#creating-an-instance">Creating an Instance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#usb-serial-connection">USB Serial Connection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#tcp-wi-fi-connection">TCP/Wi-Fi Connection</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#led-control">LED Control</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#motor-control">Motor Control</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#position-control-angles">Position Control &amp; Angles</a></li>
@@ -68,6 +69,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Additional Resources</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="wifi_server.html">CircuitPython Wi-Fi Server</a></li>
 <li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions (FAQ)</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
@@ -112,12 +114,27 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 </pre></div>
 </div>
 </section>
-<section id="creating-an-instance">
-<h2>Creating an Instance<a class="headerlink" href="#creating-an-instance" title="Link to this heading"></a></h2>
-<p>To connect to the device:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">hand_exo</span><span class="w"> </span><span class="kn">import</span> <span class="n">HandExo</span>
+<section id="usb-serial-connection">
+<h2>USB Serial Connection<a class="headerlink" href="#usb-serial-connection" title="Link to this heading"></a></h2>
+<p>We can connect to the device using a USB serial connection</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">hand_exo</span><span class="w"> </span><span class="kn">import</span> <span class="n">HandExo</span><span class="p">,</span> <span class="n">SerialComm</span>
 
-<span class="n">exo</span> <span class="o">=</span> <span class="n">HandExo</span><span class="p">(</span><span class="n">port</span><span class="o">=</span><span class="s1">&#39;COM3&#39;</span><span class="p">,</span> <span class="n">baudrate</span><span class="o">=</span><span class="mi">57600</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="c1"># Define serial communication parameters</span>
+<span class="n">com</span> <span class="o">=</span> <span class="n">SerialComm</span><span class="p">(</span><span class="n">port</span><span class="o">=</span><span class="s1">&#39;COM3&#39;</span><span class="p">,</span> <span class="n">baudrate</span><span class="o">=</span><span class="mi">57600</span><span class="p">)</span> <span class="c1"># Change &#39;COM3&#39; to your device&#39;s serial port</span>
+
+<span class="c1"># Create an instance of the HandExo class</span>
+<span class="n">exo</span> <span class="o">=</span> <span class="n">HandExo</span><span class="p">(</span><span class="n">com</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="tcp-wi-fi-connection">
+<h2>TCP/Wi-Fi Connection<a class="headerlink" href="#tcp-wi-fi-connection" title="Link to this heading"></a></h2>
+<p>If you want to connect to the device over TCP or Wi-Fi, you can use the <cite>TCPComm</cite> class instead of <cite>SerialComm</cite>. You can use the PicoW module as the server to handle client connections and exchange serial data. For setting up the pico server, check out the <a class="reference internal" href="wifi_server.html"><span class="doc">CircuitPython Wi-Fi Server</span></a> documentation for more.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">hand_exo</span><span class="w"> </span><span class="kn">import</span> <span class="n">HandExo</span><span class="p">,</span> <span class="n">TCPComm</span>
+
+<span class="c1"># Define TCP communication parameters</span>
+<span class="n">comm</span> <span class="o">=</span> <span class="n">TCPComm</span><span class="p">(</span><span class="n">ip</span><span class="o">=</span><span class="s2">&quot;192.168.1.200&quot;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">5001</span><span class="s2">&quot;) # Default IP and port for the PicoW server, change as needed</span>
+<span class="n">exo</span> <span class="o">=</span> <span class="n">HandExo</span><span class="p">(</span><span class="n">comm</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
