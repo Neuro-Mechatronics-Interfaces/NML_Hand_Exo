@@ -108,6 +108,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo22getTorqueEnabledStatusE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getTorqueEnabledStatus()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo12enableTorqueE7uint8_tb"><code class="docutils literal notranslate"><span class="pre">enableTorque()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo10getCurrentE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getCurrent()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo15getCurrentLimitE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getCurrentLimit()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo15setCurrentLimitE7uint8_t8uint16_t"><code class="docutils literal notranslate"><span class="pre">setCurrentLimit()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo9setTorqueE7uint8_tf"><code class="docutils literal notranslate"><span class="pre">setTorque()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo9getTorqueE7uint8_t"><code class="docutils literal notranslate"><span class="pre">getTorque()</span></code></a></li>
@@ -144,6 +145,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo20calibrationTimedModeE"><code class="docutils literal notranslate"><span class="pre">calibrationTimedMode</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo20calibrationStartTimeE"><code class="docutils literal notranslate"><span class="pre">calibrationStartTime</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo19calibrationDurationE"><code class="docutils literal notranslate"><span class="pre">calibrationDuration</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo10flipMotor_E"><code class="docutils literal notranslate"><span class="pre">flipMotor_</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#_CPPv4N10NMLHandExo14modeSwitchFlagE"><code class="docutils literal notranslate"><span class="pre">modeSwitchFlag</span></code></a></li>
 </ul>
 </li>
@@ -694,6 +696,20 @@
 </dd></dl>
 
 <dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo15getCurrentLimitE7uint8_t">
+<span id="_CPPv3N10NMLHandExo15getCurrentLimitE7uint8_t"></span><span id="_CPPv2N10NMLHandExo15getCurrentLimitE7uint8_t"></span><span id="NMLHandExo::getCurrentLimit__uint8_t"></span><span class="target" id="classNMLHandExo_1ac01dcf190e654c7da6a0d882efe76e39"></span><span class="n"><span class="pre">int16_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">getCurrentLimit</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo15getCurrentLimitE7uint8_t" title="Link to this definition"></a><br /></dt>
+<dd><p>Get the current limit in mA for a motor. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>id</strong> – Motor ID. </p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Current limit in milliamps. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
 <dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo15setCurrentLimitE7uint8_t8uint16_t">
 <span id="_CPPv3N10NMLHandExo15setCurrentLimitE7uint8_t8uint16_t"></span><span id="_CPPv2N10NMLHandExo15setCurrentLimitE7uint8_t8uint16_t"></span><span id="NMLHandExo::setCurrentLimit__uint8_t.uint16_t"></span><span class="target" id="classNMLHandExo_1a07676c9aaa793914cd842ceafba777dc"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">setCurrentLimit</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">id</span></span>, <span class="n"><span class="pre">uint16_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">current_mA</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N10NMLHandExo15setCurrentLimitE7uint8_t8uint16_t" title="Link to this definition"></a><br /></dt>
 <dd><p>Set the current limit for a motor. </p>
@@ -921,7 +937,7 @@
 <p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-static-attributes">Public Static Attributes</p>
 <dl class="cpp var">
 <dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo7VERSIONE">
-<span id="_CPPv3N10NMLHandExo7VERSIONE"></span><span id="_CPPv2N10NMLHandExo7VERSIONE"></span><span id="NMLHandExo::VERSION__cCP"></span><span class="target" id="classNMLHandExo_1a21f2a007112d02fbbdd487d5d9a5defd"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><span class="k"><span class="pre">constexpr</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">VERSION</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="s"><span class="pre">&quot;0.2.10&quot;</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo7VERSIONE" title="Link to this definition"></a><br /></dt>
+<span id="_CPPv3N10NMLHandExo7VERSIONE"></span><span id="_CPPv2N10NMLHandExo7VERSIONE"></span><span id="NMLHandExo::VERSION__cCP"></span><span class="target" id="classNMLHandExo_1a21f2a007112d02fbbdd487d5d9a5defd"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><span class="k"><span class="pre">constexpr</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">VERSION</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="s"><span class="pre">&quot;0.2.11&quot;</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo7VERSIONE" title="Link to this definition"></a><br /></dt>
 <dd><p>Current software version. </p>
 </dd></dl>
 
@@ -1034,6 +1050,11 @@
 <span id="_CPPv3N10NMLHandExo19calibrationDurationE"></span><span id="_CPPv2N10NMLHandExo19calibrationDurationE"></span><span id="NMLHandExo::calibrationDuration__unsigned-l"></span><span class="target" id="classNMLHandExo_1a0accf57ba687a664ea355c5523ecb920"></span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">calibrationDuration</span></span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo19calibrationDurationE" title="Link to this definition"></a><br /></dt>
 <dd><p>Duration for calibration in milliseconds. </p>
 </dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N10NMLHandExo10flipMotor_E">
+<span id="_CPPv3N10NMLHandExo10flipMotor_E"></span><span id="_CPPv2N10NMLHandExo10flipMotor_E"></span><span id="NMLHandExo::flipMotor___bA"></span><span class="target" id="classNMLHandExo_1a2c3c860a7a62df5cd110cfb5ec0b4d02"></span><span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">flipMotor_</span></span></span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">6</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="p"><span class="pre">{</span></span><span class="k"><span class="pre">false</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="k"><span class="pre">false</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="k"><span class="pre">false</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="k"><span class="pre">true</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="k"><span class="pre">false</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="k"><span class="pre">true</span></span><span class="p"><span class="pre">}</span></span><a class="headerlink" href="#_CPPv4N10NMLHandExo10flipMotor_E" title="Link to this definition"></a><br /></dt>
+<dd></dd></dl>
 
 </div>
 <div class="breathe-sectiondef docutils container">
