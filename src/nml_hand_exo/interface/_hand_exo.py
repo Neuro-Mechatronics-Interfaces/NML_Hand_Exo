@@ -298,70 +298,118 @@ class HandExo(object):
 
     def info(self) -> dict:
         """
-        Parses the exoskeleton info response into a structured dictionary.
+        Request and parse exoskeleton info into a structured dictionary.
+
+        Returns
+        -------
+        info : dict
+            Keys:
+            - name : str
+            - version : str
+            - n_motors : int
+            - motors : {motor_id: {...}}
+            - motor_<id> : per-motor dicts (back-compat)
         """
+        import re
+
         self.send_command("info")
         raw = self._receive(wait_until_return=True)
         if self.verbose:
             print(f"Raw return: {raw}")
 
-        info = {}
+        info: dict = {}
         if not raw:
             return info
 
-        try:
-            lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        # Normalize lines and drop empties
+        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
 
-            # First line should have name, version, and motor count
-            header = lines[0]
-            name_match = re.search(r"Name:\s*([^\s]+)", header)
-            version_match = re.search(r"Version:\s*([^\s]+)", header)
-            motor_count_match = re.search(r"Number of Motors:\s*(\d+)", header)
+        # --- Header lines appear one-per-line in your sample ---
+        name_pat    = re.compile(r'^Name:\s*(\S+)')
+        ver_pat     = re.compile(r'^Version:\s*(\S+)')
+        nmot_pat    = re.compile(r'^Number of Motors:\s*(\d+)')
+        motor_pat   = re.compile(r'^Motor\s+(\d+):\s*\{(.*)\}\s*$')
 
-            if name_match:
-                info['name'] = name_match.group(1)
-            if version_match:
-                info['version'] = version_match.group(1)
-            if motor_count_match:
-                info['n_motors'] = int(motor_count_match.group(1))
+        motors = {}
 
-            # Parse each motor line
-            for line in lines[1:]:
-                motor_match = re.match(r"Motor\s+(\d+):\s*\{(.+?)\}", line)
-                if not motor_match:
-                    continue
+        for ln in lines:
+            m = name_pat.search(ln)
+            if m:
+                info['name'] = m.group(1)
+                continue
+            m = ver_pat.search(ln)
+            if m:
+                info['version'] = m.group(1)
+                continue
+            m = nmot_pat.search(ln)
+            if m:
+                info['n_motors'] = int(m.group(1))
+                continue
 
-                motor_id = int(motor_match.group(1))
-                motor_data = motor_match.group(2)
+        # --- Motor detail lines ---
+        for ln in lines:
+            mm = motor_pat.match(ln)
+            if not mm:
+                continue
 
-                # Parse the individual fields inside the { ... }
-                motor_info = {}
-                for part in motor_data.split(','):
-                    key_val = part.strip().split(":", 1)
-                    if len(key_val) != 2:
-                        continue
-                    key, val = key_val[0].strip(), key_val[1].strip()
-                    if key == "id":
-                        motor_info["id"] = int(val)
-                    elif key == "angle":
-                        motor_info["angle"] = float(val)
-                    elif key == "limits":
-                        limits_match = re.findall(r"[-+]?[0-9]*\.?[0-9]+", val)
-                        motor_info["limits"] = [float(l) for l in limits_match]
-                    elif key == "torque":
-                        motor_info["torque"] = float(val)
-                    elif key == "enabled":
-                        motor_info["enabled"] = val.lower() == "true"
-                    else:
-                        motor_info[key] = val
+            motor_id = int(mm.group(1))
+            blob = mm.group(2)  # inside {...}
 
-                info[f"motor_{motor_id}"] = motor_info
+            # Pull fields robustly (values may include parentheses/brackets/commas)
+            get_str = lambda key: (re.search(rf'\b{key}:\s*([^,}}]+)', blob) or [None, None])[1]
+            get_num = lambda key: (
+                (m := re.search(rf'\b{key}:\s*([-+]?\d+(?:\.\d+)?)', blob)) and float(m.group(1))
+            )
 
-            return info
+            m_info = {}
 
-        except Exception as e:
-            print(f"[ERROR] Failed to parse info: {e}")
-            return {}
+            # name
+            nm = get_str('name')
+            if nm is not None:
+                m_info['name'] = nm.strip()
+
+            # id (should equal motor_id, but we parse for completeness)
+            mid = get_num('id')
+            if mid is not None:
+                m_info['id'] = int(mid)
+            else:
+                m_info['id'] = motor_id
+
+            # angle: first float only; also capture optional "(abs: ...)" as angle_abs
+            ang_m = re.search(r'angle:\s*([-+]?\d+(?:\.\d+)?)', blob)
+            if ang_m:
+                m_info['angle'] = float(ang_m.group(1))
+            abs_m = re.search(r'\(abs:\s*([-+]?\d+(?:\.\d+)?)\)', blob)
+            if abs_m:
+                m_info['angle_abs'] = float(abs_m.group(1))
+
+            # limits: two floats inside [...]
+            lim_m = re.search(r'limits:\s*\[([^\]]+)\]', blob)
+            if lim_m:
+                lim_vals = re.findall(r'[-+]?\d+(?:\.\d+)?', lim_m.group(1))
+                if len(lim_vals) >= 2:
+                    m_info['limits'] = [float(lim_vals[0]), float(lim_vals[1])]
+
+            # torque
+            tq = get_num('torque')
+            if tq is not None:
+                m_info['torque'] = float(tq)
+
+            # enabled (true/false)
+            en_m = re.search(r'enabled:\s*(true|false)', blob, re.IGNORECASE)
+            if en_m:
+                m_info['enabled'] = (en_m.group(1).lower() == 'true')
+
+            # Stash
+            motors[motor_id] = m_info
+            info[f'motor_{motor_id}'] = m_info  # back-compat
+
+        if 'n_motors' not in info:
+            info['n_motors'] = len(motors)
+
+        info['motors'] = motors
+        return info
+
 
     def get_baudrate(self, motor_id: (int or str) = 'all') -> int:
         """
