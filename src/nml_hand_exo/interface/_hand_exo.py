@@ -126,7 +126,8 @@ class HandExo(object):
             #return parsed
             return {mid: m.get(attr) for mid, m in parsed.items()}
         elif isinstance(motor_id, int):
-            print(f"Returning motor {motor_id}'s {attr} value")
+            if self.verbose:
+                print(f"Returning motor {motor_id}'s {attr} value")
             if motor_id not in parsed:
                 raise ValueError(f"Motor ID {motor_id} not found in response.")
             return parsed[motor_id].get(attr)
