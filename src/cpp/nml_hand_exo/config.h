@@ -128,7 +128,6 @@ constexpr float jointLimits[6][2] = {
   {-138, 2140} //214, 138
 };
 
-
 /// @brief Default baud rate for the debug serial connection.
 constexpr long DEBUG_BAUD_RATE = 57600;
 
