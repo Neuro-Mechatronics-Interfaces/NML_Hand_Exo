@@ -26,13 +26,13 @@ SOFTWARE.
 #include "utils.h"
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
-#include <Adafruit_ISM330DHCX.h>
+//#include <Adafruit_ISM330DHCX.h>
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BNO055.h>
 
 // Create IMU device (The "ISM330DLC" library can be downloaded from Arduino's Library Manager)
-Adafruit_ISM330DHCX ism330dhcx; //deprecated
+//Adafruit_ISM330DHCX ism330dhcx; //deprecated
 Adafruit_BNO055 bno055;  //= Adafruit_BNO055(55, 0x28)
 
 // TO-DO: Move these to config.h or nml_hand_exo.h
@@ -54,7 +54,7 @@ void setup() {
   COMMAND_SERIAL.begin(COMMAND_BAUD_RATE);     // (Optional) Establish port with TX/RX pins for incomming serial data/commands
 
   // Setup IMU
-//  initializeIMU(ism330dhcx);
+  //initializeIMU(ism330dhcx);
   initializeIMU(bno055);
 
   // Setup exo

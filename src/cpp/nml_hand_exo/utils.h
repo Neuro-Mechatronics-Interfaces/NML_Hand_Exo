@@ -9,7 +9,7 @@
 #include <Arduino.h>
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
-#include <Adafruit_ISM330DHCX.h>
+//#include <Adafruit_ISM330DHCX.h>
 #include <Adafruit_BNO055.h>
 
 
