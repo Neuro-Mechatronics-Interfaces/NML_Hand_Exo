@@ -26,10 +26,14 @@ SOFTWARE.
 #include "utils.h"
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
-#include <Adafruit_ISM330DHCX.h>
+//#include <Adafruit_ISM330DHCX.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BNO055.h>
 
 // Create IMU device (The "ISM330DLC" library can be downloaded from Arduino's Library Manager)
-Adafruit_ISM330DHCX ism330dhcx;
+//Adafruit_ISM330DHCX ism330dhcx; //deprecated
+Adafruit_BNO055 bno055;  //= Adafruit_BNO055(55, 0x28)
 
 // TO-DO: Move these to config.h or nml_hand_exo.h
 //#define DEBUG_SERIAL Serial
@@ -49,10 +53,11 @@ void setup() {
   DEBUG_SERIAL.begin(DEBUG_BAUD_RATE);    // Setting a default baud rate of 57600
   COMMAND_SERIAL.begin(COMMAND_BAUD_RATE);     // (Optional) Establish port with TX/RX pins for incomming serial data/commands
 
-  // // Setup IMU
-  initializeIMU(ism330dhcx);
+  // Setup IMU
+  //initializeIMU(ism330dhcx);
+  initializeIMU(bno055);
 
-  // // Setup exo
+  // Setup exo
   exo.initializeSerial(DYNAMIXEL_BAUD_RATE);
   exo.initializeMotors();       // Initialize motors and set them to "current position" mode
   // exo.resetAllZeros();       // (Optional) Defines the current position of the motors as the home position
@@ -81,7 +86,7 @@ void loop() {
     String input = DEBUG_SERIAL.readStringUntil('\n');
     input.trim();
     debugPrint("Received: " + input);
-    parseMessage(exo, gc, ism330dhcx, input);
+    parseMessage(exo, gc, bno055, input);
   }
 
   // Handle data from the BLE/command connection
@@ -89,8 +94,10 @@ void loop() {
     String input = COMMAND_SERIAL.readStringUntil('\n');
     input.trim();
     debugPrint("Received: " + input);
-    parseMessage(exo, gc, ism330dhcx, input);
+    parseMessage(exo, gc, bno055, input);
   }
+
+  updateIMU(bno055); //constantly updating the IMU values. Keeps position consistent
 
   // Update the exo state, including checking for button pressed, mode switching, and internal routines
   exo.update();

@@ -398,7 +398,7 @@ class HandExo(object):
             None
 
         """
-        self.send_command(f"set_vel:{motor_id}:{velocity}")
+        self.send_command(f"set_goal_velocity:{motor_id}:{velocity}")
 
     def get_motor_acceleration(self, motor_id: (int or str) = 'all') -> float:
         """
@@ -796,16 +796,24 @@ class HandExo(object):
         Retrieves the IMU data from the exoskeleton.
 
         Receives a serial message with contents, as an example:
-            "Temp: 20.28 C
-             Accel: [-0.46, -0.42, 9.85]
-             Gyro: [-0.00, 0.01, -0.00]"
+            "Received: get_imu
+            Heading: 0.00, Pitch: 0.00, Roll: 0.00"
 
         Returns:
             dict: A dictionary containing IMU data (e.g., accelerometer, gyroscope, magnetometer).
 
         """
         self.send_command("get_imu")
-        response = self._receive()
+        full_response = self._receive()
+        print(full_response)
+        while (full_response is None) or ("Heading" not in full_response):
+            self.send_command("get_imu")
+            full_response = self._receive()
+
+        lines = full_response.strip().splitlines()  #added to handle additional response info from arduino 
+        response = lines[-1]
+
+        # print("response:", response)
         imu_data = {}
         if response:
             try:
@@ -821,46 +829,106 @@ class HandExo(object):
                         gyro_str = part.split(':')[-1].strip().replace(']', '').replace('[', '')
                         gyro_str = gyro_str.replace('rad/s', '')
                         imu_data['gyroscope'] = list(map(float, gyro_str.split(',')))
-                    # Add more parts as needed (e.g., magnetometer)
+
+                new_msgs = response.split(",")
+                for part in new_msgs:
+                    if part.startswith("Heading:"):
+                        heading_str = part.split(':')[-1].strip()
+                        imu_data['heading'] = float(heading_str)
+                    elif part.startswith(" Pitch:"):                
+                        pitch_str = part.split(':')[-1].strip()
+                        imu_data['pitch'] = float(pitch_str)
+                    elif part.startswith(" Roll:"):
+                        roll_str = part.split(':')[-1].strip()
+                        imu_data['roll'] = float(roll_str)
+                    elif part.startswith(" Positionx"):
+                        posx_str = part.split(":")[-1].strip()
+                        imu_data['positionx'] = float(posx_str)
+                    elif part.startswith(" Positiony:"):
+                        posy_str = part.split(":")[-1].strip()
+                        imu_data['positiony'] = float(posy_str)
+                    elif part.startswith(" Speed:"):
+                        speed_str = part.split(':')[-1].strip()
+                        imu_data['speed'] = float(speed_str)
+                        # Add more parts as needed (e.g., magnetometer)
 
                 return imu_data
             except (ValueError, IndexError):
                 print(f"[ERROR] Invalid IMU data response: {response}")
         return {}
 
-    def get_imu_angles(self, degrees=True, raw=False) -> dict:
+   
+    def get_imu_angles(self) -> list:       #TODO: add radians conversion option
         """
-        Computes the orientation of the exo device based on the imu data received
-
-        Args:
-            degrees (bool): If True, returns roll, pitch, and yaw in degrees. If False, returns in radians.
-            raw (bool): If True, returns raw IMU data instead of computed orientation.
+        Retrieves the current roll, pitch, and yaw of the IMU.
 
         Returns:
-            dict: A dictionary containing orientation data (e.g., roll, pitch, yaw).
+            list: [Roll, Pitch, Yaw]
+
         """
         data = self.get_imu_data()
-        if data:
-            if raw:
-                return data
 
-            # compute the roll, pitch, and yaw from the accelerometer and gyroscope data
-            accel = data.get('acceleration', [0, 0, 0])
-            gyro = data.get('gyroscope', [0, 0, 0])
-            roll = np.atan2(accel[1], accel[2])
-            pitch = np.atan2(-accel[0], np.sqrt(accel[1]**2 + accel[2]**2))
-            yaw = np.atan2(gyro[1], gyro[0])
+        if data: 
+            try:
+                heading = data['heading']
+                roll = data['roll']
+                pitch = data['pitch']
+                return [roll, pitch, heading]
 
-            if degrees:
-                roll = np.degrees(roll)
-                pitch = np.degrees(pitch)
-                yaw = np.degrees(yaw)
+            except Exception as e:
+                print(f"[ERROR] Failed to parse an angle from IMU angles: {e}")
 
-            return {
-                'roll': float(roll),
-                'pitch': float(pitch),
-                'yaw': float(yaw)
-            }
+    def get_imu_heading(self) -> float:    
+        """
+        Retrieves the current yaw of the IMU.
+
+        Returns:
+            float: Current yaw in degrees.
+
+        """
+        data = self.get_imu_data()
+
+        if data: 
+            try:
+                heading = data['heading']
+                return heading
+            except Exception as e:
+                print(f"[ERROR] Failed to parse heading from IMU angles: {e}")
+
+    def get_imu_roll(self) -> float:  
+        """
+        Retrieves the current roll of the IMU.
+
+        Returns:
+            float: Current roll in degrees.
+
+        """  
+        data = self.get_imu_data()
+
+        if data: 
+            try:
+                roll = data['roll']
+                return roll
+            except Exception as e:
+                print(f"[ERROR] Failed to parse roll from IMU angles: {e}")
+
+    def get_imu_pitch(self) -> float:   
+        """
+        Retrieves the current pitch of the IMU.
+
+        Returns:
+            float: Current pitch in degrees.
+
+        """   
+        data = self.get_imu_data()
+
+        if data: 
+            try:
+                pitch = data['pitch']
+                return pitch
+            except Exception as e:
+                print(f"[ERROR] Failed to parse pitch from IMU angles: {e}")
+        
 
     def get_gesture_state(self):
         """

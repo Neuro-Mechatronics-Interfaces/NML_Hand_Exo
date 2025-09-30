@@ -9,7 +9,8 @@
 #include <Arduino.h>
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
-#include <Adafruit_ISM330DHCX.h>
+//#include <Adafruit_ISM330DHCX.h>
+#include <Adafruit_BNO055.h>
 
 
 /// @brief Prints a debug message to the debug serial port (VERBOSE specific)
@@ -44,14 +45,20 @@ int getArgMotorID(NMLHandExo& exo, const String& line, const int index);
 /// @param exo The NMLHandExo instance to control
 /// @param gc The GestureController instance to control gestures
 /// @param token The input string containing the command to parse
-void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_ISM330DHCX& imu, String token);
+void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token);
 
 /// @brief Initializes the IMU device 
 /// @param imu The imu instance
-void initializeIMU(Adafruit_ISM330DHCX& imu);
+//void initializeIMU(Adafruit_ISM330DHCX& imu);
+//void initializeIMU(Adafruit_BNO055& imu);
+bool initializeIMU(Adafruit_BNO055& imu);
 
 /// @brief Sends an event request and prints out the data from the IMU
 /// @param imu The imu instance
-void getIMUData(Adafruit_ISM330DHCX& imu); 
+//void getIMUData(Adafruit_ISM330DHCX& imu); 
+// void getIMUData(Adafruit_BNO055& imu);
+void updateIMU(Adafruit_BNO055& imu);
+void getIMUData(Adafruit_BNO055& imu);
+
 
 #endif

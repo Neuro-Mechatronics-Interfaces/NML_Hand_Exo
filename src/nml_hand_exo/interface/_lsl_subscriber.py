@@ -1,6 +1,7 @@
 # intan/interface/lsl_subscribers.py
-import time
 from __future__ import annotations
+
+import time
 import threading
 from collections import deque
 from typing import Optional, List, Tuple, Callable, Any

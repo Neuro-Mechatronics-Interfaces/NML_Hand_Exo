@@ -7,6 +7,18 @@
 #include <Arduino.h>
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BNO055.h>
+
+
+// IMU variables (print delay logic currently disabled)
+uint16_t BNO055_SAMPLERATE_DELAY_MS = 10; //how often to read data from the board
+uint16_t PRINT_DELAY_MS = 500; // how often to print the data
+uint16_t printCount = 0; //counter to avoid printing every 10MS sample
+
+sensors_event_t orientationData, linearAccelData;
+
 
 
 void debugPrint(const String& msg) {
@@ -29,7 +41,7 @@ void commandPrint(const String& msg) {
     cmdMsg += cmdDelimiter;
   }
 
-  // Prints out message to DEBUG/CMD serial port regardless of VERBOSE mode
+  // Prints out message to DEBUG/CMD serial port regardless of VERBOSE mode 
   #if defined(COMMAND_SERIAL)
     // Need to print to all serial devices for data output
     COMMAND_SERIAL.println(cmdMsg);
@@ -40,33 +52,90 @@ void commandPrint(const String& msg) {
   #endif
 }
 
-void initializeIMU(Adafruit_ISM330DHCX& imu) {
-  if (!imu.begin_I2C()) {
-    // if (!ism330dhcx.begin_SPI(LSM_CS)) {
-    // if (!ism330dhcx.begin_SPI(LSM_CS, LSM_SCK, LSM_MISO, LSM_MOSI)) {
-    debugPrint("Failed to find ISM330DHCX chip");
+// void initializeIMU(Adafruit_ISM330DHCX& imu) {
+//   if (!imu.begin_I2C()) {
+//     // if (!ism330dhcx.begin_SPI(LSM_CS)) {
+//     // if (!ism330dhcx.begin_SPI(LSM_CS, LSM_SCK, LSM_MISO, LSM_MOSI)) {
+//     debugPrint("Failed to find ISM330DHCX chip");
+//   } else {
+//     debugPrint(F("ISM330DHCX Found!"));
+//     imu.configInt1(false, false, true); // accelerometer DRDY on INT1
+//     imu.configInt2(false, true, false); // gyro DRDY on INT2
+
+//   }
+// }
+
+bool initializeIMU(Adafruit_BNO055& bno) {
+  if (!bno.begin()) {
+    Serial.println("No BNO055 detected");
+    return false;
+  }
+  delay(1000);
+  return true;
+}
+
+
+// void getIMUData(Adafruit_ISM330DHCX& imu) {
+//   sensors_event_t accel, gyro, temp;
+//   if (!imu.getEvent(&accel, &gyro, &temp)) {
+//     debugPrint("IMU read failed");
+//     return;
+//   }
+//   char buffer[128];
+//   snprintf(buffer, sizeof(buffer),
+//            "Temp:%.2f C; Accel: [%.2f, %.2f, %.2f] m/s^2; Gyro: [%.2f, %.2f, %.2f] rad/s;",
+//            temp.temperature,
+//            accel.acceleration.x, accel.acceleration.y, accel.acceleration.z,
+//            gyro.gyro.x, gyro.gyro.y, gyro.gyro.z);
+//   commandPrint(buffer);
+// }
+
+// void getIMUData(Adafruit_BNO055& imu) {
+//   sensors_event_t orientationData, accelData, magData, gyroData;
+
+//   imu.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
+//   imu.getEvent(&accelData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
+//   imu.getEvent(&magData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
+//   imu.getEvent(&gyroData, Adafruit_BNO055::VECTOR_GYROSCOPE);
+
+//   int temperature = imu.getTemp();
+
+//     // Now use orientationData, accelData, etc., and temperature as needed
+
+//   char buffer[128];
+//   snprintf(buffer, sizeof(buffer),
+//          "Temp: %.2f C; Euler: [%.2f, %.2f, %.2f] deg; Accel: [%.2f, %.2f, %.2f] m/s^2;",
+//          (float)temperature,
+//          euler.x(), euler.y(), euler.z(),
+//          accel.x(), accel.y(), accel.z());
+
+//   commandPrint(buffer);
+// }
+
+void updateIMU(Adafruit_BNO055& bno) {
+  unsigned long tStart = micros();
+
+  bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
+  bno.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
+
+  
+  //while ((micros() - tStart) < (BNO055_SAMPLERATE_DELAY_MS * 1000)) {
+    // wait
+  //}
+}
+
+void getIMUData(Adafruit_BNO055& bno) {
+  if (printCount * BNO055_SAMPLERATE_DELAY_MS >= PRINT_DELAY_MS) {
+    printCount = 0;
   } else {
-    debugPrint(F("ISM330DHCX Found!"));
-    imu.configInt1(false, false, true); // accelerometer DRDY on INT1
-    imu.configInt2(false, true, false); // gyro DRDY on INT2
-
+    printCount++;
   }
+
+  String imu_data = "Heading: " + String(orientationData.orientation.x) + ", Pitch: " + String(orientationData.orientation.y) + ", Roll: " + String(orientationData.orientation.z); 
+
+  commandPrint(imu_data);
 }
 
-void getIMUData(Adafruit_ISM330DHCX& imu) {
-  sensors_event_t accel, gyro, temp;
-  if (!imu.getEvent(&accel, &gyro, &temp)) {
-    debugPrint(F("IMU read failed"));
-    return;
-  }
-  char buffer[128];
-  snprintf(buffer, sizeof(buffer),
-           "Temp:%.2f C\nAccel: [%.2f, %.2f, %.2f] m/s^2\nGyro: [%.2f, %.2f, %.2f] rad/s;",
-           temp.temperature,
-           accel.acceleration.x, accel.acceleration.y, accel.acceleration.z,
-           gyro.gyro.x, gyro.gyro.y, gyro.gyro.z);
-  commandPrint(buffer);
-}
 
 void flashPin(int pin, int durationMs, int repetitions) {
   for (int i = 0; i < repetitions; ++i) {
@@ -93,7 +162,7 @@ int getArgMotorID(NMLHandExo& exo, const String& line, const int index) {
   return exo.getMotorID(getArg(line, index));
 }
 
-void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_ISM330DHCX& imu, String token) {
+void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token) {
 
   token.trim();        // Remove any trailing white space
   token.toLowerCase(); // Set all characters to lowercase
@@ -159,7 +228,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_ISM330DHCX& i
       String info = "Motor Baudrate: \n";
       for (int i = 0; i < exo.getMotorCount(); i++) {
         uint8_t id = exo.getMotorIDByIndex(i);
-        uint32_t baud = exo.getBaudRate(i);  
+          uint32_t baud = exo.getBaudRate(i);  
         info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
             ", baudrate: " + String(baud) + "}\n";
       }
@@ -353,9 +422,9 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_ISM330DHCX& i
       }
       commandPrint(info);
     } else {
-      id = getArgMotorID(exo, token, 1);
-      if (id != -1) {
-        float current_mA = exo.getCurrent(id) * 2.69f;
+    id = getArgMotorID(exo, token, 1);
+    if (id != -1) {
+      float current_mA = exo.getCurrent(id) * 2.69f;
         commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
           ", current: " + String(current_mA, 3) + " mA}");
       }
