@@ -33,7 +33,6 @@ enum ExoOperatingMode {
   GESTURE_CALIBRATION
 };
 
-
 /// @brief Class to manage the NML Hand Exoskeleton, providing initialization, motor control, and telemetry.
 class NMLHandExo {
   public:

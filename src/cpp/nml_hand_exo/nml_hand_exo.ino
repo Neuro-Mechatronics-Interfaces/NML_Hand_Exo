@@ -24,6 +24,7 @@ SOFTWARE.
 
 #include "config.h"
 #include "utils.h"
+#include "oled.h"
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
 //#include <Adafruit_ISM330DHCX.h>
@@ -43,6 +44,11 @@ Adafruit_BNO055 bno055;  //= Adafruit_BNO055(55, 0x28)
 NMLHandExo exo(MOTOR_IDS, N_MOTORS, jointLimits, HOME_STATES);
 GestureController gc(exo);  // pass exo reference
 
+
+// OLED display instance
+//volatile bool gOledEnabled = OLED_ENABLED_DEFAULT;
+//Adafruit_SSD1306 gDisplay(OLED_SCREEN_WIDTH, OLED_SCREEN_HEIGHT, &Wire, -1);
+
 void setup() {
 
   // LEDs for command/connection feedback
@@ -55,7 +61,11 @@ void setup() {
 
   // Setup IMU
   //initializeIMU(ism330dhcx);
-  initializeIMU(bno055);
+  //initializeIMU(bno055);
+
+  // Setup OLED
+  oledInit();
+  oledSetState(EXO_READY);
 
   // Setup exo
   exo.initializeSerial(DYNAMIXEL_BAUD_RATE);
@@ -97,12 +107,14 @@ void loop() {
     parseMessage(exo, gc, bno055, input);
   }
 
-  updateIMU(bno055); //constantly updating the IMU values. Keeps position consistent
+  //updateIMU(bno055); //constantly updating the IMU values. Keeps position consistent
 
   // Update the exo state, including checking for button pressed, mode switching, and internal routines
   exo.update();
 
   // Check for any updates needed with the gesture controller
   gc.update();
+
+  oledTick();
 
 }

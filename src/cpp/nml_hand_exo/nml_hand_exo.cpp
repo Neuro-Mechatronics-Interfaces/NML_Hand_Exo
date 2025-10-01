@@ -66,13 +66,34 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
   }
 
   // (Choose one) Disable comment for right/left hand function below
-  if (IS_RIGHT_HAND) {
-    debugPrint("Configuring for RIGHT hand");
-    bool flips[6] = {false, false, false,  true, false,  true}; // right hand
-  } else {
-    debugPrint("Configuring for LEFT hand");
-    bool flips[6] = { true,  true,  true, false,  true, false}; // left hand
-  }
+  //bool flips[7] = {false, false, false, false,  true, false,  true}; // right hand
+  bool flips[7] = { true,  true,  true, true, false,  true, false}; // left hand
+
+  // if (IS_RIGHT_HAND) {
+  //   debugPrint("Configuring for RIGHT hand");
+  //   flips[6] = {false, false, false,  true, false,  true}; // right hand
+  // } else {
+  //   debugPrint("Configuring for LEFT hand");
+  //   flips[6] = { true,  true,  true, true, false,  true, false}; // left hand
+  // }
+  // bool flips[6];
+  // if (IS_RIGHT_HAND) {
+  //   debugPrint("Configuring for RIGHT hand");
+  //   flips[0] = false;
+  //   flips[1] = false;
+  //   flips[2] = false;
+  //   flips[3] = true;
+  //   flips[4] = false;
+  //   flips[5] = true;
+  // } else {
+  //   debugPrint("Configuring for LEFT hand");
+  //   flips[0] = true;
+  //   flips[1] = true;
+  //   flips[2] = true;
+  //   flips[3] = false;
+  //   flips[4] = true;
+  //   flips[5] = false;
+  // }
   memcpy(flipMotor_, flips, sizeof(flips));
 
 

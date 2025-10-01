@@ -4,6 +4,7 @@
  *
  */
 #include "utils.h"
+#include "oled.h"
 #include <Arduino.h>
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
@@ -637,6 +638,18 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
 
   } else if (cmd == "get_imu") {
     getIMUData(imu);
+
+  } else if (token == "oled:on") {
+    oledSetEnabled(true);
+    if (oledEnabled()) commandPrint("OLED enabled.");
+    else               commandPrint("OLED init failed; disabled.");
+
+  } else if (token == "oled:off") {
+    oledSetEnabled(false);
+    commandPrint("OLED disabled.");
+
+  } else if (token == "oled:status") {
+    commandPrint(oledEnabled() ? "OLED ENABLED" : "OLED DISABLED");
   
   } else if (token == "help") {
     commandPrint(F(" ================================== List of commands ======================================"));
@@ -683,6 +696,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" cycle_gesture_state   |                      | // Cycles the next gesture state"));
     commandPrint(F(" calibrate_exo         |  VALUE:VALUE         | // start the calibration routine for the exo"));
     commandPrint(F(" get_imu               |                      | // Returns list of accel & gyro values"));
+    commandPrint(F(" oled                  |  VALUE               | // Turn OLED on/off, get status"));
     commandPrint(F(" =========================================================================================="));
   } else {
     debugPrint("Unknown command: " + token);

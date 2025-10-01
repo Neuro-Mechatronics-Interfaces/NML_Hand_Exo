@@ -57,6 +57,13 @@
   //const int DXL_DIR_PIN = 2; // DYNAMIXEL Shield DIR PIN
 #endif
 
+// ======================= Define IMU Usage ==========================
+#define IMU_ENABLED_DEFAULT true     // change to false if you usually run without IMU
+
+#define IMU_I2C_ADDR_PRIMARY  0x28   // BNO055 default
+
+#define IMU_I2C_ADDR_ALTERNATE 0x29  // ADR pin pulled high
+
 // ======================================= PIN CONFIGURATION =============================================
 // =======================================================================================================
 
@@ -96,8 +103,8 @@ constexpr const char* DEFAULT_EXO_MODE = "gesture_fixed"; // Available modes are
 constexpr bool DEFAULT_VERBOSE = true;
 
 // Define servo IDs
-constexpr uint8_t RING_ID      = 6; // 1
-constexpr uint8_t PINKY_ID     = 5; // 2
+constexpr uint8_t PINKY_ID     = 6; // 2
+constexpr uint8_t RING_ID      = 5; // 1
 constexpr uint8_t INDEX_ID     = 4; // 3
 constexpr uint8_t MIDDLE_ID    = 3; // 4
 constexpr uint8_t THUMBFLEX_ID = 2; // 5
@@ -111,14 +118,14 @@ constexpr bool IS_RIGHT_HAND = false; // true for right hand, false for left han
 constexpr uint8_t MOTOR_IDS[] = {  WRIST_ID, THUMBROT_ID, THUMBFLEX_ID, INDEX_ID, MIDDLE_ID, RING_ID, PINKY_ID};
 
 /// @brief Motor name Array (must match the order above)
-constexpr const char* MOTOR_NAMES[] = {  "wrist", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky" };
+constexpr const char* MOTOR_NAMES[] = {  "wrist", "thumbrot", "thumbflex",  "index",   "middle",    "ring",    "pinky" };
 
 // Assign a home position using the absolute position for each motor when the hand is fully open. Note that these are found experimentally
 /// @brief Home states for each motor in degrees.
-constexpr float HOME_STATES[] = {          208.5,      150.0,       150.0,   247.5,    193.0,  159.5,  211.5 };
+constexpr float HOME_STATES[] = {       208.5,      150.0,       242.70,    253.44,     203.28,    167.90,    211.5 };
 
 /// @brief Assign the physical joint limits for each motor after assembly on exo (these are found experimentally)
-constexpr float jointLimits[6][2] = {
+constexpr float jointLimits[7][2] = {
   {-189, 2840}, //189, 284   // open -> close
   {-126, 1470}, //126, 147
   {-126, 1470}, //126, 147
@@ -184,4 +191,26 @@ constexpr int DXL_DIR_PIN = -1;
 #else
 constexpr int DXL_DIR_PIN = 2;
 #endif
+
+// ===== OLED (SSD1306) =====
+/// @brief Enable by default
+#define OLED_ENABLED_DEFAULT   true     // set false if most runs are headless
+
+/// @brief I2C primary adress
+#define OLED_I2C_ADDR_PRIMARY  0x3C     // 128x32 default
+
+/// @brief Alternative I2C address
+#define OLED_I2C_ADDR_ALT      0x3D     // some 128x64 boards use 0x3D
+
+/// @brief OLED screen width
+#define OLED_SCREEN_WIDTH      128
+
+/// @brief OLED screen height
+#define OLED_SCREEN_HEIGHT     32       // change to 64 if you have a 128x64
+
+/// @brief OLED center text helper
+#define OLED_CENTER_TEXT       1        // center text helper
+
+/// @brief OLED updated/refresh period
+#define OLED_UPDATE_PERIOD_MS  50       // rate-limit screen refresh (reduce I2C)
 
