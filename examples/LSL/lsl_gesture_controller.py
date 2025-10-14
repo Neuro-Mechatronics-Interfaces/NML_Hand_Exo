@@ -2,7 +2,7 @@ import argparse
 from nml_hand_exo.interface import (
     HandExo,
     SerialComm,
-    LSLSubscriber,
+    LSLMarkerSubscriber,
     GestureController
 )
 
@@ -67,8 +67,7 @@ if __name__ == "__main__":
             gc.set_gesture(gesture, state)
 
     # Create an LSL subscriber to listen and receive gesture commands
-    with LSLSubscriber(stream_type=args.type, name=args.name,
-                       timeout=args.timeout, verbose=args.verbose) as sub:
+    with LSLMarkerSubscriber(stream_type=args.type, stream_name=args.name, timeout=args.timeout, verbose=args.verbose) as sub:
         # background callback
         sub.set_callback(on_gesture, poll_hz=20)
         print("Listening… Ctrl+C to quit.")

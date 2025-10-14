@@ -99,7 +99,7 @@ You can control the hand exoskeleton over USB or Bluetooth using simple, structu
 
 Supported aliases are `THUMB`, `INDEX`, `MIDDLE`, `RING`, `PINKY`, `WRIST`
 
-For a complete list of commands, see the [Usage Guide](https://yourusername.github.io/NML_Hand_Exo/usage.html).
+For a complete list of commands, see the [Usage Guide](https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/usage.html).
 
 ## Demo
 
@@ -118,7 +118,7 @@ A demo script is included to showcase real-time plotting of EMG signals from a c
 
 If you use this project in your research, please cite it as:
 
-Jonathan Shulgach & Kriti Kacker. (2025). NML Hand Exoskeleton [Computer software]. https://github.com/yourusername/NML_Hand_Exo
+Jonathan Shulgach & Kriti Kacker. (2025). NML Hand Exoskeleton [Computer software]. https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo
 
 BibTeX:
 ```bibtex
@@ -128,7 +128,7 @@ BibTeX:
   year         = {2025},
   publisher    = {GitHub},
   journal      = {GitHub repository},
-  howpublished = {\url{https://github.com/yourusername/NML_Hand_Exo}}
+  howpublished = {\url{https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo}}
 }
 
 ## License

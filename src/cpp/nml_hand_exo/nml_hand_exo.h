@@ -33,7 +33,6 @@ enum ExoOperatingMode {
   GESTURE_CALIBRATION
 };
 
-
 /// @brief Class to manage the NML Hand Exoskeleton, providing initialization, motor control, and telemetry.
 class NMLHandExo {
   public:
@@ -361,7 +360,7 @@ class NMLHandExo {
     String getMotorMode();
 
     /// @brief Current software version.
-    static constexpr const char* VERSION = "0.2.12";
+    static constexpr const char* VERSION = "0.2.13";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.
