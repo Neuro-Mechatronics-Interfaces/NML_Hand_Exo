@@ -977,6 +977,31 @@ class HandExo(object):
                 return pitch
             except Exception as e:
                 print(f"[ERROR] Failed to parse pitch from IMU angles: {e}")
+
+    def set_yaw_angle(self, motor_id: (int or str), target_angle: float, direction: str):
+        """
+        Sets the wrist angle (IMU yaw) for the specified motor.
+
+        Args:
+            motor_id (int or str): ID of the motor to set the angle for.
+            angle (float): Desired angle in degrees.
+            direction (str): Desired direction of motion ("flex" or "extend")
+
+
+        Returns:
+            None
+
+        """
+        if direction != "flex" and direction != "extend":
+            print("Invalid function call. direction must be either 'flex' or 'extend'")
+        # elif hand != "left" and hand != "right":
+        #     print("Invalid function call. hand must be either 'left' or 'right'")
+        else:
+            if isinstance(motor_id, str):
+                cmd = f"set_imu_angle:{motor_id}:{target_angle}:{direction}"
+            else:
+                cmd = f"set_imu_angle:{int(motor_id)}:{target_angle}:{direction}"
+            self.send_command(cmd)
         
 
     def get_gesture_state(self):

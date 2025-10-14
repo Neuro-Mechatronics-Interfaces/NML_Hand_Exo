@@ -11,6 +11,8 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BNO055.h>
+#include <chrono>
+#include <thread>
 
 
 // IMU variables (print delay logic currently disabled)
@@ -135,6 +137,21 @@ void getIMUData(Adafruit_BNO055& bno) {
   String imu_data = "Heading: " + String(orientationData.orientation.x) + ", Pitch: " + String(orientationData.orientation.y) + ", Roll: " + String(orientationData.orientation.z); 
 
   commandPrint(imu_data);
+  return imu_data;
+}
+
+void getIMUYaw(Adafruit_BNO055& bno) {
+  if (printCount * BNO055_SAMPLERATE_DELAY_MS >= PRINT_DELAY_MS) {
+    printCount = 0;
+  } else {
+    printCount++;
+  }
+
+  String imu_heading_string = "Heading: " + String(orientationData.orientation.x)
+  float imu_heading_val = orientationData.orientation.x
+
+  commandPrint(imu_heading_string);
+  return imu_heading_val;
 }
 
 
@@ -352,6 +369,39 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     id = getArgMotorID(exo, token, 1);
     val = getArg(token, 2).toInt();
     if (id != -1) exo.setRelativeAngle(id, val);
+
+  } else if (cmd == "set_yaw_angle") {
+    id = getArgMotorID(exo, token, 1);
+    target_yaw = getArg(token, 2).toInt();
+    char direction = getArg(token, 3)[0];
+    float step_angle = 1.1;
+    float current_motor_angle = exo.getRelativeAngle(id);
+    int attempts = 0;
+
+    bool moving = true;
+    if(direction == 'f') {
+      float newAngle = current_motor_angle + step_angle;
+    } else {
+      float newAngle = current_motor_angle - step_angle;
+    }
+    while (moving) {
+      exo.setRelativeAngle(id, newAngle);
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      float current_wrist_angle = getIMUYaw();
+      double wrist_diff = std::abs(current_wrist_angle - target_yaw);
+      if (wrist_diff <= 0.5) || (attempts > 150) {
+        moving = false;
+      } else {
+        if(direction == 'f') {
+          float current_motor_angle = current_motor_angle + step_angle;
+        } else {
+          float current_motor_angle = current_motor_angle - step_angle;
+        }
+        attempts++;
+      }
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
   } else if (cmd == "get_absolute_angle") {
     String arg = getArg(token, 1);  // local copy
@@ -696,6 +746,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" cycle_gesture_state   |                      | // Cycles the next gesture state"));
     commandPrint(F(" calibrate_exo         |  VALUE:VALUE         | // start the calibration routine for the exo"));
     commandPrint(F(" get_imu               |                      | // Returns list of accel & gyro values"));
+    commandPrint(F(" set_yaw_angle         |  ID/NAME:ANGLE       | // Set motor angle via IMU wrist angle"));
     commandPrint(F(" oled                  |  VALUE               | // Turn OLED on/off, get status"));
     commandPrint(F(" =========================================================================================="));
   } else {
