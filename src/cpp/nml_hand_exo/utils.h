@@ -9,9 +9,8 @@
 #include <Arduino.h>
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
-#include <Adafruit_ISM330DHCX.h>
+//#include <Adafruit_ISM330DHCX.h>
 #include <Adafruit_BNO055.h>
-
 
 /// @brief Prints a debug message to the debug serial port (VERBOSE specific)
 /// @param msg The message to print
@@ -58,7 +57,9 @@ bool initializeIMU(Adafruit_BNO055& imu);
 //void getIMUData(Adafruit_ISM330DHCX& imu); 
 // void getIMUData(Adafruit_BNO055& imu);
 void updateIMU(Adafruit_BNO055& imu);
-void getIMUData(Adafruit_BNO055& imu);
+String getIMUData(Adafruit_BNO055& imu);
 
+/// @brief Returns the IMU yaw (heading) and also prints it via commandPrint
+float getIMUYaw(Adafruit_BNO055& imu);
 
 #endif

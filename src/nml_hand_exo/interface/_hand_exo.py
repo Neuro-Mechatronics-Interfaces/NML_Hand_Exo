@@ -805,7 +805,7 @@ class HandExo(object):
         """
         self.send_command("get_imu")
         full_response = self._receive()
-        print(full_response)
+        # print(full_response)
         while (full_response is None) or ("Heading" not in full_response):
             self.send_command("get_imu")
             full_response = self._receive()

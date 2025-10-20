@@ -115,41 +115,69 @@ bool initializeIMU(Adafruit_BNO055& bno) {
 // }
 
 void updateIMU(Adafruit_BNO055& bno) {
+  static unsigned long lastRead = 0;
+  const unsigned long IMU_INTERVAL = 10 * 1000; // 10 ms in microseconds (100 Hz)
+
   unsigned long tStart = micros();
+  if (tStart - lastRead < IMU_INTERVAL) return;
+  lastRead = tStart;
 
   bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
   bno.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
 
-  
-  //while ((micros() - tStart) < (BNO055_SAMPLERATE_DELAY_MS * 1000)) {
-    // wait
-  //}
+
+  // bool ok1 = bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
+  // bool ok2 = bno.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
+
+  // if (!ok1 || !ok2) {
+  //   Serial.println("IMU read failed, reinitializing...");
+  //   bno.begin(Adafruit_BNO055::OPERATION_MODE_NDOF);
+  //   bno.setExtCrystalUse(true);
+  // }
+
+
+
+
+  // if (orientationData.orientation.x == 0 &&
+  //   orientationData.orientation.y == 0 &&
+  //   orientationData.orientation.z == 0) {
+  //   Serial.println("IMU returned zeros - resetting");
+  //   bno.begin(Adafruit_BNO055::OPERATION_MODE_NDOF);
+  //   bno.setExtCrystalUse(true);
+  // }
+
 }
 
-void getIMUData(Adafruit_BNO055& bno) {
+String getIMUData(Adafruit_BNO055& bno) {
   if (printCount * BNO055_SAMPLERATE_DELAY_MS >= PRINT_DELAY_MS) {
     printCount = 0;
   } else {
     printCount++;
   }
 
-  String imu_data = "Heading: " + String(orientationData.orientation.x) + ", Pitch: " + String(orientationData.orientation.y) + ", Roll: " + String(orientationData.orientation.z); 
+  String imu_data = "Heading: " + String(orientationData.orientation.x) +
+                    ", Pitch: "   + String(orientationData.orientation.y) +
+                    ", Roll: "    + String(orientationData.orientation.z); 
 
   commandPrint(imu_data);
   return imu_data;
 }
 
-void getIMUYaw(Adafruit_BNO055& bno) {
+float getIMUYaw(Adafruit_BNO055& bno) {
   if (printCount * BNO055_SAMPLERATE_DELAY_MS >= PRINT_DELAY_MS) {
     printCount = 0;
   } else {
     printCount++;
   }
 
-  String imu_heading_string = "Heading: " + String(orientationData.orientation.x)
-  float imu_heading_val = orientationData.orientation.x
+  unsigned long timestamp = millis();
 
-  commandPrint(imu_heading_string);
+  updateIMU(bno);
+
+  String imu_heading_string = "Heading: " + String(orientationData.orientation.x) + "Timestamp: " + String(timestamp);
+  float imu_heading_val = orientationData.orientation.x;
+
+  commandPrint(String(imu_heading_string));
   return imu_heading_val;
 }
 
@@ -371,36 +399,40 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
 
   } else if (cmd == "set_yaw_angle") {
     id = getArgMotorID(exo, token, 1);
-    target_yaw = getArg(token, 2).toInt();
+    int target_yaw = getArg(token, 2).toInt();
     char direction = getArg(token, 3)[0];
+    // commandPrint("direction value" + String(direction));
     float step_angle = 1.1;
     float current_motor_angle = exo.getRelativeAngle(id);
     int attempts = 0;
-
+    float newAngle;
+    float current_wrist_angle;
     bool moving = true;
     if(direction == 'f') {
-      float newAngle = current_motor_angle + step_angle;
+      newAngle = current_motor_angle - step_angle;
     } else {
-      float newAngle = current_motor_angle - step_angle;
+      newAngle = current_motor_angle + step_angle;
     }
     while (moving) {
       exo.setRelativeAngle(id, newAngle);
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      float current_wrist_angle = getIMUYaw();
-      double wrist_diff = std::abs(current_wrist_angle - target_yaw);
-      if (wrist_diff <= 0.5) || (attempts > 150) {
+      delay(10);
+      current_wrist_angle = getIMUYaw(imu);
+      double wrist_diff = abs(current_wrist_angle - target_yaw);
+      if ((wrist_diff <= 0.5) || (attempts > 150)) {  //
         moving = false;
       } else {
-        if(direction == 'f') {
-          float current_motor_angle = current_motor_angle + step_angle;
+        if(direction == 'f') { //(directionality is for left hand)
+          newAngle = newAngle - step_angle;
+          // commandPrint("flexing");
         } else {
-          float current_motor_angle = current_motor_angle - step_angle;
+          newAngle = newAngle - step_angle;
+          // commandPrint("extending");
         }
         attempts++;
       }
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    delay(1000);
 
   } else if (cmd == "get_absolute_angle") {
     String arg = getArg(token, 1);  // local copy
