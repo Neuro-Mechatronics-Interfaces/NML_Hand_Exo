@@ -998,9 +998,9 @@ class HandExo(object):
         #     print("Invalid function call. hand must be either 'left' or 'right'")
         else:
             if isinstance(motor_id, str):
-                cmd = f"set_imu_angle:{motor_id}:{target_angle}:{direction}"
+                cmd = f"set_yaw_angle:{motor_id}:{target_angle}:{direction}"
             else:
-                cmd = f"set_imu_angle:{int(motor_id)}:{target_angle}:{direction}"
+                cmd = f"set_yaw_angle:{int(motor_id)}:{target_angle}:{direction}"
             self.send_command(cmd)
         
 
