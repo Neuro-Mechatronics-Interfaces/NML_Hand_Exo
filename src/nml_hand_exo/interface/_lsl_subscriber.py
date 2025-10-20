@@ -1,161 +1,319 @@
-# intan/interface/_lsl_subscriber.py
+# intan/interface/lsl_subscribers.py
 from __future__ import annotations
 
-import threading
 import time
+import threading
 from collections import deque
-from typing import Callable, Optional, Iterable, Tuple, List
-
-from pylsl import StreamInlet, resolve_byprop, StreamInfo
-
-
-def _to_str(x):
-    # LSL markers often come as a 1-element list of str/bytes.
-    if isinstance(x, bytes):
-        return x.decode("utf-8", errors="replace")
-    return str(x)
+from typing import Optional, List, Tuple, Callable, Any
+import numpy as np
+from pylsl import StreamInlet, resolve_byprop, cf_string
 
 
-class LSLSubscriber:
+class LSLMarkerSubscriber:
     """
-    Tiny wrapper around pylsl for string marker streams.
+    Subscribe to a string-valued marker stream (e.g., type="Markers").
 
-    - Resolves by `type` (default "Markers") or by exact `name` if provided.
-    - Creates a StreamInlet with default pylsl settings (no kwargs).
-    - `pull()` returns (value, timestamp) where value is a str.
-    - Optional background thread with a user callback.
-    - Context manager support.
+    Usage
+    -----
+        def on_marker(text: str, ts: float, exo):
+            exo.set_gesture(text)
+
+        with LSLMarkerSubscriber(stream_type="Markers", verbose=True) as sub:
+            sub.set_callback(on_marker, exo, only_on_change=True)
+            # ... do other work; callbacks run in the background thread
     """
 
     def __init__(
         self,
-        stream_type: str = "Markers",
-        name: Optional[str] = None,
+        stream_name: Optional[str] = None,
+        stream_type: Optional[str] = "Markers",
         timeout: float = 5.0,
+        buf_events: int = 2000,   # keep last N events
+        recover: bool = True,
         verbose: bool = False,
     ):
+        if not stream_name and not stream_type:
+            raise ValueError("Provide stream_name or stream_type.")
+        self.stream_name = stream_name
         self.stream_type = stream_type
-        self.name = name
         self.timeout = float(timeout)
+        self.buf_events = int(buf_events)
+        self.recover = bool(recover)
         self.verbose = verbose
 
-        self._info: Optional[StreamInfo] = None
-        self._inlet: Optional[StreamInlet] = None
+        # resolve & connect
+        qkey = "name" if stream_name else "type"
+        qval = stream_name or stream_type
+        streams = resolve_byprop(qkey, qval, timeout=self.timeout)
+        if not streams:
+            raise RuntimeError(f"No LSL stream with {qkey}='{qval}' found within {self.timeout}s.")
 
-        self._running = False
-        self._thread: Optional[threading.Thread] = None
-        self._callback: Optional[Callable[[str, float], None]] = None
+        self.inlet = StreamInlet(streams[0], recover=self.recover)
+        info = self.inlet.info()
+        self.name = info.name()
+        self.type = info.type()
+        self.n_channels = info.channel_count()
+        self.fs = float(info.nominal_srate())  # usually 0 for markers
 
-        self._queue = deque(maxlen=1024)  # if you want to poll without callback
-
-    # ---------- public API ----------
-
-    def start(self) -> None:
-        """Resolve and connect (no-op if already connected)."""
-        if self._inlet is not None:
-            return
-        self._info = self._resolve_stream()
-        self._inlet = StreamInlet(self._info)  # no kwargs → avoids ctypes issues
         if self.verbose:
-            print(f"[LSL] Connected to stream: name='{self._info.name()}', type='{self._info.type()}'")
+            print(f"[LSLMarkerSubscriber] connected to '{self.name}' (type={self.type})")
 
-    def stop(self) -> None:
-        """Stop background thread (if any)."""
-        self._running = False
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1.0)
-        self._thread = None
+        # state
+        self._lock = threading.Lock()
+        self._stop = False
+        self._thread: Optional[threading.Thread] = None
+        self._markers: deque[Tuple[float, str]] = deque(maxlen=self.buf_events)
 
-    def close(self) -> None:
-        """Close inlet and stop thread."""
-        self.stop()
-        self._inlet = None
-        self._info = None
+        # callback state
+        self._cb: Optional[Callable[..., Any]] = None
+        self._cb_args: tuple[Any, ...] = ()
+        self._cb_kwargs: dict[str, Any] = {}
+        self._only_on_change: bool = False
+        self._last_text: Optional[str] = None
 
-    def set_callback(self, fn: Callable[[str, float], None], poll_hz: float = 50.0) -> None:
-        """
-        Start a background thread that calls `fn(value, timestamp)` for each sample.
-        `poll_hz` controls the pull timeout (lower → less CPU).
-        """
-        self.start()
-        self._callback = fn
-        self._running = True
-        timeout = 1.0 / max(1.0, float(poll_hz))
-
-        def _loop():
-            while self._running:
-                try:
-                    val_ts = self.pull(timeout=timeout)
-                    if val_ts is None:
-                        continue
-                    val, ts = val_ts
-                    if self._callback:
-                        self._callback(val, ts)
-                except Exception as e:
-                    if self.verbose:
-                        print(f"[LSL] subscriber error: {e}")
-                    time.sleep(0.1)
-
-        self._thread = threading.Thread(target=_loop, daemon=True)
-        self._thread.start()
-
-    def pull(self, timeout: float = 0.0) -> Optional[Tuple[str, float]]:
-        """
-        Pull one sample. Returns (value:str, timestamp:float) or None if no sample in timeout.
-        """
-        self.start()
-        sample, ts = self._inlet.pull_sample(timeout=timeout)  # returns (list, ts) or (None, None)
-        if sample is None:
-            return None
-        # Typical marker is a 1-element list
-        val = _to_str(sample[0] if len(sample) else "")
-        self._queue.append((val, ts))
-        return val, ts
-
-    def pull_chunk(self, max_samples: int = 32, timeout: float = 0.0) -> List[Tuple[str, float]]:
-        """
-        Pull a small chunk. Returns list of (value:str, timestamp:float).
-        """
-        self.start()
-        data, ts = self._inlet.pull_chunk(max_samples=max_samples, timeout=timeout)
-        out: List[Tuple[str, float]] = []
-        if data and ts:
-            for row, t in zip(data, ts):
-                val = _to_str(row[0] if row else "")
-                out.append((val, t))
-                self._queue.append((val, t))
-        return out
-
-    # ---------- context manager ----------
-
+    # --- context manager ---
     def __enter__(self):
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc, tb):
-        self.close()
+    def __exit__(self, *exc):
+        self.stop()
 
-    # ---------- internals ----------
+    # --- lifecycle ---
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return self
+        self._stop = False
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+        return self
 
-    def _resolve_stream(self) -> StreamInfo:
+    def stop(self):
+        self._stop = True
+        if self._thread:
+            self._thread.join(timeout=1.0)
+        try:
+            self.inlet.close_stream()
+        except Exception:
+            pass
+
+    # --- callback API ---
+    def set_callback(self, func: Optional[Callable[..., Any]], *args, only_on_change: bool = False, **kwargs) -> None:
         """
-        Try resolve by name first (if provided), else by type.
+        Register a callback invoked as: func(text: str, ts: float, *args, **kwargs)
+
+        Examples:
+            sub.set_callback(on_marker)  # func(text, ts)
+            sub.set_callback(on_marker, exo, only_on_change=True)  # func(text, ts, exo=...)
+            sub.set_callback(on_marker, exo=exo)  # func(text, ts, exo=exo)
+
+        Pass None to clear the callback.
         """
-        if self.name:
-            if self.verbose:
-                print(f"[LSL] Resolving by name='{self.name}' (timeout={self.timeout}s)...")
-            by_name = resolve_byprop("name", self.name, timeout=self.timeout)
-            if by_name:
-                return by_name[0]
-            # fall back to type if name not found
-            if self.verbose:
-                print(f"[LSL] Name not found; falling back to type='{self.stream_type}'")
+        with self._lock:
+            self._cb = func
+            self._cb_args = args
+            self._cb_kwargs = kwargs
+            self._only_on_change = bool(only_on_change)
+            # Do NOT reset _last_text; change detection should persist
+
+    # --- worker ---
+    def _worker(self):
+        while not self._stop:
+            sample, ts = self.inlet.pull_sample(timeout=0.1)
+            if sample is None:
+                continue
+
+            # Concatenate multi-field markers (rare) into one string
+            text = sample[0] if len(sample) == 1 else "|".join(map(str, sample))
+            text = str(text)
+
+            # store & compute if we should fire
+            with self._lock:
+                self._markers.append((ts, text))
+                cb = self._cb
+                args = self._cb_args
+                kwargs = self._cb_kwargs
+                only_change = self._only_on_change
+                last = self._last_text
+
+                should_fire = True
+                if only_change and (text == last):
+                    should_fire = False
+                self._last_text = text
+
+            # invoke callback outside the lock
+            if cb and should_fire:
+                try:
+                    cb(text, float(ts), *args, **kwargs)
+                except Exception as e:
+                    if self.verbose:
+                        print(f"[LSLMarkerSubscriber] callback error: {e}")
+
+    # --- polling helpers ---
+    def get_recent_markers(self, k: int = 1) -> List[Tuple[float, str]]:
+        """Return the last k markers as (timestamp, text)."""
+        with self._lock:
+            return list(self._markers)[-k:]
+
+    def get_markers_since(self, since_ts: float) -> List[Tuple[float, str]]:
+        with self._lock:
+            return [(ts, s) for (ts, s) in self._markers if ts >= since_ts]
+
+    def poll_latest(self) -> Optional[Tuple[float, str]]:
+        """Non-blocking: return the most recent (ts, text) or None."""
+        with self._lock:
+            if not self._markers:
+                return None
+            return self._markers[-1]
+
+    def pull(self, timeout: float = 0.0) -> Optional[Tuple[float, str]]:
+        """
+        Wait up to `timeout` seconds for a new marker (compares against the last one).
+        Returns (ts, text) or None if nothing new appears.
+        """
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        before = self.poll_latest()
+        while time.monotonic() < deadline:
+            time.sleep(0.01)
+            after = self.poll_latest()
+            if after and after != before:
+                return after
+        return None
+
+    # --- metadata ---
+    def metadata(self) -> dict:
+        return {
+            "name": self.name,
+            "type": self.type,
+            "fs": self.fs,
+            "n_channels": self.n_channels,
+        }
+
+# ---------- NUMERIC (continuous) STREAMS ----------
+
+class LSLNumericSubscriber:
+    """
+    Subscribe to a continuous numeric stream (e.g., EMG/EEG).
+    Typical usage:
+        with LSLNumericSubscriber(stream_name="MyEMG").start() as sub:
+            X = sub.get_latest_window(200)  # last 200 ms -> (C, N) float32
+    """
+    def __init__(
+        self,
+        stream_name: Optional[str] = None,
+        stream_type: Optional[str] = None,
+        timeout: float = 5.0,
+        buf_seconds: float = 10.0,
+        max_chunklen: int = 1024,
+        recover: bool = True,
+        verbose: bool = False,
+    ):
+        if not stream_name and not stream_type:
+            raise ValueError("Provide stream_name or stream_type.")
+        self.stream_name = stream_name
+        self.stream_type = stream_type
+        self.timeout = float(timeout)
+        self.buf_seconds = float(buf_seconds)
+        self.max_chunklen = int(max_chunklen)
+        self.recover = bool(recover)
+        self.verbose = verbose
+
+        # resolve & connect
+        qkey = "name" if stream_name else "type"
+        qval = stream_name or stream_type
+        streams = resolve_byprop(qkey, qval, timeout=self.timeout)
+        if not streams:
+            raise RuntimeError(f"No LSL stream with {qkey}='{qval}' found within {self.timeout}s.")
+        self.inlet = StreamInlet(streams[0], recover=self.recover)
+        info = self.inlet.info()
+        self.name = info.name()
+        self.type = info.type()
+        self.n_channels = info.channel_count()
+        self.fs = float(info.nominal_srate())
+        if self.fs <= 0:
+            raise RuntimeError(f"Stream '{self.name}' nominal_srate={self.fs}; expected continuous numeric.")
+
+        # channel labels (best effort)
+        try:
+            ch = info.desc().child("channels").child("channel")
+            labels = []
+            for i in range(self.n_channels):
+                labels.append(ch.child_value("label") or f"Ch{i}")
+                ch = ch.next_sibling()
+            self.channel_labels = labels
+        except Exception:
+            self.channel_labels = [f"Ch{i}" for i in range(self.n_channels)]
 
         if self.verbose:
-            print(f"[LSL] Resolving by type='{self.stream_type}' (timeout={self.timeout}s)...")
-        by_type = resolve_byprop("type", self.stream_type, timeout=self.timeout)
-        if not by_type:
-            raise TimeoutError(
-                f"No LSL stream found (type='{self.stream_type}', name='{self.name or ''}') within {self.timeout}s."
-            )
-        return by_type[0]
+            print(f"[LSLNumericSubscriber] connected to '{self.name}' (type={self.type}) "
+                  f"fs={self.fs}, C={self.n_channels}")
+
+        # state
+        self._lock = threading.Lock()
+        self._stop = False
+        self._thread: Optional[threading.Thread] = None
+        maxlen = int(max(1, self.fs * self.buf_seconds))
+        self._bufs = [deque(maxlen=maxlen) for _ in range(self.n_channels)]
+
+    # context manager
+    def __enter__(self):
+        self.start()
+        return self
+    def __exit__(self, *exc):
+        self.stop()
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return self
+        self._stop = False
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._stop = True
+        if self._thread:
+            self._thread.join(timeout=1.0)
+        try:
+            self.inlet.close_stream()
+        except Exception:
+            pass
+
+    def _worker(self):
+        # use pull_chunk() to reduce Python overhead
+        while not self._stop:
+            samples, _timestamps = self.inlet.pull_chunk(timeout=0.1, max_samples=self.max_chunklen)
+            if not samples:
+                continue
+            arr = np.asarray(samples, dtype=np.float32)  # (n, C)
+            with self._lock:
+                for c in range(min(arr.shape[1], self.n_channels)):
+                    self._bufs[c].extend(arr[:, c])
+
+    # API
+    def get_latest_window(self, window_ms: int) -> np.ndarray:
+        """Return last window_ms of data as (C, N) float32 (zero-padded if not enough)."""
+        n = int(round(self.fs * window_ms / 1000.0))
+        if n <= 0:
+            return np.zeros((self.n_channels, 0), dtype=np.float32)
+        out = np.zeros((self.n_channels, n), dtype=np.float32)
+        with self._lock:
+            for c in range(self.n_channels):
+                buf = self._bufs[c]
+                if len(buf) >= n:
+                    out[c] = np.fromiter(list(buf)[-n:], dtype=np.float32, count=n)
+                else:
+                    pad = n - len(buf)
+                    if pad > 0:
+                        out[c, :pad] = 0.0
+                        out[c, pad:] = np.fromiter(list(buf), dtype=np.float32)
+        return out
+
+    def metadata(self) -> dict:
+        return {
+            "name": self.name,
+            "type": self.type,
+            "fs": self.fs,
+            "n_channels": self.n_channels,
+            "channel_labels": self.channel_labels,
+        }

@@ -13,14 +13,18 @@ Prerequisites
 - Python 3.x (optional, for higher-level scripting).
 - A serial terminal program (e.g. PuTTY, Arduino Serial Monitor) or the provided Python API.
 
+Step 1. Assemble Exoskeleton
+----------------------------
 
-Step 1. Connect the Device
+Follow the :doc:`assembly instructions`  provided in the hardware documentation to put together the exoskeleton.
+
+Step 2. Connect the Device
 --------------------------
 
 1. Plug the exoskeleton’s control board into your computer’s USB port.
 2. Ensure that the device is recognized by your operating system (typically shows up as a COM port on Windows or `/dev/ttyUSBx` on Linux).
 
-Step 2. Launch Serial Terminal
+Step 3. Launch Serial Terminal
 ------------------------------
 
 1. Open your preferred serial terminal program.
@@ -28,7 +32,7 @@ Step 2. Launch Serial Terminal
 3. Select the correct serial port (COMx on Windows, `/dev/ttyUSBx` on Linux, or 'dev.usbmodemxxx' on MacOS).
 4. Connect and open the terminal.
 
-Step 3. Send a Test Command
+Step 4. Send a Test Command
 ---------------------------
 
 Once connected, try sending a simple command to make sure you can communicate with the dynamixel motors. See if the led can turn on:

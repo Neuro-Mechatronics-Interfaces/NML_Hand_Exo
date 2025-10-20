@@ -1,6 +1,25 @@
 #include "gesture_library.h"
 #include "gesture_controller.h"
 #include "utils.h"
+#include "oled.h"
+
+static ExoState mapGestureStateToExoState(const String& gesture, const String& state) {
+  String g = gesture; g.toLowerCase();
+  String s = state;   s.toLowerCase();
+
+  if (g.indexOf("pinch") >= 0) {
+    if (g.indexOf("index")  >= 0) return EXO_INDEX_PINCH;
+    if (g.indexOf("middle") >= 0) return EXO_MIDDLE_PINCH;
+    if (g.indexOf("ring")   >= 0) return EXO_RING_PINCH;
+  }
+  if (g.indexOf("key") >= 0) {
+    return (s.indexOf("open") >= 0) ? EXO_KEYGRIP_OPEN : EXO_KEYGRIP_CLOSE;
+  }
+  if (g.indexOf("grasp") >= 0 || g.indexOf("power") >= 0) {
+    return (s.indexOf("open") >= 0) ? EXO_GRASP_OPEN : EXO_GRASP_CLOSE;
+  }
+  return EXO_READY; // fallback for unknowns/idle
+}
 
 GestureController::GestureController(NMLHandExo& exo)
   : exo_(exo),
@@ -85,6 +104,9 @@ void GestureController::executeGesture(const String& gesture, const String& stat
   currentGesture_ = gesture;
   currentGestureState_ = state;
   debugPrint("[GestureController] Executed gesture: " + gesture + ", state: " + state);
+
+  // OLED: reflect the new state
+  oledSetState(mapGestureStateToExoState(currentGesture_, currentGestureState_));
 }
 void GestureController::executeCurrentGestureNewState(const String& state) {
   // Get the current gesture

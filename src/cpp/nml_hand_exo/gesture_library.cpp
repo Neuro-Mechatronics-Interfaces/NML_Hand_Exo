@@ -63,19 +63,23 @@ GestureMap gestureLibrary[N_GESTURES] = {
       "grasp",
       {
         { "open",  true,  true,     {0}, 
-          { {"thumb",  0.0}, 
-            {"index",  0.0}, 
-            {"middle", 0.0}, 
-            {"ring",   0.0}, 
-            {"pinky",  0.0} }, 5 },
+          {
+            {"thumbflex",   0.0},
+            {"thumbrot",   60.0},
+            {"index",       0.0},
+            {"middle",      0.0},
+            {"ring",        0.0},
+            {"pinky",       0.0}
+          }, 6 },
         { "close", true,  true,     {0}, 
-          { {"thumb",  30.0},
-            {"index",  60.0},
-            {"middle", 60.0},
-            {"ring",   60.0},
-            {"pinky",  60.0} }, 5 }
-      },
-      2
+          { {"thumbflex",  60.0},
+            {"thumbrot",   60.0},
+            {"index",      60.0},
+            {"middle",     60.0},
+            {"ring",       60.0},
+            {"pinky",      60.0}
+          }, 6 }
+      }, 2
     },
 
     // --- KEYGRIP: ---
@@ -84,20 +88,25 @@ GestureMap gestureLibrary[N_GESTURES] = {
       {
         // Open: thumb=0, index/middle/ring/pinky=30, ignore wrist
         { "open",  true, true,   {0}, 
-          { {"thumb",  0.0},
-            {"index",  60.0},
-            {"middle", 60.0},
-            {"ring",   60.0},
-            {"pinky",  60.0} }, 5 },
+          {
+            {"thumbflex",  0.0},
+            {"thumbrot",   0.0},
+            {"index",     60.0},
+            {"middle",    60.0},
+            {"ring",      60.0},
+            {"pinky",     60.0}
+          }, 5 },
         // Close: thumb=30, index/middle/ring/pinky=30, ignore wrist
         { "close", true, true,   {0}, 
-          { {"thumb",  50.0},
-            {"index",  60.0},
-            {"middle", 60.0},
-            {"ring",   60.0},
-            {"pinky",  60.0} }, 5 }
-      },
-      2
+          {
+            {"thumbflex", 60.0},
+            {"thumbrot",   0.0},
+            {"index",     60.0},
+            {"middle",    60.0},
+            {"ring",      60.0},
+            {"pinky",     60.0}
+             }, 5 }
+      }, 2
     },
 
     // --- PINCH: (keep as dense absolute; your remapper uses these) ---
@@ -106,57 +115,72 @@ GestureMap gestureLibrary[N_GESTURES] = {
       {
         // open: thumb=0, index=0, others closed=30; wrist omitted
         { "open",  true,  true,  {0},
-          { {"thumb", 0.0}, 
-            {"index", 0.0}, // this one
-            {"middle", 0.0}, 
-            {"ring", 0.0}, 
-            {"pinky", 0.0} }, 5 },
+          {
+            {"thumbflex",   0.0},
+            {"thumbrot",   60.0},
+            {"index",       0.0}, // this one
+            {"middle",      0.0},
+            {"ring",        0.0},
+            {"pinky",       0.0}
+          }, 5 },
         // close: thumb=30, index=30, others closed=30
         { "close", true,  true,  {0},
-          { {"thumb", 60.0}, 
-            {"index", 60.0}, // this one
-            {"middle", 0.0}, 
-            {"ring", 0.0}, 
-            {"pinky", 0.0} }, 5 }
-      },
-      2
+          {
+            {"thumbflex", 60.0},
+            {"thumbrot",  60.0},
+            {"index",     60.0},
+            {"middle",     0.0},
+            {"ring",       0.0},
+            {"pinky",      0.0}
+          }, 5 }
+      }, 2
     },
 
     {
       "pinch_middle",
       {
         { "open",  true,  true,  {0},
-          { {"thumb", 0.0}, 
-            {"middle", 0.0}, // this one
-            {"index", 0.0}, 
-            {"ring", 0.0}, 
-            {"pinky", 0.0} }, 5 },
+          {
+            {"thumbflex",  0.0},
+            {"thumbrot",  60.0},
+            {"index",      0.0},
+            {"middle",     0.0},
+            {"ring",       0.0},
+            {"pinky",      0.0}
+          }, 5 },
         { "close", true,  true,  {0},
-          { {"thumb", 50.0}, 
-            {"middle", 60.0}, // this one
-            {"index", 0.0}, 
-            {"ring", 0.0}, 
-            {"pinky", 0.0} }, 5 }
-      },
-      2
+          {
+            {"thumbflex", 60.0},
+            {"thumbrot",  60.0},
+            {"index",      0.0},
+            {"middle",    60.0},
+            {"ring",       0.0},
+            {"pinky",      0.0}
+          }, 5 }
+      }, 2
     },
 
     {
       "pinch_ring",
       {
         { "open",  true,  true,  {0},
-          { {"thumb", 0.0}, 
-            {"ring", 0.0}, // this one
-            {"index", 0.0}, 
-            {"middle", 0.0}, 
-            {"pinky", 0.0} }, 5 },
+          {
+            {"thumbflex",  0.0},
+            {"thumbrot",  60.0},
+            {"index",      0.0},
+            {"middle",     0.0},
+            {"ring",       0.0},
+            {"pinky",      0.0}
+          }, 5 },
         { "close", true,  true,  {0},
-          { {"thumb", 50.0}, 
-            {"ring", 60.0}, // this one
-            {"index", 0.0}, 
-            {"middle", 0.0}, 
-            {"pinky", 0.0} }, 5 }
-      },
-      2
+          {
+            {"thumbflex",  60.0},
+            {"thumbrot",  60.0},
+            {"index",      0.0},
+            {"middle",     0.0},
+            {"ring",      60.0},
+            {"pinky",      0.0}
+          }, 5 }
+      }, 2
     },
 };
