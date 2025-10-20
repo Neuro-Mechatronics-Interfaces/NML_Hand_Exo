@@ -61,7 +61,7 @@ void setup() {
 
   // Setup IMU
   //initializeIMU(ism330dhcx);
-  initializeIMU(bno055);
+  //initializeIMU(bno055);
 
   // Setup OLED
   oledInit();
