@@ -3,7 +3,10 @@ name = "nml_hand_exo"
 version = "0.0.6"
 description = "Python API for controlling the NML Hand Exoskeleton"
 authors = [
-    { name="Jonathan Shulgach", email="jshulgac@andrew.cmu.edu" }
+    { name="Jonathan Shulgach", email="jshulgac@andrew.cmu.edu" },
+    { name="Kriti Kacker", email="kkacker@andrew.cmu.edu" }, 
+    { name="Coleman Walsh", email="colemanw@andrew.cmu.edu" },  
+    { name="Max Murphy", email="mdmurphy@andrew.cmu.edu" }
 ]
 readme = "README.md"
 requires-python = ">=3.10"

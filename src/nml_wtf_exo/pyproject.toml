@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nml-wtf-exo"                     # distribution name (import stays: nml_wtf_exo)
+version = "0.0.2"
+description = "Dev/GUI utilities and apps for NML Hand Exo (developer extras)"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Max Murphy", email = "mdmurphy@andrew.cmu.edu" }
+]
+dependencies = [
+  "numpy",
+  "pyserial",
+  "pyyaml",
+  "PyQt5",
+  "pyqtgraph",
+  "pylsl",
+  "pandas",
+  "scipy",
+  "nml_hand_exo>=0.0.6",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy",
+  "ruff",
+]
+
+[project.urls]
+Homepage = "https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo"
+
+[tool.setuptools]
+# because this pyproject lives INSIDE src/nml_wtf_exo/, the package root is "."
+packages = ["nml_wtf_exo"]
+package-dir = { "nml_wtf_exo" = "." } 
+include-package-data = true
+
+# include your non-.py assets in wheels/sdists
+[tool.setuptools.package-data]
+nml_wtf_exo = [
+  "resources/*",
+  "resources/**/*",
+  "gui/ui/*",
+  "gui/ui/**/*",
+  "*.json",
+  "**/*.json",
+  "**/*.png",
+  "**/*.jpg",
+  "**/*.gif",
+  "**/*.txt",
+]
+
+# Optional: entry points for quick launching (adjust targets if needed)
+[project.scripts]
+nml-wtf-exo = "nml_wtf_exo.run.exo:main"
+nml-wtf-exo-viewer = "nml_wtf_exo.run.viewer:main"
+nml-wtf-exo-logger = "nml_wtf_exo.run.logger:main"
+nml-wtf-exo-keyboard = "nml_wtf_exo.run.keyboard:main"
