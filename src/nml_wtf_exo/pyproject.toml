@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nml-wtf-exo"                     # distribution name (import stays: nml_wtf_exo)
-version = "0.0.2"
+version = "0.0.3"
 description = "Dev/GUI utilities and apps for NML Hand Exo (developer extras)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -59,3 +59,5 @@ nml-wtf-exo = "nml_wtf_exo.run.exo:main"
 nml-wtf-exo-viewer = "nml_wtf_exo.run.viewer:main"
 nml-wtf-exo-logger = "nml_wtf_exo.run.logger:main"
 nml-wtf-exo-keyboard = "nml_wtf_exo.run.keyboard:main"
+nml-wtf-exo-demo = "nml_wtf_exo.run.demo:main"
+

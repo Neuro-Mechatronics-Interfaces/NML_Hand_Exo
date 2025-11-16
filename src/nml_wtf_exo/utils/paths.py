@@ -194,6 +194,7 @@ def _build_paths() -> Dict[str, str]:
         "keyboard_layout_json": as_abs(keyboard_layout_json),
         "virtual_keyboard_png": as_abs(virtual_keyboard_png),
         "phrases_txt": as_abs(phrases_txt),
+        "exo_demo_defaults": as_abs(resources_dir / "exo_demo_default_motion.json"), 
         "lsl_dll": _find_lsl_dll()
     }
 

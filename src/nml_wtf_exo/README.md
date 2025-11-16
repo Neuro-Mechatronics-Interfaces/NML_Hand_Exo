@@ -6,9 +6,15 @@ From repository root:
 ```bat
 pip install -e src/nml_wtf_exo
 ```
-To launch a GUI for interactions with the Exo, you can now run:
+
+## Scripts Overview ##
+To launch a [GUI for interactions](#controller-gui) with the Exo, you can now run:
 ```bat
 nml-wtf-exo
+```
+To launch a [demo GUI](#demo-gui) for driving the Exo with different parametric motion functions (e.g. sinusoid, triangle, step, white or colored noise), you can  run:
+```bat
+nml-wtf-exo-demo
 ```
 
 ### Controller GUI ###
@@ -45,11 +51,22 @@ nml-wtf-exo
 * Send raw serial commands (e.g., info, help) to the device.
 * Adjustable timeout; prints response to terminal and a status line in the GUI.
 
+### Demo GUI ###
+This is a very basic GUI intended for use to show how the relative position commands can be used via software interface to control the state of the hand exo, manipulating individual digits asynchronously via master loop that updates each motor state sequentially every 100-milliseconds. Currently, there is no logging associated (although some of the framework exists to save the motion configuration, and it wouldn't be too hard to add a logging component). 
+
+#### How to run ####
+```bash
+nml-wtf-exo-demo
+```
+By default, the motion/joint parameterization in `PATHS['exo_demo_default_motion.json']` are used for the initial per-joint configurations (which are shown in the gif below):  
+![This should be a gif with GUI capture and accompanying exo OBS video](/src/nml_wtf_exo/resources/2025-11-16_Hand-Exo-Demo.gif)
+
+
 ### Viewer GUI ###
 Launches a **landmark log viewer** for CSV recordings (e.g., from your LSL logger).  
 It visualizes 2-D landmark trajectories over time and lets you scrub/play them with basic controls.
 
-#### How to run ###
+#### How to run ####
 ```bash
 nml-wtf-exo-viewer
 ```
