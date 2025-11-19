@@ -21,6 +21,7 @@ dependencies = [
   "pandas",
   "scipy",
   "nml_hand_exo>=0.0.6",
+  "nml_wtf_mindrove>=0.1.8", 
 ]
 
 [project.optional-dependencies]

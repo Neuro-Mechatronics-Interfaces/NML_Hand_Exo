@@ -1,4 +1,4 @@
-mindrove
+nml-wtf-mindrove
 PySerial
 PyQt5
 pyqtgraph
