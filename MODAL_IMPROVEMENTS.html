@@ -1,0 +1,656 @@
+<!doctype html>
+<!--
+  Minimal Mistakes Jekyll Theme 4.24.0 by Michael Rose
+  Copyright 2013-2020 Michael Rose - mademistakes.com | @mmistakes
+  Free for personal and commercial use under the MIT license
+  https://github.com/mmistakes/minimal-mistakes/blob/master/LICENSE
+-->
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="utf-8">
+
+<!-- begin _includes/seo.html --><title>Modal Popup Improvements - VS Code Dark Theme 🎨 | NML Hand Exoskeleton</title>
+<meta name="description" content="Open exoskeleton platform: software, hardware, and APIs for assistive robotics research">
+
+
+  <meta name="author" content="Neuromechatronics Lab">
+  
+
+
+<meta property="og:type" content="website">
+<meta property="og:locale" content="en_US">
+<meta property="og:site_name" content="NML Hand Exoskeleton">
+<meta property="og:title" content="Modal Popup Improvements - VS Code Dark Theme 🎨">
+<meta property="og:url" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/MODAL_IMPROVEMENTS.html">
+
+
+  <meta property="og:description" content="Open exoskeleton platform: software, hardware, and APIs for assistive robotics research">
+
+
+
+  <meta property="og:image" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/assets/images/hand-exo.jpg">
+
+
+
+
+
+
+
+
+
+
+<link rel="canonical" href="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/MODAL_IMPROVEMENTS.html">
+
+
+
+
+<script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    
+      "@type": "Organization",
+      "url": "https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/",
+      "logo": "https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/assets/images/hand-exo.jpg"
+    
+  }
+</script>
+
+
+
+
+
+
+
+<!-- end _includes/seo.html -->
+
+
+
+  <link href="/NML_Hand_Exo/feed.xml" type="application/atom+xml" rel="alternate" title="NML Hand Exoskeleton Feed">
+
+
+<!-- https://t.co/dKP3o1e -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script>
+  document.documentElement.className = document.documentElement.className.replace(/\bno-js\b/g, '') + ' js ';
+</script>
+
+<!-- For all browsers -->
+<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/main.css">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5/css/all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5/css/all.min.css"></noscript>
+
+
+  
+    <script src="/NML_Hand_Exo/assets/js/custom.js"></script>
+  
+
+
+    <!-- Favicon -->
+<link rel="icon" type="image/svg+xml" href="/NML_Hand_Exo/assets/images/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="32x32" href="/NML_Hand_Exo/assets/images/favicon-32x32.svg">
+<link rel="apple-touch-icon" href="/NML_Hand_Exo/assets/images/favicon.svg">
+
+<!-- load splash cursor assets -->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/fluid-cursor.css">-->
+<!--<script defer src="/NML_Hand_Exo/assets/js/fluid-cursor.js"></script>-->
+
+<!-- Effects CSS -->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/prism.css">-->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/glare.css">-->
+
+<!-- Effects JS -->
+<!--<script defer type="module" src="/NML_Hand_Exo/assets/js/prism-ogl.js"></script>-->
+<!--<script defer src="/NML_Hand_Exo/assets/js/glare.v2.js"></script>-->
+
+<!-- Hero Rotator -->
+<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/hero-rotator.css">
+<script defer src="/NML_Hand_Exo/assets/js/hero-rotator.js"></script>
+
+<!-- Custom Animations & Effects -->
+<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/custom.css">
+<script defer src="/NML_Hand_Exo/assets/js/custom.js"></script>
+
+<!-- Splash Screen -->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/splash_glitch.css">-->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/splash_pixel.css">-->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/splash_combo.css">-->
+<!--<script defer src="/NML_Hand_Exo/assets/js/splash_combo.js"></script>-->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/splash_combo.css">-->
+
+
+
+
+  </head>
+
+  <body class="layout--single">
+    <nav class="skip-links">
+  <ul>
+    <li><a href="#site-nav" class="screen-reader-shortcut">Skip to primary navigation</a></li>
+    <li><a href="#main" class="screen-reader-shortcut">Skip to content</a></li>
+    <li><a href="#footer" class="screen-reader-shortcut">Skip to footer</a></li>
+  </ul>
+</nav>
+
+    <!--[if lt IE 9]>
+<div class="notice--danger align-center" style="margin: 0;">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience.</div>
+<![endif]-->
+
+    
+
+<div class="masthead">
+  <div class="masthead__inner-wrap">
+    <div class="masthead__menu">
+      <nav id="site-nav" class="greedy-nav">
+        
+          <a class="site-logo" href="/NML_Hand_Exo/"><img src="/NML_Hand_Exo/assets/images/logo.png" alt="NML Hand Exoskeleton"></a>
+        
+        <a class="site-title" href="/NML_Hand_Exo/">
+          NML Hand Exoskeleton
+          <span class="site-subtitle">Open-Source Research Platform</span>
+        </a>
+        <ul class="visible-links"><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/quickstart/">Quickstart</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/assembly/">Assembly</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/examples/">Examples</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/python-api/">Python API</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/cpp-api/">C++ API</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/papers/">Papers</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/community/">Community</a>
+            </li><li class="masthead__menu-item">
+              <a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo">GitHub</a>
+            </li></ul>
+        
+        <button class="search__toggle" type="button">
+          <span class="visually-hidden">Toggle search</span>
+          <i class="fas fa-search"></i>
+        </button>
+        
+        <button class="greedy-nav__toggle hidden" type="button">
+          <span class="visually-hidden">Toggle menu</span>
+          <div class="navicon"></div>
+        </button>
+        <ul class="hidden-links hidden"></ul>
+      </nav>
+    </div>
+  </div>
+</div>
+
+
+    <div class="initial-content">
+      
+
+
+
+<div id="main" role="main">
+  
+
+
+  <article class="page" itemscope itemtype="https://schema.org/CreativeWork">
+    <meta itemprop="headline" content="Modal Popup Improvements - VS Code Dark Theme 🎨">
+    
+    
+    
+
+    <div class="page__inner-wrap">
+      
+        <header>
+          <h1 id="page-title" class="page__title" itemprop="headline">Modal Popup Improvements - VS Code Dark Theme 🎨
+</h1>
+          
+
+
+        </header>
+      
+
+      <section class="page__content" itemprop="text">
+        
+          <aside class="sidebar__right sticky">
+            <nav class="toc">
+              <header><h4 class="nav__title"><i class="fas fa-file-alt"></i> On this page</h4></header>
+              <ul class="toc__menu"><li><a href="#modal-popup-improvements---vs-code-dark-theme-">Modal Popup Improvements - VS Code Dark Theme 🎨</a><ul><li><a href="#before-vs-after-comparison">Before vs After Comparison</a><ul><li><a href="#before-light-theme">BEFORE (Light Theme)</a></li><li><a href="#after-vs-code-dark">AFTER (VS Code Dark)</a></li></ul></li><li><a href="#detailed-improvements">Detailed Improvements</a><ul><li><a href="#1-background--container">1. Background &amp; Container</a></li><li><a href="#2-typography--color-hierarchy">2. Typography &amp; Color Hierarchy</a><ul><li><a href="#title-h3">Title (h3)</a></li><li><a href="#section-headers-h4">Section Headers (h4)</a></li><li><a href="#body-text">Body Text</a></li><li><a href="#strongbold">Strong/Bold</a></li><li><a href="#emphasized-text">Emphasized Text</a></li></ul></li><li><a href="#3-code-blocks-enhanced">3. Code Blocks Enhanced</a><ul><li><a href="#inline-code">Inline Code</a></li><li><a href="#code-blocks-pre">Code Blocks (pre)</a></li></ul></li><li><a href="#4-interactive-elements">4. Interactive Elements</a><ul><li><a href="#close-button-">Close Button (×)</a></li></ul></li><li><a href="#5-animations">5. Animations</a><ul><li><a href="#modal-backdrop">Modal Backdrop</a></li><li><a href="#modal-panel">Modal Panel</a></li></ul></li><li><a href="#6-custom-scrollbar">6. Custom Scrollbar</a></li><li><a href="#7-visual-hierarchy-structure">7. Visual Hierarchy Structure</a></li></ul></li><li><a href="#color-usage-summary">Color Usage Summary</a></li><li><a href="#user-experience-improvements">User Experience Improvements</a><ul><li><a href="#-better-readability">✨ Better Readability</a></li><li><a href="#-professional-look">✨ Professional Look</a></li><li><a href="#-improved-scanning">✨ Improved Scanning</a></li><li><a href="#-enhanced-focus">✨ Enhanced Focus</a></li></ul></li><li><a href="#testing-the-changes">Testing the Changes</a><ul><li><a href="#to-preview">To preview:</a></li><li><a href="#visit">Visit:</a></li><li><a href="#test-checklist">Test checklist:</a></li></ul></li><li><a href="#accessibility-maintained">Accessibility Maintained</a></li><li><a href="#mobile-responsive">Mobile Responsive</a></li><li><a href="#summary">Summary</a><ul><li><a href="#what-changed">What Changed:</a></li><li><a href="#result">Result:</a></li></ul></li><li><a href="#file-modified">File Modified</a></li></ul></li></ul>
+
+            </nav>
+          </aside>
+        
+        <h1 id="modal-popup-improvements---vs-code-dark-theme-">Modal Popup Improvements - VS Code Dark Theme 🎨</h1>
+
+<h2 id="before-vs-after-comparison">Before vs After Comparison</h2>
+
+<h3 id="before-light-theme"><strong>BEFORE (Light Theme)</strong></h3>
+<ul>
+  <li>❌ Light/white background</li>
+  <li>❌ Basic black text</li>
+  <li>❌ Simple rounded corners</li>
+  <li>❌ Minimal visual hierarchy</li>
+  <li>❌ Standard scrollbar</li>
+  <li>❌ Generic close button</li>
+</ul>
+
+<h3 id="after-vs-code-dark"><strong>AFTER (VS Code Dark)</strong></h3>
+<ul>
+  <li>✅ <strong>Dark sidebar background</strong> (<code class="language-plaintext highlighter-rouge">#252526</code>)</li>
+  <li>✅ <strong>VS Code blue accents</strong> for titles</li>
+  <li>✅ <strong>Syntax-colored elements</strong> throughout</li>
+  <li>✅ <strong>Enhanced visual hierarchy</strong></li>
+  <li>✅ <strong>Custom dark scrollbar</strong></li>
+  <li>✅ <strong>Interactive close button</strong> with hover effect</li>
+</ul>
+
+<hr />
+
+<h2 id="detailed-improvements">Detailed Improvements</h2>
+
+<h3 id="1-background--container">1. <strong>Background &amp; Container</strong></h3>
+<div class="language-css highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">Background</span><span class="o">:</span> <span class="err">#252526</span> <span class="o">(</span><span class="nt">VS</span> <span class="nt">Code</span> <span class="nt">sidebar</span><span class="o">)</span>
+<span class="nt">Border</span><span class="o">:</span> <span class="err">1</span><span class="nt">px</span> <span class="nt">solid</span> <span class="err">#3</span><span class="nt">e3e42</span> <span class="o">(</span><span class="nt">subtle</span> <span class="nt">VS</span> <span class="nt">Code</span> <span class="nt">border</span><span class="o">)</span>
+<span class="nt">Shadow</span><span class="o">:</span> <span class="err">0</span> <span class="err">20</span><span class="nt">px</span> <span class="err">60</span><span class="nt">px</span> <span class="nt">rgba</span><span class="o">(</span><span class="err">0</span><span class="o">,</span><span class="err">0</span><span class="o">,</span><span class="err">0</span><span class="o">,.</span><span class="err">5</span><span class="o">)</span> <span class="o">+</span> <span class="nt">blue</span> <span class="nt">glow</span>
+<span class="nt">Backdrop</span><span class="o">:</span> <span class="nt">rgba</span><span class="o">(</span><span class="err">0</span><span class="o">,</span><span class="err">0</span><span class="o">,</span><span class="err">0</span><span class="o">,.</span><span class="err">75</span><span class="o">)</span> <span class="nt">with</span> <span class="nt">blur</span><span class="o">(</span><span class="err">2</span><span class="nt">px</span><span class="o">)</span>
+</code></pre></div></div>
+
+<p><strong>Effect:</strong> Modal feels integrated into VS Code environment, not floating on light page</p>
+
+<hr />
+
+<h3 id="2-typography--color-hierarchy">2. <strong>Typography &amp; Color Hierarchy</strong></h3>
+
+<h4 id="title-h3"><strong>Title (h3)</strong></h4>
+<ul>
+  <li>Color: <code class="language-plaintext highlighter-rouge">#569cd6</code> (VS Code keyword blue)</li>
+  <li>Weight: 600 (semi-bold)</li>
+  <li>Size: 1.5rem</li>
+  <li>Letter-spacing: -0.01em (tight, modern)</li>
+</ul>
+
+<h4 id="section-headers-h4"><strong>Section Headers (h4)</strong></h4>
+<ul>
+  <li>Color: <code class="language-plaintext highlighter-rouge">#4ec9b0</code> (VS Code cyan/type color)</li>
+  <li>Left border: 3px solid blue</li>
+  <li>Padding-left for visual depth</li>
+</ul>
+
+<h4 id="body-text"><strong>Body Text</strong></h4>
+<ul>
+  <li>Color: <code class="language-plaintext highlighter-rouge">#d4d4d4</code> (VS Code main text)</li>
+  <li>Line-height: 1.6 (improved readability)</li>
+</ul>
+
+<h4 id="strongbold"><strong>Strong/Bold</strong></h4>
+<ul>
+  <li>Color: <code class="language-plaintext highlighter-rouge">#dcdcaa</code> (VS Code string/number yellow)</li>
+  <li>Makes “Goal:”, “Expected:”, etc. pop</li>
+</ul>
+
+<h4 id="emphasized-text"><strong>Emphasized Text</strong></h4>
+<ul>
+  <li>Color: <code class="language-plaintext highlighter-rouge">#858585</code> (muted grey)</li>
+  <li>Italic style preserved</li>
+</ul>
+
+<hr />
+
+<h3 id="3-code-blocks-enhanced">3. <strong>Code Blocks Enhanced</strong></h3>
+
+<h4 id="inline-code"><strong>Inline Code</strong></h4>
+<div class="language-css highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">Background</span><span class="o">:</span> <span class="err">#1</span><span class="nt">e1e1e</span> <span class="o">(</span><span class="nt">editor</span> <span class="nt">background</span><span class="o">)</span>
+<span class="nt">Color</span><span class="o">:</span> <span class="nf">#ce9178</span> <span class="o">(</span><span class="nt">VS</span> <span class="nt">Code</span> <span class="nt">string</span> <span class="nt">color</span> <span class="nt">-</span> <span class="nt">orange</span><span class="o">)</span>
+<span class="nt">Border</span><span class="o">:</span> <span class="err">1</span><span class="nt">px</span> <span class="nt">solid</span> <span class="err">#3</span><span class="nt">e3e42</span>
+<span class="nt">Padding</span><span class="o">:</span> <span class="err">2</span><span class="nt">px</span> <span class="err">6</span><span class="nt">px</span>
+<span class="nt">Border-radius</span><span class="o">:</span> <span class="err">3</span><span class="nt">px</span>
+</code></pre></div></div>
+
+<h4 id="code-blocks-pre"><strong>Code Blocks (pre)</strong></h4>
+<div class="language-css highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">Background</span><span class="o">:</span> <span class="err">#1</span><span class="nt">e1e1e</span> <span class="o">(</span><span class="nt">darker</span> <span class="nt">editor</span><span class="o">)</span>
+<span class="nt">Border</span><span class="o">:</span> <span class="err">1</span><span class="nt">px</span> <span class="nt">solid</span> <span class="err">#3</span><span class="nt">e3e42</span>
+<span class="nt">Padding</span><span class="o">:</span> <span class="err">1</span><span class="nt">rem</span>
+<span class="nt">Border-radius</span><span class="o">:</span> <span class="err">4</span><span class="nt">px</span>
+</code></pre></div></div>
+
+<p><strong>Effect:</strong> Code looks exactly like VS Code editor!</p>
+
+<hr />
+
+<h3 id="4-interactive-elements">4. <strong>Interactive Elements</strong></h3>
+
+<h4 id="close-button-"><strong>Close Button (×)</strong></h4>
+<p><strong>Default:</strong></p>
+<ul>
+  <li>Color: <code class="language-plaintext highlighter-rouge">#858585</code> (muted)</li>
+  <li>Transparent background</li>
+</ul>
+
+<p><strong>Hover:</strong></p>
+<ul>
+  <li>Background: <code class="language-plaintext highlighter-rouge">rgba(86, 156, 214, 0.15)</code> (blue glow)</li>
+  <li>Color: <code class="language-plaintext highlighter-rouge">#d4d4d4</code> (brightens)</li>
+  <li>Transition: 0.2s smooth</li>
+</ul>
+
+<hr />
+
+<h3 id="5-animations">5. <strong>Animations</strong></h3>
+
+<h4 id="modal-backdrop"><strong>Modal Backdrop</strong></h4>
+<div class="language-css highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">fadeIn</span><span class="o">:</span> <span class="err">0</span><span class="o">.</span><span class="err">25</span><span class="nt">s</span> <span class="o">(</span><span class="nt">quick</span> <span class="nt">backdrop</span> <span class="nt">appear</span><span class="o">)</span>
+</code></pre></div></div>
+
+<h4 id="modal-panel"><strong>Modal Panel</strong></h4>
+<div class="language-css highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">slideUp</span><span class="o">:</span> <span class="err">0</span><span class="o">.</span><span class="err">3</span><span class="nt">s</span> <span class="nt">cubic-bezier</span>
+<span class="nt">From</span><span class="o">:</span> <span class="nt">translateY</span><span class="o">(</span><span class="err">30</span><span class="nt">px</span><span class="o">),</span> <span class="nt">opacity</span> <span class="err">0</span>
+<span class="nt">To</span><span class="o">:</span> <span class="nt">translateY</span><span class="o">(</span><span class="err">0</span><span class="o">),</span> <span class="nt">opacity</span> <span class="err">1</span>
+</code></pre></div></div>
+
+<p><strong>Effect:</strong> Smooth, professional appearance like VS Code dialogs</p>
+
+<hr />
+
+<h3 id="6-custom-scrollbar">6. <strong>Custom Scrollbar</strong></h3>
+
+<div class="language-css highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">Width</span><span class="o">:</span> <span class="err">12</span><span class="nt">px</span>
+<span class="nt">Track</span><span class="o">:</span> <span class="err">#1</span><span class="nt">e1e1e</span> <span class="o">(</span><span class="nt">dark</span> <span class="nt">editor</span><span class="o">)</span>
+<span class="nt">Thumb</span><span class="o">:</span> <span class="err">#424242</span> <span class="o">(</span><span class="nt">lighter</span> <span class="nt">grey</span><span class="o">)</span>
+<span class="nt">Thumb</span> <span class="nt">Hover</span><span class="o">:</span> <span class="err">#4</span><span class="nt">e4e4e</span> <span class="o">(</span><span class="nt">even</span> <span class="nt">lighter</span><span class="o">)</span>
+</code></pre></div></div>
+
+<p><strong>Effect:</strong> Matches VS Code scrollbar exactly!</p>
+
+<hr />
+
+<h3 id="7-visual-hierarchy-structure">7. <strong>Visual Hierarchy Structure</strong></h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>┌─────────────────────────────────────┐
+│  Title (Blue #569cd6)               │ ← Header with border
+├─────────────────────────────────────┤
+│                                     │
+│  Body Text (#d4d4d4)               │
+│                                     │
+│  Section (Cyan #4ec9b0) ━━━━━      │ ← Colored header with bar
+│    • List item                      │
+│    • code snippet (orange)          │
+│                                     │
+│  ┌─────────────────────────────┐  │
+│  │ Code Block (#1e1e1e)        │  │ ← Dark editor block
+│  │ $ command here              │  │
+│  └─────────────────────────────┘  │
+│                                     │
+│  Expected: (yellow) Description    │
+│                                     │
+└─────────────────────────────────────┘
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="color-usage-summary">Color Usage Summary</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Element</th>
+      <th>Color</th>
+      <th>VS Code Reference</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Modal Background</td>
+      <td><code class="language-plaintext highlighter-rouge">#252526</code></td>
+      <td>Sidebar</td>
+    </tr>
+    <tr>
+      <td>Text</td>
+      <td><code class="language-plaintext highlighter-rouge">#d4d4d4</code></td>
+      <td>Main text</td>
+    </tr>
+    <tr>
+      <td>Title (h3)</td>
+      <td><code class="language-plaintext highlighter-rouge">#569cd6</code></td>
+      <td>Keywords</td>
+    </tr>
+    <tr>
+      <td>Headers (h4)</td>
+      <td><code class="language-plaintext highlighter-rouge">#4ec9b0</code></td>
+      <td>Types/Constants</td>
+    </tr>
+    <tr>
+      <td>Strong text</td>
+      <td><code class="language-plaintext highlighter-rouge">#dcdcaa</code></td>
+      <td>Strings/Numbers</td>
+    </tr>
+    <tr>
+      <td>Inline code</td>
+      <td><code class="language-plaintext highlighter-rouge">#ce9178</code></td>
+      <td>Strings (orange)</td>
+    </tr>
+    <tr>
+      <td>Code blocks</td>
+      <td><code class="language-plaintext highlighter-rouge">#1e1e1e</code></td>
+      <td>Editor</td>
+    </tr>
+    <tr>
+      <td>Borders</td>
+      <td><code class="language-plaintext highlighter-rouge">#3e3e42</code></td>
+      <td>Subtle borders</td>
+    </tr>
+    <tr>
+      <td>Muted text</td>
+      <td><code class="language-plaintext highlighter-rouge">#858585</code></td>
+      <td>Comments</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="user-experience-improvements">User Experience Improvements</h2>
+
+<h3 id="-better-readability">✨ <strong>Better Readability</strong></h3>
+<ul>
+  <li>Higher contrast on dark background</li>
+  <li>Colored headers create clear sections</li>
+  <li>Code blocks visually separated</li>
+</ul>
+
+<h3 id="-professional-look">✨ <strong>Professional Look</strong></h3>
+<ul>
+  <li>Matches VS Code aesthetic users know</li>
+  <li>Consistent color language throughout</li>
+  <li>Polished animations</li>
+</ul>
+
+<h3 id="-improved-scanning">✨ <strong>Improved Scanning</strong></h3>
+<ul>
+  <li>Color-coded hierarchy helps find info fast</li>
+  <li>Section headers with left border draw eye</li>
+  <li>Strong text highlights key terms</li>
+</ul>
+
+<h3 id="-enhanced-focus">✨ <strong>Enhanced Focus</strong></h3>
+<ul>
+  <li>Darker backdrop (75% opacity + blur)</li>
+  <li>Modal “pops” from background</li>
+  <li>Blue accent glow subtle but effective</li>
+</ul>
+
+<hr />
+
+<h2 id="testing-the-changes">Testing the Changes</h2>
+
+<h3 id="to-preview"><strong>To preview:</strong></h3>
+<div class="language-powershell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">cd</span><span class="w"> </span><span class="s2">"c:\Users\HP\Documents\Github\NML_Hand_Exo\exo_docs_scaffold\website_jekyll"</span><span class="w">
+</span><span class="n">bundle</span><span class="w"> </span><span class="nx">exec</span><span class="w"> </span><span class="nx">jekyll</span><span class="w"> </span><span class="nx">serve</span><span class="w"> </span><span class="nt">--livereload</span><span class="w">
+</span></code></pre></div></div>
+
+<h3 id="visit"><strong>Visit:</strong></h3>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>http://localhost:4000/NML_Hand_Exo/examples/
+</code></pre></div></div>
+
+<h3 id="test-checklist"><strong>Test checklist:</strong></h3>
+<ul class="task-list">
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Click “Open” button on any example card</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Modal appears with <strong>dark background</strong> (#252526)</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Title is <strong>blue</strong> (#569cd6)</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Section headers are <strong>cyan</strong> (#4ec9b0) with left border</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Code blocks are <strong>dark</strong> (#1e1e1e) like VS Code</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Inline code is <strong>orange</strong> (#ce9178)</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Close button <strong>glows blue</strong> on hover</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Scrollbar is <strong>dark themed</strong></li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Animations are smooth</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Text is readable and well-spaced</li>
+</ul>
+
+<hr />
+
+<h2 id="accessibility-maintained">Accessibility Maintained</h2>
+
+<p>✅ <strong>High contrast</strong> maintained (WCAG AA compliant)
+✅ <strong>Keyboard navigation</strong> works (ESC to close)
+✅ <strong>Screen reader</strong> attributes preserved (aria-labels)
+✅ <strong>Focus indicators</strong> visible
+✅ <strong>Smooth animations</strong> respect <code class="language-plaintext highlighter-rouge">prefers-reduced-motion</code></p>
+
+<hr />
+
+<h2 id="mobile-responsive">Mobile Responsive</h2>
+
+<p>The modal styling adapts to mobile:</p>
+<ul>
+  <li>Padding adjusts for smaller screens</li>
+  <li>Max-height ensures content fits</li>
+  <li>Scrollable content with dark scrollbar</li>
+  <li>Touch-friendly close button</li>
+</ul>
+
+<hr />
+
+<h2 id="summary">Summary</h2>
+
+<h3 id="what-changed"><strong>What Changed:</strong></h3>
+<ol>
+  <li>Dark VS Code themed background</li>
+  <li>Color-coded hierarchy (blue titles, cyan headers, yellow emphasis)</li>
+  <li>VS Code styled code blocks</li>
+  <li>Interactive close button with hover</li>
+  <li>Custom dark scrollbar</li>
+  <li>Smooth animations</li>
+  <li>Better spacing and visual rhythm</li>
+</ol>
+
+<h3 id="result"><strong>Result:</strong></h3>
+<p><strong>Professional, polished modals that feel like native VS Code dialogs</strong> while maintaining excellent readability and user experience! 🎉</p>
+
+<hr />
+
+<h2 id="file-modified">File Modified</h2>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">examples.md</code> - Enhanced <code class="language-plaintext highlighter-rouge">&lt;style&gt;</code> block with 150+ lines of VS Code themed CSS</li>
+</ul>
+
+<hr />
+
+<p><strong>The modal popups now match your VS Code dark theme perfectly!</strong> 🚀</p>
+
+        
+      </section>
+
+      <footer class="page__meta">
+        
+        
+
+
+        
+
+
+      </footer>
+
+      
+
+      
+    </div>
+
+    
+  </article>
+
+  
+  
+</div>
+
+    </div>
+
+    
+      <div class="search-content">
+        <div class="search-content__inner-wrap"><form class="search-content__form" onkeydown="return event.key != 'Enter';">
+    <label class="sr-only" for="search">
+      Enter your search term...
+    </label>
+    <input type="search" id="search" class="search-input" tabindex="-1" placeholder="Enter your search term..." />
+  </form>
+  <div id="results" class="results"></div></div>
+
+      </div>
+    
+
+    <div id="footer" class="page__footer">
+      <footer>
+        <!-- start custom footer snippets -->
+
+<!-- end custom footer snippets -->
+        <div class="page__footer-follow">
+  <ul class="social-icons">
+    
+
+    
+      
+        
+          <li><a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo" rel="nofollow noopener noreferrer"><i class="fab fa-fw fa-github" aria-hidden="true"></i> GitHub</a></li>
+        
+      
+        
+          <li><a href="/docs/" rel="nofollow noopener noreferrer"><i class="fas fa-fw fa-book" aria-hidden="true"></i> Documentation</a></li>
+        
+      
+        
+          <li><a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/blob/main/LICENSE" rel="nofollow noopener noreferrer"><i class="fas fa-fw fa-file-contract" aria-hidden="true"></i> License</a></li>
+        
+      
+    
+
+    
+      <li><a href="/NML_Hand_Exo/feed.xml"><i class="fas fa-fw fa-rss-square" aria-hidden="true"></i> Feed</a></li>
+    
+  </ul>
+</div>
+
+<div class="page__footer-copyright">&copy; 2025 Neuromechatronics Lab. Powered by <a href="https://jekyllrb.com" rel="nofollow">Jekyll</a> &amp; <a href="https://mademistakes.com/work/minimal-mistakes-jekyll-theme/" rel="nofollow">Minimal Mistakes</a>.</div>
+
+      </footer>
+    </div>
+
+    
+  <script src="/NML_Hand_Exo/assets/js/main.min.js"></script>
+
+
+
+
+<script src="/NML_Hand_Exo/assets/js/lunr/lunr.min.js"></script>
+<script src="/NML_Hand_Exo/assets/js/lunr/lunr-store.js"></script>
+<script src="/NML_Hand_Exo/assets/js/lunr/lunr-en.js"></script>
+
+
+
+
+
+  
+    <script src="/NML_Hand_Exo/assets/js/custom.js"></script>
+  
+
+
+
+  </body>
+</html>

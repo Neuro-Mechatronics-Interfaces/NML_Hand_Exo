@@ -1,0 +1,520 @@
+<!doctype html>
+<!--
+  Minimal Mistakes Jekyll Theme 4.24.0 by Michael Rose
+  Copyright 2013-2020 Michael Rose - mademistakes.com | @mmistakes
+  Free for personal and commercial use under the MIT license
+  https://github.com/mmistakes/minimal-mistakes/blob/master/LICENSE
+-->
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="utf-8">
+
+<!-- begin _includes/seo.html --><title>Quick Testing Guide | NML Hand Exoskeleton</title>
+<meta name="description" content="Open exoskeleton platform: software, hardware, and APIs for assistive robotics research">
+
+
+  <meta name="author" content="Neuromechatronics Lab">
+  
+
+
+<meta property="og:type" content="website">
+<meta property="og:locale" content="en_US">
+<meta property="og:site_name" content="NML Hand Exoskeleton">
+<meta property="og:title" content="Quick Testing Guide">
+<meta property="og:url" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/QUICK_TEST.html">
+
+
+  <meta property="og:description" content="Open exoskeleton platform: software, hardware, and APIs for assistive robotics research">
+
+
+
+  <meta property="og:image" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/assets/images/hand-exo.jpg">
+
+
+
+
+
+
+
+
+
+
+<link rel="canonical" href="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/QUICK_TEST.html">
+
+
+
+
+<script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    
+      "@type": "Organization",
+      "url": "https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/",
+      "logo": "https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/assets/images/hand-exo.jpg"
+    
+  }
+</script>
+
+
+
+
+
+
+
+<!-- end _includes/seo.html -->
+
+
+
+  <link href="/NML_Hand_Exo/feed.xml" type="application/atom+xml" rel="alternate" title="NML Hand Exoskeleton Feed">
+
+
+<!-- https://t.co/dKP3o1e -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script>
+  document.documentElement.className = document.documentElement.className.replace(/\bno-js\b/g, '') + ' js ';
+</script>
+
+<!-- For all browsers -->
+<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/main.css">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5/css/all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5/css/all.min.css"></noscript>
+
+
+  
+    <script src="/NML_Hand_Exo/assets/js/custom.js"></script>
+  
+
+
+    <!-- Favicon -->
+<link rel="icon" type="image/svg+xml" href="/NML_Hand_Exo/assets/images/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="32x32" href="/NML_Hand_Exo/assets/images/favicon-32x32.svg">
+<link rel="apple-touch-icon" href="/NML_Hand_Exo/assets/images/favicon.svg">
+
+<!-- load splash cursor assets -->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/fluid-cursor.css">-->
+<!--<script defer src="/NML_Hand_Exo/assets/js/fluid-cursor.js"></script>-->
+
+<!-- Effects CSS -->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/prism.css">-->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/glare.css">-->
+
+<!-- Effects JS -->
+<!--<script defer type="module" src="/NML_Hand_Exo/assets/js/prism-ogl.js"></script>-->
+<!--<script defer src="/NML_Hand_Exo/assets/js/glare.v2.js"></script>-->
+
+<!-- Hero Rotator -->
+<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/hero-rotator.css">
+<script defer src="/NML_Hand_Exo/assets/js/hero-rotator.js"></script>
+
+<!-- Custom Animations & Effects -->
+<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/custom.css">
+<script defer src="/NML_Hand_Exo/assets/js/custom.js"></script>
+
+<!-- Splash Screen -->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/splash_glitch.css">-->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/splash_pixel.css">-->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/splash_combo.css">-->
+<!--<script defer src="/NML_Hand_Exo/assets/js/splash_combo.js"></script>-->
+<!--<link rel="stylesheet" href="/NML_Hand_Exo/assets/css/splash_combo.css">-->
+
+
+
+
+  </head>
+
+  <body class="layout--single">
+    <nav class="skip-links">
+  <ul>
+    <li><a href="#site-nav" class="screen-reader-shortcut">Skip to primary navigation</a></li>
+    <li><a href="#main" class="screen-reader-shortcut">Skip to content</a></li>
+    <li><a href="#footer" class="screen-reader-shortcut">Skip to footer</a></li>
+  </ul>
+</nav>
+
+    <!--[if lt IE 9]>
+<div class="notice--danger align-center" style="margin: 0;">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience.</div>
+<![endif]-->
+
+    
+
+<div class="masthead">
+  <div class="masthead__inner-wrap">
+    <div class="masthead__menu">
+      <nav id="site-nav" class="greedy-nav">
+        
+          <a class="site-logo" href="/NML_Hand_Exo/"><img src="/NML_Hand_Exo/assets/images/logo.png" alt="NML Hand Exoskeleton"></a>
+        
+        <a class="site-title" href="/NML_Hand_Exo/">
+          NML Hand Exoskeleton
+          <span class="site-subtitle">Open-Source Research Platform</span>
+        </a>
+        <ul class="visible-links"><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/quickstart/">Quickstart</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/assembly/">Assembly</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/examples/">Examples</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/python-api/">Python API</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/cpp-api/">C++ API</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/papers/">Papers</a>
+            </li><li class="masthead__menu-item">
+              <a href="/NML_Hand_Exo/community/">Community</a>
+            </li><li class="masthead__menu-item">
+              <a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo">GitHub</a>
+            </li></ul>
+        
+        <button class="search__toggle" type="button">
+          <span class="visually-hidden">Toggle search</span>
+          <i class="fas fa-search"></i>
+        </button>
+        
+        <button class="greedy-nav__toggle hidden" type="button">
+          <span class="visually-hidden">Toggle menu</span>
+          <div class="navicon"></div>
+        </button>
+        <ul class="hidden-links hidden"></ul>
+      </nav>
+    </div>
+  </div>
+</div>
+
+
+    <div class="initial-content">
+      
+
+
+
+<div id="main" role="main">
+  
+
+
+  <article class="page" itemscope itemtype="https://schema.org/CreativeWork">
+    <meta itemprop="headline" content="Quick Testing Guide">
+    
+    
+    
+
+    <div class="page__inner-wrap">
+      
+        <header>
+          <h1 id="page-title" class="page__title" itemprop="headline">Quick Testing Guide
+</h1>
+          
+
+
+        </header>
+      
+
+      <section class="page__content" itemprop="text">
+        
+          <aside class="sidebar__right sticky">
+            <nav class="toc">
+              <header><h4 class="nav__title"><i class="fas fa-file-alt"></i> On this page</h4></header>
+              <ul class="toc__menu"><li><a href="#quick-testing-guide">Quick Testing Guide</a><ul><li><a href="#test-now-5-minutes">Test Now (5 minutes)</a><ul><li><a href="#1-build-check">1. Build Check</a></li><li><a href="#2-local-preview">2. Local Preview</a></li><li><a href="#3-visual-checks-open-in-browser">3. Visual Checks (Open in Browser)</a><ul><li><a href="#home-page">Home Page:</a></li><li><a href="#quickstart-page">Quickstart Page:</a></li><li><a href="#assembly-page">Assembly Page:</a></li><li><a href="#examples-page">Examples Page:</a></li><li><a href="#scroll-test">Scroll Test:</a></li><li><a href="#mobile-test-resize-browser">Mobile Test (Resize Browser):</a></li></ul></li></ul></li><li><a href="#what-to-look-for">What to Look For</a><ul><li><a href="#-good-signs">✅ Good Signs:</a></li><li><a href="#️-warning-signs">⚠️ Warning Signs:</a></li></ul></li><li><a href="#quick-fixes">Quick Fixes</a><ul><li><a href="#if-build-fails">If build fails:</a></li><li><a href="#if-custom-cssjs-not-loading">If custom CSS/JS not loading:</a></li><li><a href="#if-animations-dont-work">If animations don’t work:</a></li></ul></li><li><a href="#test-results-template">Test Results Template</a></li><li><a href="#next-steps-after-testing">Next Steps After Testing</a></li><li><a href="#contact">Contact</a></li></ul></li></ul>
+
+            </nav>
+          </aside>
+        
+        <h1 id="quick-testing-guide">Quick Testing Guide</h1>
+
+<h2 id="test-now-5-minutes">Test Now (5 minutes)</h2>
+
+<h3 id="1-build-check">1. Build Check</h3>
+<div class="language-powershell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">cd</span><span class="w"> </span><span class="s2">"c:\Users\HP\Documents\Github\NML_Hand_Exo\exo_docs_scaffold\website_jekyll"</span><span class="w">
+</span><span class="n">bundle</span><span class="w"> </span><span class="nx">exec</span><span class="w"> </span><span class="nx">jekyll</span><span class="w"> </span><span class="nx">build</span><span class="w">
+</span></code></pre></div></div>
+<p><strong>Expected:</strong> Build completes with no errors</p>
+
+<hr />
+
+<h3 id="2-local-preview">2. Local Preview</h3>
+<div class="language-powershell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">bundle</span><span class="w"> </span><span class="nx">exec</span><span class="w"> </span><span class="nx">jekyll</span><span class="w"> </span><span class="nx">serve</span><span class="w"> </span><span class="nt">--livereload</span><span class="w">
+</span></code></pre></div></div>
+<p><strong>Expected:</strong> Server starts at http://localhost:4000/NML_Hand_Exo/</p>
+
+<hr />
+
+<h3 id="3-visual-checks-open-in-browser">3. Visual Checks (Open in Browser)</h3>
+
+<p>Visit: <code class="language-plaintext highlighter-rouge">http://localhost:4000/NML_Hand_Exo/</code></p>
+
+<h4 id="home-page">Home Page:</h4>
+<ul class="task-list">
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Hero images rotating every 4.5 seconds?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Text fades in smoothly?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Feature tiles lift on hover?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Navigation has blue underline on hover?</li>
+</ul>
+
+<h4 id="quickstart-page">Quickstart Page:</h4>
+<ul class="task-list">
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Code blocks have copy button on hover?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Copy button changes to “Copied!” with checkmark?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Table of contents sticky on right side?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Smooth scroll when clicking TOC links?</li>
+</ul>
+
+<h4 id="assembly-page">Assembly Page:</h4>
+<ul class="task-list">
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Images load correctly?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Tables display properly?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Notice boxes (warnings) styled correctly?</li>
+</ul>
+
+<h4 id="examples-page">Examples Page:</h4>
+<ul class="task-list">
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Feature rows display?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Cards have hover effects?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Modals work (if present)?</li>
+</ul>
+
+<h4 id="scroll-test">Scroll Test:</h4>
+<ul class="task-list">
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Back-to-top button appears after scrolling 300px?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Clicking back-to-top smoothly scrolls to top?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Content fades in as you scroll? (if wrapped in .fade-in-section)</li>
+</ul>
+
+<h4 id="mobile-test-resize-browser">Mobile Test (Resize Browser):</h4>
+<ul class="task-list">
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Navigation collapses to hamburger menu?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Cards stack vertically?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />Tables scroll horizontally if needed?</li>
+  <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />All content readable on 375px width?</li>
+</ul>
+
+<hr />
+
+<h2 id="what-to-look-for">What to Look For</h2>
+
+<h3 id="-good-signs">✅ <strong>Good Signs:</strong></h3>
+<ul>
+  <li>Build completes without errors</li>
+  <li>Server starts without warnings</li>
+  <li>All pages load quickly</li>
+  <li>Animations are smooth (60fps)</li>
+  <li>No console errors (F12 → Console)</li>
+  <li>Copy buttons work on code blocks</li>
+  <li>Navigation feels responsive</li>
+  <li>Site looks professional</li>
+</ul>
+
+<h3 id="️-warning-signs">⚠️ <strong>Warning Signs:</strong></h3>
+<ul>
+  <li>Build errors or warnings</li>
+  <li>404 errors in console</li>
+  <li>Missing images</li>
+  <li>Broken links</li>
+  <li>Animations are janky</li>
+  <li>Copy buttons don’t appear</li>
+  <li>Layout breaks on mobile</li>
+</ul>
+
+<hr />
+
+<h2 id="quick-fixes">Quick Fixes</h2>
+
+<h3 id="if-build-fails">If build fails:</h3>
+<div class="language-powershell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">bundle</span><span class="w"> </span><span class="nx">install</span><span class="w">
+</span><span class="n">bundle</span><span class="w"> </span><span class="nx">exec</span><span class="w"> </span><span class="nx">jekyll</span><span class="w"> </span><span class="nx">clean</span><span class="w">
+</span><span class="n">bundle</span><span class="w"> </span><span class="nx">exec</span><span class="w"> </span><span class="nx">jekyll</span><span class="w"> </span><span class="nx">build</span><span class="w">
+</span></code></pre></div></div>
+
+<h3 id="if-custom-cssjs-not-loading">If custom CSS/JS not loading:</h3>
+<p>Check browser console (F12) → Network tab</p>
+<ul>
+  <li>custom.css should show 200 status</li>
+  <li>custom.js should show 200 status</li>
+</ul>
+
+<h3 id="if-animations-dont-work">If animations don’t work:</h3>
+<p>Open console (F12) → Look for JavaScript errors
+Should see: “NML Hand Exo site initialized ✓”</p>
+
+<hr />
+
+<h2 id="test-results-template">Test Results Template</h2>
+
+<p>Copy and fill this out:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>## Test Results - [DATE]
+
+### Build Test:
+- Build status: [ ] Pass / [ ] Fail
+- Errors: [list any]
+
+### Visual Test:
+- Hero rotation: [ ] Working / [ ] Not working
+- Hover effects: [ ] Working / [ ] Not working
+- Copy buttons: [ ] Working / [ ] Not working
+- Back-to-top: [ ] Working / [ ] Not working
+- Navigation: [ ] Working / [ ] Not working
+
+### Mobile Test:
+- 375px width: [ ] Good / [ ] Issues
+- 768px width: [ ] Good / [ ] Issues
+- Navigation: [ ] Good / [ ] Issues
+
+### Performance:
+- Page load: [ ] Fast / [ ] Slow
+- Animations: [ ] Smooth / [ ] Janky
+- Console errors: [ ] None / [ ] [list]
+
+### Overall:
+- Ready for deployment: [ ] Yes / [ ] No / [ ] Almost
+- Issues to fix: [list]
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="next-steps-after-testing">Next Steps After Testing</h2>
+
+<ol>
+  <li><strong>If everything works:</strong>
+    <ul>
+      <li>Read JEKYLL_REVIEW.md for polish recommendations</li>
+      <li>Start content review and updates</li>
+      <li>Optimize images</li>
+      <li>Prepare for GitHub Pages deployment</li>
+    </ul>
+  </li>
+  <li><strong>If issues found:</strong>
+    <ul>
+      <li>Note specific problems</li>
+      <li>Check browser console for errors</li>
+      <li>Review file paths and links</li>
+      <li>Verify all files were created/modified correctly</li>
+    </ul>
+  </li>
+  <li><strong>When ready to deploy:</strong>
+    <div class="language-powershell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">git</span><span class="w"> </span><span class="nx">add</span><span class="w"> </span><span class="o">.</span><span class="w">
+</span><span class="n">git</span><span class="w"> </span><span class="nx">commit</span><span class="w"> </span><span class="nt">-m</span><span class="w"> </span><span class="s2">"Production-ready Jekyll site"</span><span class="w">
+</span><span class="n">git</span><span class="w"> </span><span class="nx">push</span><span class="w"> </span><span class="nx">origin</span><span class="w"> </span><span class="nx">main</span><span class="w">
+</span></code></pre></div>    </div>
+    <p>Then configure GitHub Pages in repo settings.</p>
+  </li>
+</ol>
+
+<hr />
+
+<h2 id="contact">Contact</h2>
+
+<p>If you encounter issues not covered here:</p>
+<ul>
+  <li>Check JEKYLL_REVIEW.md (comprehensive troubleshooting)</li>
+  <li>Check IMPLEMENTATION_SUMMARY.md (detailed changes)</li>
+  <li>Review Jekyll documentation</li>
+  <li>Check browser console for specific errors</li>
+</ul>
+
+<hr />
+
+<p><strong>Ready?</strong> Open PowerShell and run:</p>
+<div class="language-powershell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">cd</span><span class="w"> </span><span class="s2">"c:\Users\HP\Documents\Github\NML_Hand_Exo\exo_docs_scaffold\website_jekyll"</span><span class="w">
+</span><span class="n">bundle</span><span class="w"> </span><span class="nx">exec</span><span class="w"> </span><span class="nx">jekyll</span><span class="w"> </span><span class="nx">serve</span><span class="w"> </span><span class="nt">--livereload</span><span class="w">
+</span></code></pre></div></div>
+
+<p>Then open: http://localhost:4000/NML_Hand_Exo/</p>
+
+        
+      </section>
+
+      <footer class="page__meta">
+        
+        
+
+
+        
+
+
+      </footer>
+
+      
+
+      
+    </div>
+
+    
+  </article>
+
+  
+  
+</div>
+
+    </div>
+
+    
+      <div class="search-content">
+        <div class="search-content__inner-wrap"><form class="search-content__form" onkeydown="return event.key != 'Enter';">
+    <label class="sr-only" for="search">
+      Enter your search term...
+    </label>
+    <input type="search" id="search" class="search-input" tabindex="-1" placeholder="Enter your search term..." />
+  </form>
+  <div id="results" class="results"></div></div>
+
+      </div>
+    
+
+    <div id="footer" class="page__footer">
+      <footer>
+        <!-- start custom footer snippets -->
+
+<!-- end custom footer snippets -->
+        <div class="page__footer-follow">
+  <ul class="social-icons">
+    
+
+    
+      
+        
+          <li><a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo" rel="nofollow noopener noreferrer"><i class="fab fa-fw fa-github" aria-hidden="true"></i> GitHub</a></li>
+        
+      
+        
+          <li><a href="/docs/" rel="nofollow noopener noreferrer"><i class="fas fa-fw fa-book" aria-hidden="true"></i> Documentation</a></li>
+        
+      
+        
+          <li><a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/blob/main/LICENSE" rel="nofollow noopener noreferrer"><i class="fas fa-fw fa-file-contract" aria-hidden="true"></i> License</a></li>
+        
+      
+    
+
+    
+      <li><a href="/NML_Hand_Exo/feed.xml"><i class="fas fa-fw fa-rss-square" aria-hidden="true"></i> Feed</a></li>
+    
+  </ul>
+</div>
+
+<div class="page__footer-copyright">&copy; 2025 Neuromechatronics Lab. Powered by <a href="https://jekyllrb.com" rel="nofollow">Jekyll</a> &amp; <a href="https://mademistakes.com/work/minimal-mistakes-jekyll-theme/" rel="nofollow">Minimal Mistakes</a>.</div>
+
+      </footer>
+    </div>
+
+    
+  <script src="/NML_Hand_Exo/assets/js/main.min.js"></script>
+
+
+
+
+<script src="/NML_Hand_Exo/assets/js/lunr/lunr.min.js"></script>
+<script src="/NML_Hand_Exo/assets/js/lunr/lunr-store.js"></script>
+<script src="/NML_Hand_Exo/assets/js/lunr/lunr-en.js"></script>
+
+
+
+
+
+  
+    <script src="/NML_Hand_Exo/assets/js/custom.js"></script>
+  
+
+
+
+  </body>
+</html>

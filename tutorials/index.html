@@ -9,8 +9,8 @@
   <head>
     <meta charset="utf-8">
 
-<!-- begin _includes/seo.html --><title>Robotic Hand-Wrist Orthosis | NML Hand Exoskeleton</title>
-<meta name="description" content="An open-source platform that brings software, hardware, and 3D printing from benchtop to research-grade experiments quickly.">
+<!-- begin _includes/seo.html --><title>Tutorials | NML Hand Exoskeleton</title>
+<meta name="description" content="Open exoskeleton platform: software, hardware, and APIs for assistive robotics research">
 
 
   <meta name="author" content="Neuromechatronics Lab">
@@ -20,18 +20,15 @@
 <meta property="og:type" content="website">
 <meta property="og:locale" content="en_US">
 <meta property="og:site_name" content="NML Hand Exoskeleton">
-<meta property="og:title" content="Robotic Hand-Wrist Orthosis">
-<meta property="og:url" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/">
+<meta property="og:title" content="Tutorials">
+<meta property="og:url" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/tutorials/">
 
 
-  <meta property="og:description" content="An open-source platform that brings software, hardware, and 3D printing from benchtop to research-grade experiments quickly.">
-
-
-
-  <meta property="og:image" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/assets/images/hero/hand1.jpg">
+  <meta property="og:description" content="Open exoskeleton platform: software, hardware, and APIs for assistive robotics research">
 
 
 
+  <meta property="og:image" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/assets/images/hand-exo.jpg">
 
 
 
@@ -39,7 +36,10 @@
 
 
 
-<link rel="canonical" href="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/">
+
+
+
+<link rel="canonical" href="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/tutorials/">
 
 
 
@@ -123,7 +123,7 @@
 
   </head>
 
-  <body class="layout--splash">
+  <body class="layout--single">
     <nav class="skip-links">
   <ul>
     <li><a href="#site-nav" class="screen-reader-shortcut">Skip to primary navigation</a></li>
@@ -185,156 +185,88 @@
 
     <div class="initial-content">
       
-  
-
-
-
-
-
-
-
-<div class="page__hero--overlay"
-  style=" background-image: linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.35)), url('/NML_Hand_Exo/assets/images/hero/hand1.jpg');"
->
-  
-    <div class="wrapper">
-      <h1 id="page-title" class="page__title" itemprop="headline">
-        
-          Robotic Hand-Wrist Orthosis
-
-        
-      </h1>
-      
-        <p class="page__lead">An open-source platform that brings <strong>software, hardware, and 3D printing</strong> from benchtop to research-grade experiments quickly.
-</p>
-      
-      
-
-
-      
-      
-        <p>
-        
-          <a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/releases/latest" class="btn btn--light-outline btn--large">Install now</a>
-        
-      
-    </div>
-  
-  
-</div>
 
 
 
 <div id="main" role="main">
-  <article class="splash" itemscope itemtype="https://schema.org/CreativeWork">
-    <meta itemprop="headline" content="Robotic Hand-Wrist Orthosis">
-    <meta itemprop="description" content="An open-source platform that brings software, hardware, and 3D printing from benchtop to research-grade experiments quickly.">
+  
+
+
+  <article class="page" itemscope itemtype="https://schema.org/CreativeWork">
+    <meta itemprop="headline" content="Tutorials">
     
     
+    
 
-    <section class="page__content" itemprop="text">
-      <!-- Hero slideshow config (valid JSON; each string uses relative_url) -->
-<div class="hero-rotator" data-images="[
-    &quot;/NML_Hand_Exo/assets/images/hero/hand1.jpg&quot;,
-    &quot;/NML_Hand_Exo/assets/images/hero/hand2.jpg&quot;,
-    &quot;/NML_Hand_Exo/assets/images/hero/hand3.jpg&quot;,
-    &quot;/NML_Hand_Exo/assets/images/hero/exo_hand_wrist2.png&quot;
-  ]" data-interval="4500" data-fade="900">
-</div>
+    <div class="page__inner-wrap">
+      
+        <header>
+          <h1 id="page-title" class="page__title" itemprop="headline">Tutorials
+</h1>
+          
 
-<div class="feature__wrapper">
 
-  
-    <div class="feature__item">
-      <div class="archive__item">
+        </header>
+      
+
+      <section class="page__content" itemprop="text">
         
-          <div class="archive__item-teaser">
-            <img src="/NML_Hand_Exo/assets/images/tiles/assemble.png" alt="Assemble your own" />
-            
-          </div>
+        <p>Follow these focused walkthroughs to go from <strong>flash → motion → control</strong>.
+For a card-style gallery, you can also create <code class="language-plaintext highlighter-rouge">tutorials/index.md</code> using the splash layout.</p>
+
+<h3 id="available-tutorials">Available Tutorials</h3>
+
+<h4 id="1-first-motion">1) First Motion</h4>
+<p>Flash firmware, home axes, and execute your first gesture.<br />
+<strong>Start:</strong> <a href="/tutorials/first-motion/">/tutorials/first-motion/</a></p>
+
+<h4 id="2-live-emg-classification">2) Live EMG Classification</h4>
+<p>Stream 250 ms EMG windows and classify in real time (Intan/Open Ephys).<br />
+<strong>Start:</strong> <a href="/tutorials/live-emg/">/tutorials/live-emg/</a></p>
+
+<h4 id="3-ros2-teleop-coming-soon">3) ROS2 Teleop <em>(coming soon)</em></h4>
+<p>Joystick control with collision checks using MoveIt.<br />
+<strong>Planned path:</strong> <code class="language-plaintext highlighter-rouge">/tutorials/ros2-teleop/</code></p>
+
+<h4 id="4-force-plate-calibration-coming-soon">4) Force Plate Calibration <em>(coming soon)</em></h4>
+<p>Zero, span, and verify using reference weights.<br />
+<strong>Planned path:</strong> <code class="language-plaintext highlighter-rouge">/tutorials/force-plate/</code></p>
+
+<hr />
+
+<h3 id="tips">Tips</h3>
+
+<ul>
+  <li>Put screenshots under <code class="language-plaintext highlighter-rouge">assets/images/tutorials/</code> and embed with:
+    <div class="language-md highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">![</span><span class="nv">First Motion</span><span class="p">](</span><span class="sx">/assets/images/tutorials/first-motion.png</span><span class="p">)</span>
+</code></pre></div>    </div>
+  </li>
+  <li>Keep commands copy-pasteable; add expected outputs and failure modes.</li>
+</ul>
+
+        
+      </section>
+
+      <footer class="page__meta">
+        
         
 
-        <div class="archive__item-body">
-          
-            <h2 class="archive__item-title">Assemble Your Own</h2>
-          
 
-          
-            <div class="archive__item-excerpt">
-              <p>Full BOM, prints, torque specs, wiring, safety &amp; QA.</p>
+        
 
-            </div>
-          
 
-          
-            <p><a href="/NML_Hand_Exo/assembly/" class="btn btn--info">Open guide</a></p>
-          
-        </div>
-      </div>
+      </footer>
+
+      
+
+      
     </div>
-  
-    <div class="feature__item">
-      <div class="archive__item">
-        
-          <div class="archive__item-teaser">
-            <img src="/NML_Hand_Exo/assets/images/tiles/examples.png" alt="Examples" />
-            
-          </div>
-        
 
-        <div class="archive__item-body">
-          
-            <h2 class="archive__item-title">Examples</h2>
-          
-
-          
-            <div class="archive__item-excerpt">
-              <p>From gesture control to ROS2 teleop and EMG pipelines.</p>
-
-            </div>
-          
-
-          
-            <p><a href="/NML_Hand_Exo/examples/" class="btn btn--info">Browse examples</a></p>
-          
-        </div>
-      </div>
-    </div>
-  
-    <div class="feature__item">
-      <div class="archive__item">
-        
-          <div class="archive__item-teaser">
-            <img src="/NML_Hand_Exo/assets/images/tiles/sdk.png" alt="API &amp; SDK" />
-            
-          </div>
-        
-
-        <div class="archive__item-body">
-          
-            <h2 class="archive__item-title">API &amp; SDK</h2>
-          
-
-          
-            <div class="archive__item-excerpt">
-              <p>Doxygen reference + Python utilities for real-time control.</p>
-
-            </div>
-          
-
-          
-            <p><a href="/NML_Hand_Exo/python-api/" class="btn btn--info">Open API</a></p>
-          
-        </div>
-      </div>
-    </div>
-  
-
-</div>
-
-
-    </section>
+    
   </article>
+
+  
+  
 </div>
 
     </div>

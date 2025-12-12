@@ -9,8 +9,8 @@
   <head>
     <meta charset="utf-8">
 
-<!-- begin _includes/seo.html --><title>Robotic Hand-Wrist Orthosis | NML Hand Exoskeleton</title>
-<meta name="description" content="An open-source platform that brings software, hardware, and 3D printing from benchtop to research-grade experiments quickly.">
+<!-- begin _includes/seo.html --><title>Documentation | NML Hand Exoskeleton</title>
+<meta name="description" content="Open exoskeleton platform: software, hardware, and APIs for assistive robotics research">
 
 
   <meta name="author" content="Neuromechatronics Lab">
@@ -20,18 +20,15 @@
 <meta property="og:type" content="website">
 <meta property="og:locale" content="en_US">
 <meta property="og:site_name" content="NML Hand Exoskeleton">
-<meta property="og:title" content="Robotic Hand-Wrist Orthosis">
-<meta property="og:url" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/">
+<meta property="og:title" content="Documentation">
+<meta property="og:url" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/docs/">
 
 
-  <meta property="og:description" content="An open-source platform that brings software, hardware, and 3D printing from benchtop to research-grade experiments quickly.">
-
-
-
-  <meta property="og:image" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/assets/images/hero/hand1.jpg">
+  <meta property="og:description" content="Open exoskeleton platform: software, hardware, and APIs for assistive robotics research">
 
 
 
+  <meta property="og:image" content="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/assets/images/hand-exo.jpg">
 
 
 
@@ -39,7 +36,10 @@
 
 
 
-<link rel="canonical" href="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/">
+
+
+
+<link rel="canonical" href="https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/docs/">
 
 
 
@@ -123,7 +123,7 @@
 
   </head>
 
-  <body class="layout--splash">
+  <body class="layout--single wide">
     <nav class="skip-links">
   <ul>
     <li><a href="#site-nav" class="screen-reader-shortcut">Skip to primary navigation</a></li>
@@ -185,156 +185,217 @@
 
     <div class="initial-content">
       
-  
-
-
-
-
-
-
-
-<div class="page__hero--overlay"
-  style=" background-image: linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.35)), url('/NML_Hand_Exo/assets/images/hero/hand1.jpg');"
->
-  
-    <div class="wrapper">
-      <h1 id="page-title" class="page__title" itemprop="headline">
-        
-          Robotic Hand-Wrist Orthosis
-
-        
-      </h1>
-      
-        <p class="page__lead">An open-source platform that brings <strong>software, hardware, and 3D printing</strong> from benchtop to research-grade experiments quickly.
-</p>
-      
-      
-
-
-      
-      
-        <p>
-        
-          <a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/releases/latest" class="btn btn--light-outline btn--large">Install now</a>
-        
-      
-    </div>
-  
-  
-</div>
 
 
 
 <div id="main" role="main">
-  <article class="splash" itemscope itemtype="https://schema.org/CreativeWork">
-    <meta itemprop="headline" content="Robotic Hand-Wrist Orthosis">
-    <meta itemprop="description" content="An open-source platform that brings software, hardware, and 3D printing from benchtop to research-grade experiments quickly.">
+  
+
+
+  <article class="page" itemscope itemtype="https://schema.org/CreativeWork">
+    <meta itemprop="headline" content="Documentation">
     
     
+    
 
-    <section class="page__content" itemprop="text">
-      <!-- Hero slideshow config (valid JSON; each string uses relative_url) -->
-<div class="hero-rotator" data-images="[
-    &quot;/NML_Hand_Exo/assets/images/hero/hand1.jpg&quot;,
-    &quot;/NML_Hand_Exo/assets/images/hero/hand2.jpg&quot;,
-    &quot;/NML_Hand_Exo/assets/images/hero/hand3.jpg&quot;,
-    &quot;/NML_Hand_Exo/assets/images/hero/exo_hand_wrist2.png&quot;
-  ]" data-interval="4500" data-fade="900">
+    <div class="page__inner-wrap">
+      
+        <header>
+          <h1 id="page-title" class="page__title" itemprop="headline">Documentation
+</h1>
+          
+
+
+        </header>
+      
+
+      <section class="page__content" itemprop="text">
+        
+        <style>
+
+/\* Big banner-like tiles \*/
+
+.doc-grid {
+
+&nbsp; display: grid;
+
+&nbsp; gap: 1rem;
+
+}
+
+@media (min-width: 740px) {
+
+&nbsp; .doc-grid { gap: 1.25rem; }
+
+}
+
+.doc-tile {
+
+&nbsp; position: relative;
+
+&nbsp; display: block;
+
+&nbsp; height: 120px;
+
+&nbsp; border-radius: 14px;
+
+&nbsp; overflow: hidden;
+
+&nbsp; text-decoration: none;
+
+&nbsp; color: #fff;
+
+&nbsp; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+
+&nbsp; transform: translateZ(0);
+
+}
+
+.doc-tile .bg {
+
+&nbsp; position: absolute; inset: 0;
+
+&nbsp; background-size: cover; background-position: center;
+
+&nbsp; filter: saturate(0.9) contrast(0.95) brightness(0.9);
+
+&nbsp; transition: transform .6s cubic-bezier(.2,.6,.2,1), filter .3s ease;
+
+}
+
+.doc-tile::after{
+
+&nbsp; content:""; position:absolute; inset:0;
+
+&nbsp; background: linear-gradient(180deg, rgba(0,0,0,.40), rgba(0,0,0,.55));
+
+}
+
+.doc-tile h3{
+
+&nbsp; position: absolute; right: 1.25rem; bottom: 1rem; margin: 0;
+
+&nbsp; font-weight: 800; font-size: clamp(1.15rem, 2.5vw, 1.6rem);
+
+&nbsp; letter-spacing: .2px; text-shadow: 0 2px 10px rgba(0,0,0,.35);
+
+}
+
+.doc-tile:hover .bg { transform: scale(1.05); filter: saturate(1.1) contrast(1.05) brightness(1.0); }
+
+
+
+/\* Gentle color wash if an image is missing \*/
+
+.doc-tile\[data-fallback] .bg {
+
+&nbsp; background-image: radial-gradient(1200px 500px at 20% 0%,
+
+&nbsp;   #c9d7e8 0%, #8fb0d6 30%, #5e86b6 60%, #2c3e50 100%);
+
+}
+
+</style>
+
+<div class="doc-grid">
+
+
+&nbsp; <a class="doc-tile" href="/NML_Hand_Exo/quickstart/">
+
+&nbsp;   <div class="bg" style="background-image:url('/NML_Hand_Exo/assets/images/docs/tiles/get-started.jpg');"></div>
+
+&nbsp;   <h3>Get Started</h3>
+
+&nbsp; </a>
+
+
+
+&nbsp; <a class="doc-tile" href="/NML_Hand_Exo/assets/bom/nml%5C_hand%5C_exo%5C_bom.xlsx">
+
+&nbsp;   <div class="bg" style="background-image:url('/NML_Hand_Exo/assets/images/docs/tiles/bom.jpg');"></div>
+
+&nbsp;   <h3>BOM</h3>
+
+&nbsp; </a>
+
+
+
+&nbsp; <a class="doc-tile" href="/NML_Hand_Exo/print/">
+
+&nbsp;   <div class="bg" style="background-image:url('/NML_Hand_Exo/assets/images/docs/tiles/3d-print.jpg');"></div>
+
+&nbsp;   <h3>3D Print</h3>
+
+&nbsp; </a>
+
+
+
+&nbsp; <a class="doc-tile" href="/NML_Hand_Exo/assembly/">
+
+&nbsp;   <div class="bg" style="background-image:url('/NML_Hand_Exo/assets/images/docs/tiles/assembly.jpg');"></div>
+
+&nbsp;   <h3>Assembly</h3>
+
+&nbsp; </a>
+
+
+
+&nbsp; <a class="doc-tile" href="/NML_Hand_Exo/electronics/">
+
+&nbsp;   <div class="bg" style="background-image:url('/NML_Hand_Exo/assets/images/docs/tiles/electronics.jpg');"></div>
+
+&nbsp;   <h3>Electronics</h3>
+
+&nbsp; </a>
+
+
+
+&nbsp; <a class="doc-tile" href="/NML_Hand_Exo/firmware/">
+
+&nbsp;   <div class="bg" style="background-image:url('/NML_Hand_Exo/assets/images/docs/tiles/firmware.jpg');"></div>
+
+&nbsp;   <h3>Firmware</h3>
+
+&nbsp; </a>
+
+
+
+&nbsp; <a class="doc-tile" href="/NML_Hand_Exo/examples/">
+
+&nbsp;   <div class="bg" style="background-image:url('/NML_Hand_Exo/assets/images/docs/tiles/control.jpg');"></div>
+
+&nbsp;   <h3>Control Software</h3>
+
+&nbsp; </a>
+
+
+
 </div>
 
-<div class="feature__wrapper">
 
-  
-    <div class="feature__item">
-      <div class="archive__item">
         
-          <div class="archive__item-teaser">
-            <img src="/NML_Hand_Exo/assets/images/tiles/assemble.png" alt="Assemble your own" />
-            
-          </div>
+      </section>
+
+      <footer class="page__meta">
+        
         
 
-        <div class="archive__item-body">
-          
-            <h2 class="archive__item-title">Assemble Your Own</h2>
-          
 
-          
-            <div class="archive__item-excerpt">
-              <p>Full BOM, prints, torque specs, wiring, safety &amp; QA.</p>
+        
 
-            </div>
-          
 
-          
-            <p><a href="/NML_Hand_Exo/assembly/" class="btn btn--info">Open guide</a></p>
-          
-        </div>
-      </div>
+      </footer>
+
+      
+
+      
     </div>
-  
-    <div class="feature__item">
-      <div class="archive__item">
-        
-          <div class="archive__item-teaser">
-            <img src="/NML_Hand_Exo/assets/images/tiles/examples.png" alt="Examples" />
-            
-          </div>
-        
 
-        <div class="archive__item-body">
-          
-            <h2 class="archive__item-title">Examples</h2>
-          
-
-          
-            <div class="archive__item-excerpt">
-              <p>From gesture control to ROS2 teleop and EMG pipelines.</p>
-
-            </div>
-          
-
-          
-            <p><a href="/NML_Hand_Exo/examples/" class="btn btn--info">Browse examples</a></p>
-          
-        </div>
-      </div>
-    </div>
-  
-    <div class="feature__item">
-      <div class="archive__item">
-        
-          <div class="archive__item-teaser">
-            <img src="/NML_Hand_Exo/assets/images/tiles/sdk.png" alt="API &amp; SDK" />
-            
-          </div>
-        
-
-        <div class="archive__item-body">
-          
-            <h2 class="archive__item-title">API &amp; SDK</h2>
-          
-
-          
-            <div class="archive__item-excerpt">
-              <p>Doxygen reference + Python utilities for real-time control.</p>
-
-            </div>
-          
-
-          
-            <p><a href="/NML_Hand_Exo/python-api/" class="btn btn--info">Open API</a></p>
-          
-        </div>
-      </div>
-    </div>
-  
-
-</div>
-
-
-    </section>
+    
   </article>
+
+  
+  
 </div>
 
     </div>
