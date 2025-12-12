@@ -21,9 +21,10 @@ __pycache__/
 *.csv
 *.txt
 
-# Images
+# Images (exclude from data folders, but allow docs)
 gesture_classifier/*.png
 *.png
+!docs/website_jekyll/assets/images/**
 
 # PyTorch models
 gesture_classifier/*.pth
