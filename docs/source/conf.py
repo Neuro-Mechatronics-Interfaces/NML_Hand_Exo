@@ -48,6 +48,30 @@ html_theme = "sphinx_rtd_theme"
 html_static_path = ['_static']
 html_logo = "_static/LabLogoRedSquare.png"
 
+# Theme options for Read the Docs (dark mode and customization)
+html_theme_options = {
+    'style_nav_header_background': '#252526',  # VS Code sidebar color
+    'navigation_depth': 4,
+    'collapse_navigation': False,
+    'sticky_navigation': True,
+    'includehidden': True,
+    'titles_only': False,
+}
+
+# Custom CSS for VS Code dark theme styling
+html_css_files = [
+    'custom.css',
+]
+
+# Additional context for templates
+html_context = {
+    'display_github': True,
+    'github_user': 'Neuro-Mechatronics-Interfaces',
+    'github_repo': 'NML_Hand_Exo',
+    'github_version': 'main',
+    'conf_py_path': '/docs/source/',
+}
+
 # Breathe configuration
 breathe_projects = {
     "NMLHandExo": "../build/doxygen/xml"

@@ -87,6 +87,11 @@ docs/build/
 docs/build/doxygen/
 docs/build/doxygen/xml/
 
+# Jekyll docs
+docs/website_jekyll/_site/
+docs/website_jekyll/.jekyll-cache/
+docs/website_jekyll/cpp_api_doxygen/
+
 # PyInstaller
 *.manifest
 *.spec

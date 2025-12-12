@@ -32,8 +32,7 @@ SOFTWARE.
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BNO055.h>
 
-// Create IMU device (The "ISM330DLC" library can be downloaded from Arduino's Library Manager)
-//Adafruit_ISM330DHCX ism330dhcx; //deprecated
+// Create IMU device (The Adafruit_BNO055 library can be downloaded from Arduino's Library Manager)
 Adafruit_BNO055 bno055;  //= Adafruit_BNO055(55, 0x28)
 
 // TO-DO: Move these to config.h or nml_hand_exo.h

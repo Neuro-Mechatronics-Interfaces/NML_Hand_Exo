@@ -10,16 +10,25 @@ __license__ = "MIT"
 __url__ = "https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo"
 __description__ = "Python package for controlling the NML HandExo device."
 
+# Convenience imports for backwards compatibility
+# Users should prefer: from nml_hand_exo.interface import HandExo, SerialComm
+from .interface import HandExo, SerialComm, TCPComm, FakeHandExo
+
 submodules = [
     'applications',
     'interface',
     'processing',
     'plotting',
-
+    'control',
+    'ml',
 ]
 
 __all__ = submodules + [
     '__version__',
+    'HandExo',
+    'SerialComm',
+    'TCPComm',
+    'FakeHandExo',
 ]
 
 def __dir__():

@@ -103,16 +103,16 @@ constexpr const char* DEFAULT_EXO_MODE = "gesture_fixed"; // Available modes are
 constexpr bool DEFAULT_VERBOSE = true;
 
 // Define servo IDs
-constexpr uint8_t PINKY_ID     = 6; // 2
-constexpr uint8_t RING_ID      = 5; // 1
-constexpr uint8_t INDEX_ID     = 4; // 3
-constexpr uint8_t MIDDLE_ID    = 3; // 4
-constexpr uint8_t THUMBFLEX_ID = 2; // 5
-constexpr uint8_t THUMBROT_ID  = 1; // 5
+constexpr uint8_t PINKY_ID     = 15; // 2
+constexpr uint8_t RING_ID      = 14; // 1
+constexpr uint8_t INDEX_ID     = 12; // 3
+constexpr uint8_t MIDDLE_ID    = 13; // 4
+constexpr uint8_t THUMBFLEX_ID = 11; // 5
+constexpr uint8_t THUMBROT_ID  = 10; // 5
 constexpr uint8_t WRIST_ID     = 0;
 
 /// @brief Hand orientation (right or left)
-constexpr bool IS_RIGHT_HAND = false; // true for right hand, false for left hand
+constexpr bool IS_RIGHT_HAND = true; // true for right hand, false for left hand
 
 /// @brief Motor ID Array (ordered by internal mapping you use)
 constexpr uint8_t MOTOR_IDS[] = {  WRIST_ID, THUMBROT_ID, THUMBFLEX_ID, INDEX_ID, MIDDLE_ID, RING_ID, PINKY_ID};
@@ -122,7 +122,7 @@ constexpr const char* MOTOR_NAMES[] = {  "wrist", "thumbrot", "thumbflex",  "ind
 
 // Assign a home position using the absolute position for each motor when the hand is fully open. Note that these are found experimentally
 /// @brief Home states for each motor in degrees.
-constexpr float HOME_STATES[] = {       208.5,      150.0,       242.70,    253.44,     203.28,    167.90,    211.5 };
+constexpr float HOME_STATES[] = {    149.1,      285.0,       242.70,    80.0,     165.22,    179.0,    298.0 };
 
 /// @brief Assign the physical joint limits for each motor after assembly on exo (these are found experimentally)
 constexpr float jointLimits[7][2] = {

@@ -66,8 +66,8 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
   }
 
   // (Choose one) Disable comment for right/left hand function below
-  //bool flips[7] = {false, false, false, false,  true, false,  true}; // right hand
-  bool flips[7] = { true,  true,  true, true, false,  true, false}; // left hand
+  bool flips[7] = {false, true, false, false,  true, false,  true}; // right hand
+  //bool flips[7] = { true,  true,  true, true, false,  true, false}; // left hand
 
   // if (IS_RIGHT_HAND) {
   //   debugPrint("Configuring for RIGHT hand");

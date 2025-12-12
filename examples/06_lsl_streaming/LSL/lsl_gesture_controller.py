@@ -1,3 +1,4 @@
+import time
 import argparse
 from nml_hand_exo.interface import (
     HandExo,
@@ -30,9 +31,9 @@ def get_gesture_and_state_from_marker(marker: str) -> tuple[str, str]:
 
     if gesture == 'indexpinch':
         gesture = 'pinch_index'
-    elif gesture == 'middlepinch':
+    elif gesture == 'middlefinger' or gesture == "middlepinch":
         gesture = 'pinch_middle'
-    elif gesture == 'ringpinch':
+    elif gesture == 'ringfinger' or gesture == "middlepinch":
         gesture = 'pinch_ring'
     elif gesture == 'hand':
         gesture = 'grasp'
@@ -62,21 +63,25 @@ if __name__ == "__main__":
     def on_gesture(value: str, ts: float):
         # Pass gesture to gesture controller
         #print(f"[gesture] {value} at {ts:.6f}")
+        
         gesture, state = get_gesture_and_state_from_marker(value)
-        if gc.current_gesture != gesture or gc.current_state != state:
-            gc.set_gesture(gesture, state)
+        if not state == "None" and not state == None:
+            if gc.current_gesture != gesture or gc.current_state != state:
+                gc.set_gesture(gesture, state)
 
     # Create an LSL subscriber to listen and receive gesture commands
     with LSLMarkerSubscriber(stream_type=args.type, stream_name=args.name, timeout=args.timeout, verbose=args.verbose) as sub:
         # background callback
-        sub.set_callback(on_gesture, poll_hz=20)
+        #sub.set_callback(on_gesture, poll_hz=20)
+        sub.set_callback(on_gesture, only_on_change=True)
+
         print("Listening… Ctrl+C to quit.")
         try:
             while True:
                 # you can also poll explicitly:
                 # msg = sub.pull(timeout=0.0)
                 # if msg: print("polled:", msg)
-                pass
+                time.sleep(1.0)
         except KeyboardInterrupt:
             print("\nDone.")
 

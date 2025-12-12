@@ -1,9 +1,13 @@
 Welcome to the NML Hand Exoskeleton Docs!
 ==========================================
 
-This documentation provides comprehensive guides and references for using the
-NML Hand Exoskeleton project. Whether you’re a developer integrating with
-the hardware or an end user running code, you’ll find all the information you need.
+.. note::
+   📚 **Full Documentation Site**: This is the detailed API reference. For getting started guides, 
+   assembly instructions, and project overview, visit the `main documentation site <https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/>`_.
+
+This documentation provides comprehensive API references for using the
+NML Hand Exoskeleton project. Whether you're a developer integrating with
+the hardware or an end user running code, you'll find all the technical details you need.
 
 .. toctree::
    :maxdepth: 2

@@ -1,0 +1,17 @@
+main:
+  - title: "Quickstart"
+    url: /quickstart/
+  - title: "Assembly"
+    url: /assembly/
+  - title: "Examples"
+    url: /examples/
+  - title: "Python API"
+    url: /python-api/
+  - title: "C++ API"
+    url: /cpp-api/
+  - title: "Papers"
+    url: /papers/
+  - title: "Community"
+    url: /community/
+  - title: "GitHub"
+    url: https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo

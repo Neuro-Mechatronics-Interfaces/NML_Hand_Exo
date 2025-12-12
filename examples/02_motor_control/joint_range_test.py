@@ -1,12 +1,10 @@
 # This script connects to the exo and sends an angle command in increments of 5 degrees every second.
-# For each motor, in increasing order of teh motor id, the angle is starting from home/rest increasing until the maximum joint upper limit is reached for that motor
+# For each motor, in increasing order of the motor id, the angle is starting from home/rest increasing until the maximum joint upper limit is reached for that motor
 # and afterwards goes back to home/rest position. Then the motor decreases angle in increments of 5 degrees every second until the minimum joint lower limit is reached for that motor
 # and afterwards goes back to home/rest position.
 
-from nml_hand_exo import HandExo, SerialComm
+from nml_hand_exo.interface import HandExo, SerialComm
 import time
-
-#from nml_hand_exo.utils import JointRange
 
 # Serial usage
 
@@ -24,7 +22,7 @@ try:
     time.sleep(0.5)
 
     # Get home states for the motors
-    home_states = exo.get_home(wait_until_return=False)
+    home_states = exo.get_home('all')
     print(f"Home states: {home_states}")
     for motor_id, angle in home_states.items():
         print(f"| Motor {motor_id} home angle: {angle['angle']} degrees")
@@ -36,7 +34,7 @@ try:
     time.sleep(1)
 
     # Get joint ranges
-    data_dir = exo.get_motor_limits(wait_until_return=False)
+    data_dir = exo.get_motor_limits('all')
     print("Joint ranges:")
     for motor_id, limits in data_dir.items():
         print(f"| Motor {motor_id}: Lower limit = {limits['lower_limit']}, Upper limit = {limits['upper_limit']}")

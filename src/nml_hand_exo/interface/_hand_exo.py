@@ -273,6 +273,20 @@ class HandExo(object):
         self.send_command("help")
         return self._receive(wait_until_return=True)
 
+    def set_debug(self, enable: bool):
+        """
+        Enables or disables verbose debug output from the Arduino.
+
+        Args:
+            enable (bool): True to enable debug output, False to disable.
+
+        Returns:
+            None
+
+        """
+        state = "on" if enable else "off"
+        self.send_command(f"debug:{state}")
+
     def version(self) -> str:
         """
         Gets the version of the exo
@@ -422,6 +436,20 @@ class HandExo(object):
         """
         return self._get_motor_attribute('baudrate', motor_id, wait_until_return=True)
 
+    def set_baudrate(self, motor_id: (int or str), baudrate: int):
+        """
+        Sets the baud rate for the specified motor.
+
+        Args:
+            motor_id (int or str): ID of the motor to set the baud rate for.
+            baudrate (int): Desired baud rate (e.g., 57600, 115200).
+
+        Returns:
+            None
+
+        """
+        self.send_command(f"set_baud:{motor_id}:{baudrate}")
+
     def get_motor_velocity(self, motor_id: (int or str) = 'all') -> float:
         """
         Retrieves the current velocity of the specified motor.
@@ -474,7 +502,7 @@ class HandExo(object):
             None
 
         """
-        self.send_command(f"set_accel:{motor_id}:{acceleration}")
+        self.send_command(f"set_goal_acceleration:{motor_id}:{acceleration}")
 
     def get_motor_angle(self, motor_id: (int or str) = 'all') -> float:
         """
@@ -533,9 +561,9 @@ class HandExo(object):
 
         """
         if isinstance(motor_id, str):
-            cmd = f"set_absangle:{motor_id}:{angle}"
+            cmd = f"set_absolute_angle:{motor_id}:{angle}"
         else:
-            cmd = f"set_absangle:{int(motor_id)}:{angle}"
+            cmd = f"set_absolute_angle:{int(motor_id)}:{angle}"
         self.send_command(cmd)
 
     def get_home(self, motor_id: (int or str) = 'all') -> float:
@@ -551,19 +579,18 @@ class HandExo(object):
         """
         return self._get_motor_attribute('home', motor_id, True)
 
-    def set_home(self, motor_id: (int or str), home_angle: float):
+    def set_home(self, motor_id: (int or str)):
         """
-        Sets the home angle for the specified motor.
+        Sets the current position as the new home/zero position for the specified motor.
 
         Args:
-            motor_id (int or str): ID of the motor to set the home angle for.
-            home_angle (float): Desired home angle in degrees.
+            motor_id (int or str): ID of the motor to set the home position for.
 
         Returns:
             None
 
         """
-        self.send_command(f"set_home:{motor_id}:{home_angle}")
+        self.send_command(f"set_home:{motor_id}")
 
     def get_motor_torque(self, motor_id: (int or str) = 'all') -> float:
         """
@@ -704,19 +731,18 @@ class HandExo(object):
                 print(f"[ERROR] Invalid response")
         return ""
 
-    def set_motor_mode(self, motor_id: (int or str), mode: str):
+    def set_motor_mode(self, mode: str):
         """
-        Sets the control mode for the specified motor.
+        Sets the control mode for all motors (global setting).
 
         Args:
-            motor_id (int or str): ID of the motor to set the mode for.
             mode (str): Desired control mode (e.g., "position", "velocity", "current_position").
 
         Returns:
             None
 
         """
-        self.send_command(f"set_motor_mode:{motor_id}:{mode}")
+        self.send_command(f"set_motor_mode:{mode}")
 
     def get_exo_mode(self) -> str:
         """
@@ -827,6 +853,54 @@ class HandExo(object):
 
         """
         self.send_command("cycle_gesture_state")
+
+    def calibrate_exo(self, mode: str = "timed", duration: float = 10.0):
+        """
+        Starts the calibration routine for the exoskeleton.
+        Note: This feature may not be fully implemented in the firmware.
+
+        Args:
+            mode (str): Calibration mode (default: "timed").
+            duration (float): Duration in seconds for timed calibration (default: 10.0).
+
+        Returns:
+            None
+
+        """
+        self.send_command(f"calibrate_exo:{mode}:{duration}")
+
+    def enable_oled(self) -> str:
+        """
+        Enables the OLED display on the exoskeleton.
+
+        Returns:
+            str: Response from the device.
+
+        """
+        self.send_command("oled:on")
+        return self._receive()
+
+    def disable_oled(self) -> str:
+        """
+        Disables the OLED display on the exoskeleton.
+
+        Returns:
+            str: Response from the device.
+
+        """
+        self.send_command("oled:off")
+        return self._receive()
+
+    def get_oled_status(self) -> str:
+        """
+        Gets the current status of the OLED display.
+
+        Returns:
+            str: OLED status ("OLED ENABLED" or "OLED DISABLED").
+
+        """
+        self.send_command("oled:status")
+        return self._receive()
 
     def close(self):
         """
@@ -984,24 +1058,26 @@ class HandExo(object):
 
         Args:
             motor_id (int or str): ID of the motor to set the angle for.
-            angle (float): Desired angle in degrees.
-            direction (str): Desired direction of motion ("flex" or "extend")
-
+            target_angle (float): Desired angle in degrees.
+            direction (str): Desired direction of motion ("flex" or "extend", or single char 'f'/'e')
 
         Returns:
             None
 
         """
-        if direction != "flex" and direction != "extend":
-            print("Invalid function call. direction must be either 'flex' or 'extend'")
-        # elif hand != "left" and hand != "right":
-        #     print("Invalid function call. hand must be either 'left' or 'right'")
+        # Map full direction strings to single characters expected by Arduino
+        direction_map = {"flex": "f", "extend": "e", "f": "f", "e": "e"}
+        direction_char = direction_map.get(direction.lower())
+        
+        if direction_char is None:
+            print("Invalid function call. direction must be either 'flex', 'extend', 'f', or 'e'")
+            return
+        
+        if isinstance(motor_id, str):
+            cmd = f"set_yaw_angle:{motor_id}:{target_angle}:{direction_char}"
         else:
-            if isinstance(motor_id, str):
-                cmd = f"set_imu_angle:{motor_id}:{target_angle}:{direction}"
-            else:
-                cmd = f"set_imu_angle:{int(motor_id)}:{target_angle}:{direction}"
-            self.send_command(cmd)
+            cmd = f"set_yaw_angle:{int(motor_id)}:{target_angle}:{direction_char}"
+        self.send_command(cmd)
         
 
     def get_gesture_state(self):

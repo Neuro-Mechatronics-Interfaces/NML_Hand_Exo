@@ -1,7 +1,4 @@
-
-
-
-from nml_hand_exo import HandExo, SerialComm
+from nml_hand_exo.interface import HandExo, SerialComm
 import time
 
 port = "COM6"

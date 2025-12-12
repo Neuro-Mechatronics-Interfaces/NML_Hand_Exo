@@ -221,10 +221,10 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   if (cmd == "enable") {
     String arg = getArg(token, 1);  // local copy
     arg.trim();
-    arg.toUpperCase();
-    if (arg == "ALL") {
+    if (arg.equalsIgnoreCase("ALL")) {
       for (int i = 0; i < exo.getMotorCount(); i++) {
-        exo.enableTorque(i, true);
+        uint8_t id = exo.getMotorIDByIndex(i);
+        exo.enableTorque(id, true);
       }
     } else {
       id = getArgMotorID(exo, token, 1);
@@ -232,12 +232,13 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     }
 
   } else if (cmd == "disable") {
-    String arg = getArg(token, 1);  // local copy
+    // TO-DO: allow support of csv type arguments "1,3"
+    String arg = getArg(token, 1);
     arg.trim();
-    arg.toUpperCase();
-    if (arg == "ALL") {
+    if (arg.equalsIgnoreCase("ALL")) {
       for (int i = 0; i < exo.getMotorCount(); i++) {
-        exo.enableTorque(i, false);
+        uint8_t id = exo.getMotorIDByIndex(i);
+        exo.enableTorque(id, false);
       }
     } else {
       id = getArgMotorID(exo, token, 1);

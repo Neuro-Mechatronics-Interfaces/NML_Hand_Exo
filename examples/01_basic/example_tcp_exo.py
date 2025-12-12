@@ -1,4 +1,4 @@
-from nml_hand_exo import HandExo, TCPComm
+from nml_hand_exo.interface import HandExo, TCPComm
 
 # TCP usage (e.g., Pico W on Wi-Fi)
 ip = "192.168.1.200"

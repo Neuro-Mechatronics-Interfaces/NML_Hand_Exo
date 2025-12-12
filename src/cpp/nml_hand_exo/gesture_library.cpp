@@ -65,15 +65,15 @@ GestureMap gestureLibrary[N_GESTURES] = {
         { "open",  true,  true,     {0}, 
           {
             {"thumbflex",   0.0},
-            {"thumbrot",   60.0},
+            {"thumbrot",   140.0},
             {"index",       0.0},
             {"middle",      0.0},
             {"ring",        0.0},
             {"pinky",       0.0}
           }, 6 },
         { "close", true,  true,     {0}, 
-          { {"thumbflex",  60.0},
-            {"thumbrot",   60.0},
+          { {"thumbflex",  90.0},
+            {"thumbrot",   140.0},
             {"index",      60.0},
             {"middle",     60.0},
             {"ring",       60.0},
@@ -95,7 +95,7 @@ GestureMap gestureLibrary[N_GESTURES] = {
             {"middle",    60.0},
             {"ring",      60.0},
             {"pinky",     60.0}
-          }, 5 },
+          }, 6 },
         // Close: thumb=30, index/middle/ring/pinky=30, ignore wrist
         { "close", true, true,   {0}, 
           {
@@ -105,7 +105,7 @@ GestureMap gestureLibrary[N_GESTURES] = {
             {"middle",    60.0},
             {"ring",      60.0},
             {"pinky",     60.0}
-             }, 5 }
+             }, 6 }
       }, 2
     },
 
@@ -117,7 +117,7 @@ GestureMap gestureLibrary[N_GESTURES] = {
         { "open",  true,  true,  {0},
           {
             {"thumbflex",   0.0},
-            {"thumbrot",   60.0},
+            {"thumbrot",   140.0},
             {"index",       0.0}, // this one
             {"middle",      0.0},
             {"ring",        0.0},
@@ -127,7 +127,7 @@ GestureMap gestureLibrary[N_GESTURES] = {
         { "close", true,  true,  {0},
           {
             {"thumbflex", 60.0},
-            {"thumbrot",  60.0},
+            {"thumbrot",  140.0},
             {"index",     60.0},
             {"middle",     0.0},
             {"ring",       0.0},
@@ -142,7 +142,7 @@ GestureMap gestureLibrary[N_GESTURES] = {
         { "open",  true,  true,  {0},
           {
             {"thumbflex",  0.0},
-            {"thumbrot",  60.0},
+            {"thumbrot",  150.0},
             {"index",      0.0},
             {"middle",     0.0},
             {"ring",       0.0},
@@ -151,7 +151,7 @@ GestureMap gestureLibrary[N_GESTURES] = {
         { "close", true,  true,  {0},
           {
             {"thumbflex", 60.0},
-            {"thumbrot",  60.0},
+            {"thumbrot",  150.0},
             {"index",      0.0},
             {"middle",    60.0},
             {"ring",       0.0},
@@ -166,7 +166,7 @@ GestureMap gestureLibrary[N_GESTURES] = {
         { "open",  true,  true,  {0},
           {
             {"thumbflex",  0.0},
-            {"thumbrot",  60.0},
+            {"thumbrot",  160.0},
             {"index",      0.0},
             {"middle",     0.0},
             {"ring",       0.0},
@@ -175,7 +175,7 @@ GestureMap gestureLibrary[N_GESTURES] = {
         { "close", true,  true,  {0},
           {
             {"thumbflex",  60.0},
-            {"thumbrot",  60.0},
+            {"thumbrot",  160.0},
             {"index",      0.0},
             {"middle",     0.0},
             {"ring",      60.0},
