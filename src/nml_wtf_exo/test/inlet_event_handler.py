@@ -3,6 +3,8 @@ import sys
 import json
 from pylsl import resolve_byprop, StreamInlet
 from nml_hand_exo.interface import HandExo, SerialComm
+import re
+import time
 
 # Most firmwares use 57600 and semicolon-delimited tokens.
 comm = SerialComm(port="COM3", baudrate=57600, command_delimiter="\r\n", timeout=1)
@@ -28,27 +30,84 @@ signal.signal(signal.SIGINT, handle_sigint)
 # --------------------------------------------------
 #  Event mapping helpers
 # --------------------------------------------------
+def camel_to_snake(name: str) -> str:
+    """
+    Convert CamelCase or PascalCase to snake_case.
+    Examples:
+        PinchIndex   -> pinch_index
+        KeyGrip      -> key_grip
+        Grasp        -> grasp
+    """
+    if name == "IndexPinch":
+        return "pinch_index"
+    elif name == "MiddlePinch":
+        return "pinch_middle"
+    else:
+        s1 = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', name)
+        s2 = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s1)
+        return s2.lower()
 
 def send_start_gesture(exo_client, gesture_name):
     """Tell the exo to activate a gesture."""
     try:
-        print(f"[API] set_gesture('{gesture_name}', 'closed')")
-        exo_client.set_gesture(gesture_name, 'closed')
+        name = camel_to_snake(gesture_name)
+        print(f"[API] set_gesture('{name}', 'close')")
+        exo_client.set_gesture(name, 'close')
     except Exception as e:
         print(f"[API ERROR] set_gesture: {e}")
 
 def send_end_gesture(exo_client, gesture_name):
     """Tell the exo to release/open."""
     try:
-        print(f"[API] set_gesture('{gesture_name}','open')")
-        exo_client.set_gesture(gesture_name, 'open')
+        name = camel_to_snake(gesture_name)
+        print(f"[API] set_gesture('{name}','open')")
+        exo_client.set_gesture(name, 'open')
     except Exception as e:
         print(f"[API ERROR] set_gesture_state: {e}")
+
+
+def resolve_lsl_stream_by_type_and_name(
+    stream_type: str,
+    stream_name: str,
+    timeout: float = 2.0,
+    retry_interval: float = 1.0,
+    max_retries: int | None = None,
+):
+    """
+    Resolve an LSL stream by (type, name), retrying if not found.
+
+    max_retries = None  -> retry forever
+    """
+    attempt = 0
+
+    while True:
+        attempt += 1
+        print(f"[LSL] Resolving '{stream_name}' (attempt {attempt})...")
+
+        streams = resolve_byprop("type", stream_type, timeout=timeout)
+
+        for s in streams:
+            if s.name() == stream_name:
+                print("[LSL] Found matching stream.")
+                return s
+
+        print("[LSL] Stream not found.")
+        if streams:
+            print("[LSL] Available streams:")
+            for s in streams:
+                print(f"  - name='{s.name()}', type='{s.type()}', source_id='{s.source_id()}'")
+
+        if max_retries is not None and attempt >= max_retries:
+            raise RuntimeError(
+                f"Failed to resolve LSL stream '{stream_name}' "
+                f"after {max_retries} attempts"
+            )
+
+        time.sleep(retry_interval)
 
 # --------------------------------------------------
 #  Main LSL loop
 # --------------------------------------------------
-
 def main():
     global exo
 
@@ -59,29 +118,22 @@ def main():
     print("[API] Connecting to exo device...")
     exo.connect()
     exo.enable_motor('all')
-    exo.set_exo_mode("GESTURE_CONTINUOUS");
+    exo.set_exo_mode("GESTURE_FIXED");
     exo.home('all')
 
     # Wait for stream
     print(f"[LSL] Resolving streams with type='{TARGET_TYPE}'...")
 
-    streams = resolve_byprop("type", TARGET_TYPE, timeout=5.0)
-
-    if not streams:
-        print("[LSL] No streams found with matching type.")
-        sys.exit(1)
-
-    info = None
-    for s in streams:
-        if s.name() == TARGET_NAME:
-            info = s
-            break
-
-    if info is None:
-        print(f"[LSL] No stream found with name='{TARGET_NAME}'.")
-        print("[LSL] Available streams:")
-        for s in streams:
-            print(f"  - name='{s.name()}', source_id='{s.source_id()}'")
+    try:
+        info = resolve_lsl_stream_by_type_and_name(
+            stream_type=TARGET_TYPE,
+            stream_name=TARGET_NAME,
+            timeout=2.0,
+            retry_interval=1.0,
+            max_retries=None,   # retry forever
+        )
+    except RuntimeError as e:
+        print(f"[LSL ERROR] {e}")
         sys.exit(1)
 
     print("[LSL] Connected to stream:")
