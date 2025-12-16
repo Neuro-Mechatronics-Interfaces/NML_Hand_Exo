@@ -670,7 +670,13 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint("Current gesture: " + current_gesture);
 
   } else if (cmd == "gesture_list") {
-    commandPrint("Command not supported yet");
+      String out = "Gestures:\n";
+      for (int i = 0; i < N_GESTURES; ++i) {
+        out += "  - ";
+        out += gestureLibrary[i].name;
+        out += "\n";
+      }
+      commandPrint(out);
 
   } else if (cmd == "set_gesture") { 
     String gestureStr = getArg(token, 1);

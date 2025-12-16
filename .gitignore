@@ -101,3 +101,6 @@ docs/website_jekyll/cpp_api_doxygen/
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
+
+# Max WTF logs
+exo_logs

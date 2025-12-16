@@ -41,9 +41,9 @@ Choose one of the following methods to create a virtual environment for this pro
       ```
    - or using Python's virtualenv:
      ```bash
-     python3 -m venv .handexo
+     python3 -m venv .handexo # Use python -m venv .handexo on Windows
      source .handexo/bin/activate # On Linux/Mac
-     call .handexo/Scripts/activate # On Windows
+     # call .handexo/Scripts/activate  # On Windows
      ```
   
 ### 3. Install Python dependencies
@@ -52,9 +52,23 @@ Choose one of the following methods to create a virtual environment for this pro
 pip install -r requirements.txt
 ```
 
-For local development, you can also install the python API as a package 
+For local development, you can also install the python API as a package. 
 ```bash
 pip install -e .
+```
+
+### 4. (Optional) Install Max WTF dependencies
+If you are on Max's WTF `dev/Max` side-branch, you can also add his WTF code at your own risk.
+```bash
+pip install -e src/nml_wtf_exo      
+```
+
+(this extra/dev installation lets you use entry-level scripts for Max WTF applications, such as):
+```bash
+nml-wtf-exo          # launches main exo app
+nml-wtf-exo-viewer   # opens your viewer GUI
+nml-wtf-exo-logger   # starts logger
+nml-wtf-exo-keyboard # opens keyboard overlay app
 ```
    
 ## Exo Firmware
