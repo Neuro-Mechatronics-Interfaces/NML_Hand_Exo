@@ -206,7 +206,7 @@ class DemoApp(QWidget):
             try:
                 self.exo.send_command("disable:all")
             except Exception:
-                pass
+                print("Could not disable exo motors!")
 
             info = self.exo.info()
             print("Exo Info:", info)  # debug output

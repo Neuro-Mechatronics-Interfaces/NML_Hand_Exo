@@ -61,7 +61,6 @@ nml-wtf-exo-demo
 By default, the motion/joint parameterization in `PATHS['exo_demo_default_motion.json']` are used for the initial per-joint configurations (which are shown in the gif below):  
 ![This should be a gif with GUI capture and accompanying exo OBS video](/src/nml_wtf_exo/resources/2025-11-16_Hand-Exo-Demo.gif)
 
-
 ### Viewer GUI ###
 Launches a **landmark log viewer** for CSV recordings (e.g., from your LSL logger).  
 It visualizes 2-D landmark trajectories over time and lets you scrub/play them with basic controls.
