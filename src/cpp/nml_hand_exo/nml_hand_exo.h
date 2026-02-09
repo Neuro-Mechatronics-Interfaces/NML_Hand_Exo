@@ -48,6 +48,7 @@ class NMLHandExo {
       delete[] jointLimits_;
       delete[] zeroOffsets_;
       delete[] currentLimits_;
+      delete[] flipMotor_;
     }
 
     // -----------------------------------------------------------
@@ -236,6 +237,16 @@ class NMLHandExo {
     /// @return A string in the format "[min, max]" or error message.
     String getMotorLimits(uint8_t id);
 
+    /// @brief Get the lower joint limit for a motor.
+    /// @param id Motor ID.
+    /// @return Lower limit in degrees, or -1 if invalid ID.
+    float getMotorLimitMin(uint8_t id);
+
+    /// @brief Get the upper joint limit for a motor.
+    /// @param id Motor ID.
+    /// @return Upper limit in degrees, or -1 if invalid ID.
+    float getMotorLimitMax(uint8_t id);
+
     /// @brief Set the joint angle limits for a motor.
     /// @param id Motor ID.
     /// @param lowerLimit New lower limit in degrees.
@@ -271,6 +282,21 @@ class NMLHandExo {
     /// @param id Motor ID.
     /// @param current_mA Current limit in milliamps.
     void setCurrentLimit(uint8_t id, uint16_t current_mA);
+
+    /// @brief Set the zero offset for a motor to an arbitrary value.
+    /// @param id Motor ID.
+    /// @param offset_deg Zero offset in degrees.
+    void setZeroOffsetValue(uint8_t id, float offset_deg);
+
+    /// @brief Set the flip direction flag for a motor.
+    /// @param id Motor ID.
+    /// @param flip True to invert the motor direction, false for normal.
+    void setFlipMotor(uint8_t id, bool flip);
+
+    /// @brief Get the flip direction flag for a motor.
+    /// @param id Motor ID.
+    /// @return True if the motor direction is inverted.
+    bool getFlipMotor(uint8_t id);
 
     /// @brief Set the calculated torque in N·m for a motor.
     /// @param id Motor ID.
@@ -421,7 +447,7 @@ class NMLHandExo {
     unsigned long calibrationDuration;
 
 
-    bool flipMotor_[6] = {false, false, false, true, false, true}; // Flips for motors 3 and 5
+    bool* flipMotor_;
 
 };
 

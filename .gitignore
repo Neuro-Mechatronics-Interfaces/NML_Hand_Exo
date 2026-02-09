@@ -104,3 +104,6 @@ pip-delete-this-directory.txt
 
 # Max WTF logs
 exo_logs
+
+# Claude Code
+.claude/

@@ -1,0 +1,40 @@
+{
+  "motors": {
+    "thumbrot": {
+      "home": 251.86,
+      "limit_min": 220.26,
+      "limit_max": 251.86,
+      "flip": true
+    },
+    "thumbflex": {
+      "home": 374.53,
+      "limit_min": 374.53,
+      "limit_max": 415.27,
+      "flip": false
+    },
+    "index": {
+      "home": 162.8,
+      "limit_min": 162.8,
+      "limit_max": 224.93,
+      "flip": false
+    },
+    "middle": {
+      "home": 106.83,
+      "limit_min": 64.5,
+      "limit_max": 106.83,
+      "flip": true
+    },
+    "ring": {
+      "home": 68.99,
+      "limit_min": 68.99,
+      "limit_max": 119.06,
+      "flip": false
+    },
+    "pinky": {
+      "home": 115.37,
+      "limit_min": 74.1,
+      "limit_max": 115.37,
+      "flip": true
+    }
+  }
+}
