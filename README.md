@@ -1,7 +1,7 @@
 # NML_Hand_Exo
 
 <p align="center">
-  <img src="docs/source/_static/hand-exo.jpg" width="80%"/>
+  <img src="docs/source/_static/new exo.png" width="80%"/>
 </p>
 
 [![Python](https://img.shields.io/badge/python-3.10-blue)](https://www.python.org/)
