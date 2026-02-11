@@ -21,6 +21,9 @@ __pycache__/
 *.csv
 *.txt
 
+# ROM assessment output
+output_data/
+
 # Images (exclude from data folders, but allow docs)
 gesture_classifier/*.png
 *.png

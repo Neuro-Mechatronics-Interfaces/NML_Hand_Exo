@@ -109,7 +109,9 @@ constexpr uint8_t INDEX_ID     = 13; // 3
 constexpr uint8_t MIDDLE_ID    = 12; // 4
 constexpr uint8_t THUMBFLEX_ID = 15; // 5
 constexpr uint8_t THUMBROT_ID  = 14; // 5
-constexpr uint8_t WRIST_ID     = 0;
+constexpr uint8_t WRIST_ID     = 1;
+constexpr uint8_t WRIST2_ID    = 2;
+constexpr uint8_t THUMBADD_ID  = 3;
 
 /// @brief Hand orientation (right or left)
 constexpr bool IS_RIGHT_HAND = true; // true for right hand, false for left hand
@@ -118,6 +120,8 @@ constexpr bool IS_RIGHT_HAND = true; // true for right hand, false for left hand
 // Set to 0 to exclude a motor that is not connected.
 // Set to 1 to include it.  All arrays below are built automatically.
 #define ENABLE_WRIST     0
+#define ENABLE_WRIST2    0
+#define ENABLE_THUMBADD  0
 #define ENABLE_THUMBROT  1
 #define ENABLE_THUMBFLEX 1
 #define ENABLE_INDEX     1
@@ -129,6 +133,12 @@ constexpr bool IS_RIGHT_HAND = true; // true for right hand, false for left hand
 constexpr uint8_t MOTOR_IDS[] = {
 #if ENABLE_WRIST
   WRIST_ID,
+#endif
+#if ENABLE_WRIST2
+  WRIST2_ID,
+#endif
+#if ENABLE_THUMBADD
+  THUMBADD_ID,
 #endif
 #if ENABLE_THUMBROT
   THUMBROT_ID,
@@ -155,6 +165,12 @@ constexpr const char* MOTOR_NAMES[] = {
 #if ENABLE_WRIST
   "wrist",
 #endif
+#if ENABLE_WRIST2
+  "wrist2",
+#endif
+#if ENABLE_THUMBADD
+  "thumbadd",
+#endif
 #if ENABLE_THUMBROT
   "thumbrot",
 #endif
@@ -179,6 +195,12 @@ constexpr const char* MOTOR_NAMES[] = {
 constexpr float HOME_STATES[] = {
 #if ENABLE_WRIST
   149.1,
+#endif
+#if ENABLE_WRIST2
+  180.0,           // placeholder -- needs real calibration
+#endif
+#if ENABLE_THUMBADD
+  180.0,           // placeholder -- needs real calibration
 #endif
 #if ENABLE_THUMBROT
   251.86,
@@ -205,6 +227,12 @@ constexpr float jointLimits[][2] = {
 #if ENABLE_WRIST
   {-189, 2840},
 #endif
+#if ENABLE_WRIST2
+  {0.0, 360.0},   // placeholder -- needs real calibration
+#endif
+#if ENABLE_THUMBADD
+  {0.0, 360.0},   // placeholder -- needs real calibration
+#endif
 #if ENABLE_THUMBROT
   {220.26, 251.86},
 #endif
@@ -229,6 +257,12 @@ constexpr float jointLimits[][2] = {
 constexpr bool DEFAULT_FLIPS[] = {
 #if ENABLE_WRIST
   false,
+#endif
+#if ENABLE_WRIST2
+  false,           // placeholder -- needs real calibration
+#endif
+#if ENABLE_THUMBADD
+  false,           // placeholder -- needs real calibration
 #endif
 #if ENABLE_THUMBROT
   true,
