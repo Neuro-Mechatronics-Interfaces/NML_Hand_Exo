@@ -119,9 +119,9 @@ constexpr bool IS_RIGHT_HAND = true; // true for right hand, false for left hand
 // ---- Motor enable flags ------------------------------------------------
 // Set to 0 to exclude a motor that is not connected.
 // Set to 1 to include it.  All arrays below are built automatically.
-#define ENABLE_WRIST     0
-#define ENABLE_WRIST2    0
-#define ENABLE_THUMBADD  0
+#define ENABLE_WRIST     1
+#define ENABLE_WRIST2    1
+#define ENABLE_THUMBADD  1
 #define ENABLE_THUMBROT  1
 #define ENABLE_THUMBFLEX 1
 #define ENABLE_INDEX     1
@@ -294,7 +294,7 @@ constexpr long COMMAND_BAUD_RATE = 57600;
 constexpr long DYNAMIXEL_BAUD_RATE = 57600;
 
 /// @brief Total number of gesture contained in the library
-constexpr int N_GESTURES = 7;
+constexpr int N_GESTURES = 6;
 
 /// @brief Maximum number of gesture buttons that can be configured
 constexpr int MAX_GESTURE_BUTTONS = 6; // Maximum number of gesture buttons that can be configured

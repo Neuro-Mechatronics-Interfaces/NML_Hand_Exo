@@ -790,9 +790,11 @@ class HandExoGUI(QWidget):
 
         gestures = [
             ("Grasp", "grasp"),
+            ("Keygrip", "keygrip"),
             ("Pinch Index", "pinch_index"),
             ("Pinch Middle", "pinch_middle"),
             ("Pinch Ring", "pinch_ring"),
+            ("Peace", "peace"),
         ]
 
         for row, (label, cmd) in enumerate(gestures):

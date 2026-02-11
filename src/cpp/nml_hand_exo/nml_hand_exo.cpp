@@ -48,6 +48,8 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
   zeroOffsets_ = new float[numMotors_];
 
   // Create offsets if values passed for homeState
+  // NOTE: These will be OVERRIDDEN in initializeMotors() by reading actual motor positions
+  // This prevents assumptions about where motors are physically located
   if (homeState != nullptr) {
     for (int i = 0; i < numMotors_; ++i) {
       zeroOffsets_[i] = homeState[i];
@@ -84,22 +86,60 @@ void NMLHandExo::initializeSerial(int baud) {
   dxl_.setPortProtocolVersion(DXL_PROTOCOL_VERSION);
 }
 void NMLHandExo::initializeMotors() {
+  // Configure motor operating modes and torque, but DON'T move them yet
   for (int i = 0; i < numMotors_; i++) {
     uint8_t id = motorIds_[i];
     dxl_.torqueOff(id);
-
-    // Set Operating Mode to Current-Based Position Control
-    //dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION);
-    //dxl_.writeControlTableItem(ControlTableItem::OPERATING_MODE, id, 5);
     dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION);
-    //dxl_.setOperatingMode(id, OP_POSITION);  // Default mode is set to position mode
-
     dxl_.torqueOn(id);
-
-    //dxl_.writeControlTableItem(ControlTableItem::GOAL_CURRENT, currentLimits_[i], 100);
     dxl_.setGoalCurrent(id, currentLimits_[i]);
   }
-  delay(100); // Allow time for motors to initialize
+  delay(500);
+
+  // --- Multi-turn offset correction ---
+  // In OP_CURRENT_BASED_POSITION mode the motor tracks multi-turn position.
+  // After power-on, the reported position may be HOME + N*360 for some integer N.
+  // If we keep zeroOffsets_ = HOME_STATES (single-turn), the first "home" command
+  // targets HOME but the motor is at HOME + N*360, causing N full rotations.
+  //
+  // Fix: read actual position and snap zeroOffsets_ (and jointLimits_) to the
+  // nearest equivalent of HOME_STATES modulo 360 degrees.
+  for (int i = 0; i < numMotors_; i++) {
+    uint8_t id = motorIds_[i];
+    float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
+
+    // Sanity check: if read returns exactly 0.0 but home is far away,
+    // assume the read failed and keep the original HOME_STATES offset.
+    if (currentPos == 0.0f && zeroOffsets_[i] > 10.0f) {
+      debugPrint("[WARN] Motor " + String(id) + " position read returned 0.0, "
+                 "keeping HOME_STATES offset " + String(zeroOffsets_[i], 2));
+      continue;
+    }
+    // Reject wildly out-of-range reads (>100 turns)
+    if (currentPos < -36000.0f || currentPos > 36000.0f) {
+      debugPrint("[WARN] Motor " + String(id) + " position read out of range: "
+                 + String(currentPos, 2) + ", keeping HOME_STATES offset");
+      continue;
+    }
+
+    float home = zeroOffsets_[i];  // original HOME_STATES value
+    float diff = currentPos - home;
+    float turns = round(diff / 360.0f);
+    float offset = turns * 360.0f;
+
+    zeroOffsets_[i] = home + offset;
+    jointLimits_[i][0] += offset;
+    jointLimits_[i][1] += offset;
+
+    if (turns != 0.0f) {
+      debugPrint("[INIT] Motor " + String(id) + " multi-turn correction: "
+                 + String(turns, 0) + " turn(s), new offset "
+                 + String(zeroOffsets_[i], 2));
+    }
+  }
+
+  debugPrint("========== MOTOR INITIALIZATION COMPLETE ==========");
+  debugPrint("Motors configured. Multi-turn offsets corrected.");
 }
 int NMLHandExo::getMotorID(const String& token) {
   String target = token;
@@ -400,9 +440,14 @@ void NMLHandExo::setRelativeAngle(uint8_t id, float relativeAngle) {
   // Clamp the absolute goal to the joint limits (if necessary)
   abs_goal = constrain(abs_goal, jointLimits_[index][0], jointLimits_[index][1]);
 
+  // Shortest-path guard: avoid 360° rotations in extended position mode
+  float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  float diff = abs_goal - currentPos;
+  if (diff > 180.0f)       abs_goal -= 360.0f;
+  else if (diff < -180.0f) abs_goal += 360.0f;
+
   // Command the motor to the absolute position
   dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE);
-  //dxl_.writeControlTableItem(ControlTableItem::GOAL_POSITION, id, abs_goal_ticks);
 
   char buffer[128];
   snprintf(buffer, sizeof(buffer), "Motor %d set to relative angle %.2f deg (absolute: %.2f deg)", id, relativeAngle, abs_goal);
@@ -423,11 +468,19 @@ void NMLHandExo::setAbsoluteAngle(uint8_t id, float absoluteAngle) {
     return;
   }
   float clamped = constrain(absoluteAngle, jointLimits_[index][0], jointLimits_[index][1]);
+
+  // In extended/current-based position mode the motor travels directly from
+  // present to goal on a linear tick number line (no shortest-path wrapping).
+  // If present and goal differ by ~360° they represent the same physical angle
+  // but the motor will spin a full revolution.  Snap goal to within ±180° of
+  // the current position to always take the short route.
+  float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  float diff = clamped - currentPos;
+  if (diff > 180.0f)       clamped -= 360.0f;
+  else if (diff < -180.0f) clamped += 360.0f;
+
   dxl_.setGoalPosition(id, clamped, UNIT_DEGREE);
-  //char buffer[64];
-  //snprintf(buffer, sizeof(buffer), "Setting motor %d to absolute angle %.2f", id, absoluteAngle);
-  //debugPrint(buffer);
-  debugPrint("[NMLHandExo] Setting motor " + String(id) + " to absolute angle " + String(absoluteAngle, 2));
+  debugPrint("[NMLHandExo] Setting motor " + String(id) + " to absolute angle " + String(clamped, 2));
 }
 float NMLHandExo::getZeroAngle(uint8_t id){
   int index = getIndexById(id);
@@ -447,6 +500,13 @@ void NMLHandExo::setHome(uint8_t id){
 
   // Command the motor to move to the stored zero offset position
   float homeAngle = zeroOffsets_[index];
+
+  // Shortest-path guard: avoid 360° rotations in extended position mode
+  float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  float diff = homeAngle - currentPos;
+  if (diff > 180.0f)       homeAngle -= 360.0f;
+  else if (diff < -180.0f) homeAngle += 360.0f;
+
   dxl_.setGoalPosition(id, homeAngle, UNIT_DEGREE);
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "Motor %d homing to %.2f deg", id, homeAngle);
@@ -467,6 +527,12 @@ void NMLHandExo::setAngleById(uint8_t id, float angle_deg) {
 
   // Clamp angle to joint limits (in degrees)
   abs_goal = constrain(abs_goal, jointLimits_[index][0], jointLimits_[index][1]);
+
+  // Shortest-path guard: avoid 360° rotations in extended position mode
+  float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  float diff = abs_goal - currentPos;
+  if (diff > 180.0f)       abs_goal -= 360.0f;
+  else if (diff < -180.0f) abs_goal += 360.0f;
 
   // Set new goal tick position
   dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE);

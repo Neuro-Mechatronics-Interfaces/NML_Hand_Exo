@@ -48,15 +48,6 @@ void resolveStateAngles(const GestureState& state,
 // You can convert them to relative later if you want.
 
 GestureMap gestureLibrary[N_GESTURES] = {
-    // --- HOME: capture baseline (all zeros relative) ---
-    // {
-    //   "home",
-    //   {
-    //     // name,  is Relative to home, isSparse,         dense...,          sparse...,    nPairs
-    //     { "home",         true,           false,    {0,0,0,0,0,0},          {},           0 }
-    //   },
-    //   1
-    // },
 
     // --- GRASP: (relative + sparse, normalized 0.0–1.0) ---
     // Values are fraction of calibrated range: 0.0 = home/open, 1.0 = fully closed
@@ -65,21 +56,28 @@ GestureMap gestureLibrary[N_GESTURES] = {
       {
         { "open",  true,  true,     {0},
           {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
             {"thumbflex",  0.0},
-            {"thumbrot",   1.0},
+            {"thumbrot",   0.0},
             {"index",      0.0},
             {"middle",     0.0},
             {"ring",       0.0},
             {"pinky",      0.0}
-          }, 6 },
+          }, 9 },
         { "close", true,  true,     {0},
-          { {"thumbflex",  1.0},
+          {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
+            {"thumbflex",  1.0},
             {"thumbrot",   1.0},
             {"index",      1.0},
             {"middle",     1.0},
             {"ring",       1.0},
             {"pinky",      1.0}
-          }, 6 }
+          }, 9 }
       }, 2
     },
 
@@ -89,22 +87,28 @@ GestureMap gestureLibrary[N_GESTURES] = {
       {
         { "open",  true, true,   {0},
           {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
             {"thumbflex",  0.0},
             {"thumbrot",   0.0},
             {"index",      1.0},
             {"middle",     1.0},
             {"ring",       1.0},
             {"pinky",      1.0}
-          }, 6 },
+          }, 9 },
         { "close", true, true,   {0},
           {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
             {"thumbflex",  1.0},
             {"thumbrot",   0.0},
             {"index",      1.0},
             {"middle",     1.0},
             {"ring",       1.0},
             {"pinky",      1.0}
-          }, 6 }
+          }, 9 }
       }, 2
     },
 
@@ -114,22 +118,28 @@ GestureMap gestureLibrary[N_GESTURES] = {
       {
         { "open",  true,  true,  {0},
           {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
             {"thumbflex",  0.0},
-            {"thumbrot",   1.0},
+            {"thumbrot",   0.0},
             {"index",      0.0},
             {"middle",     0.0},
             {"ring",       0.0},
             {"pinky",      0.0}
-          }, 6 },
+          }, 9 },
         { "close", true,  true,  {0},
           {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
             {"thumbflex",  1.0},
             {"thumbrot",   1.0},
             {"index",      1.0},
             {"middle",     0.0},
             {"ring",       0.0},
             {"pinky",      0.0}
-          }, 6 }
+          }, 9 }
       }, 2
     },
 
@@ -139,22 +149,28 @@ GestureMap gestureLibrary[N_GESTURES] = {
       {
         { "open",  true,  true,  {0},
           {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
             {"thumbflex",  0.0},
-            {"thumbrot",   1.0},
+            {"thumbrot",   0.0},
             {"index",      0.0},
             {"middle",     0.0},
             {"ring",       0.0},
             {"pinky",      0.0}
-          }, 6 },
+          }, 9 },
         { "close", true,  true,  {0},
           {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
             {"thumbflex",  1.0},
             {"thumbrot",   1.0},
             {"index",      0.0},
             {"middle",     1.0},
             {"ring",       0.0},
             {"pinky",      0.0}
-          }, 6 }
+          }, 9 }
       }, 2
     },
 
@@ -164,22 +180,59 @@ GestureMap gestureLibrary[N_GESTURES] = {
       {
         { "open",  true,  true,  {0},
           {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
             {"thumbflex",  0.0},
-            {"thumbrot",   1.0},
+            {"thumbrot",   0.0},
             {"index",      0.0},
             {"middle",     0.0},
             {"ring",       0.0},
             {"pinky",      0.0}
-          }, 6 },
+          }, 9 },
         { "close", true,  true,  {0},
           {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
             {"thumbflex",  1.0},
             {"thumbrot",   1.0},
             {"index",      0.0},
             {"middle",     0.0},
             {"ring",       1.0},
             {"pinky",      0.0}
-          }, 6 }
+          }, 9 }
+      }, 2
+    },
+
+    // --- PEACE SIGN: index + middle extended, ring + pinky closed, thumb tucked ---
+    {
+      "peace",
+      {
+        { "open",  true,  true,  {0},
+          {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
+            {"thumbflex",  0.0},
+            {"thumbrot",   0.0},
+            {"index",      0.0},
+            {"middle",     0.0},
+            {"ring",       0.0},
+            {"pinky",      0.0}
+          }, 9 },
+        { "close", true,  true,  {0},
+          {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
+            {"thumbflex",  1.0},
+            {"thumbrot",   1.0},
+            {"index",      0.0},
+            {"middle",     0.0},
+            {"ring",       1.0},
+            {"pinky",      1.0}
+          }, 9 }
       }, 2
     },
 };
