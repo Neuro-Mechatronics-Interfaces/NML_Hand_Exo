@@ -1,5 +1,23 @@
 {
   "motors": {
+    "wrist": {
+      "home": 149.1,
+      "limit_min": -189.0,
+      "limit_max": 2840.0,
+      "flip": false
+    },
+    "wrist2": {
+      "home": 180.0,
+      "limit_min": 0.0,
+      "limit_max": 360.0,
+      "flip": false
+    },
+    "thumbadd": {
+      "home": 180.0,
+      "limit_min": 0.0,
+      "limit_max": 360.0,
+      "flip": false
+    },
     "thumbrot": {
       "home": 251.86,
       "limit_min": 220.26,

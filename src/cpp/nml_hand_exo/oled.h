@@ -53,3 +53,6 @@ ExoState oledGetState();
 
 /** Optional: get the displayable PROGMEM text for a given state. */
 const __FlashStringHelper* oledGetStateText(ExoState s);
+
+/** Run the startup animation sequence (blocking for ~3 seconds). */
+void oledStartupAnimation();
