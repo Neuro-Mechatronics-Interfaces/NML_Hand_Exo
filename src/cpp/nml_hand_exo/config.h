@@ -47,7 +47,7 @@
   //OpenRB does not require the DIR control pin.
   #define DEBUG_SERIAL Serial
   #define DXL_SERIAL Serial1
-  #define COMMAND_SERIAL Serial2
+  #define COMMAND_SERIAL Serial2  // HC-05 BT: D13=RX2, D14=TX2
   //#define DEBUG_SERIAL Serial
   //const int DXL_DIR_PIN = -1;
 #else // Other boards when using DynamixelShield
@@ -287,8 +287,10 @@ constexpr bool DEFAULT_FLIPS[] = {
 /// @brief Default baud rate for the debug serial connection.
 constexpr long DEBUG_BAUD_RATE = 57600;
 
-/// @brief Default baud rates for BLE communication.
-constexpr long COMMAND_BAUD_RATE = 57600;
+/// @brief Default baud rates for HC-05 Bluetooth communication.
+/// @note HC-05 factory default is 9600. If you reconfigured the module via AT
+///       commands, update this value to match (e.g. 38400 or 57600).
+constexpr long COMMAND_BAUD_RATE = 9600;
 
 /// @brief Default baud rate for Dynamixel communication.
 constexpr long DYNAMIXEL_BAUD_RATE = 57600;
