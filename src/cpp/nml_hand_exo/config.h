@@ -103,36 +103,185 @@ constexpr const char* DEFAULT_EXO_MODE = "gesture_fixed"; // Available modes are
 constexpr bool DEFAULT_VERBOSE = true;
 
 // Define servo IDs
-constexpr uint8_t PINKY_ID     = 15; // 2
-constexpr uint8_t RING_ID      = 14; // 1
-constexpr uint8_t INDEX_ID     = 12; // 3
-constexpr uint8_t MIDDLE_ID    = 13; // 4
-constexpr uint8_t THUMBFLEX_ID = 11; // 5
-constexpr uint8_t THUMBROT_ID  = 10; // 5
-constexpr uint8_t WRIST_ID     = 0;
+constexpr uint8_t PINKY_ID     = 10; // 2
+constexpr uint8_t RING_ID      = 11; // 1
+constexpr uint8_t INDEX_ID     = 13; // 3
+constexpr uint8_t MIDDLE_ID    = 12; // 4
+constexpr uint8_t THUMBFLEX_ID = 15; // 5
+constexpr uint8_t THUMBROT_ID  = 14; // 5
+constexpr uint8_t WRIST_ID     = 1;
+constexpr uint8_t WRIST2_ID    = 2;
+constexpr uint8_t THUMBADD_ID  = 3;
 
 /// @brief Hand orientation (right or left)
 constexpr bool IS_RIGHT_HAND = true; // true for right hand, false for left hand
 
-/// @brief Motor ID Array (ordered by internal mapping you use)
-constexpr uint8_t MOTOR_IDS[] = {  WRIST_ID, THUMBROT_ID, THUMBFLEX_ID, INDEX_ID, MIDDLE_ID, RING_ID, PINKY_ID};
+// ---- Motor enable flags ------------------------------------------------
+// Set to 0 to exclude a motor that is not connected.
+// Set to 1 to include it.  All arrays below are built automatically.
+#define ENABLE_WRIST     0
+#define ENABLE_WRIST2    0
+#define ENABLE_THUMBADD  0
+#define ENABLE_THUMBROT  1
+#define ENABLE_THUMBFLEX 1
+#define ENABLE_INDEX     1
+#define ENABLE_MIDDLE    1
+#define ENABLE_RING      1
+#define ENABLE_PINKY     1
 
-/// @brief Motor name Array (must match the order above)
-constexpr const char* MOTOR_NAMES[] = {  "wrist", "thumbrot", "thumbflex",  "index",   "middle",    "ring",    "pinky" };
+/// @brief Motor ID Array (auto-built from enable flags)
+constexpr uint8_t MOTOR_IDS[] = {
+#if ENABLE_WRIST
+  WRIST_ID,
+#endif
+#if ENABLE_WRIST2
+  WRIST2_ID,
+#endif
+#if ENABLE_THUMBADD
+  THUMBADD_ID,
+#endif
+#if ENABLE_THUMBROT
+  THUMBROT_ID,
+#endif
+#if ENABLE_THUMBFLEX
+  THUMBFLEX_ID,
+#endif
+#if ENABLE_INDEX
+  INDEX_ID,
+#endif
+#if ENABLE_MIDDLE
+  MIDDLE_ID,
+#endif
+#if ENABLE_RING
+  RING_ID,
+#endif
+#if ENABLE_PINKY
+  PINKY_ID,
+#endif
+};
 
-// Assign a home position using the absolute position for each motor when the hand is fully open. Note that these are found experimentally
-/// @brief Home states for each motor in degrees.
-constexpr float HOME_STATES[] = {    149.1,      285.0,       242.70,    80.0,     165.22,    179.0,    298.0 };
+/// @brief Motor name Array (must match MOTOR_IDS order)
+constexpr const char* MOTOR_NAMES[] = {
+#if ENABLE_WRIST
+  "wrist",
+#endif
+#if ENABLE_WRIST2
+  "wrist2",
+#endif
+#if ENABLE_THUMBADD
+  "thumbadd",
+#endif
+#if ENABLE_THUMBROT
+  "thumbrot",
+#endif
+#if ENABLE_THUMBFLEX
+  "thumbflex",
+#endif
+#if ENABLE_INDEX
+  "index",
+#endif
+#if ENABLE_MIDDLE
+  "middle",
+#endif
+#if ENABLE_RING
+  "ring",
+#endif
+#if ENABLE_PINKY
+  "pinky",
+#endif
+};
 
-/// @brief Assign the physical joint limits for each motor after assembly on exo (these are found experimentally)
-constexpr float jointLimits[7][2] = {
-  {-189, 2840}, //189, 284   // open -> close
-  {-126, 1470}, //126, 147
-  {-126, 1470}, //126, 147
-  {-242, 3020}, //242, 302
-  {-142, 1950}, //142, 195
-  {-158, 2260}, //158, 226
-  {-138, 2140} //214, 138
+/// @brief Home states for each motor in degrees (found experimentally).
+constexpr float HOME_STATES[] = {
+#if ENABLE_WRIST
+  149.1,
+#endif
+#if ENABLE_WRIST2
+  180.0,           // placeholder -- needs real calibration
+#endif
+#if ENABLE_THUMBADD
+  180.0,           // placeholder -- needs real calibration
+#endif
+#if ENABLE_THUMBROT
+  251.86,
+#endif
+#if ENABLE_THUMBFLEX
+  374.53,
+#endif
+#if ENABLE_INDEX
+  162.8,
+#endif
+#if ENABLE_MIDDLE
+  106.83,
+#endif
+#if ENABLE_RING
+  68.99,
+#endif
+#if ENABLE_PINKY
+  115.37,
+#endif
+};
+
+/// @brief Physical joint limits [min, max] for each motor (found experimentally).
+constexpr float jointLimits[][2] = {
+#if ENABLE_WRIST
+  {-189, 2840},
+#endif
+#if ENABLE_WRIST2
+  {0.0, 360.0},   // placeholder -- needs real calibration
+#endif
+#if ENABLE_THUMBADD
+  {0.0, 360.0},   // placeholder -- needs real calibration
+#endif
+#if ENABLE_THUMBROT
+  {220.26, 251.86},
+#endif
+#if ENABLE_THUMBFLEX
+  {374.53, 415.27},
+#endif
+#if ENABLE_INDEX
+  {162.8, 224.93},
+#endif
+#if ENABLE_MIDDLE
+  {64.5, 106.83},
+#endif
+#if ENABLE_RING
+  {68.99, 119.06},
+#endif
+#if ENABLE_PINKY
+  {74.1, 115.37},
+#endif
+};
+
+/// @brief Default flip direction per motor (overwritten at runtime by calibration).
+constexpr bool DEFAULT_FLIPS[] = {
+#if ENABLE_WRIST
+  false,
+#endif
+#if ENABLE_WRIST2
+  false,           // placeholder -- needs real calibration
+#endif
+#if ENABLE_THUMBADD
+  false,           // placeholder -- needs real calibration
+#endif
+#if ENABLE_THUMBROT
+  true,
+#endif
+#if ENABLE_THUMBFLEX
+  false,
+#endif
+#if ENABLE_INDEX
+  false,
+#endif
+#if ENABLE_MIDDLE
+  true,
+#endif
+#if ENABLE_RING
+  false,
+#endif
+#if ENABLE_PINKY
+  true,
+#endif
 };
 
 /// @brief Default baud rate for the debug serial connection.

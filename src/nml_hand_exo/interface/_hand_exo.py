@@ -854,6 +854,82 @@ class HandExo(object):
         """
         self.send_command("cycle_gesture_state")
 
+    def set_zero_offset(self, motor_id: (int or str), offset: float):
+        """
+        Sets the zero offset for the specified motor to an arbitrary value.
+
+        Args:
+            motor_id (int or str): ID or name of the motor.
+            offset (float): Zero offset in degrees (absolute angle of the open/home position).
+
+        """
+        self.send_command(f"set_zero_offset:{motor_id}:{offset}")
+
+    def set_flip(self, motor_id: (int or str), flip: bool):
+        """
+        Sets the direction flip flag for a motor.
+
+        Args:
+            motor_id (int or str): ID or name of the motor.
+            flip (bool): True to invert direction, False for normal.
+
+        """
+        self.send_command(f"set_flip:{motor_id}:{'1' if flip else '0'}")
+
+    def apply_calibration(self, profile_or_path: str = None, profiles_dir: str = None):
+        """
+        Loads a calibration profile and pushes all values to the device.
+
+        Can be called with a profile name (e.g. "zach"), a full file path,
+        or with no arguments to load the default profile.
+
+        Args:
+            profile_or_path (str or None): One of:
+                - A profile name (e.g. "zach") → loads profiles/zach.json
+                - A full file path to a calibration JSON
+                - None → loads the default profile from profiles/config.json
+            profiles_dir (str or None): Directory containing profile JSONs.
+                Defaults to examples/calibration/profiles/ relative to
+                the repo root.
+
+        """
+        import json
+        import os
+
+        if profiles_dir is None:
+            repo_root = os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))))
+            profiles_dir = os.path.join(repo_root, "examples", "calibration", "profiles")
+
+        if profile_or_path is None:
+            config_path = os.path.join(profiles_dir, "config.json")
+            if not os.path.exists(config_path):
+                raise FileNotFoundError(f"No profiles config found at {config_path}")
+            with open(config_path, "r") as f:
+                cfg = json.load(f)
+            default_name = cfg.get("default")
+            if not default_name:
+                raise ValueError("No default profile set. Pass a profile name or run calibrate_exo.py --set-default.")
+            filepath = os.path.join(profiles_dir, f"{default_name}.json")
+        elif os.path.isfile(profile_or_path):
+            filepath = profile_or_path
+        else:
+            filepath = os.path.join(profiles_dir, f"{profile_or_path}.json")
+
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"Calibration profile not found: {filepath}")
+
+        with open(filepath, "r") as f:
+            cal = json.load(f)
+
+        for name, vals in cal["motors"].items():
+            self.set_zero_offset(name, vals["home"])
+            self.set_motor_limits(name, vals["limit_min"], vals["limit_max"])
+            self.set_flip(name, vals["flip"])
+
+        profile_name = os.path.basename(filepath).removesuffix(".json")
+        self.logger(f"Calibration profile '{profile_name}' applied from {filepath}")
+
     def calibrate_exo(self, mode: str = "timed", duration: float = 10.0):
         """
         Starts the calibration routine for the exoskeleton.

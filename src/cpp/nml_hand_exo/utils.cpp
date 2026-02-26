@@ -592,14 +592,12 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
 
   } else if (cmd == "set_motor_limits") {
     id = getArgMotorID(exo, token, 1);
-    String limitsStr = getArg(token, 2);
-    int colonIndex = limitsStr.indexOf(':');
-    if (colonIndex != -1) {
-      float lowerLimit = limitsStr.substring(0, colonIndex).toFloat();
-      float upperLimit = limitsStr.substring(colonIndex + 1).toFloat();
-      if (id != -1) exo.setMotorLimits(id, lowerLimit, upperLimit);
+    float lowerLimit = getArg(token, 2).toFloat();
+    float upperLimit = getArg(token, 3).toFloat();
+    if (id != -1) {
+      exo.setMotorLimits(id, lowerLimit, upperLimit);
     } else {
-      commandPrint("[Error] Invalid limits format. Use 'lower:upper'");
+      commandPrint("[Error] Invalid motor ID for set_motor_limits");
     }
 
   } else if (cmd == "led") {
@@ -709,6 +707,49 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     String stateStr = getArg(token, 1);
     gc.executeCurrentGestureNewState(stateStr);
 
+  } else if (cmd == "set_zero_offset") {
+    String arg = getArg(token, 1);
+    arg.trim(); arg.toUpperCase();
+    if (arg == "ALL") {
+      float val = getArg(token, 2).toFloat();
+      for (int i = 0; i < exo.getMotorCount(); i++) {
+        uint8_t mid = exo.getMotorIDByIndex(i);
+        exo.setZeroOffsetValue(mid, val);
+      }
+    } else {
+      id = getArgMotorID(exo, token, 1);
+      float offset = getArg(token, 2).toFloat();
+      if (id != -1) exo.setZeroOffsetValue(id, offset);
+    }
+
+  } else if (cmd == "set_flip") {
+    id = getArgMotorID(exo, token, 1);
+    String flipStr = getArg(token, 2);
+    flipStr.trim();
+    bool flip = (flipStr == "1" || flipStr == "true");
+    if (id != -1) exo.setFlipMotor(id, flip);
+
+  } else if (cmd == "get_flip") {
+    String arg = getArg(token, 1);
+    arg.trim(); arg.toUpperCase();
+    if (arg == "ALL") {
+      String info = "Motor Flip Status:\n";
+      for (int i = 0; i < exo.getMotorCount(); ++i) {
+        uint8_t mid = exo.getMotorIDByIndex(i);
+        bool flip = exo.getFlipMotor(mid);
+        info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(mid) + ", id: " + String(mid) +
+            ", flip: " + (flip ? "true" : "false") + "}\n";
+      }
+      commandPrint(info);
+    } else {
+      id = getArgMotorID(exo, token, 1);
+      if (id != -1) {
+        bool flip = exo.getFlipMotor(id);
+        commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
+          ", flip: " + (flip ? "true" : "false") + "}");
+      }
+    }
+
   } else if (cmd == "calibrate_exo") {
     debugPrint(F("Command not supported yet"));
     //String mode = getArg(token, 1);
@@ -783,6 +824,9 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" get_gesture_state     |                      | // Get exo gesture state"));
     commandPrint(F(" cycle_gesture         |                      | // Executes the next gesture in the library"));
     commandPrint(F(" cycle_gesture_state   |                      | // Cycles the next gesture state"));
+    commandPrint(F(" set_zero_offset       |  ID/NAME/ALL:VALUE   | // Set the zero offset for a motor to an arbitrary angle"));
+    commandPrint(F(" set_flip              |  ID/NAME:0/1         | // Set motor direction flip (1=inverted, 0=normal)"));
+    commandPrint(F(" get_flip              |  ID/NAME/ALL         | // Get motor direction flip status"));
     commandPrint(F(" calibrate_exo         |  VALUE:VALUE         | // start the calibration routine for the exo"));
     commandPrint(F(" get_imu               |                      | // Returns list of accel & gyro values"));
     commandPrint(F(" set_yaw_angle         |  ID/NAME:ANGLE       | // Set motor angle via IMU wrist angle"));

@@ -62,9 +62,11 @@ void setup() {
   //initializeIMU(ism330dhcx);
   //initializeIMU(bno055);
 
-  // Setup OLED
-  oledInit();
-  oledSetState(EXO_READY);
+  // Setup OLED with startup animation
+  if (oledInit()) {
+    oledSetState(EXO_READY);
+    oledStartupAnimation();  // Show brain animation for ~3 seconds, then "READY"
+  }
 
   // Setup exo
   exo.initializeSerial(DYNAMIXEL_BAUD_RATE);

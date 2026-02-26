@@ -65,36 +65,11 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
       currentLimits_[i] = MOTOR_CURRENT_LIMIT; // default 200 mA or whatever safe default
   }
 
-  // (Choose one) Disable comment for right/left hand function below
-  bool flips[7] = {false, true, false, false,  true, false,  true}; // right hand
-  //bool flips[7] = { true,  true,  true, true, false,  true, false}; // left hand
-
-  // if (IS_RIGHT_HAND) {
-  //   debugPrint("Configuring for RIGHT hand");
-  //   flips[6] = {false, false, false,  true, false,  true}; // right hand
-  // } else {
-  //   debugPrint("Configuring for LEFT hand");
-  //   flips[6] = { true,  true,  true, true, false,  true, false}; // left hand
-  // }
-  // bool flips[6];
-  // if (IS_RIGHT_HAND) {
-  //   debugPrint("Configuring for RIGHT hand");
-  //   flips[0] = false;
-  //   flips[1] = false;
-  //   flips[2] = false;
-  //   flips[3] = true;
-  //   flips[4] = false;
-  //   flips[5] = true;
-  // } else {
-  //   debugPrint("Configuring for LEFT hand");
-  //   flips[0] = true;
-  //   flips[1] = true;
-  //   flips[2] = true;
-  //   flips[3] = false;
-  //   flips[4] = true;
-  //   flips[5] = false;
-  // }
-  memcpy(flipMotor_, flips, sizeof(flips));
+  // Allocate flip flags and initialize from config defaults (overwritten by calibration)
+  flipMotor_ = new bool[numMotors_];
+  for (int i = 0; i < numMotors_; ++i) {
+    flipMotor_[i] = DEFAULT_FLIPS[i];
+  }
 
 
   // If jointLimits_, zeroOffsets_, currentLimits_ were dynamically allocated, make sure to add a destructor.
@@ -447,9 +422,8 @@ void NMLHandExo::setAbsoluteAngle(uint8_t id, float absoluteAngle) {
     debugPrint("Invalid motor ID: " + String(id));
     return;
   }
-  //   float clamped = constrain(absoluteAngle, jointLimits_[index][0], jointLimits_[index][1]);
-  //dxl_.setGoalPosition(id, clamped, UNIT_DEGREE);
-  dxl_.setGoalPosition(id, absoluteAngle, UNIT_DEGREE);
+  float clamped = constrain(absoluteAngle, jointLimits_[index][0], jointLimits_[index][1]);
+  dxl_.setGoalPosition(id, clamped, UNIT_DEGREE);
   //char buffer[64];
   //snprintf(buffer, sizeof(buffer), "Setting motor %d to absolute angle %.2f", id, absoluteAngle);
   //debugPrint(buffer);
@@ -552,7 +526,7 @@ void NMLHandExo::setMotorLimits(uint8_t id, float lowerLimit, float upperLimit) 
   }
 
   // Check if limits are valid
-  if (lowerLimit >= upperLimit) {
+  if (lowerLimit > upperLimit) {
     char buffer[64];
     snprintf(buffer, sizeof(buffer), "Invalid limits for motor %d: [%.2f, %.2f]", id, lowerLimit, upperLimit);
     debugPrint(buffer);
@@ -564,6 +538,16 @@ void NMLHandExo::setMotorLimits(uint8_t id, float lowerLimit, float upperLimit) 
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "Set limits for motor %d: [%.2f, %.2f]", id, lowerLimit, upperLimit);
   debugPrint(buffer);
+}
+float NMLHandExo::getMotorLimitMin(uint8_t id) {
+  int index = getIndexById(id);
+  if (index == -1) return -1;
+  return jointLimits_[index][0];
+}
+float NMLHandExo::getMotorLimitMax(uint8_t id) {
+  int index = getIndexById(id);
+  if (index == -1) return -1;
+  return jointLimits_[index][1];
 }
 
 
@@ -618,6 +602,31 @@ float NMLHandExo::getTorque(uint8_t id) {
   float current_mA = raw_current * 2.69;
   float torque_Nm = current_mA * XL330_TORQUE_CONSTANT;
   return torque_Nm;  // in N·m
+}
+void NMLHandExo::setZeroOffsetValue(uint8_t id, float offset_deg) {
+  int index = getIndexById(id);
+  if (index == -1) {
+    debugPrint("Invalid motor ID for zero offset: " + String(id));
+    return;
+  }
+  zeroOffsets_[index] = offset_deg;
+  char buffer[64];
+  snprintf(buffer, sizeof(buffer), "Zero offset for motor %d set to %.2f deg", id, offset_deg);
+  debugPrint(buffer);
+}
+void NMLHandExo::setFlipMotor(uint8_t id, bool flip) {
+  int index = getIndexById(id);
+  if (index == -1) {
+    debugPrint("Invalid motor ID for flip: " + String(id));
+    return;
+  }
+  flipMotor_[index] = flip;
+  debugPrint("Motor " + String(id) + " flip set to " + String(flip ? "true" : "false"));
+}
+bool NMLHandExo::getFlipMotor(uint8_t id) {
+  int index = getIndexById(id);
+  if (index == -1) return false;
+  return flipMotor_[index];
 }
 void NMLHandExo::setTorque(uint8_t id, float torque_Nm) {
   int index = getIndexById(id);

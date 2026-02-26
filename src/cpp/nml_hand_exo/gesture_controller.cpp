@@ -60,17 +60,22 @@ void GestureController::executeGesture(const String& gesture, const String& stat
     home[i] = exo_.getZeroAngle(id);
   }
 
-  // Resolve this state into absolute angles
+  // Resolve this state into absolute angles.
+  // Gesture values are normalized 0.0–1.0 (fraction of motor range).
   float absAngles[N_MOTORS];
   resolveStateAngles(gestureLibrary[gIdx].states[sIdx], home, absAngles);
 
-  /// If this state's angles were defined RELATIVE to home,
-  // apply per-motor flip by mirroring around the home baseline.
   if (st.isRelative) {
+    // Scale normalized offsets by each motor's calibrated range,
+    // then apply flip direction.
     for (int i = 0; i < exo_.getMotorCount(); ++i) {
       uint8_t id = exo_.getMotorIDByIndex(i);
+      float fraction = absAngles[i] - home[i];  // 0.0–1.0 from resolveStateAngles
+      float range = exo_.getMotorLimitMax(id) - exo_.getMotorLimitMin(id);
       if (exo_.isMotorFlipped(id)) {
-        absAngles[i] = 2.0f * home[i] - absAngles[i];
+        absAngles[i] = home[i] - fraction * range;
+      } else {
+        absAngles[i] = home[i] + fraction * range;
       }
     }
   }
