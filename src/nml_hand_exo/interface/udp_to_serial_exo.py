@@ -89,10 +89,10 @@ def send(ser: serial.Serial, cmd: str, verbose: bool = True) -> str:
     """Send a command and drain the response to prevent buffer deadlock."""
     ser.reset_input_buffer()
     ser.write((cmd.strip() + "\n").encode())
-    time.sleep(0.15)
+    # time.sleep(0.15)
 
     response = b""
-    deadline = time.time() + 2.0
+    deadline = time.time() + 0.2
     while time.time() < deadline:
         if ser.in_waiting > 0:
             chunk = ser.read(ser.in_waiting)
@@ -100,7 +100,8 @@ def send(ser: serial.Serial, cmd: str, verbose: bool = True) -> str:
             if b";" in chunk:
                 break
         else:
-            time.sleep(0.02)
+            # time.sleep(0.02)
+            pass
 
     text = response.decode(errors="ignore").strip()
     if verbose:
@@ -137,21 +138,27 @@ def main():
             data, addr = sock.recvfrom(1024)
             msg = data.decode(errors="ignore").strip()
 
-            if msg not in ("0", "1"):
+            if msg not in ("-1", "1", "-2", "2"):
                 continue
 
             state = int(msg)
             if state == last_state:
-                continue  # ignore repeats
+                continue  # ignore repeatsa
             last_state = state
 
             print(state)
             if state == 1:
                 # print(f"From {addr}: {msg}  -> serial {PINCH_ON_CMD.strip()}")
                 send(ser, "set_gesture:pinch_index:close")
-            else:
+            elif state == -1: 
                 # print(f"From {addr}: {msg}  -> serial {PINCH_OFF_CMD.strip()}")
                 send(ser, "set_gesture:pinch_index:open")
+            elif state == 2:
+                # print(f"From {addr}: {msg}  -> serial {PINCH_ON_CMD.strip()}")
+                send(ser, "set_gesture:pinch_middle:close")
+            elif state == -2: 
+                # print(f"From {addr}: {msg}  -> serial {PINCH_OFF_CMD.strip()}")
+                send(ser, "set_gesture:pinch_middle:open")
 
     except KeyboardInterrupt:
         print("\nExiting...")
