@@ -237,6 +237,23 @@ QDialog {
 #  Calibration Dialog
 # ==========================================================================
 
+# Anatomical prompts for each known motor name: (extension_desc, flexion_desc).
+# Used for standalone motors. Wrist + wrist2 paired prompts are set in
+# _build_cal_steps(); these entries serve as fallback if only one is present.
+# Unknown motor names fall back to generic "<name> extended / flexed" text.
+_MOTOR_PROMPTS = {
+    'wrist':     ('wrist EXTENDED (up)',                'wrist FLEXED (down)'),
+    'wrist2':    ('wrist2 EXTENDED (up)',               'wrist2 FLEXED (down)'),
+    'thumbadd':  ('thumb ABDUCTED (away from hand)',    'thumb ADDUCTED (toward hand)'),
+    'thumbrot':  ('thumb rotated to EXTENDED position', 'thumb rotated to FLEXED position'),
+    'thumbflex': ('thumb EXTENDED (open)',              'thumb FLEXED (closed)'),
+    'index':     ('index EXTENDED (open)',              'index FLEXED (closed)'),
+    'middle':    ('middle EXTENDED (open)',             'middle FLEXED (closed)'),
+    'ring':      ('ring EXTENDED (open)',               'ring FLEXED (closed)'),
+    'pinky':     ('pinky EXTENDED (open)',              'pinky FLEXED (closed)'),
+}
+
+
 class CalibrationDialog(QDialog):
     """Interactive calibration dialog -walks through open/closed positions."""
 
@@ -248,13 +265,18 @@ class CalibrationDialog(QDialog):
         self.profile_name = profile_name
         self.setWindowTitle("Calibration Protocol")
         self.setMinimumWidth(500)
-        self._step = 0  # 0=open, 1=closed, 2=done
+        # Each calibration step may correspond to one or more motors (e.g. wrist
+        # and wrist2 are grouped into a single extension/flexion step).
+        # _step_idx indexes into _cal_steps; _phase is 0=extension, 1=flexion.
+        self._cal_steps = self._build_cal_steps()
+        self._step_idx = 0
+        self._phase = 0
         self.open_angles = {}
         self.close_angles = {}
 
         layout = QVBoxLayout(self)
 
-        self.info_label = QLabel("Step 1: Move ALL fingers to the FULLY OPEN position.")
+        self.info_label = QLabel("")
         self.info_label.setWordWrap(True)
         self.info_label.setStyleSheet("font-size: 14px; padding: 8px;")
         layout.addWidget(self.info_label)
@@ -265,7 +287,7 @@ class CalibrationDialog(QDialog):
         layout.addWidget(self.result_label)
 
         btn_row = QHBoxLayout()
-        self.record_btn = QPushButton("Record Open Position")
+        self.record_btn = QPushButton("")
         self.record_btn.setProperty("accent", True)
         self.record_btn.clicked.connect(self._record)
         btn_row.addStretch()
@@ -279,48 +301,107 @@ class CalibrationDialog(QDialog):
         except Exception:
             pass
 
+        self._update_prompt()
+
+    def _build_cal_steps(self) -> list:
+        """Build the ordered calibration step list from motor_names.
+
+        Each step is a dict:
+            'motors':     list of (name: str, idx: int) — precomputed so _record()
+                          never calls motor_names.index() at click time
+            'display':    short label shown in the UI header
+            'open_desc':  instruction for the extension snapshot
+            'close_desc': instruction for the flexion snapshot
+
+        Wrist + wrist2 are merged into one step when both are present.
+        All other motors produce one step each.
+        """
+        steps = []
+        consumed = set()  # motor names already claimed by a grouped step
+
+        for i, name in enumerate(self.motor_names):
+            if name in consumed:
+                continue
+
+            if name == 'wrist' and 'wrist2' in self.motor_names:
+                j = self.motor_names.index('wrist2')
+                steps.append({
+                    'motors':     [('wrist', i), ('wrist2', j)],
+                    'display':    'wrist',
+                    'open_desc':  'wrist EXTENDED upward',
+                    'close_desc': 'wrist FLEXED downward',
+                })
+                consumed.add('wrist2')
+            else:
+                open_desc, close_desc = _MOTOR_PROMPTS.get(
+                    name, (f"{name} extended", f"{name} flexed")
+                )
+                steps.append({
+                    'motors':     [(name, i)],
+                    'display':    name,
+                    'open_desc':  open_desc,
+                    'close_desc': close_desc,
+                })
+
+        return steps
+
+    def _update_prompt(self):
+        """Refresh info_label and record_btn text for the current step."""
+        step = self._cal_steps[self._step_idx]
+        total = len(self._cal_steps) * 2
+        step_num = self._step_idx * 2 + self._phase + 1
+        if self._phase == 0:
+            desc = step['open_desc']
+            btn_text = "Record Extension"
+        else:
+            desc = step['close_desc']
+            btn_text = "Record Flexion"
+        self.info_label.setText(
+            f"Step {step_num} of {total}  [{step['display']}]\n"
+            f"Move to: {desc}"
+        )
+        self.record_btn.setText(btn_text)
+
     def _record(self):
-        if self._step == 0:
-            # Record open positions
-            try:
-                angles = self.exo.get_absolute_motor_angle('all')
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to read motor angles:\n{e}")
-                return
+        step = self._cal_steps[self._step_idx]
 
-            for mid, name in enumerate(self.motor_names):
-                val = angles.get(mid, angles.get(name, 0.0))
-                self.open_angles[name] = float(val)
+        try:
+            angles = self.exo.get_absolute_motor_angle('all')
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to read motor angles:\n{e}")
+            return
 
-            lines = [f"  {n:<12} {self.open_angles[n]:.2f} deg" for n in self.motor_names]
-            self.result_label.setText("Open positions recorded:\n" + "\n".join(lines))
+        if self._phase == 0:
+            for name, idx in step['motors']:
+                self.open_angles[name] = float(angles.get(idx, 0.0))
+            readout = ", ".join(
+                f"{n} = {self.open_angles[n]:.2f}\u00b0" for n, _ in step['motors']
+            )
+            self.result_label.setText(f"Recorded extension: {readout}")
+            self._phase = 1
+            self._update_prompt()
+        else:
+            for name, idx in step['motors']:
+                self.close_angles[name] = float(angles.get(idx, 0.0))
+            readout = ", ".join(
+                f"{n} = {self.close_angles[n]:.2f}\u00b0" for n, _ in step['motors']
+            )
+            self.result_label.setText(f"Recorded flexion: {readout}")
+            self._step_idx += 1
+            self._phase = 0
 
-            self._step = 1
-            self.info_label.setText("Step 2: Move ALL fingers to the FULLY CLOSED position.")
-            self.record_btn.setText("Record Closed Position")
-
-        elif self._step == 1:
-            # Record closed positions
-            try:
-                angles = self.exo.get_absolute_motor_angle('all')
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to read motor angles:\n{e}")
-                return
-
-            for mid, name in enumerate(self.motor_names):
-                val = angles.get(mid, angles.get(name, 0.0))
-                self.close_angles[name] = float(val)
-
-            lines = [f"  {n:<12} {self.close_angles[n]:.2f} deg" for n in self.motor_names]
-            self.result_label.setText("Closed positions recorded:\n" + "\n".join(lines))
-
-            # Compute and save profile
-            self._save_profile()
-            self._step = 2
-            self.info_label.setText(f"Calibration complete! Profile '{self.profile_name}' saved.")
-            self.record_btn.setText("Close")
-            self.record_btn.clicked.disconnect()
-            self.record_btn.clicked.connect(self.accept)
+            if self._step_idx < len(self._cal_steps):
+                self._update_prompt()
+            else:
+                self._save_profile()
+                n_motors = sum(len(s['motors']) for s in self._cal_steps)
+                self.info_label.setText(
+                    f"Calibration complete!\n"
+                    f"Profile '{self.profile_name}' saved ({n_motors} motors)."
+                )
+                self.record_btn.setText("Close")
+                self.record_btn.clicked.disconnect()
+                self.record_btn.clicked.connect(self.accept)
 
     def _save_profile(self):
         data = {"motors": {}}
