@@ -549,7 +549,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
         uint8_t id = exo.getMotorIDByIndex(i);
         float torque = exo.getTorque(id);
         info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-            ", Torque: " + String(val) + "}";
+            ", torque: " + String(torque, 4) + "}\n";
       }
       commandPrint(info);
     } else {
