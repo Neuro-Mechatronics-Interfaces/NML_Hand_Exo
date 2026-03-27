@@ -10,6 +10,7 @@ import csv
 import json
 import os
 import re
+import statistics
 import sys
 import time
 from datetime import datetime
@@ -17,7 +18,7 @@ from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QLineEdit, QTextEdit, QGridLayout, QMessageBox, QGroupBox, QComboBox,
-    QDialog, QScrollArea, QFrame, QSizePolicy, QSpacerItem,
+    QDialog, QInputDialog, QScrollArea, QFrame, QSizePolicy, QSpacerItem,
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QFontMetrics
@@ -241,21 +242,25 @@ QDialog {
 # Used for standalone motors. Wrist + wrist2 paired prompts are set in
 # _build_cal_steps(); these entries serve as fallback if only one is present.
 # Unknown motor names fall back to generic "<name> extended / flexed" text.
-_MOTOR_PROMPTS = {
-    'wrist':     ('wrist EXTENDED (up)',                'wrist FLEXED (down)'),
-    'wrist2':    ('wrist2 EXTENDED (up)',               'wrist2 FLEXED (down)'),
-    'thumbadd':  ('thumb ABDUCTED (away from hand)',    'thumb ADDUCTED (toward hand)'),
-    'thumbrot':  ('thumb rotated to EXTENDED position', 'thumb rotated to FLEXED position'),
-    'thumbflex': ('thumb EXTENDED (open)',              'thumb FLEXED (closed)'),
-    'index':     ('index EXTENDED (open)',              'index FLEXED (closed)'),
-    'middle':    ('middle EXTENDED (open)',             'middle FLEXED (closed)'),
-    'ring':      ('ring EXTENDED (open)',               'ring FLEXED (closed)'),
-    'pinky':     ('pinky EXTENDED (open)',              'pinky FLEXED (closed)'),
-}
-
-
 class CalibrationDialog(QDialog):
-    """Interactive calibration dialog -walks through open/closed positions."""
+    """Interactive calibration dialog — two global streaming phases (extension then flexion)."""
+
+    # Phase instruction text
+    _PHASE_INFO = [
+        (
+            "Phase 1 of 2 — Extension / Open\n"
+            "Move each joint through its extension/open extreme while recording is active,\n"
+            "then press Stop Recording.\n"
+            "(Wrist: extend upward. Fingers: open fully. Thumb: extend/abduct.)"
+        ),
+        (
+            "Phase 2 of 2 — Flexion / Close\n"
+            "Move each joint through its flexion/close extreme while recording is active,\n"
+            "then press Stop Recording.\n"
+            "(Wrist: flex downward. Fingers: close fully. Thumb: flex/adduct.)"
+        ),
+    ]
+    _PHASE_BTN = ["Start Recording Extension", "Start Recording Flexion"]
 
     def __init__(self, exo: HandExo, motor_names: list[str],
                  profile_name: str, parent=None):
@@ -265,14 +270,22 @@ class CalibrationDialog(QDialog):
         self.profile_name = profile_name
         self.setWindowTitle("Calibration Protocol")
         self.setMinimumWidth(500)
-        # Each calibration step may correspond to one or more motors (e.g. wrist
-        # and wrist2 are grouped into a single extension/flexion step).
-        # _step_idx indexes into _cal_steps; _phase is 0=extension, 1=flexion.
-        self._cal_steps = self._build_cal_steps()
-        self._step_idx = 0
+
+        # _phase: 0 = extension/open global window, 1 = flexion/close global window
         self._phase = 0
-        self.open_angles = {}
-        self.close_angles = {}
+
+        # Precomputed index map: motor name → position in motor_names list.
+        # get_absolute_motor_angle('all') returns {0: val, 1: val, ...} keyed by this index.
+        self._motor_idx: dict[str, int] = {
+            name: i for i, name in enumerate(motor_names)
+        }
+
+        # Streaming state — full sample lists kept for Option B profile derivation.
+        # Keys are motor names; lists accumulate during each recording window.
+        self._recording = False
+        self._samples_buf: dict[str, list[float]] = {}  # current window accumulator
+        self._open_samples: dict[str, list[float]] = {}   # committed after extension stop
+        self._close_samples: dict[str, list[float]] = {}  # committed after flexion stop
 
         layout = QVBoxLayout(self)
 
@@ -289,11 +302,20 @@ class CalibrationDialog(QDialog):
         btn_row = QHBoxLayout()
         self.record_btn = QPushButton("")
         self.record_btn.setProperty("accent", True)
-        self.record_btn.clicked.connect(self._record)
+        self.record_btn.clicked.connect(self._toggle_recording)
         btn_row.addStretch()
         btn_row.addWidget(self.record_btn)
         btn_row.addStretch()
         layout.addLayout(btn_row)
+
+        self.sample_label = QLabel("Samples: 0")
+        self.sample_label.setStyleSheet("color: #777777; padding: 2px 8px;")
+        layout.addWidget(self.sample_label)
+
+        # Dialog-owned timer — 100 ms, same rate as ROMDialog. Never shares the
+        # main window's _angle_timer.
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._poll_angles)
 
         # Disable motors for free movement
         try:
@@ -301,127 +323,192 @@ class CalibrationDialog(QDialog):
         except Exception:
             pass
 
-        self._update_prompt()
+        self._show_phase_prompt()
 
-    def _build_cal_steps(self) -> list:
-        """Build the ordered calibration step list from motor_names.
+    def _show_phase_prompt(self):
+        """Set info_label and record_btn text for the current phase (0 or 1)."""
+        self.info_label.setText(self._PHASE_INFO[self._phase])
+        self.sample_label.setText("Samples: 0")
+        self.record_btn.setText(self._PHASE_BTN[self._phase])
 
-        Each step is a dict:
-            'motors':     list of (name: str, idx: int) — precomputed so _record()
-                          never calls motor_names.index() at click time
-            'display':    short label shown in the UI header
-            'open_desc':  instruction for the extension snapshot
-            'close_desc': instruction for the flexion snapshot
+    # -- Streaming recording -----------------------------------------------
 
-        Wrist + wrist2 are merged into one step when both are present.
-        All other motors produce one step each.
-        """
-        steps = []
-        consumed = set()  # motor names already claimed by a grouped step
-
-        for i, name in enumerate(self.motor_names):
-            if name in consumed:
-                continue
-
-            if name == 'wrist' and 'wrist2' in self.motor_names:
-                j = self.motor_names.index('wrist2')
-                steps.append({
-                    'motors':     [('wrist', i), ('wrist2', j)],
-                    'display':    'wrist',
-                    'open_desc':  'wrist EXTENDED upward',
-                    'close_desc': 'wrist FLEXED downward',
-                })
-                consumed.add('wrist2')
-            else:
-                open_desc, close_desc = _MOTOR_PROMPTS.get(
-                    name, (f"{name} extended", f"{name} flexed")
-                )
-                steps.append({
-                    'motors':     [(name, i)],
-                    'display':    name,
-                    'open_desc':  open_desc,
-                    'close_desc': close_desc,
-                })
-
-        return steps
-
-    def _update_prompt(self):
-        """Refresh info_label and record_btn text for the current step."""
-        step = self._cal_steps[self._step_idx]
-        total = len(self._cal_steps) * 2
-        step_num = self._step_idx * 2 + self._phase + 1
-        if self._phase == 0:
-            desc = step['open_desc']
-            btn_text = "Record Extension"
+    def _toggle_recording(self):
+        if not self._recording:
+            self._start_recording()
         else:
-            desc = step['close_desc']
-            btn_text = "Record Flexion"
-        self.info_label.setText(
-            f"Step {step_num} of {total}  [{step['display']}]\n"
-            f"Move to: {desc}"
+            self._stop_recording()
+
+    def _start_recording(self):
+        self._samples_buf = {name: [] for name in self.motor_names}
+        self._recording = True
+        self._timer.start(100)
+        self.record_btn.setText("Stop Recording")
+        phase_word = "extension" if self._phase == 0 else "flexion"
+        self.result_label.setText(f"Recording {phase_word}... click Stop when done.")
+
+    def _stop_recording(self):
+        self._timer.stop()
+        self._recording = False
+
+        # Guard: require at least 3 samples per motor before committing.
+        min_samples = min(
+            len(self._samples_buf.get(name, [])) for name in self.motor_names
         )
-        self.record_btn.setText(btn_text)
-
-    def _record(self):
-        step = self._cal_steps[self._step_idx]
-
-        try:
-            angles = self.exo.get_absolute_motor_angle('all')
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to read motor angles:\n{e}")
+        if min_samples < 3:
+            QMessageBox.warning(
+                self, "Too Few Samples",
+                f"Only {min_samples} sample(s) collected — need at least 3.\n"
+                "Move each joint through its range while recording is active."
+            )
+            # Reset for a retry: leave _phase unchanged, restore prompt.
+            self._show_phase_prompt()
             return
 
         if self._phase == 0:
-            for name, idx in step['motors']:
-                self.open_angles[name] = float(angles.get(idx, 0.0))
-            readout = ", ".join(
-                f"{n} = {self.open_angles[n]:.2f}\u00b0" for n, _ in step['motors']
+            # Commit extension samples for all motors
+            self._open_samples = {name: list(self._samples_buf[name])
+                                   for name in self.motor_names}
+            self.result_label.setText(
+                f"Extension phase recorded: {min_samples} samples per motor."
             )
-            self.result_label.setText(f"Recorded extension: {readout}")
             self._phase = 1
-            self._update_prompt()
+            self._show_phase_prompt()
         else:
-            for name, idx in step['motors']:
-                self.close_angles[name] = float(angles.get(idx, 0.0))
-            readout = ", ".join(
-                f"{n} = {self.close_angles[n]:.2f}\u00b0" for n, _ in step['motors']
+            # Commit flexion samples for all motors
+            self._close_samples = {name: list(self._samples_buf[name])
+                                    for name in self.motor_names}
+            self.result_label.setText(
+                f"Flexion phase recorded: {min_samples} samples per motor."
             )
-            self.result_label.setText(f"Recorded flexion: {readout}")
-            self._step_idx += 1
-            self._phase = 0
-
-            if self._step_idx < len(self._cal_steps):
-                self._update_prompt()
-            else:
+            try:
                 self._save_profile()
-                n_motors = sum(len(s['motors']) for s in self._cal_steps)
-                self.info_label.setText(
-                    f"Calibration complete!\n"
-                    f"Profile '{self.profile_name}' saved ({n_motors} motors)."
+            except RuntimeError as e:
+                QMessageBox.critical(self, "Calibration Error", str(e))
+                # Leave dialog open — user must close manually.
+                # accept() is never called so dlg.result() == Rejected
+                # and HandExoGUI will not offer to apply.
+                self.info_label.setText("Calibration failed — see error above.")
+                self.sample_label.setText("")
+                self.record_btn.setEnabled(False)
+                return
+            self.info_label.setText(
+                f"Calibration complete!\n"
+                f"Profile '{self.profile_name}' saved ({len(self.motor_names)} motors)."
+            )
+            self.sample_label.setText("")
+            self.record_btn.setText("Close")
+            self.record_btn.clicked.disconnect()
+            self.record_btn.clicked.connect(self.accept)
+
+    def _poll_angles(self):
+        """Timer callback — appends one angle reading per motor to the current buffer."""
+        try:
+            angles = self.exo.get_absolute_motor_angle('all')
+        except Exception:
+            return
+        for name, idx in self._motor_idx.items():
+            val = angles.get(idx)
+            if val is not None:
+                self._samples_buf[name].append(float(val))
+        count = min(
+            len(self._samples_buf.get(name, [])) for name in self.motor_names
+        )
+        self.sample_label.setText(f"Samples: {count}")
+
+    # Minimum observed range (deg) that is considered physiologically plausible.
+    # Below this threshold the user is warned, but saving is not blocked.
+    _MIN_RANGE_DEG = 2.0
+
+    def _validate_profile(self, data: dict):
+        """Check derived profile values before writing to disk.
+
+        Blocking errors (raise RuntimeError — save is aborted):
+          - limit_min == limit_max: motor never moved or hardware offline.
+          - home outside [limit_min, limit_max]: self-inconsistent profile.
+
+        Warnings (QMessageBox.warning — save continues after the user acknowledges):
+          - observed range < _MIN_RANGE_DEG: motor moved very little.
+
+        All messages include the motor name so grouped-step motors (e.g. wrist2)
+        are identified individually.
+        """
+        warn_msgs = []
+        for name, vals in data["motors"].items():
+            lo = vals["limit_min"]
+            hi = vals["limit_max"]
+            home = vals["home"]
+            observed_range = hi - lo
+
+            if lo == hi:
+                raise RuntimeError(
+                    f"Motor '{name}': limit_min == limit_max ({lo:.2f}°).\n"
+                    "The motor did not move during calibration — check hardware connection.\n"
+                    "Profile not saved."
                 )
-                self.record_btn.setText("Close")
-                self.record_btn.clicked.disconnect()
-                self.record_btn.clicked.connect(self.accept)
+
+            if not (lo <= home <= hi):
+                raise RuntimeError(
+                    f"Motor '{name}': home ({home:.2f}°) is outside "
+                    f"[limit_min={lo:.2f}°, limit_max={hi:.2f}°].\n"
+                    "Profile is self-inconsistent and not saved."
+                )
+
+            if observed_range < self._MIN_RANGE_DEG:
+                warn_msgs.append(
+                    f"  {name}: range = {observed_range:.2f}° "
+                    f"(min={lo:.2f}°, max={hi:.2f}°)"
+                )
+
+        if warn_msgs:
+            QMessageBox.warning(
+                self, "Suspiciously Small Range",
+                "The following motors moved less than "
+                f"{self._MIN_RANGE_DEG:.0f}° during calibration:\n\n"
+                + "\n".join(warn_msgs)
+                + "\n\nThe profile will be saved, but verify hardware before use.",
+            )
 
     def _save_profile(self):
+        """Derive calibration values from full sample lists (Option B).
+
+        home      = median of extension samples  (stable resting position)
+        flip      = flexion median < extension median  (direction detection)
+        limit_min = true minimum across extension + flexion samples
+        limit_max = true maximum across extension + flexion samples
+
+        Profile schema is unchanged.
+        """
         data = {"motors": {}}
         for name in self.motor_names:
-            o = self.open_angles[name]
-            c = self.close_angles[name]
-            lo = min(o, c)
-            hi = max(o, c)
-            flip = c < o
+            o_vals = self._open_samples.get(name, [])
+            c_vals = self._close_samples.get(name, [])
+            # Guard: both lists must be non-empty (enforced by _stop_recording,
+            # but protect _save_profile against any unexpected code path).
+            if not o_vals or not c_vals:
+                raise RuntimeError(
+                    f"Motor '{name}': missing samples — extension or flexion was "
+                    "not recorded. Profile not saved."
+                )
+            o_med = statistics.median(o_vals)
+            c_med = statistics.median(c_vals)
+            all_vals = o_vals + c_vals
             data["motors"][name] = {
-                "home": round(o, 2),
-                "limit_min": round(lo, 2),
-                "limit_max": round(hi, 2),
-                "flip": flip,
+                "home":      round(o_med, 2),
+                "flip":      c_med < o_med,
+                "limit_min": round(min(all_vals), 2),
+                "limit_max": round(max(all_vals), 2),
             }
+
+        # Validate before writing — raises RuntimeError on blocking problems,
+        # shows QMessageBox.warning for non-blocking concerns.
+        self._validate_profile(data)
+
         save_profile(self.profile_name, data)
 
-        # Set as default if first profile
-        if get_default_profile_name() is None:
-            set_default_profile(self.profile_name)
+        # Always set the newly calibrated profile as the default so that
+        # _ensure_gesture_ready() applies the correct profile on the next gesture.
+        set_default_profile(self.profile_name)
 
 
 # ==========================================================================
@@ -585,6 +672,52 @@ class ROMDialog(QDialog):
         # Save CSV
         filepath = self._save_csv(unassisted, assisted)
         self.instruction_label.setText(f"Saved to: {filepath}")
+
+        # Offer to derive a calibration profile from the assisted ROM data
+        self.saved_profile_name = None
+        ans = QMessageBox.question(
+            self, "Save Calibration Profile",
+            "Save a calibration profile derived from the assisted ROM data?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if ans == QMessageBox.Yes:
+            default_name = self.participant
+            name, ok = QInputDialog.getText(
+                self, "Profile Name", "Profile name:", text=default_name
+            )
+            if ok and name.strip():
+                self._derive_and_save_cal_profile(name.strip().lower())
+
+    def _derive_and_save_cal_profile(self, name: str):
+        """Derive a calibration profile from the assisted ROM data and save it.
+
+        Uses median of the assisted open samples as `home` and median of
+        assisted close samples as the flex position.  Arithmetic is identical
+        to CalibrationDialog._save_profile(): flip detected from data,
+        limit_min/max from the two medians.  Profile schema is unchanged.
+        """
+        open_samples = self._phase_data[2]   # assisted open
+        close_samples = self._phase_data[3]  # assisted close
+
+        data = {"motors": {}}
+        for motor_name in self.motor_names:
+            o_vals = open_samples.get(motor_name, [])
+            c_vals = close_samples.get(motor_name, [])
+            o = statistics.median(o_vals) if o_vals else 0.0
+            c = statistics.median(c_vals) if c_vals else 0.0
+            data["motors"][motor_name] = {
+                "home":      round(o, 2),
+                "limit_min": round(min(o, c), 2),
+                "limit_max": round(max(o, c), 2),
+                "flip":      c < o,
+            }
+
+        save_profile(name, data)
+        if get_default_profile_name() is None:
+            set_default_profile(name)
+
+        self.saved_profile_name = name
 
     def _compute_phase(self, open_samples: dict, closed_samples: dict) -> dict:
         results = {}
@@ -1137,8 +1270,26 @@ class HandExoGUI(QWidget):
 
         dlg = CalibrationDialog(self.exo, self.motor_names, name, parent=self)
         dlg.exec_()
+        # CalibrationDialog disables motors. Reset the flag so the next gesture
+        # call re-runs _ensure_gesture_ready() and re-enables them.
+        self._gesture_ready = False
         self._refresh_profiles()
-        self._log(f"Calibration profile '{name}' saved.")
+
+        if dlg.result() == QDialog.Accepted:
+            self._log(f"Calibration profile '{name}' saved.")
+            ans = QMessageBox.question(
+                self, "Apply Profile",
+                f"Apply calibration profile '{name}' to the device now?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if ans == QMessageBox.Yes:
+                try:
+                    self.exo.apply_calibration(name)
+                    self._log(f"Applied calibration profile: {name}")
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to apply profile:\n{e}")
+                    self._log(f"Apply profile error: {e}")
 
     def _apply_profile(self):
         if not self.exo_connected:
@@ -1167,6 +1318,24 @@ class HandExoGUI(QWidget):
         dlg = ROMDialog(self.exo, self.motor_names, participant, parent=self)
         dlg.exec_()
         self._log(f"ROM assessment complete for '{participant}'.")
+
+        profile_name = getattr(dlg, "saved_profile_name", None)
+        if profile_name:
+            self._refresh_profiles()
+            self._log(f"ROM-derived calibration profile '{profile_name}' saved.")
+            ans = QMessageBox.question(
+                self, "Apply Calibration Profile",
+                f"Apply calibration profile '{profile_name}' to the device now?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if ans == QMessageBox.Yes:
+                try:
+                    self.exo.apply_calibration(profile_name)
+                    self._log(f"Applied calibration profile: {profile_name}")
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to apply profile:\n{e}")
+                    self._log(f"Apply profile error: {e}")
 
     def _update_enabled_state(self):
         on = self.exo_connected
