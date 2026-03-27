@@ -1,120 +1,71 @@
 # CLAUDE.md — NML Hand Exoskeleton
 
-> `[VERIFIED]` = confirmed from source. `[INFERRED]` = reasonable but unverified.
-
----
-
-## Project overview
-
-Dual-stack project: Arduino C++ firmware on an OpenRB-150 + Python SDK on a host PC.
-9 Dynamixel XL330 motors drive a wearable hand exoskeleton (wrist, thumb 3-DOF, 4 fingers).
-Communication: USB serial (57600) or HC-05 Bluetooth on Serial2 D13/D14 (9600).
-
----
-
-## Current development focus
-
-**Per-DoF guided calibration.** Replace the current all-at-once open/close snapshot with
-a per-motor loop that prompts the user for each joint individually.
-
-- Current flow: one global OPEN snapshot → one global CLOSED snapshot → derive all limits
-- Target flow: iterate over motors, prompt per joint, record open+close per motor
-- **No firmware changes needed** `[VERIFIED]` — `get_absolute_angle:<name>`,
-  `set_motor_limits:<name>:min:max`, `set_zero_offset:<name>:val`, `set_flip:<name>:0|1`
-  all already work per-motor
-- All changes are Python/GUI only → see [docs/calibration_flow.md](docs/calibration_flow.md)
+Dual-stack: Arduino C++ on OpenRB-150 + Python SDK on host PC.
+9 Dynamixel XL330 motors. USB serial (57600) or HC-05 BT on Serial2 D13/D14 (57600).
 
 ---
 
 ## Key paths
 
 ```
-src/cpp/nml_hand_exo/           Arduino firmware (entry: nml_hand_exo.ino)
-  config.h                      All hardware constants and baud rates
-  utils.cpp                     Serial command parser — source of truth for command names
-  nml_hand_exo.cpp              NMLHandExo motor-control class
+src/cpp/nml_hand_exo/
+  config.h                 Hardware constants, motor IDs/names, baud rates
+  utils.cpp                Serial command parser — source of truth for all command names
+  nml_hand_exo.cpp         NMLHandExo motor-control class
 
 src/nml_hand_exo/interface/
-  _hand_exo.py                  HandExo — high-level Python API
-  _interfaces.py                SerialComm / TCPComm
+  _hand_exo.py             HandExo — high-level Python API, response parser
+  _interfaces.py           SerialComm / TCPComm
 
 src/nml_hand_exo/applications/
-  hand_exo_gui.py               PyQt5 GUI — primary user interface [VERIFIED]
+  hand_exo_gui.py          PyQt5 main GUI window. Calibration and ROM are modal QDialogs
+                           launched from it, not tabs. The QTabWidget holds Controls and
+                           Telemetry only.
 
 examples/calibration/
-  calibrate_exo.py              CLI calibration wizard (also updates config.h)
-  rom_assessment.py             ROM protocol → output_data/<name>_rom_<date>_<run>.csv
-  profiles/<name>.json          Per-user calibration profiles
+  calibrate_exo.py         CLI calibration wizard (also updates config.h)
+  rom_assessment.py        ROM protocol → output_data/<name>_rom_<date>_<run>.csv
+  profiles/<name>.json     Per-user calibration profiles
 ```
 
 ---
 
-## Safety rules
+## Safety rules (mandatory, every session)
 
-These apply to every session. Do not skip them.
-
-1. **Never command a motor outside its `jointLimits`.** Exceeding physical bounds
-   can damage the mechanism or injure a participant.
-2. **Current limit is 200 mA by default.** Do not raise `MOTOR_CURRENT_LIMIT` in
-   `config.h` without a specific reason.
-3. **`disable:all` before any passive movement.** Torque-enabled motors resist
-   movement and can cause injury during calibration or ROM assessment.
-4. **No movement in `setup()` without user confirmation.** `initializeMotors()`
-   holds current position — do not add `homeAllMotors()` or any motion to startup.
-5. **Calibration profiles are safety-critical.** Wrong `home`/limit values cause
-   sudden large movements. Verify physiological plausibility before participant use.
-6. **Wrist (ID 1) multi-turn range is intentional** (`-189° to 2840°`). Do not clamp to 360°.
+1. Never command a motor outside its `jointLimits`. Physical damage + injury risk.
+2. Current limit is 200 mA. Do not raise `MOTOR_CURRENT_LIMIT` without a specific reason.
+3. Call `disable:all` before any passive movement.
+4. Do not add motion to `setup()` — `initializeMotors()` holds position.
+5. Calibration profiles are safety-critical. Verify plausibility before participant use.
+6. Wrist (ID 1) range is intentionally multi-turn (`-189° to 2840°`). Do not clamp to 360°.
 
 ---
 
-## Critical protocol rules
+## Protocol rules (mandatory)
 
-Full coupling rules → [docs/serial_protocol.md](docs/serial_protocol.md)
-
-- **Do not touch firmware unless a Python-only solution is impossible.**
-  Read `utils.cpp` first. If an existing command covers the need, use it.
-- **Command names and response labels are a shared contract.**
-  Rename anything in `utils.cpp` and you must update every Python parser that reads it.
-- **Delimiter is always `;`** in both `config.h` (`COMMAND_DELIMITER`) and
-  `SerialComm.__init__()`. Change one → change both.
-- **Motor names are the join key** across firmware, profiles, and Python API calls.
-  `config.h:MOTOR_NAMES[]` must stay in sync with `profiles/<name>.json` keys.
+- Do not touch firmware unless Python-only is impossible. Read `utils.cpp` first.
+- Command names are a shared contract. Rename in `utils.cpp` → update every Python parser.
+- Delimiter is `;` in both `config.h` and `SerialComm.__init__()`. Change one → change both.
+- Motor names are the join key: `config.h:MOTOR_NAMES[]` → firmware `info` → Python → `profiles/*.json`.
 
 ---
 
-## Per-DoF calibration checklist
+## Open tasks
 
-- [x] Audit `CalibrationDialog._record()` — understand what must change for per-motor iteration
-- [ ] Decide: extract shared helpers into `calibration_utils.py` first, or add inline?
-- [x] Design per-DoF prompt sequence (motor order, anatomical descriptions)
-- [x] Implement per-motor loop in `CalibrationDialog` (GUI, Python only)
-- [ ] Mirror change in `calibrate_exo.py` CLI or explicitly document divergence
-- [ ] Add validation: warn if `limit_min == limit_max` or `home` outside `[min, max]`
-- [ ] Decide: should GUI call `update_config_h()` after save? (CLI does; GUI currently does not)
-- [ ] Live device test: apply profile and confirm per-motor limits received by firmware
+- [ ] Reflash firmware with `utils.cpp` torque fix → verify Torque column in Telemetry tab
+- [ ] Mirror streaming calibration into `calibrate_exo.py` CLI (or document divergence)
+- [ ] Live device test: apply calibration profile, confirm per-motor limits received
+- [ ] Decide: should GUI call `update_config_h()` after calibration save? (CLI does; GUI does not)
 
 ---
 
-## Quick-start commands
+## Docs (load on demand)
 
-```bash
-source .venv/Scripts/activate                          # activate venv (Git Bash)
-.venv\Scripts\activate                                 # activate venv (cmd/PowerShell)
-
-python src/nml_hand_exo/applications/hand_exo_gui.py  # launch GUI
-
-python examples/calibration/calibrate_exo.py --port COM<N> --name <profile>
-python examples/calibration/rom_assessment.py  --port COM<N> --profile <name>
-python examples/01_basic/example_serial_exo.py         # USB connectivity check
-python examples/01_basic/example_bluetooth_exo.py      # BT connectivity check
-```
-
----
-
-## Detailed docs (load on demand)
-
-| Doc | Load when... |
+| Doc | When to load |
 |-----|-------------|
-| [docs/calibration_flow.md](docs/calibration_flow.md) | Working on calibration logic, profiles, or ROM |
-| [docs/gui_workflow.md](docs/gui_workflow.md) | Working on `hand_exo_gui.py` or `CalibrationDialog` |
-| [docs/serial_protocol.md](docs/serial_protocol.md) | Touching firmware, comms, baud rates, or command parsing |
+| [docs/calibration_flow.md](docs/calibration_flow.md) | Calibration, profiles, ROM |
+| [docs/telemetry_architecture.md](docs/telemetry_architecture.md) | Telemetry tab, polling, firmware parsing |
+| [docs/apply_and_gesture_state.md](docs/apply_and_gesture_state.md) | Profile apply, default profile, `_gesture_ready` |
+| [docs/gui_workflow.md](docs/gui_workflow.md) | GUI class map, CalibrationDialog, ROMDialog |
+| [docs/serial_protocol.md](docs/serial_protocol.md) | Firmware commands, baud rates, response format |
+| [docs/gotchas.md](docs/gotchas.md) | Known bugs, traps, firmware quirks |
