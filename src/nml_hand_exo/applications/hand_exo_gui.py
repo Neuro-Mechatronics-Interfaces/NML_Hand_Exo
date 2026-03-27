@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QLineEdit, QTextEdit, QGridLayout, QMessageBox, QGroupBox, QComboBox,
     QDialog, QInputDialog, QScrollArea, QFrame, QSizePolicy, QSpacerItem,
+    QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QFontMetrics
@@ -230,6 +231,62 @@ QFrame#motor-row {
 QDialog {
     background-color: #1a1a1a;
     color: #e0e0e0;
+}
+QTabWidget::pane {
+    border: 1px solid #333333;
+    background-color: #1a1a1a;
+}
+QTabBar::tab {
+    background-color: #2e2e2e;
+    color: #e0e0e0;
+    padding: 6px 18px;
+    border: 1px solid #444444;
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    min-width: 80px;
+}
+QTabBar::tab:selected {
+    background-color: #1a1a1a;
+    color: #ffffff;
+    border-color: #c0392b;
+    border-bottom: 2px solid #c0392b;
+}
+QTabBar::tab:hover:!selected {
+    background-color: #3a3a3a;
+}
+QTableWidget {
+    background-color: #1a1a1a;
+    alternate-background-color: #222222;
+    color: #e0e0e0;
+    gridline-color: #333333;
+    border: 1px solid #333333;
+}
+QTableWidget::item {
+    color: #e0e0e0;
+    padding: 4px;
+}
+QHeaderView::section {
+    background-color: #2e2e2e;
+    color: #e0e0e0;
+    border: 1px solid #333333;
+    padding: 4px 8px;
+    font-weight: bold;
+}
+QCheckBox {
+    color: #e0e0e0;
+    spacing: 6px;
+}
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #555555;
+    background-color: #2a2a2a;
+    border-radius: 2px;
+}
+QCheckBox::indicator:checked {
+    background-color: #c0392b;
+    border-color: #c0392b;
 }
 """
 
@@ -802,11 +859,19 @@ class HandExoGUI(QWidget):
         self.motor_widgets = []  # list of dicts per motor row
         self._gesture_ready = False  # set True after calibration + enable for gestures
 
+        # Per-motor lookup maps (populated on connect, cleared on disconnect)
+        self._motor_idx: dict[str, int] = {}  # motor name → serial index (0-based)
+        self._motor_row: dict[str, int] = {}  # motor name → telemetry table row
+
         self._build_ui()
 
-        # Motor angle poll timer
+        # Motor angle poll timer (Controls tab)
         self._angle_timer = QTimer(self)
         self._angle_timer.timeout.connect(self._poll_motor_angles)
+
+        # Telemetry poll timer (Telemetry tab)
+        self._telem_timer = QTimer(self)
+        self._telem_timer.timeout.connect(self._poll_telemetry)
 
     # -- UI Construction ---------------------------------------------------
 
@@ -828,14 +893,131 @@ class HandExoGUI(QWidget):
 
         self._build_header()
         self._build_connection_section()
+
+        # Tab widget: Controls | Telemetry
+        self.main_tabs = QTabWidget()
+        self.main_layout.addWidget(self.main_tabs)
+
+        # Build the Controls tab by temporarily redirecting self.main_layout so
+        # all existing _build_*_section() methods add their boxes to it unchanged.
+        controls_container = QWidget()
+        controls_layout = QVBoxLayout(controls_container)
+        controls_layout.setSpacing(10)
+        controls_layout.setContentsMargins(0, 4, 0, 4)
+        _saved_layout = self.main_layout
+        self.main_layout = controls_layout
         self._build_motor_section()
         self._build_gesture_section()
         self._build_calibration_section()
         self._build_rom_section()
-        self._build_log_section()
-
         self.main_layout.addStretch()
+        self.main_layout = _saved_layout
+
+        self.main_tabs.addTab(controls_container, "Controls")
+        self.main_tabs.addTab(self._build_telemetry_tab(), "Telemetry")
+
+        self._build_log_section()
         self._update_enabled_state()
+
+    def _build_telemetry_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        # Control row
+        ctrl_row = QHBoxLayout()
+        self._telem_refresh_btn = QPushButton("Refresh")
+        self._telem_refresh_btn.clicked.connect(self._poll_telemetry)
+        self._telem_auto_cb = QCheckBox("Auto-refresh (500 ms)")
+        self._telem_auto_cb.setChecked(True)
+        self._telem_auto_cb.toggled.connect(self._on_telem_autorefresh)
+        self._telem_status_lbl = QLabel("Not connected")
+        self._telem_status_lbl.setStyleSheet("color: #888888;")
+        ctrl_row.addWidget(self._telem_refresh_btn)
+        ctrl_row.addWidget(self._telem_auto_cb)
+        ctrl_row.addStretch()
+        ctrl_row.addWidget(self._telem_status_lbl)
+        layout.addLayout(ctrl_row)
+
+        self._telem_table = QTableWidget(0, 4)
+        self._telem_table.setHorizontalHeaderLabels(
+            ["Motor", "Position (°)", "Torque", "Current (mA)"]
+        )
+        hdr = self._telem_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        for col in (1, 2, 3):
+            hdr.setSectionResizeMode(col, QHeaderView.Stretch)
+        self._telem_table.verticalHeader().setVisible(False)
+        self._telem_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._telem_table.setSelectionMode(QTableWidget.NoSelection)
+        self._telem_table.setAlternatingRowColors(True)
+        self._telem_table.setMinimumHeight(200)
+
+        layout.addWidget(self._telem_table)
+        return widget
+
+    def _on_telem_autorefresh(self, checked: bool):
+        if checked:
+            if self.exo_connected:
+                self._telem_timer.start(500)
+        else:
+            self._telem_timer.stop()
+
+    def _rebuild_telem_table(self):
+        """Populate telemetry table rows from self.motor_names after connect."""
+        self._telem_table.setRowCount(len(self.motor_names))
+        for row, name in enumerate(self.motor_names):
+            for col in range(4):
+                text = name if col == 0 else "—"
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignCenter)
+                self._telem_table.setItem(row, col, item)
+
+    def _poll_telemetry(self):
+        if not self.exo_connected:
+            return
+        # Each call is independent: a failure in torque/current must not block position.
+        positions = None
+        torques   = None
+        currents  = None
+        try:
+            positions = self.exo.get_absolute_motor_angle('all')
+        except Exception:
+            pass
+        try:
+            torques = self.exo.get_motor_torque('all')
+        except Exception:
+            pass
+        try:
+            currents = self.exo.get_motor_current('all')
+        except Exception:
+            pass
+
+        if positions is None and torques is None and currents is None:
+            ts = datetime.now().strftime("%H:%M:%S")
+            self._telem_status_lbl.setText(f"Read failed  {ts}")
+            self._telem_status_lbl.setStyleSheet("color: #c0392b;")
+            return
+
+        for name, row in self._motor_row.items():
+            idx = self._motor_idx[name]
+            pos  = positions.get(idx)  if positions is not None else None
+            torq = torques.get(idx)   if torques   is not None else None
+            curr = currents.get(idx)  if currents  is not None else None
+            self._telem_table.item(row, 1).setText(
+                f"{pos:.2f}"  if pos  is not None else "—"
+            )
+            self._telem_table.item(row, 2).setText(
+                f"{torq:.4f}" if torq is not None else "—"
+            )
+            self._telem_table.item(row, 3).setText(
+                f"{curr:.1f}" if curr is not None else "—"
+            )
+
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._telem_status_lbl.setText(f"Last update OK  {ts}")
+        self._telem_status_lbl.setStyleSheet("color: #27ae60;")
 
     def _build_header(self):
         title = QLabel("NML EXO")
@@ -1188,9 +1370,18 @@ class HandExoGUI(QWidget):
             self.status_label.setStyle(self.status_label.style())  # force re-style
             self._log(f"Connected to {port} @ {baud} -{self.n_motors} motors: {', '.join(self.motor_names)}")
 
+            # Precompute motor lookup maps used by telemetry polling
+            self._motor_idx = {name: i for i, name in enumerate(self.motor_names)}
+            self._motor_row = {name: row for row, name in enumerate(self.motor_names)}
+
             self._build_motor_rows()
+            self._rebuild_telem_table()
+            self._telem_status_lbl.setText("Connected — waiting for first poll")
+            self._telem_status_lbl.setStyleSheet("color: #888888;")
             self._refresh_profiles()
             self._angle_timer.start(500)
+            if self._telem_auto_cb.isChecked():
+                self._telem_timer.start(500)
         except Exception as e:
             self.exo = None
             self.exo_connected = False
@@ -1201,6 +1392,7 @@ class HandExoGUI(QWidget):
 
     def _disconnect(self):
         self._angle_timer.stop()
+        self._telem_timer.stop()
         try:
             if self.exo:
                 self.exo.close()
@@ -1209,6 +1401,16 @@ class HandExoGUI(QWidget):
         self.exo = None
         self.exo_connected = False
         self._gesture_ready = False
+        self._motor_idx = {}
+        self._motor_row = {}
+        # Reset telemetry value cells; leave motor-name column intact
+        for row in range(self._telem_table.rowCount()):
+            for col in (1, 2, 3):
+                item = self._telem_table.item(row, col)
+                if item:
+                    item.setText("—")
+        self._telem_status_lbl.setText("Not connected")
+        self._telem_status_lbl.setStyleSheet("color: #888888;")
         self.status_label.setText("Disconnected")
         self.status_label.setObjectName("status-disconnected")
         self.status_label.setStyle(self.status_label.style())

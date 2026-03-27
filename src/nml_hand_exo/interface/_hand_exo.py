@@ -185,9 +185,11 @@ class HandExo(object):
                 elif key == "absolute_angle":
                     motor_info["absolute_angle"] = float(val)
                 elif key == "current":
-                    motor_info["current"] = float(val)
+                    _m = re.match(r'[-+]?[\d.]+', val.strip())
+                    motor_info["current"] = float(_m.group()) if _m else float(val)
                 elif key == "current_limit":
-                    motor_info["current_limit"] = float(val)
+                    _m = re.match(r'[-+]?[\d.]+', val.strip())
+                    motor_info["current_limit"] = float(_m.group()) if _m else float(val)
                 else:
                     motor_info[key] = val
 
