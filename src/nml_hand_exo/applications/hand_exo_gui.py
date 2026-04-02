@@ -1147,11 +1147,20 @@ class HandExoGUI(QWidget):
 
             self.motor_rows_layout.addWidget(row)
             self.motor_widgets.append({
-                "name": name,
+                "name": name,           # motor name string used for serial commands
                 "angle_lbl": angle_lbl,
                 "status_lbl": status_lbl,
                 "toggle_btn": toggle_btn,
+                # Cached GUI belief about device torque state. Drives button text
+                # and status label. NOT a user-intent field — use user_disabled for that.
                 "enabled": False,
+                # Persistent user-intent lock.  True only when the user has
+                # explicitly disabled this motor via the Controls UI.
+                # Invariant: user-disabled motors must remain disabled and must
+                # not be re-enabled by automatic code (gesture setup, etc.) until
+                # the user explicitly enables them again.
+                # user_disabled=True always implies enabled=False.
+                "user_disabled": False,
             })
 
     def _make_motor_toggle(self, idx, name):
@@ -1159,17 +1168,22 @@ class HandExoGUI(QWidget):
             if not self.exo_connected:
                 return
             w = self.motor_widgets[idx]
+            # Always use motor name for commands, never the enumerate index.
+            # idx is UI order only; firmware IDs are hardware-assigned (e.g. WRIST=1,
+            # INDEX=13) and do not match 0-based indices.
             try:
                 if w["enabled"]:
-                    self.exo.disable_motor(idx)
+                    self.exo.disable_motor(name)
                     w["enabled"] = False
+                    w["user_disabled"] = True   # explicit user action — block gesture re-enable
                     w["toggle_btn"].setText("Enable")
                     w["status_lbl"].setText("OFF")
                     w["status_lbl"].setStyleSheet("color: #c0392b;")
                     self._log(f"Disabled motor {name}")
                 else:
-                    self.exo.enable_motor(idx)
+                    self.exo.enable_motor(name)
                     w["enabled"] = True
+                    w["user_disabled"] = False  # explicit user action — clear the block
                     w["toggle_btn"].setText("Disable")
                     w["status_lbl"].setText("ON")
                     w["status_lbl"].setStyleSheet("color: #27ae60;")
@@ -1215,7 +1229,12 @@ class HandExoGUI(QWidget):
         self.main_layout.addWidget(box)
 
     def _ensure_gesture_ready(self):
-        """Enable motors and apply calibration if needed before gestures."""
+        """Enable motors and apply calibration if needed before gestures.
+
+        Invariant: user-disabled motors must remain disabled and must not be
+        moved by gesture commands until explicitly re-enabled.  Only motors
+        whose ``user_disabled`` flag is False are enabled here.
+        """
         if not self._gesture_ready:
             # Apply calibration so gesture angles scale correctly
             default_profile = get_default_profile_name()
@@ -1228,15 +1247,22 @@ class HandExoGUI(QWidget):
             else:
                 self._log("Warning: no calibration profile found. Gestures may not work correctly.")
 
-            # Enable all motors
+            # Enable only motors not locked off by the user (see user_disabled invariant in docstring).
             try:
-                self.exo.enable_motor('all')
+                enabled_count = 0
                 for w in self.motor_widgets:
-                    w["enabled"] = True
-                    w["toggle_btn"].setText("Disable")
-                    w["status_lbl"].setText("ON")
-                    w["status_lbl"].setStyleSheet("color: #27ae60;")
-                self._log("Enabled all motors for gesture control.")
+                    if not w["user_disabled"]:
+                        self.exo.enable_motor(w["name"])  # name, not index — see _make_motor_toggle
+                        w["enabled"] = True
+                        w["toggle_btn"].setText("Disable")
+                        w["status_lbl"].setText("ON")
+                        w["status_lbl"].setStyleSheet("color: #27ae60;")
+                        enabled_count += 1
+                skipped = len(self.motor_widgets) - enabled_count
+                msg = f"Enabled {enabled_count} motor(s) for gesture control."
+                if skipped:
+                    msg += f" {skipped} user-disabled motor(s) left off."
+                self._log(msg)
             except Exception as e:
                 self._log(f"Warning: could not enable motors: {e}")
 
@@ -1425,6 +1451,7 @@ class HandExoGUI(QWidget):
                 self.exo.enable_motor('all')
                 for w in self.motor_widgets:
                     w["enabled"] = True
+                    w["user_disabled"] = False  # explicit "Enable All" clears user-disabled
                     w["toggle_btn"].setText("Disable")
                     w["status_lbl"].setText("ON")
                     w["status_lbl"].setStyleSheet("color: #27ae60;")
@@ -1433,6 +1460,7 @@ class HandExoGUI(QWidget):
                 self.exo.disable_motor('all')
                 for w in self.motor_widgets:
                     w["enabled"] = False
+                    w["user_disabled"] = True   # explicit "Disable All" marks all user-disabled
                     w["toggle_btn"].setText("Enable")
                     w["status_lbl"].setText("OFF")
                     w["status_lbl"].setStyleSheet("color: #c0392b;")

@@ -91,7 +91,31 @@ To upload the firmware:
 
 ## Usage
 
+### GUI Application
+
+The primary way to interact with the exoskeleton is through the PyQt5 desktop GUI:
+
+```bash
+python src/nml_hand_exo/applications/hand_exo_gui.py
+```
+
+The GUI provides:
+
+- **Connection panel** — connect via USB serial port or Bluetooth (HC-05). Auto-detects available COM ports.
+- **Controls tab**
+  - Per-motor angle sliders and enable/disable toggles
+  - Gesture presets (open, close, pinch, etc.) with a lazy-initialize safety gate
+  - **Calibration** — opens a guided dialog for streaming joint-limit calibration. Operator moves each DoF through its full range during two global streaming phases (extension, then flexion). Results are saved as a per-user profile JSON.
+  - **ROM Assessment** — opens a dialog to run a range-of-motion protocol and export data to `output_data/<name>_rom_<date>_<run>.csv`.
+- **Telemetry tab** — live table showing position, torque, and current for all 9 motors. Includes a manual Refresh button and an Auto-refresh checkbox (250 ms polling).
+- **Log panel** — timestamped command/response log at the bottom of the window.
+
+Calibration profiles are stored in `examples/calibration/profiles/<name>.json`. A default profile can be set in `profiles/config.json` and is applied automatically before gesture commands.
+
+### Python API
+
 An example of using the Python API for scripting and control:
+
 ```python
 from nml_hand_exo.hand_exo import HandExo
 
@@ -103,17 +127,25 @@ print(f"Motor angle: {angle} degrees")
 exo.disable_motor(1)
 ```
 
-You can control the hand exoskeleton over USB or Bluetooth using simple, structured serial commands. For example:
+You can control the exoskeleton over USB or Bluetooth using structured serial commands:
 
 - `set_angle:WRIST:30` — set wrist motor to 30 degrees.
-
 - `enable:1` — enable motor 1 torque.
-
 - `get_angle:1` — query relative angle.
 
-Supported aliases are `THUMB`, `INDEX`, `MIDDLE`, `RING`, `PINKY`, `WRIST`
+Supported motor aliases: `THUMB`, `INDEX`, `MIDDLE`, `RING`, `PINKY`, `WRIST`
 
 For a complete list of commands, see the [Usage Guide](https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/usage.html).
+
+### CLI Calibration
+
+A command-line calibration wizard is also available:
+
+```bash
+python examples/calibration/calibrate_exo.py
+```
+
+This saves a profile JSON and updates `src/cpp/nml_hand_exo/config.h` with the calibrated joint limits.
 
 ## Demo
 
@@ -121,12 +153,12 @@ For a complete list of commands, see the [Usage Guide](https://neuro-mechatronic
 
 ![](/docs/source/_static/pyqtemg.gif)
 
-A demo script is included to showcase real-time plotting of EMG signals from a connected MindRove EMG band. 
+A demo script is included to showcase real-time plotting of EMG signals from a connected MindRove EMG band.
 1) Connect your MindRove EMG Band to the PC (using a Wifi dongle if you want to maintain internet connection on a separate wifi network)
 2) Run the demo script
-   ~~~
+   ```
    python demo_mindrove_realtime.py
-   ~~~
+   ```
 
 ## 📖 How to Cite
 
@@ -144,6 +176,7 @@ BibTeX:
   journal      = {GitHub repository},
   howpublished = {\url{https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo}}
 }
+```
 
 ## License
 

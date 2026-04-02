@@ -924,9 +924,43 @@ class HandExo(object):
         with open(filepath, "r") as f:
             cal = json.load(f)
 
+        # --- Epoch alignment for multi-turn motors ---
+        # In OP_CURRENT_BASED_POSITION the Dynamixel resets its multi-turn counter
+        # at power-on.  The same physical joint angle may be reported as N*360° away
+        # from the value recorded during calibration.  Query actual positions first
+        # and snap every profile value to the motor's current epoch before pushing to
+        # firmware; otherwise getRelativeAngle() subtracts a home that is ~360° off.
+        self.send_command("get_absolute_angle:all")
+        _raw = self._receive(wait_until_return=True)
+        _parsed = self._parse_motor_data_block(_raw)
+        abs_by_name = {
+            info["name"]: info["absolute_angle"]
+            for info in _parsed.values()
+            if "name" in info and "absolute_angle" in info
+        }
+
         for name, vals in cal["motors"].items():
-            self.set_zero_offset(name, vals["home"])
-            self.set_motor_limits(name, vals["limit_min"], vals["limit_max"])
+            profile_home  = vals["home"]
+            current_abs   = abs_by_name.get(name)
+
+            if current_abs is not None:
+                epoch_shift = round((current_abs - profile_home) / 360.0) * 360.0
+            else:
+                epoch_shift = 0.0
+                self.logger(f"[apply_calibration] {name}: position unreadable, no epoch correction", warning=True)
+
+            adj_home      = profile_home       + epoch_shift
+            adj_limit_min = vals["limit_min"]  + epoch_shift
+            adj_limit_max = vals["limit_max"]  + epoch_shift
+
+            self.logger(
+                f"[cal] {name}: profile_home={profile_home:.2f} cur_abs="
+                + (f"{current_abs:.2f}" if current_abs is not None else "N/A")
+                + f" shift={epoch_shift:+.0f} adj_home={adj_home:.2f}"
+            )
+
+            self.set_zero_offset(name, adj_home)
+            self.set_motor_limits(name, adj_limit_min, adj_limit_max)
             self.set_flip(name, vals["flip"])
 
         profile_name = os.path.basename(filepath).removesuffix(".json")
