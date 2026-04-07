@@ -29,6 +29,19 @@ def _trusted_namespace_paths(paths):
         candidate = Path(raw_path).resolve()
         if candidate == current_pkg or any(_is_within(candidate, root) for root in trusted_roots):
             trusted.append(str(candidate))
+
+    # Include known NeuroBridge package paths explicitly so CI/test runs can
+    # resolve `nml_hand_exo.ai` without separately installing NeuroBridge.
+    explicit_pkg_candidates = [
+        repo_root / "external" / "NeuroBridge" / "src" / "nml_hand_exo",
+        repo_root.parent / "NeuroBridge" / "src" / "nml_hand_exo",
+    ]
+    for candidate in explicit_pkg_candidates:
+        if candidate.exists():
+            resolved = str(candidate.resolve())
+            if resolved not in trusted:
+                trusted.append(resolved)
+
     return trusted
 
 
