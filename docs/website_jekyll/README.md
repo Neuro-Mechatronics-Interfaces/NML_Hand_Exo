@@ -49,7 +49,7 @@ gem install bundler
 ### Serve Locally (with Live Reload)
 
 ```powershell
-cd exo_docs_scaffold\website_jekyll
+cd docs\website_jekyll
 .\serve_jekyll.ps1
 ```
 
@@ -63,7 +63,7 @@ This will:
 ### Build Static Site
 
 ```powershell
-cd exo_docs_scaffold\website_jekyll
+cd docs\website_jekyll
 .\build_jekyll.ps1
 ```
 
@@ -92,7 +92,7 @@ website_jekyll/
 ├── _config.yml          # Jekyll configuration
 ├── index.md             # Home page
 ├── quickstart.md        # Getting started guide
-├── api.md               # API overview
+├── cpp_api.md           # C++ API overview
 ├── examples.md          # Examples showcase
 ├── contributing.md      # Contribution guidelines
 ├── assembly.md          # Hardware assembly

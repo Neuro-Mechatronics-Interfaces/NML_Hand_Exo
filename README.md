@@ -11,6 +11,20 @@
 
 This repository contains the firmware and Python tools for controlling the **NML Hand Exoskeleton**—a modular, open-source robotic hand exoskeleton platform for research and prototyping.
 
+## Quick Start (cmd)
+
+If you are using NeuroBridge as a submodule dependency for AI runtime:
+
+```bat
+scripts\setup_neurobridge_submodule.bat
+scripts\run_ai_agent.bat
+scripts\run_exo_visualizer.bat
+```
+
+Run AI agent and visualizer in separate terminals.
+
+The AI launcher defaults to the `nml_default` bundle. Add `--no-dry-run` when you want hardware motion enabled.
+
 ## 🚀 Overview
 
 The **NML Hand Exoskeleton** includes:
@@ -91,16 +105,29 @@ To upload the firmware:
 
 ## Usage
 
+### AI Agent via NeuroBridge Submodule
+
+If you want the AI runtime to come from a pinned NeuroBridge dependency (recommended for dependency isolation and reproducibility), use:
+
+- [docs/AI_SUBMODULE_SETUP.md](docs/AI_SUBMODULE_SETUP.md)
+- [docs/NEUROBRIDGE_BOUNDARY.md](docs/NEUROBRIDGE_BOUNDARY.md)
+- [docs/PHASE2_CUTOVER_CHECKLIST.md](docs/PHASE2_CUTOVER_CHECKLIST.md)
+
+This setup supports running both the AI agent and exo visualizer from one environment while keeping NeuroBridge version-pinned as a submodule.
+
 An example of using the Python API for scripting and control:
 ```python
-from nml_hand_exo.hand_exo import HandExo
+from nml_hand_exo.interface import HandExo, SerialComm
 
-exo = HandExo('COM3', baudrate=57600)
+comm = SerialComm(port="COM3", baudrate=57600)
+exo = HandExo(comm)
+exo.connect()
 exo.enable_motor(1)
 exo.set_motor_angle(1, 45)
 angle = exo.get_motor_angle(1)
 print(f"Motor angle: {angle} degrees")
 exo.disable_motor(1)
+exo.close()
 ```
 
 You can control the hand exoskeleton over USB or Bluetooth using simple, structured serial commands. For example:
@@ -144,6 +171,7 @@ BibTeX:
   journal      = {GitHub repository},
   howpublished = {\url{https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo}}
 }
+```
 
 ## License
 
