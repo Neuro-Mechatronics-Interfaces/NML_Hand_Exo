@@ -16,7 +16,7 @@ Prerequisites
 Step 1. Assemble Exoskeleton
 ----------------------------
 
-Follow the :doc:`assembly instructions`  provided in the hardware documentation to put together the exoskeleton.
+Follow the assembly instructions in the project hardware documentation to put together the exoskeleton.
 
 Step 2. Connect the Device
 --------------------------

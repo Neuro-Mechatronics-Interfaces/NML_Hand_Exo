@@ -20,17 +20,16 @@ This folder contains the **Sphinx documentation** for the NML Hand Exoskeleton p
 - `Doxyfile` - Doxygen configuration for C++ docs
 - `Makefile` / `make.bat` - Build commands
 
+## 🛡️ Safety and Architecture Docs
+
+- `SAFETY_REQUIREMENTS.md` - Lightweight requirements-to-tests safety trace for robotics runtime behavior
+- `ROBOTICS_ARCHITECTURE.md` - Why the robotics submodule is layered and how responsibilities are split
+
 ## 🛠️ Building Documentation Locally
 
 ### Quick Start
 
-**Option 1: PowerShell Script (Recommended)**
-```powershell
-cd docs
-.\build_docs.ps1
-```
-
-**Option 2: Manual Build**
+**Manual Build**
 ```powershell
 cd docs
 .\make.bat html
@@ -55,9 +54,6 @@ For automatic rebuilding when you edit docs:
 
 ```powershell
 cd docs
-.\serve_docs.ps1
-
-# Or manually:
 pip install sphinx-autobuild
 sphinx-autobuild source build/html --open-browser
 ```
@@ -174,7 +170,7 @@ View at: https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/
 .\make.bat clean
 
 # Build and serve with live reload
-.\serve_docs.ps1
+sphinx-autobuild source build/html --open-browser
 
 # Check for broken links
 .\make.bat linkcheck
