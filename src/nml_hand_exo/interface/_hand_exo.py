@@ -41,6 +41,10 @@ class HandExo(object):
         if auto_connect:
             self.device.connect()
 
+    @property
+    def connected(self) -> bool:
+        return bool(self.device and self.device.is_connected())
+
     def logger(self, *argv, warning: bool = False):
         """ 
         Robust debugging print function
@@ -221,7 +225,7 @@ class HandExo(object):
             bool: True if the motor is enabled, False otherwise.
 
         """
-        self._get_motor_attribute('enabled', motor_id, wait_until_return=True)
+        return self._get_motor_attribute('enabled', motor_id, wait_until_return=True)
 
     def disable_motor(self, motor_id: (int or str) = 'all'):
         """
@@ -534,6 +538,12 @@ class HandExo(object):
         else:
             cmd = f"set_angle:{int(motor_id)}:{angle}"
         self.send_command(cmd)
+
+    def set_joint(self, motor_id: (int or str), angle: float):
+        """
+        Backwards-compatible alias for set_motor_angle.
+        """
+        self.set_motor_angle(motor_id, angle)
 
     def get_absolute_motor_angle(self, motor_id: (int or str) = 'all') -> float:
         """

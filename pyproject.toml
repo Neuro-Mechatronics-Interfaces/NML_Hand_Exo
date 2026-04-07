@@ -10,7 +10,8 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 keywords = ["exo", "neurotech", "biomedical", "rehabilitation"]
 dependencies = [
     "numpy",
@@ -31,10 +32,19 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["nml_hand_exo"]
 package-dir = { "" = "src" }
 
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["nml_hand_exo*"]
+
 [project.optional-dependencies]
+ai = [
+    "faster-whisper",
+    "elevenlabs",
+    "sounddevice",
+]
+
 docs = [
     "sphinx",
     "sphinx-autodoc-typehints",
@@ -44,3 +54,6 @@ docs = [
     "m2r2",
     "sphinx_rtd_theme",
 ]
+
+[project.scripts]
+nml-exo-state-visualizer = "nml_hand_exo.applications.exo_state_visualizer:main"

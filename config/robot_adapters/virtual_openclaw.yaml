@@ -1,0 +1,15 @@
+config_version: 1
+adapter_id: virtual_openclaw
+adapter_kwargs:
+  device:
+    name: OpenClaw Virtual Robot
+cli_defaults:
+  confirmation_mode: balanced
+  provider: heuristic
+  provider_fallback: heuristic
+  assistant_tone: warm
+  default_safe_confidence: aggressive
+  dry_run: true
+  simulate_exo: false
+  telemetry_broadcast: true
+  telemetry_heartbeat_seconds: 1.0

@@ -14,7 +14,7 @@ class HandExoGUI(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("HandExo Control Panel")
-        self.exo = HandExo()
+        self.exo = None
         self.n_motors = 1 # Default to 1 motor until connected
         self.sliders = []
         self.angle_fields = []
@@ -64,7 +64,9 @@ class HandExoGUI(QWidget):
         port = self.port_input.text()
         baud = int(self.baud_input.text())
         try:
-            self.exo.connect(port, baud)
+            comm = SerialComm(port=port, baudrate=baud)
+            self.exo = HandExo(comm)
+            self.exo.connect()
             if self.exo.connected:
                 info = self.exo.info()
                 self.n_motors = info.get("n_motors", 0)
@@ -112,8 +114,8 @@ class HandExoGUI(QWidget):
         def handler(value):
             try:
                 self.angle_fields[idx].setText(str(value))
-                if self.exo.connected:
-                    self.exo.set_joint(idx, value)
+                if self.exo and self.exo.connected:
+                    self.exo.set_motor_angle(idx, value)
                     self.log.append(f"Set motor {idx} to {value}°")
             except Exception as e:
                 self.log.append(f"Error: {e}")
@@ -126,8 +128,8 @@ class HandExoGUI(QWidget):
                 self.sliders[idx].blockSignals(True)  # Prevent slider update
                 self.sliders[idx].setValue(int(angle))
                 self.sliders[idx].blockSignals(False)  # Re-enable slider update
-                if self.exo.connected:
-                    self.exo.set_joint(idx, angle)
+                if self.exo and self.exo.connected:
+                    self.exo.set_motor_angle(idx, angle)
                     self.log.append(f"Set motor {idx} to {angle}°")
             except Exception as e:
                 self.log.append(f"Error: {e}")

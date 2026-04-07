@@ -1,0 +1,8 @@
+profile_version: 1
+profile_id: rapid_iteration
+description: Balanced defaults for simulation-driven iteration cycles.
+defaults:
+  confirmation_mode: balanced
+  default_safe_confidence: balanced
+  max_relative_angle: 135.0
+  dry_run: true

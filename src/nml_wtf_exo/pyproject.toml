@@ -34,9 +34,19 @@ dev = [
 Homepage = "https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo"
 
 [tool.setuptools]
-# because this pyproject lives INSIDE src/nml_wtf_exo/, the package root is "."
-packages = ["nml_wtf_exo"]
-package-dir = { "nml_wtf_exo" = "." } 
+packages = [
+  "nml_wtf_exo",
+  "nml_wtf_exo.controller",
+  "nml_wtf_exo.gui",
+  "nml_wtf_exo.gui.ui",
+  "nml_wtf_exo.lsl",
+  "nml_wtf_exo.resources",
+  "nml_wtf_exo.run",
+  "nml_wtf_exo.test",
+  "nml_wtf_exo.tools",
+  "nml_wtf_exo.utils",
+]
+package-dir = { "nml_wtf_exo" = "." }
 include-package-data = true
 
 # include your non-.py assets in wheels/sdists

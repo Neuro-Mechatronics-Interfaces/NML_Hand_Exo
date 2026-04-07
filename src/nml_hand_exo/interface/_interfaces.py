@@ -5,11 +5,23 @@ import time
 
 
 class BaseComm:
-    def connect(self): pass
-    def disconnect(self): pass
-    def send(self, message: str): pass
-    def receive(self) -> str: pass
-    def is_connected(self) -> bool: pass
+    def connect(self):
+        raise NotImplementedError()
+
+    def close(self):
+        raise NotImplementedError()
+
+    def disconnect(self):
+        self.close()
+
+    def send(self, message: str):
+        raise NotImplementedError()
+
+    def receive(self, wait_until_return: bool = False, timeout: float = 2.0) -> str:
+        raise NotImplementedError()
+
+    def is_connected(self) -> bool:
+        raise NotImplementedError()
 
 
 class TCPComm(BaseComm):
@@ -36,23 +48,50 @@ class TCPComm(BaseComm):
     def close(self):
         if self.sock:
             self.sock.close()
+            self.sock = None
 
     def send(self, message: str):
         self.sock.sendall(message.encode())
 
-    def receive(self) -> str:
-        return self.sock.recv(1024).decode().strip()
+    def receive(self, wait_until_return: bool = False, timeout: float = 2.0) -> str:
+        if not self.sock:
+            raise ConnectionError("TCP socket is not connected")
+
+        if not wait_until_return:
+            self.sock.settimeout(timeout)
+            return self.sock.recv(4096).decode(errors="ignore").strip()
+
+        chunks = []
+        deadline = time.monotonic() + timeout
+
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            self.sock.settimeout(min(0.1, max(remaining, 0.01)))
+            try:
+                chunk = self.sock.recv(4096)
+            except socket.timeout:
+                if chunks:
+                    break
+                continue
+
+            if not chunk:
+                break
+
+            chunks.append(chunk)
+
+        return b"".join(chunks).decode(errors="ignore").strip()
 
     def is_connected(self) -> bool:
-        return self.sock is not None
+        return self.sock is not None and self.sock.fileno() != -1
 
 
 class SerialComm(BaseComm):
-    def __init__(self, port, baudrate, command_delimiter=';', timeout=1):
+    def __init__(self, port, baudrate, command_delimiter=';', timeout=1, verbose=False):
         self.port = port
         self.baudrate = baudrate
         self.command_delimiter = command_delimiter
         self.timeout = timeout
+        self.verbose = verbose
         self.device = None
 
     def connect(self):

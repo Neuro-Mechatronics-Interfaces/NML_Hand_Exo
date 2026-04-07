@@ -1,0 +1,26 @@
+bundle_version: 1
+bundle_id: nml_default
+description: Default deployment bundle for NML Hand Exo simulator-first development.
+adapter:
+  id: nml_hand_exo
+  config: ../robot_adapters/nml_hand_exo.yaml
+signature:
+  required: false
+policy_profile: ../policy_profiles/safe_lab.yaml
+skill_packs:
+  - ../skill_packs/nml_core.md
+telemetry:
+  schema_version: v1
+  strict: true
+runtime_defaults:
+  provider: heuristic
+  provider_fallback: heuristic
+  assistant_tone: warm
+  confirmation_mode: relaxed
+  dry_run: true
+  simulate_exo: true
+  telemetry_broadcast: true
+tags:
+  - nml
+  - simulator
+  - safe-defaults

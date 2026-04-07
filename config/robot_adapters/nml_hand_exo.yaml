@@ -1,0 +1,13 @@
+config_version: 1
+adapter_id: nml_hand_exo
+adapter_kwargs: {}
+cli_defaults:
+  confirmation_mode: relaxed
+  provider: heuristic
+  provider_fallback: heuristic
+  assistant_tone: warm
+  default_safe_confidence: aggressive
+  dry_run: true
+  simulate_exo: true
+  telemetry_broadcast: true
+  telemetry_heartbeat_seconds: 1.0
