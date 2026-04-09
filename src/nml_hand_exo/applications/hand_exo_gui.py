@@ -1260,8 +1260,9 @@ class HandExoGUI(QWidget):
         self.refresh_btn.clicked.connect(self._refresh_ports)
 
         self.baud_combo = QComboBox()
-        for b in ["57600", "115200", "230400"]:
+        for b in ["9600", "57600", "115200", "230400"]:
             self.baud_combo.addItem(b)
+        self.baud_combo.setCurrentText("57600")  # default to firmware baud rate
 
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.setProperty("accent", True)

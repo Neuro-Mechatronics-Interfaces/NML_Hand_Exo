@@ -47,7 +47,7 @@
   //OpenRB does not require the DIR control pin.
   #define DEBUG_SERIAL Serial
   #define DXL_SERIAL Serial1
-  #define COMMAND_SERIAL Serial2
+  #define COMMAND_SERIAL Serial3  // D13(TX)/D14(RX) — HC-05 Bluetooth UART
   //#define DEBUG_SERIAL Serial
   //const int DXL_DIR_PIN = -1;
 #else // Other boards when using DynamixelShield
