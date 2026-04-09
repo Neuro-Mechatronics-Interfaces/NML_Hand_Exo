@@ -8,6 +8,7 @@ calibration, and ROM assessment -all from the UI.
 
 import csv
 import json
+import math
 import os
 import re
 import statistics
@@ -844,6 +845,190 @@ class ROMDialog(QDialog):
 
 
 # ==========================================================================
+#  Hand State Visualisation Widget
+# ==========================================================================
+
+class HandSkeletonWidget(QWidget):
+    """
+    2D dorsal-view stick-figure hand skeleton, driven by normalised motor states.
+
+    Call update_motor_states(t_dict, connected) after each angle poll.
+    Each t-value is in [0, 1]:  0 = extended / open,  1 = flexed / closed.
+
+    Motor → visual role
+    ───────────────────
+      index / middle / ring / pinky  →  2-segment finger curl (MCP + PIP joints)
+      thumbflex                      →  thumb tip curl
+      thumbadd                       →  thumb lateral abduction angle
+      thumbrot                       →  thumb metacarpal in-plane rotation (±7°)
+      wrist                          →  tilt of the whole hand assembly (±9°)
+      wrist2                         →  omitted (v1; pronation/supination not shown)
+    """
+
+    # (MCP x, MCP y, proximal length, distal length) in hand-unit space.
+    # Dorsal right-hand view: index on the left, pinky on the right.
+    _FINGER_CFG = {
+        "index":  (-0.110, 0.330, 0.175, 0.115),
+        "middle": (-0.037, 0.355, 0.195, 0.130),
+        "ring":   ( 0.037, 0.345, 0.180, 0.120),
+        "pinky":  ( 0.115, 0.310, 0.135, 0.090),
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._t: dict[str, float] = {}   # normalised motor states
+        self._connected = False
+        self.setMinimumSize(260, 320)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+    def update_motor_states(self, t_dict: dict[str, float], connected: bool = True):
+        """Push new normalised [0, 1] states and request a repaint."""
+        self._t = dict(t_dict)
+        self._connected = connected
+        self.update()
+
+    # -- Paint ---------------------------------------------------------------
+
+    def paintEvent(self, event):
+        from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QPolygonF
+        from PyQt5.QtCore import QPointF
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+
+        if not self._connected:
+            painter.setPen(QColor("#555555"))
+            painter.setFont(QFont("Segoe UI", 10))
+            painter.drawText(self.rect(), Qt.AlignCenter,
+                             "Connect a device\nto view hand state")
+            return
+
+        # ── Scale / origin ───────────────────────────────────────────────────
+        # Hand bounding box (unit space): ~0.44 wide (−0.24 … +0.20),
+        #   ~0.78 tall (−0.10 forearm … +0.68 middle tip at full extension).
+        PAD = 18
+        scale = min((w - 2 * PAD) / 0.44, (h - 2 * PAD) / 0.78)
+        # ox: keep the 0.44-unit box horizontally centred; thumb extends left so
+        # we bias the origin 0.24 units from the left edge of that box.
+        ox = PAD + 0.24 * scale + max(0.0, (w - 2 * PAD - 0.44 * scale) / 2)
+        oy = h - PAD - 0.08 * scale  # wrist origin near widget bottom
+
+        def _px(x, y):
+            """Hand-unit coords → screen pixels (y-axis flipped for screen)."""
+            return ox + x * scale, oy - y * scale
+
+        # ── Pens / brushes ───────────────────────────────────────────────────
+        lw = max(2, int(scale * 0.022))
+        bone_pen  = QPen(QColor("#c0392b"), lw, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        thin_pen  = QPen(QColor("#3a3a3a"), max(1, lw - 1), Qt.SolidLine, Qt.RoundCap)
+        joint_brush  = QBrush(QColor("#777777"))
+        accent_brush = QBrush(QColor("#c0392b"))
+        palm_brush   = QBrush(QColor("#222222"))
+        jr = max(3, int(scale * 0.028))  # joint dot radius (px)
+
+        # ── Wrist tilt ───────────────────────────────────────────────────────
+        # t=0 → extended (hand tilts back), t=0.5 → neutral, t=1 → flexed.
+        # The whole hand assembly rotates ±9° around the wrist origin.
+        t_wrist = self._t.get("wrist", 0.5)
+        tilt_rad = math.radians((t_wrist - 0.5) * 18.0)
+        cos_t, sin_t = math.cos(tilt_rad), math.sin(tilt_rad)
+
+        def _rot(x, y):
+            """Rotate by wrist tilt around (0, 0)."""
+            return x * cos_t - y * sin_t, x * sin_t + y * cos_t
+
+        # ── Chain-walking helper ─────────────────────────────────────────────
+        def _walk(x0, y0, dir_deg, segs):
+            """
+            Walk a segment chain starting at (x0, y0).
+            dir_deg: initial direction in degrees (90 = straight up).
+            segs: list of (length, bend_deg); each bend_deg is subtracted from
+                  the current direction so positive bend curls toward the palm.
+            Returns a list of (x, y) unit-space points (start included),
+            with wrist-tilt rotation already applied.
+            """
+            pts = [(x0, y0)]
+            d = dir_deg
+            for length, bend in segs:
+                d -= bend
+                xi = pts[-1][0] + length * math.cos(math.radians(d))
+                yi = pts[-1][1] + length * math.sin(math.radians(d))
+                pts.append((xi, yi))
+            return [_rot(xi, yi) for xi, yi in pts]
+
+        # ── Drawing helpers ──────────────────────────────────────────────────
+        def _chain(pts):
+            """Draw bone segments between consecutive rotated unit-space points."""
+            painter.setPen(bone_pen)
+            for i in range(len(pts) - 1):
+                x1, y1 = _px(*pts[i])
+                x2, y2 = _px(*pts[i + 1])
+                painter.drawLine(int(x1), int(y1), int(x2), int(y2))
+
+        def _dot(rx, ry, r=None, brush=None):
+            """Draw joint dot at rotated unit-space position (rx, ry)."""
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(brush or joint_brush)
+            cr = r or jr
+            cx_, cy_ = _px(rx, ry)
+            painter.drawEllipse(int(cx_ - cr), int(cy_ - cr), cr * 2, cr * 2)
+
+        # ── Forearm stub (fixed — does not rotate with wrist tilt) ───────────
+        painter.setPen(thin_pen)
+        ax, ay = _px(0.0, -0.08)
+        bx, by = _px(0.0,  0.00)
+        painter.drawLine(int(ax), int(ay), int(bx), int(by))
+        # Wrist joint dot in accent colour, drawn here so it sits on top of
+        # the palm polygon painted next.
+        _dot(0.0, 0.0, jr + 2, accent_brush)
+
+        # ── Palm body ────────────────────────────────────────────────────────
+        # Trapezoid: narrower at wrist, wider at the knuckle row.
+        palm_corners = [(-0.10, 0.02), (-0.155, 0.32),
+                        ( 0.155, 0.32), ( 0.10, 0.02)]
+        r_palm = [_rot(x, y) for x, y in palm_corners]
+        poly = QPolygonF([QPointF(*_px(x, y)) for x, y in r_palm])
+        painter.setPen(thin_pen)
+        painter.setBrush(palm_brush)
+        painter.drawPolygon(poly)
+        painter.setPen(bone_pen)
+
+        # ── Fingers ──────────────────────────────────────────────────────────
+        # Live angles come from get_angle:all → firmware getRelativeAngle.
+        # Normalised t: 0 = home/extended, 1 = calibrated maximum flexion.
+        # MCP bends up to 70°, PIP adds up to 50° — producing a natural curl.
+        for name, (mx, my, prox, dist) in self._FINGER_CFG.items():
+            t = self._t.get(name, 0.0)
+            pts = _walk(mx, my, 90.0, [
+                (prox, t * 70.0),   # MCP joint
+                (dist, t * 50.0),   # PIP joint (anatomically coupled for v1)
+            ])
+            _chain(pts)
+            for pt in pts[1:]:  # skip the knuckle — it's on the palm edge
+                _dot(*pt)
+
+        # ── Thumb ────────────────────────────────────────────────────────────
+        # CMC joint on the radial (left) side of palm, mid-height.
+        # thumbadd: abduction spread → base direction 125° … 153° from +x.
+        # thumbrot: metacarpal rotation ±7°.
+        # thumbflex: proximal phalanx curl 0° … 60°.
+        t_add  = self._t.get("thumbadd",  0.0)
+        t_rot  = self._t.get("thumbrot",  0.5)
+        t_flex = self._t.get("thumbflex", 0.0)
+
+        cmc_x, cmc_y = -0.145, 0.130
+        base_dir  = 125.0 + t_add * 28.0 + (t_rot - 0.5) * 14.0
+        thumb_pts = _walk(cmc_x, cmc_y, base_dir, [
+            (0.130, 0.0),            # metacarpal — no intrinsic bend
+            (0.115, t_flex * 60.0),  # proximal phalanx — flexion curl
+        ])
+        _chain(thumb_pts)
+        for pt in thumb_pts:
+            _dot(*pt, r=jr - 1)
+
+
+# ==========================================================================
 #  Main GUI
 # ==========================================================================
 
@@ -862,6 +1047,9 @@ class HandExoGUI(QWidget):
         # Per-motor lookup maps (populated on connect, cleared on disconnect)
         self._motor_idx: dict[str, int] = {}  # motor name → serial index (0-based)
         self._motor_row: dict[str, int] = {}  # motor name → telemetry table row
+        # Cached after every successful apply_calibration; used by Hand State tab
+        # to normalise live relative angles against per-motor calibrated limits.
+        self._active_cal_profile: dict | None = None
 
         self._build_ui()
 
@@ -915,6 +1103,7 @@ class HandExoGUI(QWidget):
 
         self.main_tabs.addTab(controls_container, "Controls")
         self.main_tabs.addTab(self._build_telemetry_tab(), "Telemetry")
+        self.main_tabs.addTab(self._build_visualization_tab(), "Hand State")
 
         self._build_log_section()
         self._update_enabled_state()
@@ -956,6 +1145,31 @@ class HandExoGUI(QWidget):
 
         layout.addWidget(self._telem_table)
         return widget
+
+    def _build_visualization_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+
+        self._vis_status_lbl = QLabel("No profile loaded — showing home position")
+        self._vis_status_lbl.setStyleSheet("color: #888888; font-size: 10px;")
+        self._vis_status_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._vis_status_lbl)
+
+        self._hand_vis = HandSkeletonWidget()
+        layout.addWidget(self._hand_vis, stretch=1)
+        return widget
+
+    def _set_active_profile(self, name: str, profile: dict | None):
+        """Cache the active calibration profile and update the Hand State status label."""
+        self._active_cal_profile = profile
+        if profile is not None:
+            self._vis_status_lbl.setText(f"Profile: {name}")
+            self._vis_status_lbl.setStyleSheet("color: #27ae60; font-size: 10px;")
+        else:
+            self._vis_status_lbl.setText("No profile loaded — showing home position")
+            self._vis_status_lbl.setStyleSheet("color: #888888; font-size: 10px;")
 
     def _on_telem_autorefresh(self, checked: bool):
         if checked:
@@ -1241,6 +1455,7 @@ class HandExoGUI(QWidget):
             if default_profile:
                 try:
                     self.exo.apply_calibration(default_profile)
+                    self._set_active_profile(default_profile, load_profile(default_profile))
                     self._log(f"Applied calibration profile '{default_profile}' for gestures.")
                 except Exception as e:
                     self._log(f"Warning: could not apply calibration: {e}")
@@ -1429,6 +1644,8 @@ class HandExoGUI(QWidget):
         self._gesture_ready = False
         self._motor_idx = {}
         self._motor_row = {}
+        self._set_active_profile("", None)
+        self._hand_vis.update_motor_states({}, connected=False)
         # Reset telemetry value cells; leave motor-name column intact
         for row in range(self._telem_table.rowCount()):
             for col in (1, 2, 3):
@@ -1480,6 +1697,8 @@ class HandExoGUI(QWidget):
     def _poll_motor_angles(self):
         if not self.exo_connected:
             return
+        # Source: get_angle:all → firmware getRelativeAngle (zeroed at home, flip applied).
+        angles: dict = {}
         try:
             angles = self.exo.get_motor_angle('all')
             for i, w in enumerate(self.motor_widgets):
@@ -1488,6 +1707,30 @@ class HandExoGUI(QWidget):
                     w["angle_lbl"].setText(f"{float(val):.2f} deg")
         except Exception:
             pass
+
+        # Normalise each relative angle to [0, 1] for the Hand State visualisation.
+        # Formula: convert calibrated absolute limits to relative space using the
+        # same normalize_angle() convention as the Controls tab, then clamp:
+        #   rel_a = normalize_angle(limit_min, home, flip)
+        #   rel_b = normalize_angle(limit_max, home, flip)
+        #   t = clamp((rel_angle - min(rel_a, rel_b)) / (max - min), 0, 1)
+        t_dict: dict[str, float] = {}
+        cal = (self._active_cal_profile or {}).get("motors", {})
+        for i, w in enumerate(self.motor_widgets):
+            name = w["name"]
+            val  = angles.get(i)
+            m    = cal.get(name)
+            if val is not None and m is not None:
+                rel_a = normalize_angle(m["limit_min"], m["home"], m["flip"])
+                rel_b = normalize_angle(m["limit_max"], m["home"], m["flip"])
+                lo, hi = min(rel_a, rel_b), max(rel_a, rel_b)
+                span = hi - lo
+                t_dict[name] = (
+                    max(0.0, min(1.0, (float(val) - lo) / span)) if span > 0 else 0.0
+                )
+            else:
+                t_dict[name] = 0.0  # no data or no profile: show home position
+        self._hand_vis.update_motor_states(t_dict, connected=True)
 
     def _run_calibration(self):
         if not self.exo_connected:
@@ -1516,6 +1759,7 @@ class HandExoGUI(QWidget):
             if ans == QMessageBox.Yes:
                 try:
                     self.exo.apply_calibration(name)
+                    self._set_active_profile(name, load_profile(name))
                     self._log(f"Applied calibration profile: {name}")
                 except Exception as e:
                     QMessageBox.critical(self, "Error", f"Failed to apply profile:\n{e}")
@@ -1531,6 +1775,7 @@ class HandExoGUI(QWidget):
             return
         try:
             self.exo.apply_calibration(name)
+            self._set_active_profile(name, load_profile(name))
             self._log(f"Applied calibration profile: {name}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to apply profile:\n{e}")
@@ -1562,6 +1807,7 @@ class HandExoGUI(QWidget):
             if ans == QMessageBox.Yes:
                 try:
                     self.exo.apply_calibration(profile_name)
+                    self._set_active_profile(profile_name, load_profile(profile_name))
                     self._log(f"Applied calibration profile: {profile_name}")
                 except Exception as e:
                     QMessageBox.critical(self, "Error", f"Failed to apply profile:\n{e}")
