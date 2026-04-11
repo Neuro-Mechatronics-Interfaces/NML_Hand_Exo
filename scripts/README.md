@@ -10,6 +10,8 @@ This directory is intentionally limited to thin wrappers and environment bootstr
 - Runtime launch wrappers:
   - `run_ai_agent.bat`
   - `run_ai_agent.py`
+  - `run_ai_assist_gui.bat`
+  - `run_ai_assist_gui.py`
   - `run_exo_visualizer.bat`
   - `run_exo_visualizer.py`
 

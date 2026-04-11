@@ -114,3 +114,4 @@ exo_logs
 
 # Runtime script logs
 scripts/logs/*.jsonl
+logs/*.jsonl
