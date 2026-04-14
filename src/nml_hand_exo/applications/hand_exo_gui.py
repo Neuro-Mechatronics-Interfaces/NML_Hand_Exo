@@ -10,9 +10,11 @@ import csv
 import json
 import math
 import os
+import queue
 import re
 import statistics
 import sys
+import threading
 import time
 from datetime import datetime
 
@@ -22,11 +24,19 @@ from PyQt5.QtWidgets import (
     QDialog, QInputDialog, QScrollArea, QFrame, QSizePolicy, QSpacerItem,
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QFontMetrics
 
 from serial.tools import list_ports
 from nml_hand_exo.interface import HandExo, SerialComm
+
+# websockets is optional; teleop tab gracefully degrades if missing.
+try:
+    import websockets.sync.client as _ws_sync_client
+    _WEBSOCKETS_AVAILABLE = True
+except ImportError:
+    _ws_sync_client = None          # type: ignore[assignment]
+    _WEBSOCKETS_AVAILABLE = False
 
 
 # -- Paths -----------------------------------------------------------------
@@ -1029,6 +1039,118 @@ class HandSkeletonWidget(QWidget):
 
 
 # ==========================================================================
+#  Teleop WebSocket Worker
+# ==========================================================================
+
+class TeleopWorker(QThread):
+    """
+    Background QThread that owns the WebSocket client connection for teleop
+    streaming.
+
+    The main GUI thread's ``_teleop_timer`` (100 ms QTimer) calls
+    ``enqueue(payload)`` with a compact JSON string.  This worker drains
+    the queue and fires each frame over the socket.
+
+    The send queue is bounded (maxsize=3).  When the network falls behind,
+    the oldest frame is silently dropped so the downstream controller always
+    receives the *freshest* reading — never a seconds-old backlog.
+
+    Signals
+    -------
+    status_changed(msg, color_hex)
+        Emitted on every connection-state transition.
+        color_hex is one of:
+          ``#27ae60``  green  — connected and streaming
+          ``#f39c12``  amber  — connecting (in-flight)
+          ``#c0392b``  red    — refused or runtime error
+          ``#888888``  grey   — cleanly disconnected / idle
+    """
+
+    status_changed = pyqtSignal(str, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._url: str = "ws://localhost:8765"
+        self._queue: queue.Queue = queue.Queue(maxsize=3)
+        self._stop_evt: threading.Event = threading.Event()
+
+    # -- Public API (called from the GUI thread) ----------------------------
+
+    def configure(self, url: str):
+        """Set the WebSocket server URL.  Must be called before start()."""
+        self._url = url
+
+    def enqueue(self, payload: str):
+        """
+        Add a JSON frame to the send queue.
+
+        If the queue is already full (network slow or worker stalled), the
+        oldest queued frame is dropped and the new one takes its place —
+        this keeps end-to-end latency at most one period (100 ms).
+        """
+        if self._stop_evt.is_set():
+            return
+        if self._queue.full():
+            try:
+                self._queue.get_nowait()      # drop oldest
+            except queue.Empty:
+                pass
+        try:
+            self._queue.put_nowait(payload)
+        except queue.Full:
+            pass                              # race — discard silently
+
+    def stop(self):
+        """Signal the send loop to exit and the WebSocket to close."""
+        self._stop_evt.set()
+
+    # -- Thread entry point -------------------------------------------------
+
+    def run(self):
+        """
+        Runs entirely on the worker thread.  Opens a synchronous WebSocket
+        connection (websockets.sync.client — available since websockets 12),
+        then drains the queue until stop() is called or the connection breaks.
+
+        All status updates are emitted as Qt signals so the GUI can update
+        safely from the main thread.
+        """
+        if not _WEBSOCKETS_AVAILABLE:
+            self.status_changed.emit("websockets package not installed", "#c0392b")
+            return
+
+        self._stop_evt.clear()
+
+        # Drain stale frames left over from a previous session.
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
+
+        self.status_changed.emit("Connecting\u2026", "#f39c12")
+
+        final_msg, final_color = "Disconnected", "#888888"
+        try:
+            with _ws_sync_client.connect(self._url, open_timeout=5) as ws:
+                self.status_changed.emit("Connected", "#27ae60")
+                while not self._stop_evt.is_set():
+                    try:
+                        msg = self._queue.get(timeout=0.05)
+                        ws.send(msg)
+                    except queue.Empty:
+                        pass    # nothing ready — yield back and check stop flag
+        except OSError as exc:
+            final_msg = f"Refused: {exc.strerror or exc}"
+            final_color = "#c0392b"
+        except Exception as exc:
+            final_msg = f"Error: {exc}"
+            final_color = "#c0392b"
+
+        self.status_changed.emit(final_msg, final_color)
+
+
+# ==========================================================================
 #  Main GUI
 # ==========================================================================
 
@@ -1060,6 +1182,24 @@ class HandExoGUI(QWidget):
         # Telemetry poll timer (Telemetry tab)
         self._telem_timer = QTimer(self)
         self._telem_timer.timeout.connect(self._poll_telemetry)
+
+        # ------------------------------------------------------------------
+        # Teleop state
+        # ------------------------------------------------------------------
+        # True while the 100 ms teleop tick is running (motors disabled,
+        # exo used as sensor only).
+        self._teleop_streaming: bool = False
+        # True while the WebSocket connection is established (green status).
+        self._teleop_ws_connected: bool = False
+        # Worker thread — persistent for the lifetime of the window so that
+        # connect/disconnect cycles don't leave dangling threads.
+        self._teleop_worker = TeleopWorker(self)
+        self._teleop_worker.status_changed.connect(self._on_teleop_status)
+        # Teleop tick timer — 100 ms, active only while streaming.
+        # Replaces _angle_timer while streaming so the serial bus carries
+        # exactly one angle-poll per tick at ~10 Hz (not two overlapping).
+        self._teleop_timer = QTimer(self)
+        self._teleop_timer.timeout.connect(self._teleop_tick)
 
     # -- UI Construction ---------------------------------------------------
 
@@ -1104,6 +1244,7 @@ class HandExoGUI(QWidget):
         self.main_tabs.addTab(controls_container, "Controls")
         self.main_tabs.addTab(self._build_telemetry_tab(), "Telemetry")
         self.main_tabs.addTab(self._build_visualization_tab(), "Hand State")
+        self.main_tabs.addTab(self._build_teleop_tab(), "Teleop")
 
         self._build_log_section()
         self._update_enabled_state()
@@ -1160,6 +1301,116 @@ class HandExoGUI(QWidget):
         self._hand_vis = HandSkeletonWidget()
         layout.addWidget(self._hand_vis, stretch=1)
         return widget
+
+    def _build_teleop_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        # -- Optional warning when websockets is absent --------------------
+        if not _WEBSOCKETS_AVAILABLE:
+            warn = QLabel(
+                "\u26a0  websockets package not found.\n"
+                "Install it with:  pip install websockets"
+            )
+            warn.setStyleSheet(
+                "color: #f39c12; font-weight: bold; padding: 6px;"
+            )
+            warn.setWordWrap(True)
+            layout.addWidget(warn)
+
+        # -- WebSocket Server group ----------------------------------------
+        ws_box = QGroupBox("WebSocket Server")
+        ws_layout = QVBoxLayout()
+
+        addr_row = QHBoxLayout()
+        addr_row.addWidget(QLabel("Address:"))
+        self._teleop_addr_edit = QLineEdit("ws://localhost:8765")
+        self._teleop_addr_edit.setPlaceholderText("ws://host:port")
+        addr_row.addWidget(self._teleop_addr_edit, 1)
+        ws_layout.addLayout(addr_row)
+
+        ws_btn_row = QHBoxLayout()
+        self._teleop_connect_btn = QPushButton("Connect")
+        self._teleop_connect_btn.setProperty("accent", True)
+        self._teleop_connect_btn.clicked.connect(self._on_teleop_connect)
+        self._teleop_ws_disconnect_btn = QPushButton("Disconnect")
+        self._teleop_ws_disconnect_btn.clicked.connect(self._on_teleop_ws_disconnect)
+        self._teleop_ws_disconnect_btn.setEnabled(False)
+        self._teleop_ws_status_lbl = QLabel("\u25cf  Not connected")
+        self._teleop_ws_status_lbl.setStyleSheet("color: #888888;")
+        ws_btn_row.addWidget(self._teleop_connect_btn)
+        ws_btn_row.addWidget(self._teleop_ws_disconnect_btn)
+        ws_btn_row.addStretch()
+        ws_btn_row.addWidget(self._teleop_ws_status_lbl)
+        ws_layout.addLayout(ws_btn_row)
+        ws_box.setLayout(ws_layout)
+        layout.addWidget(ws_box)
+
+        # -- Streaming group -----------------------------------------------
+        stream_box = QGroupBox("Streaming")
+        stream_layout = QVBoxLayout()
+
+        stream_ctrl = QHBoxLayout()
+        self._teleop_start_btn = QPushButton("Start Streaming")
+        self._teleop_start_btn.setProperty("accent", True)
+        self._teleop_start_btn.clicked.connect(self._on_teleop_start)
+        self._teleop_start_btn.setEnabled(False)
+        self._teleop_stop_btn = QPushButton("Stop Streaming")
+        self._teleop_stop_btn.clicked.connect(self._on_teleop_stop)
+        self._teleop_stop_btn.setEnabled(False)
+        self._teleop_stream_status_lbl = QLabel("\u25cf  Idle")
+        self._teleop_stream_status_lbl.setStyleSheet("color: #888888;")
+        stream_ctrl.addWidget(self._teleop_start_btn)
+        stream_ctrl.addWidget(self._teleop_stop_btn)
+        stream_ctrl.addStretch()
+        stream_ctrl.addWidget(self._teleop_stream_status_lbl)
+        stream_layout.addLayout(stream_ctrl)
+
+        note = QLabel(
+            "When streaming starts, all motors are torque-off and the exo acts "
+            "as a pure joint-angle sensor.  Motors are NOT re-enabled automatically "
+            "when streaming stops — use the Controls tab to re-enable them."
+        )
+        note.setStyleSheet("color: #777777; font-size: 10px;")
+        note.setWordWrap(True)
+        stream_layout.addWidget(note)
+        stream_box.setLayout(stream_layout)
+        layout.addWidget(stream_box)
+
+        # -- Live normalised states table ----------------------------------
+        state_box = QGroupBox(
+            "Live Normalised Joint States  "
+            "(0\u202f=\u202fopen\u200a/\u200aextended,  1\u202f=\u202fclosed\u200a/\u200aflexed)"
+        )
+        state_layout = QVBoxLayout()
+
+        self._teleop_state_table = QTableWidget(0, 2)
+        self._teleop_state_table.setHorizontalHeaderLabels(["Joint", "Value [0\u20131]"])
+        hdr = self._teleop_state_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(1, QHeaderView.Stretch)
+        self._teleop_state_table.verticalHeader().setVisible(False)
+        self._teleop_state_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._teleop_state_table.setSelectionMode(QTableWidget.NoSelection)
+        self._teleop_state_table.setAlternatingRowColors(True)
+        self._teleop_state_table.setMaximumHeight(260)
+        state_layout.addWidget(self._teleop_state_table)
+        state_box.setLayout(state_layout)
+        layout.addWidget(state_box)
+
+        layout.addStretch()
+        return widget
+
+    def _rebuild_teleop_table(self):
+        """Repopulate the normalised-states table from the current motor list."""
+        self._teleop_state_table.setRowCount(len(self.motor_names))
+        for row, name in enumerate(self.motor_names):
+            for col, text in enumerate([name, "\u2014"]):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignCenter)
+                self._teleop_state_table.setItem(row, col, item)
 
     def _set_active_profile(self, name: str, profile: dict | None):
         """Cache the active calibration profile and update the Hand State status label."""
@@ -1633,6 +1884,13 @@ class HandExoGUI(QWidget):
         self._update_enabled_state()
 
     def _disconnect(self):
+        # Stop teleop streaming first so the tick timer doesn't fire after
+        # the serial port closes.  Also signal the WebSocket worker to exit
+        # (non-blocking — its status_changed slot will clean up the Teleop UI).
+        if self._teleop_streaming:
+            self._on_teleop_stop()
+        if self._teleop_worker.isRunning():
+            self._teleop_worker.stop()
         self._angle_timer.stop()
         self._telem_timer.stop()
         try:
@@ -1824,6 +2082,242 @@ class HandExoGUI(QWidget):
         self.cal_run_btn.setEnabled(on)
         self.apply_profile_btn.setEnabled(on)
         self.rom_run_btn.setEnabled(on)
+        # Teleop: Start Streaming requires both exo and WS to be connected.
+        # If exo just disconnected while streaming was active, _on_teleop_stop()
+        # has already been called from _disconnect(), so _teleop_streaming=False.
+        self._teleop_start_btn.setEnabled(
+            on and self._teleop_ws_connected and not self._teleop_streaming
+        )
+
+    # -- Teleop tab handlers -----------------------------------------------
+
+    def _on_teleop_connect(self):
+        """Connect to the WebSocket server in the background worker thread."""
+        if not _WEBSOCKETS_AVAILABLE:
+            QMessageBox.critical(
+                self, "Missing Package",
+                "Install websockets first:\n\n    pip install websockets"
+            )
+            return
+        url = self._teleop_addr_edit.text().strip()
+        if not (url.startswith("ws://") or url.startswith("wss://")):
+            QMessageBox.warning(
+                self, "Invalid Address",
+                "WebSocket address must start with ws:// or wss://"
+            )
+            return
+        if self._teleop_worker.isRunning():
+            return
+
+        self._teleop_worker.configure(url)
+        self._teleop_connect_btn.setEnabled(False)
+        self._teleop_addr_edit.setEnabled(False)
+        self._teleop_ws_status_lbl.setText("\u25cf  Connecting\u2026")
+        self._teleop_ws_status_lbl.setStyleSheet("color: #f39c12;")
+        self._teleop_worker.start()
+        self._teleop_ws_disconnect_btn.setEnabled(True)
+
+    def _on_teleop_ws_disconnect(self):
+        """Disconnect from the WebSocket server and stop streaming if active."""
+        self._on_teleop_stop()
+        self._teleop_worker.stop()
+        # Non-blocking: the status_changed signal will fire from the worker
+        # thread once it closes and will finish resetting the UI.
+        self._teleop_ws_disconnect_btn.setEnabled(False)
+
+    def _on_teleop_status(self, msg: str, color: str):
+        """
+        Slot for TeleopWorker.status_changed.  Runs on the GUI thread.
+
+        Green  → WS is open; enable Start Streaming if exo is also connected.
+        Other  → WS closed or errored; stop streaming, re-enable Connect.
+        """
+        self._teleop_ws_status_lbl.setText(f"\u25cf  {msg}")
+        self._teleop_ws_status_lbl.setStyleSheet(f"color: {color};")
+        self._teleop_ws_connected = (color == "#27ae60")
+
+        if self._teleop_ws_connected:
+            # Only allow Start Streaming if an exo is also connected.
+            self._teleop_start_btn.setEnabled(
+                self.exo_connected and not self._teleop_streaming
+            )
+        else:
+            # Connection lost or failed — stop streaming and reset connect UI.
+            self._on_teleop_stop()
+            self._teleop_start_btn.setEnabled(False)
+            self._teleop_connect_btn.setEnabled(True)
+            self._teleop_addr_edit.setEnabled(True)
+            self._teleop_ws_disconnect_btn.setEnabled(False)
+
+        self._log(f"[Teleop WS] {msg}")
+
+    def _on_teleop_start(self):
+        """
+        Begin teleop streaming.
+
+        Safety procedure (mirrors CalibrationDialog / ROMDialog):
+          1. Disable torque on all motors — exo becomes a pure sensor.
+          2. Reset gesture_ready so the next gesture call re-enables motors
+             intentionally through _ensure_gesture_ready().
+          3. Suspend _angle_timer so the serial bus carries exactly one
+             get_angle:all per _teleop_tick (100 ms / 10 Hz).
+        """
+        if not self.exo_connected:
+            QMessageBox.warning(
+                self, "Not Connected",
+                "Connect to the exoskeleton first."
+            )
+            return
+        if self._teleop_streaming:
+            return
+
+        # -- Disable all motors (torque-off) --------------------------------
+        try:
+            self.exo.disable_motor('all')
+            for w in self.motor_widgets:
+                w["enabled"] = False
+                w["user_disabled"] = True   # block automatic re-enable
+                w["toggle_btn"].setText("Enable")
+                w["status_lbl"].setText("OFF")
+                w["status_lbl"].setStyleSheet("color: #c0392b;")
+        except Exception as exc:
+            self._log(f"[Teleop] Warning: could not disable motors: {exc}")
+
+        # Reset gesture state so gestures don't fire while streaming.
+        self._gesture_ready = False
+
+        # Suspend the 500 ms angle timer; teleop tick takes over at 100 ms.
+        self._angle_timer.stop()
+
+        # Populate the live-states table with current motor names.
+        self._rebuild_teleop_table()
+
+        # -- Start streaming ------------------------------------------------
+        self._teleop_streaming = True
+        self._teleop_timer.start(100)
+
+        self._teleop_start_btn.setEnabled(False)
+        self._teleop_stop_btn.setEnabled(True)
+        self._teleop_stream_status_lbl.setText("\u25cf  Streaming  (10 Hz)")
+        self._teleop_stream_status_lbl.setStyleSheet("color: #27ae60;")
+        self._log("[Teleop] Streaming started — motors disabled.")
+
+    def _on_teleop_stop(self):
+        """Stop streaming.  Motors stay disabled until the user re-enables them."""
+        if not self._teleop_streaming:
+            return
+        self._teleop_streaming = False
+        self._teleop_timer.stop()
+
+        # Restart the normal 500 ms angle poll if the exo is still connected.
+        if self.exo_connected:
+            self._angle_timer.start(500)
+
+        self._teleop_start_btn.setEnabled(
+            self.exo_connected and self._teleop_ws_connected
+        )
+        self._teleop_stop_btn.setEnabled(False)
+        self._teleop_stream_status_lbl.setText("\u25cf  Idle")
+        self._teleop_stream_status_lbl.setStyleSheet("color: #888888;")
+        self._log("[Teleop] Streaming stopped.")
+
+    def _teleop_tick(self):
+        """
+        Timer callback, 100 ms / 10 Hz.  Runs on the GUI thread.
+
+        Responsibilities while streaming is active:
+          1. Poll relative motor angles from the device (one serial round-trip).
+          2. Normalise each angle to [0, 1] against the active calibration profile.
+          3. Update the motor angle labels in the Controls tab (same as
+             _poll_motor_angles normally does at 500 ms).
+          4. Push normalised values to the Hand State visualisation.
+          5. Refresh the live Teleop state table.
+          6. Enqueue a compact JSON frame for the WebSocket worker thread.
+
+        Normalisation formula (identical to _poll_motor_angles):
+            rel_a  = normalize_angle(limit_min, home, flip)
+            rel_b  = normalize_angle(limit_max, home, flip)
+            lo, hi = min(rel_a, rel_b), max(rel_a, rel_b)
+            t      = clamp( (relative_angle - lo) / (hi - lo), 0, 1 )
+
+        Convention: 0 = fully open / extended, 1 = fully closed / flexed.
+        This matches the convention used by HandSkeletonWidget.
+
+        Joints that lack a calibration entry are transmitted as ``null`` in
+        the JSON payload so downstream consumers can detect and ignore them
+        rather than acting on a meaningless zero.
+
+        JSON payload structure
+        ----------------------
+        {
+          "timestamp": <float, Unix seconds>,
+          "source":    "hand_exo",
+          "joints": {
+            "<name>": <float 0-1> | null,   -- null = no calibration
+            ...
+          }
+        }
+        """
+        if not self.exo_connected:
+            return
+
+        # -- 1. Poll relative angles from device ---------------------------
+        try:
+            angles: dict = self.exo.get_motor_angle('all')
+        except Exception:
+            return
+
+        # -- 2 & 3. Normalise and update angle labels ----------------------
+        cal = (self._active_cal_profile or {}).get("motors", {})
+        t_dict: dict[str, float] = {}
+        joints_payload: dict = {}
+
+        for i, w in enumerate(self.motor_widgets):
+            name = w["name"]
+            val = angles.get(i)
+
+            # Update Controls-tab angle label (same display as _poll_motor_angles)
+            if val is not None:
+                w["angle_lbl"].setText(f"{float(val):.2f} deg")
+
+            m = cal.get(name)
+            if val is not None and m is not None:
+                rel_a = normalize_angle(m["limit_min"], m["home"], m["flip"])
+                rel_b = normalize_angle(m["limit_max"], m["home"], m["flip"])
+                lo, hi = min(rel_a, rel_b), max(rel_a, rel_b)
+                span = hi - lo
+                t = (
+                    max(0.0, min(1.0, (float(val) - lo) / span))
+                    if span > 0 else 0.0
+                )
+                t_dict[name] = t
+                joints_payload[name] = round(t, 4)
+            else:
+                t_dict[name] = 0.0
+                joints_payload[name] = None  # no calibration data
+
+        # -- 4. Hand State visualisation -----------------------------------
+        self._hand_vis.update_motor_states(t_dict, connected=True)
+
+        # -- 5. Live Teleop state table ------------------------------------
+        for row, mw in enumerate(self.motor_widgets):
+            item = self._teleop_state_table.item(row, 1)
+            if item is None:
+                continue
+            v = joints_payload.get(mw["name"])
+            item.setText(f"{v:.3f}" if v is not None else "no cal")
+
+        # -- 6. Enqueue JSON frame for the WebSocket worker ----------------
+        if self._teleop_worker.isRunning():
+            payload = json.dumps(
+                {
+                    "timestamp": time.time(),
+                    "source": "hand_exo",
+                    "joints": joints_payload,
+                },
+                separators=(",", ":"),
+            )
+            self._teleop_worker.enqueue(payload)
 
     def _log(self, msg: str):
         ts = datetime.now().strftime("%H:%M:%S")

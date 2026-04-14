@@ -31,31 +31,68 @@ git clone https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo.git
 cd NML_Hand_Exo
 ```
 
-### 2. Create a virtual environment (recommended)
+### 2. Create and activate a virtual environment (recommended)
 
-Choose one of the following methods to create a virtual environment for this project:
-   - Using [Anaconda](https://www.anaconda.com/products/distribution) :
-      ```bash
-      conda create -n handexo
-      conda activate handexo
-      ```
-   - or using Python's virtualenv:
-     ```bash
-     python3 -m venv .handexo # Use python -m venv .handexo on Windows
-     source .handexo/bin/activate # On Linux/Mac
-     # call .handexo/Scripts/activate  # On Windows
-     ```
-  
+Use a local environment directory inside the repo, and keep it out of Git.
+
+Preferred local venv name: `.venv`
+
+Windows PowerShell:
+```powershell
+python -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\.venv\Scripts\Activate.ps1
+```
+
+Windows CMD:
+```cmd
+python -m venv .venv
+.\.venv\Scripts\activate.bat
+```
+
+macOS / Linux:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
 ### 3. Install Python dependencies
 
+Once the venv is active:
 ```bash
-pip install -r requirements.txt
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -e .
 ```
 
-For local development, you can also install the python API as a package. 
+This repo uses `pyproject.toml` as the authoritative dependency source. If you want to install the local package in editable mode, use `pip install -e .`.
+
+Optional extra package set for Max WTF applications:
 ```bash
-pip install -e .
+python -m pip install -e src/nml_wtf_exo
 ```
+
+### 4. Launch the GUI
+
+```bash
+python src/nml_hand_exo/applications/hand_exo_gui.py
+```
+
+### 5. Verify the active interpreter
+
+```bash
+python --version
+python -c "import sys; print(sys.executable)"
+python -c "import nml_hand_exo; print(nml_hand_exo.__file__)"
+```
+
+Make sure these commands run from the same activated virtual environment.
+
+### Notes
+
+- Do not commit local virtual environment folders such as `.venv/`, `.handexo/`, or `.handexo311/`.
+- If you see stale or broken env behavior after pulling changes, recreate the venv instead of trying to patch it in place.
+- If you switch Python versions, delete `.venv/` and recreate it.
+
 
 ### 4. (Optional) Install Max WTF dependencies
 If you are on Max's WTF `dev/Max` side-branch, you can also add his WTF code at your own risk.

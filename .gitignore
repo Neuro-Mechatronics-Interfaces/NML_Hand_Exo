@@ -1,6 +1,7 @@
 # Virtual environments
-.venv
-.handexo
+.venv/
+.handexo/
+.handexo*
 .idea
 .ipynb_checkpoints/
 
