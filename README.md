@@ -4,7 +4,7 @@
   <img src="docs/source/_static/new exo.png" width="80%"/>
 </p>
 
-[![Python](https://img.shields.io/badge/python-3.10-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/actions/workflows/gh-pages.yml/badge.svg)](https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/actions/workflows/gh-pages.yml)
 [![Docs](https://img.shields.io/badge/docs-online-blue.svg)](https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/)
@@ -18,7 +18,7 @@ The **NML Hand Exoskeleton** includes:
 - 🐍 Python API: high-level interface for controlling the device.
 - 🛠️ Demo scripts: examples of using the device with real-time EMG streaming and GUI control.
 
-Code was tested on **Windows 11**, **Python 3.10**.
+Code was tested on **Windows 11**, **Python 3.11**.
 
 ---
 
@@ -39,20 +39,20 @@ Preferred local venv name: `.venv`
 
 Windows PowerShell:
 ```powershell
-python -m venv .venv
+py -3.11 -m venv .venv
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 .\.venv\Scripts\Activate.ps1
 ```
 
 Windows CMD:
 ```cmd
-python -m venv .venv
+py -3.11 -m venv .venv
 .\.venv\Scripts\activate.bat
 ```
 
 macOS / Linux:
 ```bash
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 ```
 
@@ -89,6 +89,7 @@ Make sure these commands run from the same activated virtual environment.
 
 ### Notes
 
+- **Python 3.11 is required.** The package requires `>=3.10`; 3.11 is the tested version. Using `py -3.11` (Windows) or `python3.11` (macOS/Linux) when creating the venv prevents silent version mismatches if your system default is a different version.
 - Do not commit local virtual environment folders such as `.venv/`, `.handexo/`, or `.handexo311/`.
 - If you see stale or broken env behavior after pulling changes, recreate the venv instead of trying to patch it in place.
 - If you switch Python versions, delete `.venv/` and recreate it.

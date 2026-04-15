@@ -20,7 +20,8 @@ dependencies = [
     "pyqtgraph",
     "pylsl",
     "pandas",
-    "scipy"
+    "scipy",
+    "websockets"
 ]
 
 [project.urls]
