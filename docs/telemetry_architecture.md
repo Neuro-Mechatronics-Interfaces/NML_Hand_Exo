@@ -51,11 +51,30 @@ Calibration and ROM dialogs own separate dialog-scoped timers at 100 ms.
 Built once in `_connect()`, cleared in `_disconnect()`:
 
 ```python
-_motor_idx: dict[str, int]   # motor name → serial index (0-based, key in API return dicts)
-_motor_row: dict[str, int]   # motor name → telemetry table row index
+_motor_idx:    dict[str, int]   # motor name → enumerate index (0-based list position)
+_motor_row:    dict[str, int]   # motor name → telemetry table row index
+_motor_dxl_id: list[int]        # widget index → DXL hardware ID
 ```
 
-The polling loop uses these directly — no `.index()` calls in the hot path.
+`_motor_idx` and `_motor_row` are built identically:
+`{name: i for i, name in enumerate(motor_names)}`. They are the same mapping.
+They are **not** the key to use for angle dict lookups.
+
+`_motor_dxl_id[i]` is the DXL hardware ID for widget index `i`. Use this to look up
+values in the dicts returned by `get_motor_angle('all')` and similar calls, which are
+keyed by hardware DXL ID, not by list index.
+
+```python
+# Correct angle lookup in Controls-tab polling:
+dxl_id = self._motor_dxl_id[i]
+val = angles.get(dxl_id)    # ✓
+
+# Wrong — angles dict is NOT keyed by name or by enumerate index:
+val = angles.get(name)      # always None
+val = angles.get(i)         # only works if DXL ID == list index (it doesn't)
+```
+
+The polling loop uses `_motor_dxl_id` directly — no `.index()` calls in the hot path.
 
 ---
 

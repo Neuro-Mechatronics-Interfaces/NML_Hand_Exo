@@ -1,3 +1,5 @@
 {
-  "default": "zach left new"
+  "default": "zach right",
+  "default_left": "zach left",
+  "default_right": "zach right"
 }

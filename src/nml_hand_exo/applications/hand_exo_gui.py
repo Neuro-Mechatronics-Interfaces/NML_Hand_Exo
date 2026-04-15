@@ -337,7 +337,8 @@ class CalibrationDialog(QDialog):
     _PHASE_BTN = ["Start Recording Extension", "Start Recording Flexion"]
 
     def __init__(self, exo: HandExo, motor_names: list[str],
-                 profile_name: str, side: str = "right", parent=None):
+                 profile_name: str, side: str = "right",
+                 dxl_ids: list | None = None, parent=None):
         super().__init__(parent)
         self.exo = exo
         self.motor_names = motor_names
@@ -349,11 +350,19 @@ class CalibrationDialog(QDialog):
         # _phase: 0 = extension/open global window, 1 = flexion/close global window
         self._phase = 0
 
-        # Precomputed index map: motor name → position in motor_names list.
-        # get_absolute_motor_angle('all') returns {0: val, 1: val, ...} keyed by this index.
-        self._motor_idx: dict[str, int] = {
-            name: i for i, name in enumerate(motor_names)
-        }
+        # Precomputed index map: motor name → Dynamixel ID.
+        # get_absolute_motor_angle('all') returns {DXL_ID: value}.
+        # dxl_ids must be provided and match motor_names order; if omitted the
+        # dialog falls back to list-index lookup (works only when DXL IDs happen
+        # to equal 0-based indices, which they generally do NOT).
+        if dxl_ids is not None and len(dxl_ids) == len(motor_names):
+            self._motor_idx: dict[str, int] = {
+                name: dxl_ids[i] for i, name in enumerate(motor_names)
+            }
+        else:
+            # Fallback: list index — incorrect for non-zero-based DXL IDs but
+            # kept so the dialog can still be constructed without crashing.
+            self._motor_idx = {name: i for i, name in enumerate(motor_names)}
 
         # Streaming state — full sample lists kept for Option B profile derivation.
         # Keys are motor names; lists accumulate during each recording window.
@@ -392,11 +401,13 @@ class CalibrationDialog(QDialog):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll_angles)
 
-        # Disable motors for free movement
-        try:
-            self.exo.disable_motor('all')
-        except Exception:
-            pass
+        # Disable only the motors being calibrated so inactive-side motors
+        # (already disabled at connect time) are not accidentally broadcast over.
+        for _cal_dxl_id in self._motor_idx.values():
+            try:
+                self.exo.disable_motor(_cal_dxl_id)
+            except Exception:
+                pass
 
         self._show_phase_prompt()
 
@@ -594,7 +605,8 @@ class ROMDialog(QDialog):
     """ROM assessment dialog with in-GUI recording (no terminal input)."""
 
     def __init__(self, exo: HandExo, motor_names: list[str],
-                 participant: str, side: str = "right", parent=None):
+                 participant: str, side: str = "right",
+                 dxl_ids: list | None = None, parent=None):
         super().__init__(parent)
         self.exo = exo
         self.motor_names = motor_names
@@ -602,6 +614,16 @@ class ROMDialog(QDialog):
         self._side = side
         self.setWindowTitle("ROM Assessment")
         self.setMinimumWidth(600)
+
+        # Motor name → Dynamixel ID lookup for _poll_angles.
+        # get_absolute_motor_angle('all') returns {DXL_ID: value} so we need
+        # the real ID, not the 0-based list index.
+        if dxl_ids is not None and len(dxl_ids) == len(motor_names):
+            self._motor_dxl_lookup: dict[str, int] = {
+                name: dxl_ids[i] for i, name in enumerate(motor_names)
+            }
+        else:
+            self._motor_dxl_lookup = {name: i for i, name in enumerate(motor_names)}
 
         # Auto-detect motor orientation from applied calibration or profile
         self.orientation = self._detect_orientation()
@@ -653,17 +675,19 @@ class ROMDialog(QDialog):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll_angles)
 
-        # Disable motors
-        try:
-            self.exo.disable_motor('all')
-        except Exception:
-            pass
+        # Disable only the motors being assessed (side-specific IDs).
+        for _rom_dxl_id in self._motor_dxl_lookup.values():
+            try:
+                self.exo.disable_motor(_rom_dxl_id)
+            except Exception:
+                pass
 
     def _detect_orientation(self) -> dict:
         """Auto-detect motor orientation from the default/applied calibration profile."""
         orientation = {}
-        # Try loading the default profile
-        default_name = get_default_profile_name()
+        # Load the default profile for the correct side so left ROM assessments
+        # use a left profile rather than the global (right) default.
+        default_name = get_default_profile_name(side=self._side)
         cal = load_profile(default_name) if default_name else None
 
         # If no default, try any profile that exists
@@ -718,8 +742,9 @@ class ROMDialog(QDialog):
     def _poll_angles(self):
         try:
             angles = self.exo.get_absolute_motor_angle('all')
-            for i, name in enumerate(self.motor_names):
-                val = angles.get(i, None)
+            for name in self.motor_names:
+                dxl_id = self._motor_dxl_lookup.get(name)
+                val = angles.get(dxl_id) if dxl_id is not None else None
                 if val is not None:
                     self._samples[name].append(float(val))
         except Exception:
@@ -1926,7 +1951,8 @@ class HandExoGUI(QWidget):
                     left_profile = get_default_profile_name(side="left")
                     if left_profile:
                         try:
-                            self.exo.apply_calibration(left_profile)
+                            self.exo.apply_calibration(left_profile,
+                                                       name_to_id=self._make_name_to_id("left"))
                             self._active_cal_left = load_profile(left_profile)
                             self._log(f"Applied left calibration profile '{left_profile}'.")
                         except Exception as e:
@@ -1938,7 +1964,8 @@ class HandExoGUI(QWidget):
                     right_profile = get_default_profile_name(side="right")
                     if right_profile:
                         try:
-                            self.exo.apply_calibration(right_profile)
+                            self.exo.apply_calibration(right_profile,
+                                                       name_to_id=self._make_name_to_id("right"))
                             self._active_cal_right = load_profile(right_profile)
                             self._log(f"Applied right calibration profile '{right_profile}'.")
                         except Exception as e:
@@ -1950,7 +1977,8 @@ class HandExoGUI(QWidget):
                 default_profile = get_default_profile_name()
                 if default_profile:
                     try:
-                        self.exo.apply_calibration(default_profile)
+                        self.exo.apply_calibration(default_profile,
+                                                   name_to_id=self._make_name_to_id())
                         self._set_active_profile(default_profile, load_profile(default_profile))
                         self._log(f"Applied calibration profile '{default_profile}' for gestures.")
                     except Exception as e:
@@ -2118,19 +2146,31 @@ class HandExoGUI(QWidget):
         self.main_layout.addWidget(box)
 
     def _refresh_profiles(self):
-        """Repopulate the profile combo.
+        """Repopulate the profile combo filtered by the current connection mode and side.
 
-        In Dual mode, shows only profiles matching the selected side (Left/Right).
-        In single mode, shows all profiles (backward compat with untagged files).
+        - Left Only  → show profiles tagged side="left" (legacy untagged profiles
+                        default to "right" and are excluded, by design).
+        - Right Only → show profiles tagged side="right" or with no side tag
+                        (legacy backward compat: untagged profiles are right-hand).
+        - Dual       → show profiles matching the cal_side_combo selection.
+
+        Legacy profiles without a ``"side"`` key default to ``"right"``; they
+        appear in Right Only and Dual/Right views but not in Left views.
         """
         self.profile_combo.clear()
         mode = self.mode_combo.currentText() if hasattr(self, "mode_combo") else "Right Only"
-        default = get_default_profile_name()
 
-        if mode == "Dual" and hasattr(self, "cal_side_combo"):
+        if mode == "Left Only":
+            filter_side = "left"
+        elif mode == "Right Only":
+            filter_side = "right"
+        elif mode == "Dual" and hasattr(self, "cal_side_combo"):
             filter_side = self.cal_side_combo.currentText().lower()
         else:
-            filter_side = None
+            filter_side = None  # show all if mode is unknown
+
+        # Use the side-specific default for the status suffix.
+        default = get_default_profile_name(filter_side or "right")
 
         for name in list_profiles():
             profile = load_profile(name)
@@ -2243,6 +2283,27 @@ class HandExoGUI(QWidget):
             self._log(f"Left motors ({len(self._left_motor_names)}): {self._left_motor_names}")
             self._log(f"Right motors ({len(self._right_motor_names)}): {self._right_motor_names}")
 
+            # Safety: disable every motor that is on the bus but outside the
+            # active control subset.  The firmware's set_gesture command
+            # broadcasts to ALL managed motors regardless of torque state, so
+            # inactive-side motors must be disabled here to prevent them from
+            # receiving and responding to gesture commands.  This only applies
+            # in Left Only / Right Only mode; Dual mode includes all detected
+            # IDs so the inactive set is empty.
+            all_detected_ids = set(motors_dict.keys())
+            active_ids       = set(self._motor_dxl_id)
+            inactive_ids     = sorted(all_detected_ids - active_ids)
+            if inactive_ids:
+                self._log(
+                    f"Disabling {len(inactive_ids)} inactive-side motor(s) "
+                    f"to prevent gesture leakage: IDs {inactive_ids}"
+                )
+                for _inactive_id in inactive_ids:
+                    try:
+                        self.exo.disable_motor(_inactive_id)
+                    except Exception as _e:
+                        self._log(f"  Warning: could not disable inactive motor {_inactive_id}: {_e}")
+
             self.exo_connected = True
             self._gesture_ready = False
             self._active_cal_profile = None
@@ -2318,11 +2379,20 @@ class HandExoGUI(QWidget):
         self._update_enabled_state()
 
     def _motor_all(self, action):
+        """Enable or disable all active-mode motors.
+
+        Sends per-motor commands using the DXL IDs from ``_motor_dxl_id``
+        (which is already filtered to the selected mode at connect time) instead
+        of the firmware-level ``enable:all`` / ``disable:all``.  Sending ``:all``
+        would act on the entire Dynamixel bus and move motors from the wrong side
+        when running in Left Only or Right Only mode.
+        """
         if not self.exo_connected:
             return
         try:
             if action == "enable":
-                self.exo.enable_motor('all')
+                for dxl_id in self._motor_dxl_id:
+                    self.exo.enable_motor(dxl_id)
                 for w in self.motor_widgets:
                     w["enabled"] = True
                     w["user_disabled"] = False  # explicit "Enable All" clears user-disabled
@@ -2331,7 +2401,8 @@ class HandExoGUI(QWidget):
                     w["status_lbl"].setStyleSheet("color: #27ae60;")
                 self._log("Enabled all motors.")
             else:
-                self.exo.disable_motor('all')
+                for dxl_id in self._motor_dxl_id:
+                    self.exo.disable_motor(dxl_id)
                 for w in self.motor_widgets:
                     w["enabled"] = False
                     w["user_disabled"] = True   # explicit "Disable All" marks all user-disabled
@@ -2378,11 +2449,50 @@ class HandExoGUI(QWidget):
         except Exception as e:
             self._log(f"Error {action}ing {side} motors: {e}")
 
+    def _make_name_to_id(self, side: str | None = None) -> dict:
+        """Return a {bare_motor_name: dxl_id} map for the given side.
+
+        Passed to ``apply_calibration(name_to_id=...)`` so calibration
+        commands use explicit integer IDs instead of ambiguous bare motor
+        names.  In dual firmware both "wrist" motors (left ID 1, right ID 11)
+        share the same name; without explicit IDs the firmware always resolves
+        to the first match (left), making right-side calibration impossible.
+
+        Parameters
+        ----------
+        side : 'left', 'right', or None
+            Which side to build the map for.  ``None`` is valid in Left Only /
+            Right Only mode where all active motors belong to one side.
+        """
+        LEFT_IDS  = range(1, 10)
+        RIGHT_IDS = range(11, 20)
+        mode = self.mode_combo.currentText() if hasattr(self, "mode_combo") else "Right Only"
+
+        if mode == "Dual":
+            left_dxl_ids  = [i for i in self._motor_dxl_id if i in LEFT_IDS]
+            right_dxl_ids = [i for i in self._motor_dxl_id if i in RIGHT_IDS]
+            if side == "left":
+                return dict(zip(self._left_motor_names, left_dxl_ids))
+            else:  # "right" or None in Dual
+                return dict(zip(self._right_motor_names, right_dxl_ids))
+        else:
+            # Single-side mode: motor_names are already bare and _motor_dxl_id
+            # is already filtered to the active side at connect time.
+            return dict(zip(self.motor_names, self._motor_dxl_id))
+
     def _home_all(self):
+        """Home all active-mode motors.
+
+        Sends per-motor ``home:<id>`` commands using DXL IDs from
+        ``_motor_dxl_id`` (filtered to the selected mode at connect time).
+        Sending ``home:all`` would move motors from the wrong side when running
+        in Left Only or Right Only mode with both exos physically on the bus.
+        """
         if not self.exo_connected:
             return
         try:
-            self.exo.home('all')
+            for dxl_id in self._motor_dxl_id:
+                self.exo.home(dxl_id)
             self._log("Homed all motors.")
         except Exception as e:
             self._log(f"Home error: {e}")
@@ -2457,6 +2567,8 @@ class HandExoGUI(QWidget):
             return
 
         mode = self.mode_combo.currentText()
+        LEFT_IDS  = range(1, 10)
+        RIGHT_IDS = range(11, 20)
         if mode == "Dual":
             cal_side = self.cal_side_combo.currentText().lower()
             side_motor_names = (
@@ -2466,11 +2578,14 @@ class HandExoGUI(QWidget):
                 QMessageBox.warning(self, "No Motors",
                                     f"No {cal_side} motors found on the connected device.")
                 return
-            # Shared controller — pass self.exo directly; dialog uses bare motor names
-            dlg = CalibrationDialog(self.exo, side_motor_names, name, side=cal_side, parent=self)
+            id_range = LEFT_IDS if cal_side == "left" else RIGHT_IDS
+            side_dxl_ids = [i for i in self._motor_dxl_id if i in id_range]
+            dlg = CalibrationDialog(self.exo, side_motor_names, name, side=cal_side,
+                                    dxl_ids=side_dxl_ids, parent=self)
         else:
             side = "left" if mode == "Left Only" else "right"
-            dlg = CalibrationDialog(self.exo, self.motor_names, name, side=side, parent=self)
+            dlg = CalibrationDialog(self.exo, self.motor_names, name, side=side,
+                                    dxl_ids=list(self._motor_dxl_id), parent=self)
 
         dlg.exec_()
         # CalibrationDialog disables motors. Reset the flag so the next gesture
@@ -2489,7 +2604,8 @@ class HandExoGUI(QWidget):
             if ans == QMessageBox.Yes:
                 try:
                     if mode == "Dual":
-                        self.exo.apply_calibration(name)
+                        self.exo.apply_calibration(name,
+                                                   name_to_id=self._make_name_to_id(cal_side))
                         profile = load_profile(name)
                         if cal_side == "left":
                             self._active_cal_left = profile
@@ -2497,7 +2613,8 @@ class HandExoGUI(QWidget):
                             self._active_cal_right = profile
                         self._update_vis_status_dual()
                     else:
-                        self.exo.apply_calibration(name)
+                        self.exo.apply_calibration(name,
+                                                   name_to_id=self._make_name_to_id())
                         self._set_active_profile(name, load_profile(name))
                     self._log(f"Applied calibration profile: {name}")
                 except Exception as e:
@@ -2516,8 +2633,8 @@ class HandExoGUI(QWidget):
         try:
             if mode == "Dual":
                 cal_side = self.cal_side_combo.currentText().lower()
-                # One shared controller — always self.exo; profile side is metadata only
-                self.exo.apply_calibration(name)
+                self.exo.apply_calibration(name,
+                                           name_to_id=self._make_name_to_id(cal_side))
                 profile = load_profile(name)
                 if cal_side == "left":
                     self._active_cal_left = profile
@@ -2525,7 +2642,8 @@ class HandExoGUI(QWidget):
                     self._active_cal_right = profile
                 self._update_vis_status_dual()
             else:
-                self.exo.apply_calibration(name)
+                self.exo.apply_calibration(name,
+                                           name_to_id=self._make_name_to_id())
                 self._set_active_profile(name, load_profile(name))
             self._log(f"Applied calibration profile: {name}")
         except Exception as e:
@@ -2542,6 +2660,8 @@ class HandExoGUI(QWidget):
             return
 
         mode = self.mode_combo.currentText()
+        LEFT_IDS  = range(1, 10)
+        RIGHT_IDS = range(11, 20)
         if mode == "Dual":
             cal_side = self.cal_side_combo.currentText().lower()
             side_motor_names = (
@@ -2551,10 +2671,14 @@ class HandExoGUI(QWidget):
                 QMessageBox.warning(self, "No Motors",
                                     f"No {cal_side} motors found on the connected device.")
                 return
-            dlg = ROMDialog(self.exo, side_motor_names, participant, side=cal_side, parent=self)
+            id_range = LEFT_IDS if cal_side == "left" else RIGHT_IDS
+            side_dxl_ids = [i for i in self._motor_dxl_id if i in id_range]
+            dlg = ROMDialog(self.exo, side_motor_names, participant, side=cal_side,
+                            dxl_ids=side_dxl_ids, parent=self)
         else:
             side = "left" if mode == "Left Only" else "right"
-            dlg = ROMDialog(self.exo, self.motor_names, participant, side=side, parent=self)
+            dlg = ROMDialog(self.exo, self.motor_names, participant, side=side,
+                            dxl_ids=list(self._motor_dxl_id), parent=self)
 
         dlg.exec_()
         self._log(f"ROM assessment complete for '{participant}'.")
@@ -2572,7 +2696,8 @@ class HandExoGUI(QWidget):
             if ans == QMessageBox.Yes:
                 try:
                     if mode == "Dual":
-                        self.exo.apply_calibration(profile_name)
+                        self.exo.apply_calibration(profile_name,
+                                                   name_to_id=self._make_name_to_id(cal_side))
                         profile = load_profile(profile_name)
                         if cal_side == "left":
                             self._active_cal_left = profile
@@ -2580,7 +2705,8 @@ class HandExoGUI(QWidget):
                             self._active_cal_right = profile
                         self._update_vis_status_dual()
                     else:
-                        self.exo.apply_calibration(profile_name)
+                        self.exo.apply_calibration(profile_name,
+                                                   name_to_id=self._make_name_to_id())
                         self._set_active_profile(profile_name, load_profile(profile_name))
                     self._log(f"Applied calibration profile: {profile_name}")
                 except Exception as e:

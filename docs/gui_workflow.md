@@ -26,40 +26,63 @@ Key classes in `hand_exo_gui.py`:
 
 ---
 
+## Connection modes `[VERIFIED]`
+
+The mode combo (Right Only / Left Only / Dual) is selected before connecting and locked
+while connected. All modes connect through a single `HandExo` to a single serial port.
+
+At connect time, `_connect()` builds:
+
+| Variable | Content |
+|---|---|
+| `_motor_dxl_id` | DXL hardware IDs for active-side motors, in widget order |
+| `_left_motor_names` | bare motor names for left motors detected |
+| `_right_motor_names` | bare motor names for right motors detected |
+| `motor_names` | display names (bare in single-side, `L:/R:` prefixed in Dual) |
+| `motor_widgets` | one dict per active motor for GUI state tracking |
+
+After building `_motor_dxl_id`, any motor detected on the bus but NOT in that list is
+immediately disabled (`disable:<id>`) to prevent firmware broadcast commands from
+moving the inactive side. In Dual mode, `_motor_dxl_id` includes all detected IDs, so
+nothing is disabled.
+
+---
+
 ## CalibrationDialog `[VERIFIED]`
 
 ### Initialization
-- Receives a live `HandExo` object and `motor_names` list from the main window
-- Immediately calls `self.exo.disable_motor('all')` so fingers move freely
-- State machine: `self._step = 0` (open), `1` (closed), `2` (done)
+- Receives `HandExo`, `motor_names` (target-side only), `profile_name`, `side`, and `dxl_ids`
+- Builds `_motor_idx = {name: dxl_id}` from the provided `dxl_ids` list
+- Disables only the target-side motors by DXL ID (not `disable:all`)
+- Two streaming phases: extension (open), then flexion (close)
 
-### Recording flow (current — all-at-once)
+### Recording flow (streaming, 100 ms timer)
 ```
-_step == 0:
-  → exo.get_absolute_motor_angle('all')
-  → store as open_angles[name]
-  → advance to step 1
+Phase 0 — Extension:
+  QTimer → _poll_angles() every 100 ms
+    → exo.get_absolute_motor_angle('all')  returns {dxl_id: value}
+    → for each motor, angles.get(_motor_idx[name]) → append to _samples_buf[name]
+  Stop → commit to _open_samples if ≥ 3 samples per motor
 
-_step == 1:
-  → exo.get_absolute_motor_angle('all')
-  → store as close_angles[name]
-  → call _save_profile()
-  → advance to step 2 (done)
+Phase 1 — Flexion:
+  same mechanism → commit to _close_samples
+  → _save_profile()
 ```
 
 ### `_save_profile()` — what it computes
 ```python
 for name in motor_names:
-    o = open_angles[name]
-    c = close_angles[name]
+    o_med = median(_open_samples[name])
+    c_med = median(_close_samples[name])
+    all_vals = _open_samples[name] + _close_samples[name]
     data["motors"][name] = {
-        "home":      round(o, 2),
-        "limit_min": round(min(o, c), 2),
-        "limit_max": round(max(o, c), 2),
-        "flip":      c < o,
+        "home":      round(o_med, 2),
+        "flip":      c_med < o_med,
+        "limit_min": round(min(all_vals), 2),
+        "limit_max": round(max(all_vals), 2),
     }
-save_profile(profile_name, data)      # writes profiles/<name>.json
-# sets as default if first profile
+save_profile(profile_name, data, side=self._side)   # writes profiles/<name>.json
+set_default_profile(profile_name, side=self._side)  # always updates default
 ```
 
 ### What `_save_profile()` does NOT do `[VERIFIED]`

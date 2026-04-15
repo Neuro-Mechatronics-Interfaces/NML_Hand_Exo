@@ -104,9 +104,21 @@ anything between the redirect and restore that depends on `self.main_layout`.
 
 ## Telemetry index type
 
-`get_absolute_motor_angle('all')` returns `{0: val, 1: val, ...}` keyed by **integer index**
-(position in `MOTOR_IDS[]`), not by motor name or hardware ID.
-`_motor_idx[name]` gives the correct integer key. `positions.get(name)` always returns `None`.
+`get_absolute_motor_angle('all')` and all `_get_motor_attribute('all')` calls return
+`{mid: value}` keyed by **DXL hardware ID** (the `id:` field in the firmware response block),
+**not** by motor name and **not** by 0-based loop index.
+
+```python
+angles = exo.get_motor_angle('all')
+# angles == {11: 162.8, 12: 180.0, ...}  — keyed by actual DXL ID
+val = angles.get(11)   # ✓  right wrist
+val = angles.get("wrist")  # → None  always
+val = angles.get(0)        # → None  unless a motor actually has DXL ID 0
+```
+
+Use `_motor_dxl_id[i]` (widget index → DXL ID) to look up angle values in the
+Controls-tab polling loop.  `_motor_idx` in `HandExoGUI` maps name → enumerate index
+and is only used for table row tracking, not for angle dict lookups.
 
 ---
 
@@ -139,3 +151,46 @@ Any code that normalizes to 0–360 will produce wrong wrist angles.
 The GUI's `CalibrationDialog` saves a profile JSON and calls `exo.apply_calibration()`,
 but does **not** call `update_config_h()`. Firmware defaults in `config.h` persist until
 the CLI is used. Applied calibration is lost on device reboot.
+
+---
+
+## Dual-mode: bare motor names always resolve to the left side
+
+In dual firmware (`BUILD_LEFT_HAND 2`), `MOTOR_NAMES[]` has "wrist" at index 0 (ID 1,
+left) AND index 9 (ID 11, right). `getMotorIDByName()` returns the **first match** — always
+left.
+
+Any firmware command that takes a motor name in dual mode silently targets the left motor:
+
+```
+set_zero_offset:wrist:X  →  ID 1 (left wrist) — RIGHT IS NEVER UPDATED
+```
+
+**Always use explicit DXL IDs for calibration and limit commands in dual firmware.**
+`HandExo.apply_calibration(name_to_id=...)` enforces this. Do not call it without
+`name_to_id` when in dual mode. Use `GUI._make_name_to_id(side)` to build the map.
+
+---
+
+## Dual-mode: `set_gesture` is a firmware broadcast
+
+`set_gesture:grasp:close` arrives at `executeGesture()` in firmware, which iterates ALL
+`N_MOTORS` and calls `setAbsoluteAngle()` on each one — regardless of which side the GUI
+selected, and regardless of whether the motor has torque enabled.
+
+`setAbsoluteAngle()` writes the Dynamixel goal position register unconditionally. If
+the motor is torque-off, it won't move yet, but the goal is latched. Re-enabling torque
+later will cause an unexpected jump.
+
+Protection strategy (implemented at connect time): inactive-side motors are disabled
+immediately when `_connect()` finishes, so they cannot physically move even when their
+goal is written. Do not re-enable inactive motors manually while in single-side mode.
+
+---
+
+## Dual-mode: CalibrationDialog `disable_motor` scope
+
+`CalibrationDialog` and `ROMDialog` disable only the motors in their target-side ID list
+at initialization (per-ID loop), not `disable:all`. If you add code that uses
+`disable_motor('all')` inside these dialogs, it will re-disable inactive-side motors —
+harmless in isolation but unnecessary and slightly misleading.

@@ -43,6 +43,7 @@ File: `examples/calibration/profiles/<name>.json`
 
 ```json
 {
+  "side": "left",
   "motors": {
     "<name>": {
       "home":      float,
@@ -54,10 +55,24 @@ File: `examples/calibration/profiles/<name>.json`
 }
 ```
 
-`profiles/config.json` stores `{"default": "<name>"}`.
+`"side"` is always written by `save_profile()` as of 2026-04. Legacy profiles without it
+are treated as `"right"` in profile filtering.
 
-**Schema rules — additive only.** Never remove `home`, `flip`, `limit_min`, `limit_max`.
-New fields need safe defaults so old profiles load without error.
+`profiles/config.json` stores side-specific defaults:
+
+```json
+{
+  "default_left":  "alice left",
+  "default_right": "alice right",
+  "default":       "alice right"
+}
+```
+
+`"default"` is kept for backward compat with the CLI. `"default_left"` / `"default_right"`
+are used by the GUI and `HandExo.apply_calibration()` when called with `side=...`.
+
+**Schema rules — additive only.** Never remove `home`, `flip`, `limit_min`, `limit_max`,
+`side`. New fields need safe defaults so old profiles load without error.
 `flip` is always derived from measurement — never hard-coded.
 
 ---
@@ -92,6 +107,50 @@ Any change must be applied to both, or extracted into a shared `calibration_util
 `ROMDialog._finish()` offers to derive a calibration profile from the assisted ROM data
 (phases 2 and 3). It uses the same median/min/max arithmetic as `CalibrationDialog`.
 Profile is saved via `save_profile()` and optionally applied via `exo.apply_calibration()`.
+
+---
+
+## Side-specific calibration in dual mode `[VERIFIED]`
+
+### Collection — side-correct from the start
+
+`_run_calibration()` in the GUI passes only the target-side motor names and DXL IDs
+to `CalibrationDialog`:
+
+- Dual mode: reads `cal_side_combo`, filters `side_motor_names` and `side_dxl_ids`
+  to that side only (left: IDs 1–9, right: IDs 11–19).
+- Left Only / Right Only: `motor_names` and `_motor_dxl_id` are already filtered at
+  connect time; passed directly.
+
+`CalibrationDialog._poll_angles()` uses `self._motor_idx` (name → DXL hardware ID map
+built from the `dxl_ids` argument) to look up angle values. Only target-side motors
+are sampled.
+
+Profile values (home, flip, limit_min, limit_max) are computed independently per motor
+from that motor's own sample lists. There is no cross-motor averaging.
+
+### Application — ID-based, side-safe
+
+**Before April 2026**, `apply_calibration()` sent `set_zero_offset:wrist:X` etc., which
+in dual firmware always resolved to the left motor via `getMotorIDByName()`.
+
+**After April 2026**, every `apply_calibration()` call in the GUI passes:
+
+```python
+name_to_id = self._make_name_to_id(side)   # {"wrist": 11, "index": 16, ...}
+self.exo.apply_calibration(name, name_to_id=name_to_id)
+```
+
+Inside `apply_calibration()`, each motor is commanded by integer DXL ID:
+
+```python
+motor_ref = name_to_id.get(name)   # e.g. 11 for "wrist" on the right side
+self.set_zero_offset(motor_ref, adj_home)   # → set_zero_offset:11:X
+```
+
+Epoch correction (multi-turn alignment) also uses `abs_by_id` keyed by DXL ID to
+avoid the name-collision problem where two "wrist" entries would overwrite each other
+in a name-keyed dict.
 
 ---
 

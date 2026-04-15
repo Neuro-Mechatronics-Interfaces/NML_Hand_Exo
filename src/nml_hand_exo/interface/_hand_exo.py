@@ -921,7 +921,8 @@ class HandExo(object):
         """
         self.send_command(f"set_flip:{motor_id}:{'1' if flip else '0'}")
 
-    def apply_calibration(self, profile_or_path: str = None, profiles_dir: str = None):
+    def apply_calibration(self, profile_or_path: str = None, profiles_dir: str = None,
+                          name_to_id: dict = None):
         """
         Loads a calibration profile and pushes all values to the device.
 
@@ -936,6 +937,13 @@ class HandExo(object):
             profiles_dir (str or None): Directory containing profile JSONs.
                 Defaults to examples/calibration/profiles/ relative to
                 the repo root.
+            name_to_id (dict[str, int] or None): Optional mapping of bare motor
+                name → Dynamixel ID.  When provided, calibration commands use
+                the explicit integer ID instead of the bare name string so that
+                duplicate motor names in dual firmware (e.g. two "wrist" motors
+                on left ID 1 and right ID 11) are resolved to the correct side
+                without ambiguity.  When None, bare names are used (legacy
+                behaviour, safe only in single-exo firmware builds).
 
         """
         import json
@@ -991,6 +999,15 @@ class HandExo(object):
         self.send_command("get_absolute_angle:all")
         _raw = self._receive(wait_until_return=True)
         _parsed = self._parse_motor_data_block(_raw)
+
+        # Key by integer DXL ID for unambiguous lookup in dual firmware where
+        # multiple motors share the same bare name (e.g. two "wrist" motors).
+        # The name-keyed fallback is kept for callers that do not supply name_to_id.
+        abs_by_id = {
+            motor_id: info["absolute_angle"]
+            for motor_id, info in _parsed.items()
+            if "absolute_angle" in info
+        }
         abs_by_name = {
             info["name"]: info["absolute_angle"]
             for info in _parsed.values()
@@ -998,8 +1015,13 @@ class HandExo(object):
         }
 
         for name, vals in cal["motors"].items():
-            profile_home  = vals["home"]
-            current_abs   = abs_by_name.get(name)
+            # Resolve motor reference: prefer explicit DXL ID when map is provided
+            # so the firmware command targets the correct side unambiguously.
+            dxl_id    = name_to_id.get(name) if name_to_id else None
+            motor_ref = dxl_id if dxl_id is not None else name
+
+            profile_home = vals["home"]
+            current_abs  = abs_by_id.get(dxl_id) if dxl_id is not None else abs_by_name.get(name)
 
             if current_abs is not None:
                 epoch_shift = round((current_abs - profile_home) / 360.0) * 360.0
@@ -1012,14 +1034,14 @@ class HandExo(object):
             adj_limit_max = vals["limit_max"]  + epoch_shift
 
             self.logger(
-                f"[cal] {name}: profile_home={profile_home:.2f} cur_abs="
+                f"[cal] {name} (id={motor_ref}): profile_home={profile_home:.2f} cur_abs="
                 + (f"{current_abs:.2f}" if current_abs is not None else "N/A")
                 + f" shift={epoch_shift:+.0f} adj_home={adj_home:.2f}"
             )
 
-            self.set_zero_offset(name, adj_home)
-            self.set_motor_limits(name, adj_limit_min, adj_limit_max)
-            self.set_flip(name, vals["flip"])
+            self.set_zero_offset(motor_ref, adj_home)
+            self.set_motor_limits(motor_ref, adj_limit_min, adj_limit_max)
+            self.set_flip(motor_ref, vals["flip"])
 
         profile_name = os.path.basename(filepath).removesuffix(".json")
         self.logger(f"Calibration profile '{profile_name}' applied from {filepath}")

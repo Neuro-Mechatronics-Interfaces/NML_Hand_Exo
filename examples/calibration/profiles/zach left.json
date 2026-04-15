@@ -1,58 +1,59 @@
 {
+  "side": "left",
   "motors": {
     "wrist": {
-      "home": 145.16,
+      "home": 148.1,
       "flip": true,
-      "limit_min": 52.54,
-      "limit_max": 148.19
+      "limit_min": 121.53,
+      "limit_max": 154.35
     },
     "wrist2": {
-      "home": 202.36,
+      "home": 207.33,
       "flip": false,
-      "limit_min": 200.46,
-      "limit_max": 314.07
+      "limit_min": 202.05,
+      "limit_max": 230.56
     },
     "thumbadd": {
-      "home": 215.95,
+      "home": 235.93,
       "flip": false,
-      "limit_min": 214.28,
-      "limit_max": 244.82
+      "limit_min": 235.58,
+      "limit_max": 243.85
     },
     "thumbrot": {
-      "home": 204.38,
-      "flip": false,
-      "limit_min": 201.17,
-      "limit_max": 245.78
+      "home": 205.83,
+      "flip": true,
+      "limit_min": 200.73,
+      "limit_max": 208.21
     },
     "thumbflex": {
-      "home": 363.09,
-      "flip": true,
-      "limit_min": 334.4,
-      "limit_max": 364.14
+      "home": 331.32,
+      "flip": false,
+      "limit_min": 331.23,
+      "limit_max": 331.67
     },
     "index": {
-      "home": 184.62,
-      "flip": true,
-      "limit_min": 134.55,
-      "limit_max": 184.71
+      "home": 146.52,
+      "flip": false,
+      "limit_min": 146.52,
+      "limit_max": 146.61
     },
     "middle": {
-      "home": 162.18,
+      "home": 165.97,
       "flip": false,
-      "limit_min": 161.74,
-      "limit_max": 200.46
+      "limit_min": 165.97,
+      "limit_max": 186.82
     },
     "ring": {
-      "home": 198.88,
+      "home": 189.64,
       "flip": true,
-      "limit_min": 141.06,
-      "limit_max": 198.88
+      "limit_min": 178.46,
+      "limit_max": 189.64
     },
     "pinky": {
-      "home": 63.62,
+      "home": 108.24,
       "flip": false,
-      "limit_min": 63.62,
-      "limit_max": 163.59
+      "limit_min": 83.95,
+      "limit_max": 137.72
     }
   }
 }

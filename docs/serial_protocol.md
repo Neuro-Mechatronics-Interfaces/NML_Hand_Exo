@@ -58,13 +58,13 @@ Responses are terminated with `;`. `SerialComm.receive()` reads until `;` is see
 |------------------|----------------|-------|----------------------|
 | USB debug        | Serial         | 57600 | USB port             |
 | Dynamixel bus    | Serial1        | 57600 | JST DXL connector    |
-| HC-05 Bluetooth  | Serial2        | 9600  | D13 (RX), D14 (TX)   |
+| HC-05 Bluetooth  | Serial3        | 57600 | D13 (TX), D14 (RX)   |
 
 All three constants are defined in `src/cpp/nml_hand_exo/config.h`:
 `DEBUG_BAUD_RATE`, `DYNAMIXEL_BAUD_RATE`, `COMMAND_BAUD_RATE`.
 
-HC-05 is factory default 9600. To change it, use AT command mode on the module,
-then update `COMMAND_BAUD_RATE` in `config.h` to match.
+HC-05 factory default is 9600. The firmware is configured for 57600 (`COMMAND_BAUD_RATE`).
+If you swap an HC-05 module, use AT command mode to set it to 57600 before use.
 
 ---
 
@@ -73,7 +73,7 @@ then update `COMMAND_BAUD_RATE` in `config.h` to match.
 ```cpp
 #define DEBUG_SERIAL   Serial    // USB CDC
 #define DXL_SERIAL     Serial1   // Dynamixel TTL bus
-#define COMMAND_SERIAL Serial2   // D13=RX2, D14=TX2  ← HC-05 wired here
+#define COMMAND_SERIAL Serial3   // D13=TX3, D14=RX3  ← HC-05 wired here
 ```
 
 OpenRB-150 does not use a DIR pin for Dynamixel (`DXL_DIR_PIN = -1`).
@@ -148,12 +148,39 @@ Before touching any C++ firmware or the serial protocol:
 
 ---
 
+## Dual-mode motor name disambiguation `[VERIFIED]`
+
+In dual firmware (`BUILD_LEFT_HAND 2`), `MOTOR_NAMES[]` contains duplicate bare names:
+"wrist" exists at index 0 (ID 1, left) and index 9 (ID 11, right).
+
+Firmware `getMotorIDByName()` performs a linear scan and **returns the first match**.
+In dual mode this is always the left motor. Any command using a bare name in dual mode
+silently targets the wrong side:
+
+```
+set_zero_offset:wrist:X   →  ID 1 (left), regardless of intent
+set_motor_limits:wrist:X:Y →  ID 1 (left)
+```
+
+**Safe pattern**: use the integer DXL ID. `getMotorID()` parses the token as an integer
+first; if non-zero, the integer is used directly without name lookup:
+
+```
+set_zero_offset:11:X   →  ID 11 (right wrist)  ✓
+set_motor_limits:11:X:Y →  ID 11 (right wrist) ✓
+```
+
+`HandExo.apply_calibration(name_to_id={...})` enforces ID-based commands automatically
+when the GUI passes a `name_to_id` mapping. See [docs/dual_exo_architecture.md](dual_exo_architecture.md).
+
+---
+
 ## Key constants (config.h)
 
 | Constant                | Value    | Meaning                              |
 |-------------------------|----------|--------------------------------------|
 | `DEBUG_BAUD_RATE`       | 57600    | USB serial baud                      |
-| `COMMAND_BAUD_RATE`     | 9600     | HC-05 Bluetooth baud                 |
+| `COMMAND_BAUD_RATE`     | 57600    | HC-05 Bluetooth baud (firmware side) |
 | `DYNAMIXEL_BAUD_RATE`   | 57600    | Dynamixel bus baud                   |
 | `MOTOR_CURRENT_LIMIT`   | 200      | Default current cap per motor (mA)   |
 | `DXL_PROTOCOL_VERSION`  | 2.0      | Dynamixel protocol version           |
