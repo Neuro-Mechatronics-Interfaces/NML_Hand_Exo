@@ -124,6 +124,10 @@ class NMLHandExo {
     // @return Information string.
     String getDeviceInfo();
 
+    /// @brief Get the hand side this board is compiled for ("right" or "left").
+    /// @return HAND_SIDE constant as a C-string.
+    const char* getSide() const;
+
     /// @brief Get the number of motors
     /// @return integer, number of motors.
     int getMotorCount();

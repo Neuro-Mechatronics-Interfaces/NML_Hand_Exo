@@ -47,32 +47,62 @@ def get_profile_path(name: str) -> str:
     return os.path.join(PROFILES_DIR, f"{name}.json")
 
 
-def list_profiles() -> list[str]:
-    """Return a sorted list of saved profile names."""
+def list_profiles(side: str | None = None) -> list[str]:
+    """Return a sorted list of saved profile names.
+
+    If *side* is ``'left'`` or ``'right'``, only return profiles whose JSON
+    contains a matching ``"side"`` field.  Profiles without a ``"side"``
+    field are treated as ``'right'`` for backward compatibility.
+    """
     os.makedirs(PROFILES_DIR, exist_ok=True)
     names = []
     for f in os.listdir(PROFILES_DIR):
-        if f.endswith(".json") and f != "config.json":
-            names.append(f.removesuffix(".json"))
+        if not (f.endswith(".json") and f != "config.json"):
+            continue
+        name = f.removesuffix(".json")
+        if side is not None:
+            try:
+                with open(os.path.join(PROFILES_DIR, f)) as fh:
+                    data = json.load(fh)
+                profile_side = data.get("side", "right")
+                if profile_side != side:
+                    continue
+            except Exception:
+                pass
+        names.append(name)
     return sorted(names)
 
 
-def get_default_profile() -> str | None:
-    """Read the default profile name from config.json, or None."""
+def get_default_profile(side: str = "right") -> str | None:
+    """Read the default profile name for *side* from config.json, or None.
+
+    Checks ``default_right`` / ``default_left`` keys first, then falls back
+    to the legacy ``default`` key (treated as right-hand) for backward
+    compatibility with old config.json files.
+    """
     if not os.path.exists(CONFIG_FILE):
         return None
     with open(CONFIG_FILE, "r") as f:
         cfg = json.load(f)
-    return cfg.get("default")
+    # Side-specific key first, then legacy "default" key (right-hand compat).
+    return cfg.get(f"default_{side}") or (cfg.get("default") if side == "right" else None)
 
 
-def set_default_profile(name: str):
-    """Write the given name as the default in config.json."""
+def set_default_profile(name: str, side: str = "right"):
+    """Write *name* as the default profile for *side* in config.json.
+
+    Writes ``default_right`` or ``default_left`` keys.  Also maintains the
+    legacy ``default`` key (pointing to the right-hand default) so that
+    older code that reads only ``default`` continues to work.
+    """
     cfg = {}
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
             cfg = json.load(f)
-    cfg["default"] = name
+    cfg[f"default_{side}"] = name
+    # Keep the legacy "default" key in sync with the right-hand default.
+    if side == "right":
+        cfg["default"] = name
     os.makedirs(PROFILES_DIR, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
         json.dump(cfg, f, indent=2)
@@ -144,8 +174,17 @@ def prompt_enter(msg: str):
 # ---------------------------------------------------------------------------
 
 def save_calibration(filepath: str, motor_names: list, home_positions: list,
-                     joint_limits: list, flip_flags: list):
-    data = {"motors": {}}
+                     joint_limits: list, flip_flags: list, side: str = "right"):
+    """Save a calibration profile to *filepath*.
+
+    The ``"side"`` field records which hand this profile belongs to.  This
+    allows the GUI and scripts to filter and auto-apply the correct profile
+    when multiple exos are connected.
+
+    Motor names are stored bare (``"wrist"``, ``"index"``, etc.) — the side
+    is carried only in the top-level ``"side"`` field, not in the motor keys.
+    """
+    data = {"side": side, "motors": {}}
     for i, name in enumerate(motor_names):
         lo, hi = joint_limits[i]
         data["motors"][name] = {
@@ -298,28 +337,43 @@ def main():
     parser.add_argument("--baud", type=int, default=57600, help="Baud rate (default 57600)")
     parser.add_argument("--name", type=str, default=None,
                         help="Profile name for this person (e.g. 'zach', 'max')")
+    parser.add_argument("--side", type=str, default="right",
+                        choices=["right", "left"],
+                        help="Which hand this exo is for (default: right). "
+                             "Saved into the profile and used when selecting defaults.")
     parser.add_argument("--apply", nargs="?", const="__default__", default=None,
                         metavar="NAME",
-                        help="Apply a saved profile by name (no arg = use default)")
+                        help="Apply a saved profile by name (no arg = use side default)")
     parser.add_argument("--set-default", type=str, default=None, metavar="NAME",
-                        help="Set a profile as the default and exit")
+                        help="Set a profile as the default for its side and exit")
     parser.add_argument("--list-profiles", action="store_true",
                         help="List all saved calibration profiles and exit")
     parser.add_argument("--list-ports", action="store_true",
                         help="List available serial ports and exit")
     args = parser.parse_args()
 
+    side = args.side  # "right" or "left"
+
     # --- List profiles ---
     if args.list_profiles:
         profiles = list_profiles()
-        default = get_default_profile()
+        default_r = get_default_profile("right")
+        default_l = get_default_profile("left")
         if not profiles:
             print("No saved profiles. Run calibration with --name <name> to create one.")
         else:
             print("Saved calibration profiles:")
             for p in profiles:
-                marker = " (default)" if p == default else ""
-                print(f"  {p}{marker}")
+                try:
+                    with open(get_profile_path(p)) as f:
+                        p_side = json.load(f).get("side", "right")
+                except Exception:
+                    p_side = "?"
+                markers = []
+                if p == default_r: markers.append("default-right")
+                if p == default_l: markers.append("default-left")
+                suffix = f"  [{', '.join(markers)}]" if markers else ""
+                print(f"  {p}  ({p_side}){suffix}")
         return
 
     # --- Set default ---
@@ -329,8 +383,8 @@ def main():
         if not os.path.exists(path):
             print(f"Error: No profile found for '{name}'. Available: {list_profiles()}")
             return
-        set_default_profile(name)
-        print(f"Default profile set to: {name}")
+        set_default_profile(name, side)
+        print(f"Default {side}-hand profile set to: {name}")
         return
 
     # --- List ports ---
@@ -348,9 +402,9 @@ def main():
     # --- Apply-only mode ---
     if args.apply is not None:
         if args.apply == "__default__":
-            profile_name = get_default_profile()
+            profile_name = get_default_profile(side)
             if profile_name is None:
-                print("Error: No default profile set. Use --set-default <name> first,")
+                print(f"Error: No default {side}-hand profile set. Use --set-default <name> first,")
                 print("       or specify a name: --apply <name>")
                 return
         else:
@@ -368,7 +422,7 @@ def main():
         resp = send(ser, "version")
         print(f"Device response: {resp}")
 
-        print(f"\nApplying profile: {profile_name}")
+        print(f"\nApplying {side}-hand profile: {profile_name}")
         cal = load_calibration(path)
         apply_calibration(ser, cal)
         update_config_h(cal)
@@ -396,6 +450,7 @@ def main():
         args.port = input("\nEnter the COM port to use: ").strip()
 
     print(f"\nConnecting to {args.port} at {args.baud} baud...")
+    print(f"Calibrating: {side.upper()} hand  (use --side left/right to change)")
     ser = serial.Serial(args.port, args.baud, timeout=1)
     time.sleep(2)
     ser.reset_input_buffer()
@@ -407,24 +462,24 @@ def main():
 
     home_positions, joint_limits, flip_flags = run_interactive_calibration(ser, motor_names)
 
-    # Save profile
+    # Save profile (includes side field)
     profile_path = get_profile_path(args.name)
-    save_calibration(profile_path, motor_names, home_positions, joint_limits, flip_flags)
+    save_calibration(profile_path, motor_names, home_positions, joint_limits, flip_flags, side=side)
 
     # Update config.h so firmware defaults match this calibration
     cal = load_calibration(profile_path)
     update_config_h(cal)
 
-    # Set as default if it's the first profile or user wants it
-    current_default = get_default_profile()
+    # Set as default if it's the first profile for this side or user wants it
+    current_default = get_default_profile(side)
     if current_default is None:
-        set_default_profile(args.name)
-        print(f"  Set '{args.name}' as the default profile (first profile created).")
+        set_default_profile(args.name, side)
+        print(f"  Set '{args.name}' as the default {side}-hand profile (first profile created).")
     else:
-        make_default = input(f"\n  Set '{args.name}' as the default profile? (y/n): ").strip().lower()
+        make_default = input(f"\n  Set '{args.name}' as the default {side}-hand profile? (y/n): ").strip().lower()
         if make_default == "y":
-            set_default_profile(args.name)
-            print(f"  Default profile updated to: {args.name}")
+            set_default_profile(args.name, side)
+            print(f"  Default {side}-hand profile updated to: {args.name}")
 
     # Apply to device
     print("\n" + "=" * 60)

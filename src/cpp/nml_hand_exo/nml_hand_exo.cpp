@@ -213,11 +213,16 @@ void NMLHandExo::resetAllZeros() {
     debugPrint("[DEBUG] Zero offset set for motor " + String(id) + ": " + String(current_angle, 2) + " deg");
   }
 }
+const char* NMLHandExo::getSide() const {
+  return HAND_SIDE;
+}
+
 String NMLHandExo::getDeviceInfo() {
 
     // Need to return a single string with all the information
     String info = "Name: NMLHandExo\n";
     info += "Version: " + String(VERSION) + "\n";
+    info += "Side: " + String(HAND_SIDE) + "\n";
     info += "Number of Motors: " + String(numMotors_) + "\n";
     for (int i = 0; i < numMotors_; ++i) {
 

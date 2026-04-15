@@ -20,15 +20,17 @@ class HandExo(object):
     """
 
     def __init__(self, comm: BaseComm, name='NMLHandExo', command_delimiter: str = '\n', send_delay: float = 0.01,
-                 auto_connect=False, verbose: bool = False):
-        """ 
+                 auto_connect=False, verbose: bool = False, side: str | None = None):
+        """
         Initializes the HandExo interface.
-        
+
         Args:
             name (str): Name of the exoskeleton instance.
             command_delimiter (str): Delimiter used to separate commands (default is '\n').
             send_delay (float): Delay in seconds after sending a command to allow processing (default is 0.01).
             verbose (bool): If True, enables verbose logging of commands and responses (default is False).
+            side (str or None): Hand side this exo is for — ``'right'``, ``'left'``,
+                or ``None`` to auto-detect from the firmware 'info' response.
 
         """
         self.name = name
@@ -37,6 +39,8 @@ class HandExo(object):
         self.send_delay = send_delay
         self.verbose = verbose
         self.device.verbose = verbose
+        # Side is set explicitly or detected via detect_side() / info().
+        self.side: str | None = side
 
         if auto_connect:
             self.device.connect()
@@ -57,6 +61,30 @@ class HandExo(object):
             # If a warning, print the text in yellow
             msg = f"\033[93m{msg}\033[0m" if warning else msg
             print(msg)
+
+    def detect_side(self) -> str:
+        """
+        Query the firmware's 'info' response to determine the hand side.
+
+        Updates ``self.side`` and returns it.  Falls back to ``'right'`` if the
+        firmware does not include a Side field (pre-handedness firmware).
+
+        Returns:
+            str: ``'left'`` or ``'right'``.
+        """
+        try:
+            d = self.info()
+            self.side = d.get('side', self.side or 'right')
+        except Exception:
+            self.side = self.side or 'right'
+        return self.side
+
+    def close(self):
+        """Close the underlying communication interface."""
+        try:
+            self.device.close()
+        except Exception:
+            pass
 
     def set_comm(self, comm: BaseComm):
         """
@@ -193,7 +221,13 @@ class HandExo(object):
                 else:
                     motor_info[key] = val
 
-            motor_id = int(motor_id_str) if motor_id_str else motor_info.get("id")
+            # Prefer the actual Dynamixel ID from the id: field in the blob.
+            # The Motor X: prefix uses a loop index (0..N-1), NOT the hardware ID.
+            # Firmware embeds the real ID as "id: <N>" inside the braces.
+            actual_id = motor_info.get("id")
+            if actual_id is None:
+                actual_id = int(motor_id_str) if motor_id_str else None
+            motor_id = actual_id
             if motor_id is not None:
                 motor_data[motor_id] = motor_info
 
@@ -344,6 +378,7 @@ class HandExo(object):
         # --- Header lines appear one-per-line in your sample ---
         name_pat    = re.compile(r'^Name:\s*(\S+)')
         ver_pat     = re.compile(r'^Version:\s*(\S+)')
+        side_pat    = re.compile(r'^Side:\s*(\S+)')
         nmot_pat    = re.compile(r'^Number of Motors:\s*(\d+)')
         motor_pat   = re.compile(r'^Motor\s+(\d+):\s*\{(.*)\}\s*$')
 
@@ -357,6 +392,13 @@ class HandExo(object):
             m = ver_pat.search(ln)
             if m:
                 info['version'] = m.group(1)
+                continue
+            m = side_pat.search(ln)
+            if m:
+                info['side'] = m.group(1).lower()
+                # Update self.side if not explicitly set by the caller
+                if self.side is None:
+                    self.side = info['side']
                 continue
             m = nmot_pat.search(ln)
             if m:
@@ -417,9 +459,10 @@ class HandExo(object):
             if en_m:
                 m_info['enabled'] = (en_m.group(1).lower() == 'true')
 
-            # Stash
-            motors[motor_id] = m_info
-            info[f'motor_{motor_id}'] = m_info  # back-compat
+            # Stash — use actual Dynamixel ID (from id: field), not loop index
+            actual_id = m_info.get('id', motor_id)
+            motors[actual_id] = m_info
+            info[f'motor_{actual_id}'] = m_info  # back-compat
 
         if 'n_motors' not in info:
             info['n_motors'] = len(motors)
@@ -909,9 +952,15 @@ class HandExo(object):
                 raise FileNotFoundError(f"No profiles config found at {config_path}")
             with open(config_path, "r") as f:
                 cfg = json.load(f)
-            default_name = cfg.get("default")
+            # Prefer side-specific default (e.g. "default_right"), fall back to
+            # legacy "default" key so old config.json files still work.
+            my_side = self.side or "right"
+            default_name = cfg.get(f"default_{my_side}") or cfg.get("default")
             if not default_name:
-                raise ValueError("No default profile set. Pass a profile name or run calibrate_exo.py --set-default.")
+                raise ValueError(
+                    f"No default profile set for side='{my_side}'. "
+                    "Pass a profile name or run calibrate_exo.py --set-default."
+                )
             filepath = os.path.join(profiles_dir, f"{default_name}.json")
         elif os.path.isfile(profile_or_path):
             filepath = profile_or_path
@@ -923,6 +972,15 @@ class HandExo(object):
 
         with open(filepath, "r") as f:
             cal = json.load(f)
+
+        # Warn if the profile's declared side does not match this exo's side.
+        profile_side = cal.get("side")
+        if profile_side and self.side and profile_side != self.side:
+            self.logger(
+                f"[apply_calibration] WARNING: profile side='{profile_side}' "
+                f"but this exo is side='{self.side}'. Applying anyway.",
+                warning=True,
+            )
 
         # --- Epoch alignment for multi-turn motors ---
         # In OP_CURRENT_BASED_POSITION the Dynamixel resets its multi-turn counter

@@ -23,14 +23,25 @@ void resolveStateAngles(const GestureState& state,
     }
 
     if (state.isSparse) {
-        // Apply only specified joints
+        // Apply specified joints, matching ALL motors with the same name.
+        // In dual-exo mode MOTOR_NAMES[] contains duplicate names (e.g. "wrist"
+        // appears twice: once for left IDs 1-9 and once for right IDs 11-19).
+        // The old jointIndexByName() only returned the first match, so the right
+        // hand never received gesture angles.  This loop finds every matching
+        // index so both exos are commanded by the same named value.
         for (uint8_t k = 0; k < state.nPairs; ++k) {
-            int idx = jointIndexByName(state.namedPairs[k].joint);
-            if (idx < 0 || idx >= N_MOTORS) continue;
-            if (state.isRelative) {
-                outAngles[idx] = (homeAngles ? homeAngles[idx] : 0.0f) + state.namedPairs[k].value;
-            } else {
-                outAngles[idx] = state.namedPairs[k].value;
+            if (!state.namedPairs[k].joint) continue;
+            String pairName = String(state.namedPairs[k].joint);
+            pairName.toLowerCase();
+            for (int i = 0; i < N_MOTORS; ++i) {
+                if (!MOTOR_NAMES[i] || !*MOTOR_NAMES[i]) continue;
+                String mName = String(MOTOR_NAMES[i]); mName.toLowerCase();
+                if (!mName.equals(pairName)) continue;
+                if (state.isRelative) {
+                    outAngles[i] = (homeAngles ? homeAngles[i] : 0.0f) + state.namedPairs[k].value;
+                } else {
+                    outAngles[i] = state.namedPairs[k].value;
+                }
             }
         }
     } else {

@@ -1,5 +1,6 @@
 from ._interfaces import BaseComm, SerialComm, TCPComm
 from ._hand_exo import HandExo
+from ._dual_hand_exo import DualHandExo
 from ._fake_hand_exo import FakeHandExo
 from ._lsl_client import LSLClient
 from ._lsl_publisher import LSLMessagePublisher

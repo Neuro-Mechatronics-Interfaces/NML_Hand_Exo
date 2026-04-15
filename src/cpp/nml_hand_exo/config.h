@@ -102,23 +102,47 @@ constexpr const char* DEFAULT_EXO_MODE = "gesture_fixed"; // Available modes are
 /// @brief Verbose output toggle for debugging.
 constexpr bool DEFAULT_VERBOSE = true;
 
-// Define servo IDs
-constexpr uint8_t PINKY_ID     = 10; // 2
-constexpr uint8_t RING_ID      = 11; // 1
-constexpr uint8_t INDEX_ID     = 13; // 3
-constexpr uint8_t MIDDLE_ID    = 12; // 4
-constexpr uint8_t THUMBFLEX_ID = 15; // 5
-constexpr uint8_t THUMBROT_ID  = 14; // 5
-constexpr uint8_t WRIST_ID     = 1;
-constexpr uint8_t WRIST2_ID    = 2;
-constexpr uint8_t THUMBADD_ID  = 3;
+// ---- Hand-side build selector -----------------------------------------------
+// 0 = right exo only  (IDs 11-19, HAND_SIDE="right")
+// 1 = left exo only   (IDs  1-9,  HAND_SIDE="left")
+// 2 = dual            (IDs  1-9 left + 11-19 right on one bus, HAND_SIDE="dual")
+//
+// Both hands share ONE OpenRB-150 controller and one Dynamixel bus.
+// Left IDs: 1-9.  Right IDs: 11-19.
+// Calibration arrays are overwritten at runtime by apply_calibration.
+#define BUILD_LEFT_HAND 2
 
-/// @brief Hand orientation (right or left)
-constexpr bool IS_RIGHT_HAND = true; // true for right hand, false for left hand
+// ---- Motor IDs (single-exo modes only — dual defines arrays directly) --------
+#if BUILD_LEFT_HAND == 0   // right only
+  constexpr uint8_t WRIST_ID     = 11;
+  constexpr uint8_t WRIST2_ID    = 12;
+  constexpr uint8_t THUMBADD_ID  = 13;
+  constexpr uint8_t THUMBROT_ID  = 14;
+  constexpr uint8_t THUMBFLEX_ID = 15;
+  constexpr uint8_t INDEX_ID     = 16;
+  constexpr uint8_t MIDDLE_ID    = 17;
+  constexpr uint8_t RING_ID      = 18;
+  constexpr uint8_t PINKY_ID     = 19;
+  constexpr const char* HAND_SIDE = "right";
+#elif BUILD_LEFT_HAND == 1 // left only
+  constexpr uint8_t WRIST_ID     =  1;
+  constexpr uint8_t WRIST2_ID    =  2;
+  constexpr uint8_t THUMBADD_ID  =  3;
+  constexpr uint8_t THUMBROT_ID  =  4;
+  constexpr uint8_t THUMBFLEX_ID =  5;
+  constexpr uint8_t INDEX_ID     =  6;
+  constexpr uint8_t MIDDLE_ID    =  7;
+  constexpr uint8_t RING_ID      =  8;
+  constexpr uint8_t PINKY_ID     =  9;
+  constexpr const char* HAND_SIDE = "left";
+#else                      // dual (BUILD_LEFT_HAND == 2)
+  constexpr const char* HAND_SIDE = "dual";
+#endif
 
-// ---- Motor enable flags ------------------------------------------------
+// ---- Motor enable flags (single-exo modes only) ----------------------------
 // Set to 0 to exclude a motor that is not connected.
-// Set to 1 to include it.  All arrays below are built automatically.
+// In dual mode (BUILD_LEFT_HAND == 2) all 18 motors are always included.
+#if BUILD_LEFT_HAND != 2
 #define ENABLE_WRIST     1
 #define ENABLE_WRIST2    1
 #define ENABLE_THUMBADD  1
@@ -128,6 +152,56 @@ constexpr bool IS_RIGHT_HAND = true; // true for right hand, false for left hand
 #define ENABLE_MIDDLE    1
 #define ENABLE_RING      1
 #define ENABLE_PINKY     1
+#endif
+
+// ---- Motor arrays -----------------------------------------------------------
+// Dual mode uses fixed 18-entry arrays (left IDs 1-9 first, right IDs 11-19 second).
+// Single-exo modes use the ENABLE_* flags to build 9-entry arrays.
+
+#if BUILD_LEFT_HAND == 2   // ===== DUAL MODE =====
+
+/// @brief Motor ID Array: left (1-9) then right (11-19).
+constexpr uint8_t MOTOR_IDS[] = {
+  1, 2, 3, 4, 5, 6, 7, 8, 9,          // left:  wrist wrist2 thumbadd thumbrot thumbflex index middle ring pinky
+  11, 12, 13, 14, 15, 16, 17, 18, 19  // right: wrist wrist2 thumbadd thumbrot thumbflex index middle ring pinky
+};
+
+/// @brief Motor name Array (must match MOTOR_IDS order).
+/// Individual motor commands use Dynamixel ID numbers, not names, to avoid
+/// duplicate-name collisions between left and right in dual mode.
+constexpr const char* MOTOR_NAMES[] = {
+  "wrist", "wrist2", "thumbadd", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky",
+  "wrist", "wrist2", "thumbadd", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky"
+};
+
+/// @brief Home states [left placeholders, right calibrated].
+/// Left values are placeholders overwritten at runtime by apply_calibration.
+constexpr float HOME_STATES[] = {
+  // left (IDs 1-9) — placeholders, calibrate before use
+  180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0,
+  // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
+  149.1, 180.0, 180.0, 251.86, 374.53, 162.8, 106.83, 68.99, 115.37
+};
+
+/// @brief Physical joint limits [min, max] for each motor.
+constexpr float jointLimits[][2] = {
+  // left (IDs 1-9) — placeholders
+  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},
+  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},
+  // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
+  {-189, 2840}, {0.0, 360.0}, {0.0, 360.0}, {220.26, 251.86}, {374.53, 415.27},
+  {162.8, 224.93}, {64.5, 106.83}, {68.99, 119.06}, {74.1, 115.37}
+};
+
+/// @brief Default flip direction per motor.
+constexpr bool DEFAULT_FLIPS[] = {
+  // left (IDs 1-9) — placeholders
+  false, false, false, false, false, false, false, false, false,
+  // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
+  false, false, false, true, false, false, true, false, true
+};
+
+#else  // ===== SINGLE-EXO MODE (BUILD_LEFT_HAND == 0 or 1) =====
 
 /// @brief Motor ID Array (auto-built from enable flags)
 constexpr uint8_t MOTOR_IDS[] = {
@@ -283,6 +357,8 @@ constexpr bool DEFAULT_FLIPS[] = {
   true,
 #endif
 };
+
+#endif  // BUILD_LEFT_HAND == 2 vs single-exo
 
 /// @brief Default baud rate for the debug serial connection.
 constexpr long DEBUG_BAUD_RATE = 57600;
