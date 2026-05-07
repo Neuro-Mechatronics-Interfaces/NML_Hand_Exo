@@ -58,7 +58,7 @@
 #endif
 
 // ======================= Define IMU Usage ==========================
-#define IMU_ENABLED_DEFAULT true     // change to false if you usually run without IMU
+#define IMU_ENABLED_DEFAULT false     // change to false if you usually run without IMU
 
 #define IMU_I2C_ADDR_PRIMARY  0x28   // BNO055 default
 

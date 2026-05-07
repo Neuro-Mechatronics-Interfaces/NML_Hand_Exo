@@ -2,6 +2,7 @@ import socket
 import serial
 import asyncio
 import time
+import threading
 
 
 class BaseComm:
@@ -54,6 +55,9 @@ class SerialComm(BaseComm):
         self.command_delimiter = command_delimiter
         self.timeout = timeout
         self.device = None
+        # RLock serializes all writes across threads.  Reentrant so that callers
+        # holding the lock can still call send() without deadlocking.
+        self._lock = threading.RLock()
 
     def connect(self):
         self.device = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
@@ -63,7 +67,8 @@ class SerialComm(BaseComm):
             self.device.close()
 
     def send(self, message: str):
-        self.device.write(message.encode())
+        with self._lock:
+            self.device.write(message.encode())
 
     def receive(self, wait_until_return=False, timeout=2.0) -> str:
         """

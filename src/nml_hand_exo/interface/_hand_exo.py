@@ -379,6 +379,7 @@ class HandExo(object):
         name_pat    = re.compile(r'^Name:\s*(\S+)')
         ver_pat     = re.compile(r'^Version:\s*(\S+)')
         side_pat    = re.compile(r'^Side:\s*(\S+)')
+        calname_pat = re.compile(r'^CalibrationName:\s*(.*)')
         nmot_pat    = re.compile(r'^Number of Motors:\s*(\d+)')
         motor_pat   = re.compile(r'^Motor\s+(\d+):\s*\{(.*)\}\s*$')
 
@@ -399,6 +400,10 @@ class HandExo(object):
                 # Update self.side if not explicitly set by the caller
                 if self.side is None:
                     self.side = info['side']
+                continue
+            m = calname_pat.search(ln)
+            if m:
+                info['calibration_name'] = m.group(1).strip()
                 continue
             m = nmot_pat.search(ln)
             if m:
@@ -1045,6 +1050,97 @@ class HandExo(object):
 
         profile_name = os.path.basename(filepath).removesuffix(".json")
         self.logger(f"Calibration profile '{profile_name}' applied from {filepath}")
+
+    # -------------------------------------------------------------------------
+    # Gesture calibration EEPROM commands
+    # -------------------------------------------------------------------------
+
+    # Default gesture fractions used when a profile has no "gestures" section.
+    # Outer key = gesture name, inner key = state name, value = {joint: fraction}.
+    _DEFAULT_GESTURE_FRACTIONS: dict = {
+        "grasp":       {"open": {j: 0.0 for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
+                        "close":{j: (0.0 if j in ("wrist","wrist2") else 1.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
+        "keygrip":     {"open": {j: (1.0 if j in ("index","middle","ring","pinky") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
+                        "close":{j: (1.0 if j in ("thumbadd","thumbflex","index","middle","ring","pinky") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
+        "pinch_index": {"open": {j: 0.0 for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
+                        "close":{j: (1.0 if j in ("thumbadd","thumbflex","thumbrot","index") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
+        "pinch_middle":{"open": {j: 0.0 for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
+                        "close":{j: (1.0 if j in ("thumbadd","thumbflex","thumbrot","middle") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
+        "pinch_ring":  {"open": {j: 0.0 for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
+                        "close":{j: (1.0 if j in ("thumbadd","thumbflex","thumbrot","ring") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
+        "peace":       {"open": {j: 0.0 for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
+                        "close":{j: (1.0 if j in ("thumbadd","thumbflex","thumbrot","ring","pinky") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
+    }
+
+    def set_gesture_cal_value(self, gesture: str, state: str, joint: str,
+                               value: float) -> None:
+        """Update one [0-1] fraction in the firmware's live gestureLibrary.
+
+        Does NOT write to EEPROM; call save_gesture_cal() afterward to persist.
+        """
+        self.send_command(f"set_gesture_cal:{gesture}:{state}:{joint}:{value:.4f}")
+
+    def save_gesture_cal(self) -> None:
+        """Persist the current gestureLibrary fractions and cal name to EEPROM."""
+        self.send_command("save_gesture_cal")
+
+    def load_gesture_cal(self) -> None:
+        """Reload gestureLibrary fractions and cal name from EEPROM."""
+        self.send_command("load_gesture_cal")
+
+    def set_cal_name(self, name: str) -> None:
+        """Set the active calibration profile name in firmware memory.
+
+        Does NOT write to EEPROM; call save_gesture_cal() afterward to persist.
+        """
+        self.send_command(f"set_cal_name:{name}")
+
+    def get_cal_name(self) -> str:
+        """Return the calibration name currently stored in firmware memory."""
+        self.send_command("get_cal_name")
+        raw = self._receive(wait_until_return=True)
+        import re
+        m = re.search(r'CalibrationName:\s*(.*)', raw or "")
+        return m.group(1).strip() if m else ""
+
+    def flash_calibration_to_firmware(self, profile_name: str,
+                                       profiles_dir: str | None = None,
+                                       name_to_id: dict | None = None) -> None:
+        """Apply calibration profile to firmware and persist to EEPROM.
+
+        Steps:
+          1. apply_calibration() — pushes per-motor home / limits / flip
+          2. set_gesture_cal for each gesture/state/joint using values from
+             the profile's "gestures" key, or built-in defaults if absent
+          3. set_cal_name(profile_name)
+          4. save_gesture_cal() — writes fractions + name to EEPROM
+        """
+        import json, os
+
+        self.apply_calibration(profile_name, profiles_dir=profiles_dir,
+                               name_to_id=name_to_id)
+
+        # Resolve gesture fractions: prefer profile "gestures" section, else defaults.
+        if profiles_dir is None:
+            repo_root = os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))))
+            profiles_dir = os.path.join(repo_root, "examples", "calibration", "profiles")
+        filepath = os.path.join(profiles_dir, f"{profile_name}.json")
+        gestures_data: dict = {}
+        if os.path.exists(filepath):
+            with open(filepath) as f:
+                gestures_data = json.load(f).get("gestures", {})
+
+        fractions = gestures_data if gestures_data else self._DEFAULT_GESTURE_FRACTIONS
+
+        for gesture, states in fractions.items():
+            for state, joints in states.items():
+                for joint, value in joints.items():
+                    self.set_gesture_cal_value(gesture, state, joint, float(value))
+
+        self.set_cal_name(profile_name)
+        self.save_gesture_cal()
+        self.logger(f"Calibration '{profile_name}' flashed to firmware and saved to EEPROM.")
 
     def calibrate_exo(self, mode: str = "timed", duration: float = 10.0):
         """

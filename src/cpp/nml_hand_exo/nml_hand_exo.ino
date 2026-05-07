@@ -27,6 +27,7 @@ SOFTWARE.
 #include "oled.h"
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
+#include "gesture_eeprom.h"
 //#include <Adafruit_ISM330DHCX.h>
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
@@ -45,8 +46,8 @@ GestureController gc(exo);  // pass exo reference
 
 
 // OLED display instance
-//volatile bool gOledEnabled = OLED_ENABLED_DEFAULT;
-//Adafruit_SSD1306 gDisplay(OLED_SCREEN_WIDTH, OLED_SCREEN_HEIGHT, &Wire, -1);
+volatile bool gOledEnabled = OLED_ENABLED_DEFAULT;
+Adafruit_SSD1306 gDisplay(OLED_SCREEN_WIDTH, OLED_SCREEN_HEIGHT, &Wire, -1);
 
 void setup() {
 
@@ -59,8 +60,8 @@ void setup() {
   COMMAND_SERIAL.begin(COMMAND_BAUD_RATE);     // (Optional) Establish port with TX/RX pins for incomming serial data/commands
 
   // Setup IMU
-  //initializeIMU(ism330dhcx);
-  //initializeIMU(bno055);
+  initializeIMU(ism330dhcx);
+  initializeIMU(bno055);
 
   // Setup OLED with startup animation
   if (oledInit()) {
@@ -73,6 +74,13 @@ void setup() {
   exo.initializeMotors();       // Initialize motors and set them to "current position" mode
   // exo.resetAllZeros();       // (Optional) Defines the current position of the motors as the home position
   exo.setMotorNames(MOTOR_NAMES);
+
+  // Load gesture calibration (fractions + profile name) from EEPROM if available.
+  // Falls back silently to compile-time defaults on first boot or if EEPROM is blank.
+  if (!gestureCalLoadFromEEPROM()) {
+    debugPrint(F("[EEPROM] No gesture calibration found, using compile-time defaults"));
+  }
+
   //exo.setModeSwitchButton(MODESWITCH_PIN);
 
   // Default state is button control

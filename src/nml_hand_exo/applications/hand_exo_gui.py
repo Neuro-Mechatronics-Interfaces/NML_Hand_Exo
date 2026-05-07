@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTextEdit, QGridLayout, QMessageBox, QGroupBox, QComboBox,
     QDialog, QInputDialog, QScrollArea, QFrame, QSizePolicy, QSpacerItem,
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
+    QSpinBox,
 )
 from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QFontMetrics
@@ -45,9 +46,10 @@ def _repo_root():
     return os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.dirname(os.path.abspath(__file__)))))
 
-PROFILES_DIR = os.path.join(_repo_root(), "examples", "calibration", "profiles")
-CONFIG_FILE = os.path.join(PROFILES_DIR, "config.json")
-OUTPUT_DIR = os.path.join(_repo_root(), "output_data")
+PROFILES_DIR      = os.path.join(_repo_root(), "examples", "calibration", "profiles")
+CONFIG_FILE       = os.path.join(PROFILES_DIR, "config.json")
+OUTPUT_DIR        = os.path.join(_repo_root(), "output_data")
+LAST_DEVICE_FILE  = os.path.join(_repo_root(), ".last_device.json")
 
 
 # -- Helpers ---------------------------------------------------------------
@@ -76,6 +78,29 @@ def get_default_profile_name(side: str = "right") -> str | None:
         cfg = json.load(f)
     # Check side-specific key first, then legacy "default" (right-hand compat)
     return cfg.get(f"default_{side}") or cfg.get("default")
+
+
+def load_last_device() -> dict | None:
+    """Return cached connection settings, or None if the file is absent/corrupt."""
+    try:
+        with open(LAST_DEVICE_FILE, "r") as f:
+            data = json.load(f)
+        if "port" in data and "baud" in data:
+            return data
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        pass
+    return None
+
+
+def save_last_device(port: str, baud: str | int, mode: str,
+                     telem_rate_ms: int = 500) -> None:
+    """Persist connection settings and telem rate to the local cache."""
+    try:
+        with open(LAST_DEVICE_FILE, "w") as f:
+            json.dump({"port": port, "baud": str(baud), "mode": mode,
+                       "telem_rate_ms": int(telem_rate_ms)}, f, indent=2)
+    except OSError:
+        pass  # non-fatal; cache write failure doesn't affect session
 
 
 def save_profile(name: str, data: dict, side: str = "right"):
@@ -1184,6 +1209,181 @@ class TeleopWorker(QThread):
 
 
 # ==========================================================================
+#  Serial worker — all blocking serial I/O runs here
+# ==========================================================================
+
+class SerialWorker(QThread):
+    """Background serial I/O thread — strict command/response serialization.
+
+    Architecture
+    ------------
+    Two queues control dispatch priority:
+      _urgent_q  — user-initiated commands (enqueue / stop).  Checked first
+                   every loop iteration so they are never blocked behind a
+                   backlog of auto-refresh work.
+      _cmd_q     — auto-refresh polls (angles, telem).  Processed only when
+                   _urgent_q is empty.
+
+    Firmware always terminates each response record with the ';' delimiter
+    (see COMMAND_DELIMITER in config.h / commandPrint in utils.cpp).
+    _read_response() uses read_until(b';') so the response is read by the
+    same blocking-read mechanism the firmware was designed around, rather
+    than an in_waiting poll which is unreliable on Windows USB-CDC ports.
+
+    Signals (emitted on the worker thread; Qt delivers them queued to the
+    main thread automatically via Auto-Connection):
+      angles_ready(dict)            — {dxl_id: float} after get_angle:all
+      telem_ready(dict, dict, dict) — pos / torque / current dicts
+      line_received(str)            — every printable line, including errors
+    """
+
+    angles_ready  = pyqtSignal(dict)
+    telem_ready   = pyqtSignal(dict, dict, dict)
+    line_received = pyqtSignal(str)
+
+    def __init__(self, exo, parent=None):
+        super().__init__(parent)
+        self._exo            = exo
+        self._urgent_q       = queue.Queue()   # high-priority: user commands
+        self._cmd_q          = queue.Queue()   # standard: auto-refresh polls
+        self._run            = True
+        self._angles_pending = False
+
+    # ------------------------------------------------------------------ public
+
+    def request_angles(self):
+        """Queue a get_angle:all poll (de-duplicated)."""
+        if not self._angles_pending:
+            self._angles_pending = True
+            self._cmd_q.put(("angles", "get_angle:all"))
+
+    def request_telem(self):
+        """Queue a telemetry poll (3 back-to-back transactions)."""
+        self._cmd_q.put(("telem", None))
+
+    def enqueue(self, cmd: str):
+        """Queue a user-initiated command at high priority."""
+        self._urgent_q.put(("log", cmd))
+
+    def stop(self):
+        self._run = False
+        self._urgent_q.put(("_stop", None))
+        self.wait(3000)
+
+    # ------------------------------------------------------------------ worker loop
+
+    def run(self):
+        while self._run:
+            # High-priority queue checked first — user commands jump the queue.
+            try:
+                tag, cmd = self._urgent_q.get_nowait()
+            except queue.Empty:
+                try:
+                    tag, cmd = self._cmd_q.get(timeout=0.05)
+                except queue.Empty:
+                    continue
+            if tag == "_stop":
+                break
+            try:
+                if tag == "angles":
+                    self._handle_angles(cmd)
+                elif tag == "telem":
+                    self._handle_telem()
+                elif tag == "log":
+                    self._handle_log(cmd)
+            except Exception as e:
+                self.line_received.emit(f"[worker] {type(e).__name__}: {e}")
+
+    # ------------------------------------------------------------------ handlers
+
+    def _handle_angles(self, cmd: str):
+        self._angles_pending = False
+        raw    = self._transact(cmd, timeout=2.0)
+        parsed = self._exo._parse_motor_data_block(raw)
+        angles = {mid: m["angle"] for mid, m in parsed.items() if "angle" in m}
+        if angles:
+            self.angles_ready.emit(angles)
+        else:
+            sample = raw[:120] if raw else "(empty)"
+            self.line_received.emit(f"[angles] no data; raw={sample!r}")
+
+    def _handle_telem(self):
+        pos_raw = self._transact("get_absolute_angle:all", timeout=2.0)
+        tor_raw = self._transact("get_torque:all",         timeout=2.0)
+        cur_raw = self._transact("get_current:all",        timeout=2.0)
+        pos = {mid: m["absolute_angle"]
+               for mid, m in self._exo._parse_motor_data_block(pos_raw).items()
+               if "absolute_angle" in m}
+        tor = {mid: m["torque"]
+               for mid, m in self._exo._parse_motor_data_block(tor_raw).items()
+               if "torque" in m}
+        cur = {mid: m["current"]
+               for mid, m in self._exo._parse_motor_data_block(cur_raw).items()
+               if "current" in m}
+        self.telem_ready.emit(pos, tor, cur)
+
+    def _handle_log(self, cmd: str):
+        raw = self._transact(cmd, timeout=3.0)
+        if raw:
+            for ln in raw.splitlines():
+                ln = ln.strip().rstrip(";").strip()
+                if ln:
+                    self.line_received.emit(ln)
+        else:
+            self.line_received.emit(f"[cmd] no response for: {cmd}")
+
+    # ------------------------------------------------------------------ serial primitives
+
+    def _transact(self, cmd: str, timeout: float = 2.0) -> str:
+        """Send *cmd* to the firmware and return the complete response text."""
+        delim = self._exo.command_delimiter          # '\r\n' — input delimiter
+        full  = cmd if cmd.endswith(delim) else cmd + delim
+        try:
+            # Discard any bytes left over from a previous response so they
+            # cannot contaminate this command's response read.
+            self._exo.device.device.reset_input_buffer()
+        except AttributeError:
+            pass
+        self._exo.device.send(full)
+        return self._read_response(timeout)
+
+    def _read_response(self, timeout: float = 2.0) -> str:
+        """Collect the firmware response.
+
+        The firmware always ends each response record with ';'.  We use
+        read_until(b';') which is a blocking call — it returns as soon as ';'
+        arrives or the timeout fires.  After the first record we loop with a
+        short (50 ms) timeout to capture any additional ';'-terminated records
+        that follow in rapid succession (e.g. the many lines of 'help').
+        """
+        try:
+            sd = self._exo.device.device   # underlying pyserial Serial
+        except AttributeError:
+            return ""
+
+        orig_timeout = sd.timeout
+        buf = b""
+        try:
+            sd.timeout = timeout
+            chunk = sd.read_until(b";")    # blocking — waits up to `timeout`
+            if not chunk:
+                return ""                  # firmware did not respond
+            buf = chunk
+
+            # Collect any additional records that follow immediately (e.g. help)
+            sd.timeout = 0.15
+            while True:
+                chunk = sd.read_until(b";")
+                if not chunk:
+                    break
+                buf += chunk
+        finally:
+            sd.timeout = orig_timeout
+
+        return buf.decode(errors="ignore")
+
+
+# ==========================================================================
 #  Main GUI
 # ==========================================================================
 
@@ -1211,6 +1411,12 @@ class HandExoGUI(QWidget):
         self._active_cal_left:  dict | None = None
         self._active_cal_right: dict | None = None
 
+        # Firmware version string and calibration name reported by the device.
+        # Populated from the info() response on connect; cleared on disconnect.
+        # _fw_version is used to gate features added in 0.3.0 (gesture EEPROM).
+        self._fw_version: str = ""
+        self._fw_cal_name: str = ""
+
         # Per-side motor name lists for dual-mode calibration / ROM dialogs.
         self._left_motor_names:  list[str] = []
         self._right_motor_names: list[str] = []
@@ -1219,15 +1425,18 @@ class HandExoGUI(QWidget):
         # results since HandExo returns dicts keyed by Dynamixel ID, not 0-based index.
         self._motor_dxl_id: list[int] = []
 
-        self._build_ui()
+        # Serial worker — created/started in _connect(), stopped in _disconnect()
+        self._serial_worker: SerialWorker | None = None
 
-        # Motor angle poll timer (Controls tab)
+        # Motor angle poll timer (Controls tab) — dispatches to serial worker
         self._angle_timer = QTimer(self)
-        self._angle_timer.timeout.connect(self._poll_motor_angles)
+        self._angle_timer.timeout.connect(self._req_angles)
 
-        # Telemetry poll timer (Telemetry tab)
+        # Telemetry poll timer (Telemetry tab) — dispatches to serial worker
         self._telem_timer = QTimer(self)
-        self._telem_timer.timeout.connect(self._poll_telemetry)
+        self._telem_timer.timeout.connect(self._req_telem)
+
+        self._build_ui()
 
         # ------------------------------------------------------------------
         # Teleop state
@@ -1282,8 +1491,11 @@ class HandExoGUI(QWidget):
         self.main_layout = controls_layout
         self._build_motor_section()
         self._build_gesture_section()
-        self._build_calibration_section()
-        self._build_rom_section()
+        cal_rom_h = QHBoxLayout()
+        cal_rom_h.setSpacing(10)
+        cal_rom_h.addWidget(self._build_calibration_section(), 3)
+        cal_rom_h.addWidget(self._build_rom_section(), 2)
+        self.main_layout.addLayout(cal_rom_h)
         self.main_layout.addStretch()
         self.main_layout = _saved_layout
 
@@ -1291,6 +1503,11 @@ class HandExoGUI(QWidget):
         self.main_tabs.addTab(self._build_telemetry_tab(), "Telemetry")
         self.main_tabs.addTab(self._build_visualization_tab(), "Hand State")
         self.main_tabs.addTab(self._build_teleop_tab(), "Teleop")
+
+        # Restore telem rate now that _telem_rate_spin exists.
+        _last = load_last_device()
+        if _last and _last.get("telem_rate_ms"):
+            self._telem_rate_spin.setValue(int(_last["telem_rate_ms"]))
 
         self._build_log_section()
         self._update_enabled_state()
@@ -1304,14 +1521,23 @@ class HandExoGUI(QWidget):
         # Control row
         ctrl_row = QHBoxLayout()
         self._telem_refresh_btn = QPushButton("Refresh")
-        self._telem_refresh_btn.clicked.connect(self._poll_telemetry)
-        self._telem_auto_cb = QCheckBox("Auto-refresh (500 ms)")
+        self._telem_refresh_btn.clicked.connect(self._req_telem)
+        self._telem_auto_cb = QCheckBox("Auto-refresh")
         self._telem_auto_cb.setChecked(True)
         self._telem_auto_cb.toggled.connect(self._on_telem_autorefresh)
+        self._telem_rate_spin = QSpinBox()
+        self._telem_rate_spin.setRange(50, 10000)
+        self._telem_rate_spin.setSingleStep(50)
+        self._telem_rate_spin.setValue(500)
+        self._telem_rate_spin.setSuffix(" ms")
+        self._telem_rate_spin.setFixedWidth(90)
+        self._telem_rate_spin.setToolTip("Telemetry auto-refresh interval")
+        self._telem_rate_spin.valueChanged.connect(self._on_telem_rate_changed)
         self._telem_status_lbl = QLabel("Not connected")
         self._telem_status_lbl.setStyleSheet("color: #888888;")
         ctrl_row.addWidget(self._telem_refresh_btn)
         ctrl_row.addWidget(self._telem_auto_cb)
+        ctrl_row.addWidget(self._telem_rate_spin)
         ctrl_row.addStretch()
         ctrl_row.addWidget(self._telem_status_lbl)
         layout.addLayout(ctrl_row)
@@ -1485,9 +1711,14 @@ class HandExoGUI(QWidget):
     def _on_telem_autorefresh(self, checked: bool):
         if checked:
             if self.exo_connected:
-                self._telem_timer.start(500)
+                self._telem_timer.start(self._telem_rate_spin.value())
         else:
             self._telem_timer.stop()
+
+    def _on_telem_rate_changed(self, ms: int):
+        """Slot: spinbox changed — restart timer at new rate if it's already running."""
+        if self._telem_timer.isActive():
+            self._telem_timer.start(ms)
 
     def _rebuild_telem_table(self):
         """Populate telemetry table rows from self.motor_names after connect."""
@@ -1499,48 +1730,32 @@ class HandExoGUI(QWidget):
                 item.setTextAlignment(Qt.AlignCenter)
                 self._telem_table.setItem(row, col, item)
 
-    def _poll_telemetry(self):
+    def _on_telem_ready(self, positions: dict, torques: dict, currents: dict):
+        """Signal slot: receives telem dicts from SerialWorker, updates telemetry table."""
         if not self.exo_connected:
             return
-        # Each call is independent: a failure in torque/current must not block position.
-        positions = None
-        torques   = None
-        currents  = None
-        try:
-            positions = self.exo.get_absolute_motor_angle('all')
-        except Exception:
-            pass
-        try:
-            torques = self.exo.get_motor_torque('all')
-        except Exception:
-            pass
-        try:
-            currents = self.exo.get_motor_current('all')
-        except Exception:
-            pass
-
-        if positions is None and torques is None and currents is None:
+        if not positions and not torques and not currents:
             ts = datetime.now().strftime("%H:%M:%S")
             self._telem_status_lbl.setText(f"Read failed  {ts}")
             self._telem_status_lbl.setStyleSheet("color: #c0392b;")
             return
-
         for name, row in self._motor_row.items():
-            i      = self._motor_idx[name]
+            i      = self._motor_idx.get(name)
+            if i is None:
+                continue
             dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
-            pos  = positions.get(dxl_id) if (positions is not None and dxl_id is not None) else None
-            torq = torques.get(dxl_id)   if (torques   is not None and dxl_id is not None) else None
-            curr = currents.get(dxl_id)  if (currents  is not None and dxl_id is not None) else None
-            self._telem_table.item(row, 1).setText(
-                f"{pos:.2f}"  if pos  is not None else "—"
-            )
-            self._telem_table.item(row, 2).setText(
-                f"{torq:.4f}" if torq is not None else "—"
-            )
-            self._telem_table.item(row, 3).setText(
-                f"{curr:.1f}" if curr is not None else "—"
-            )
-
+            pos  = positions.get(dxl_id) if dxl_id is not None else None
+            torq = torques.get(dxl_id)   if dxl_id is not None else None
+            curr = currents.get(dxl_id)  if dxl_id is not None else None
+            self._telem_table.item(row, 1).setText(f"{pos:.2f}"  if pos  is not None else "—")
+            self._telem_table.item(row, 2).setText(f"{torq:.4f}" if torq is not None else "—")
+            self._telem_table.item(row, 3).setText(f"{curr:.1f}" if curr is not None else "—")
+        # Keep Controls tab angle labels in sync with telem positions.
+        for i, w in enumerate(self.motor_widgets):
+            dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
+            pos = positions.get(dxl_id) if dxl_id is not None else None
+            if pos is not None:
+                w["angle_lbl"].setText(f"{pos:.2f} deg")
         ts = datetime.now().strftime("%H:%M:%S")
         self._telem_status_lbl.setText(f"Last update OK  {ts}")
         self._telem_status_lbl.setStyleSheet("color: #27ae60;")
@@ -1625,6 +1840,22 @@ class HandExoGUI(QWidget):
         for p in ports:
             self.port_combo.addItem(f"{p.device} - {p.description}", p.device)
 
+        # Auto-select last-used port, baud, and mode if still available.
+        last = load_last_device()
+        if last:
+            for i in range(self.port_combo.count()):
+                if self.port_combo.itemData(i) == last["port"]:
+                    self.port_combo.setCurrentIndex(i)
+                    break
+            if last.get("baud") and hasattr(self, "baud_combo"):
+                idx = self.baud_combo.findText(str(last["baud"]))
+                if idx >= 0:
+                    self.baud_combo.setCurrentIndex(idx)
+            if last.get("mode") and hasattr(self, "mode_combo"):
+                idx = self.mode_combo.findText(last["mode"])
+                if idx >= 0:
+                    self.mode_combo.setCurrentIndex(idx)
+
     def _on_mode_changed(self, mode_text: str):
         """Update port label and dual-mode widgets based on mode."""
         is_dual = (mode_text == "Dual")
@@ -1675,6 +1906,28 @@ class HandExoGUI(QWidget):
         self.motor_box.setLayout(self.motor_layout)
         self.main_layout.addWidget(self.motor_box)
 
+    def _on_quick_cmd_changed(self, text: str):
+        self.raw_cmd_input.setVisible(text == "Send Raw")
+
+    def _send_quick_cmd(self):
+        if not self.exo_connected or self._serial_worker is None:
+            return
+        choice = self.quick_cmd_combo.currentText()
+        if choice == "List Commands":
+            self._serial_worker.enqueue("help")
+            self._log("[cmd] → help")
+        elif choice == "Reboot Motors":
+            self._serial_worker.enqueue("reboot:all")
+            self._log("[cmd] → reboot:all")
+        elif choice == "Send Raw":
+            raw   = self.raw_cmd_input.text()
+            clean = raw.rstrip(';\r\n').strip()
+            if not clean:
+                return
+            self._serial_worker.enqueue(clean)
+            self._log(f"[raw] → {clean}")
+            self.raw_cmd_input.clear()
+
     def _build_motor_rows(self):
         """Rebuild the motor panel after connecting.
 
@@ -1693,23 +1946,78 @@ class HandExoGUI(QWidget):
             self._build_motor_rows_single()
 
     def _build_motor_rows_single(self):
-        """Single-exo layout: column headers + motor rows in one column."""
-        col_header = QHBoxLayout()
-        for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("", 1)]:
-            lbl = QLabel(text)
-            lbl.setStyleSheet("color: #888888; font-size: 11px;")
-            col_header.addWidget(lbl, stretch)
-        self._motor_panel_v.addLayout(col_header)
+        """Single-exo layout: all motors in one labelled panel, split into two columns."""
+        mode = self.mode_combo.currentText() if hasattr(self, "mode_combo") else "Right Only"
+        side_label = "Left Exo" if mode == "Left Only" else "Right Exo"
 
-        rows_v = QVBoxLayout()
-        rows_v.setSpacing(0)
-        rows_v.setContentsMargins(0, 0, 0, 0)
+        # Outer panel — same style as the dual-mode exo panels
+        outer = QFrame()
+        outer.setFrameShape(QFrame.StyledPanel)
+        outer.setStyleSheet(
+            "QFrame { border: 1px solid #333333; border-radius: 4px; background: transparent; }"
+        )
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(8, 6, 8, 6)
+        outer_layout.setSpacing(4)
+
+        # Title row + enable/disable buttons
+        title_row = QHBoxLayout()
+        title_lbl = QLabel(side_label)
+        title_lbl.setStyleSheet("font-weight: bold; color: #cccccc; font-size: 12px;")
+        title_row.addWidget(title_lbl)
+        title_row.addStretch()
+        en_btn = QPushButton(f"Enable {side_label}")
+        en_btn.setFixedHeight(22)
+        en_btn.clicked.connect(lambda: self._motor_all("enable"))
+        dis_btn = QPushButton(f"Disable {side_label}")
+        dis_btn.setFixedHeight(22)
+        dis_btn.clicked.connect(lambda: self._motor_all("disable"))
+        title_row.addWidget(en_btn)
+        title_row.addWidget(dis_btn)
+        outer_layout.addLayout(title_row)
+
+        # Thin separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("border: none; background: #333333; max-height: 1px;")
+        sep.setFixedHeight(1)
+        outer_layout.addWidget(sep)
+
+        # Two sub-columns of motor rows
+        n = len(self.motor_names)
+        mid = (n + 1) // 2  # first column gets the larger half when n is odd
+
+        cols_h = QHBoxLayout()
+        cols_h.setSpacing(12)
+
+        col_layouts = []
+        for _ in range(2):
+            col_widget = QWidget()
+            col_layout = QVBoxLayout(col_widget)
+            col_layout.setContentsMargins(0, 2, 0, 0)
+            col_layout.setSpacing(2)
+
+            hdr = QHBoxLayout()
+            for text, stretch in [("Motor", 2), ("Angle", 1), ("Status", 2), ("", 2)]:
+                lbl = QLabel(text)
+                lbl.setStyleSheet("color: #888888; font-size: 11px;")
+                hdr.addWidget(lbl, stretch)
+            col_layout.addLayout(hdr)
+
+            col_layouts.append(col_layout)
+            cols_h.addWidget(col_widget)
+
         for i, name in enumerate(self.motor_names):
             cmd_name = name[2:] if name.startswith(("L:", "R:")) else name
             row_frame, w = self._make_motor_row(i, name, cmd_name, display_name=name)
-            rows_v.addWidget(row_frame)
+            col_layouts[0 if i < mid else 1].addWidget(row_frame)
             self.motor_widgets.append(w)
-        self._motor_panel_v.addLayout(rows_v)
+
+        for cl in col_layouts:
+            cl.addStretch()
+
+        outer_layout.addLayout(cols_h)
+        self._motor_panel_v.addWidget(outer)
 
     def _build_motor_rows_dual(self):
         """Dual-exo layout: Left Exo and Right Exo panels side-by-side."""
@@ -1782,7 +2090,7 @@ class HandExoGUI(QWidget):
 
         # Column headers
         col_hdr = QHBoxLayout()
-        for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("", 1)]:
+        for text, stretch in [("Motor", 2), ("Angle", 1), ("Status", 2), ("", 2)]:
             lbl = QLabel(text)
             lbl.setStyleSheet("color: #888888; font-size: 11px;")
             col_hdr.addWidget(lbl, stretch)
@@ -1809,7 +2117,7 @@ class HandExoGUI(QWidget):
         row.setObjectName("motor-row")
         row.setFrameShape(QFrame.NoFrame)
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(6, 3, 6, 3)
+        row_layout.setContentsMargins(4, 1, 4, 1)
 
         name_lbl   = QLabel(display_name)
         name_lbl.setStyleSheet("font-weight: bold;")
@@ -1817,14 +2125,14 @@ class HandExoGUI(QWidget):
         status_lbl = QLabel("--")
 
         toggle_btn = QPushButton("Enable")
-        toggle_btn.setFixedWidth(80)
+        toggle_btn.setMinimumWidth(65)
         dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
         toggle_btn.clicked.connect(self._make_motor_toggle(i, dxl_id))
 
         row_layout.addWidget(name_lbl,   2)
-        row_layout.addWidget(angle_lbl,  2)
-        row_layout.addWidget(status_lbl, 1)
-        row_layout.addWidget(toggle_btn, 1)
+        row_layout.addWidget(angle_lbl,  1)
+        row_layout.addWidget(status_lbl, 2)
+        row_layout.addWidget(toggle_btn, 2)
 
         widget_dict = {
             "name":       name,      # full display name ("L:wrist" / "wrist")
@@ -2118,6 +2426,10 @@ class HandExoGUI(QWidget):
         self._cal_side_row.setVisible(False)  # shown when mode == "Dual"
         layout.addWidget(self._cal_side_row)
 
+        self._device_cal_lbl = QLabel("Device profile: —")
+        self._device_cal_lbl.setStyleSheet("color: #555555;")
+        layout.addWidget(self._device_cal_lbl)
+
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("Profile Name:"))
         self.cal_name_input = QLineEdit()
@@ -2143,7 +2455,7 @@ class HandExoGUI(QWidget):
         layout.addLayout(row2)
 
         box.setLayout(layout)
-        self.main_layout.addWidget(box)
+        return box
 
     def _refresh_profiles(self):
         """Repopulate the profile combo filtered by the current connection mode and side.
@@ -2157,6 +2469,8 @@ class HandExoGUI(QWidget):
         Legacy profiles without a ``"side"`` key default to ``"right"``; they
         appear in Right Only and Dual/Right views but not in Left views.
         """
+        if not hasattr(self, "profile_combo"):
+            return
         self.profile_combo.clear()
         mode = self.mode_combo.currentText() if hasattr(self, "mode_combo") else "Right Only"
 
@@ -2198,7 +2512,7 @@ class HandExoGUI(QWidget):
         layout.addWidget(self.rom_run_btn)
 
         box.setLayout(layout)
-        self.main_layout.addWidget(box)
+        return box
 
     # -- Log ---------------------------------------------------------------
 
@@ -2206,10 +2520,25 @@ class HandExoGUI(QWidget):
         box = QGroupBox("Log")
         layout = QVBoxLayout()
 
+        # Quick-command row: dropdown + optional raw input + Send button.
+        cmd_row = QHBoxLayout()
+        self.quick_cmd_combo = QComboBox()
+        self.quick_cmd_combo.addItems(["List Commands", "Reboot Motors", "Send Raw"])
+        self.quick_cmd_combo.currentTextChanged.connect(self._on_quick_cmd_changed)
+        cmd_row.addWidget(self.quick_cmd_combo)
+        self.raw_cmd_input = QLineEdit()
+        self.raw_cmd_input.setPlaceholderText("raw command…")
+        self.raw_cmd_input.setVisible(False)
+        self.raw_cmd_input.returnPressed.connect(self._send_quick_cmd)
+        cmd_row.addWidget(self.raw_cmd_input, 2)
+        self.cmd_send_btn = QPushButton("Send")
+        self.cmd_send_btn.clicked.connect(self._send_quick_cmd)
+        cmd_row.addWidget(self.cmd_send_btn)
+        layout.addLayout(cmd_row)
+
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMinimumHeight(80)
-        self.log_text.setMaximumHeight(160)
+        self.log_text.setMinimumHeight(200)
         layout.addWidget(self.log_text)
 
         box.setLayout(layout)
@@ -2242,6 +2571,15 @@ class HandExoGUI(QWidget):
 
             info = self.exo.info()
             motors_dict = info.get("motors", {})  # keyed by Dynamixel ID
+
+            self._fw_version  = info.get("version", "")
+            self._fw_cal_name = info.get("calibration_name", "")
+            self._log(
+                f"Firmware version: {self._fw_version or '(unknown)'}"
+                + (f"  |  Cal profile on device: {self._fw_cal_name}"
+                   if self._fw_supports_gesture_cal() else
+                   "  |  Gesture EEPROM not supported (fw < 0.3.0)")
+            )
 
             # ID ranges that define handedness on the shared bus.
             LEFT_IDS  = range(1, 10)   # IDs 1-9  → left hand
@@ -2305,6 +2643,7 @@ class HandExoGUI(QWidget):
                         self._log(f"  Warning: could not disable inactive motor {_inactive_id}: {_e}")
 
             self.exo_connected = True
+            save_last_device(port, baud, mode, self._telem_rate_spin.value())
             self._gesture_ready = False
             self._active_cal_profile = None
             self._active_cal_left    = None
@@ -2320,15 +2659,23 @@ class HandExoGUI(QWidget):
             self._motor_idx = {name: i for i, name in enumerate(self.motor_names)}
             self._motor_row = {name: row for row, name in enumerate(self.motor_names)}
 
+            self._update_device_cal_label()
             self._build_motor_rows()
             self._rebuild_telem_table()
             self._rebuild_teleop_table()
             self._telem_status_lbl.setText("Connected — waiting for first poll")
             self._telem_status_lbl.setStyleSheet("color: #888888;")
             self._refresh_profiles()
+            # Start serial worker — all polling I/O runs on its thread from here.
+            self._serial_worker = SerialWorker(self.exo, parent=self)
+            self._serial_worker.angles_ready.connect(self._on_angles_ready)
+            self._serial_worker.telem_ready.connect(self._on_telem_ready)
+            self._serial_worker.line_received.connect(self._log)
+            self._serial_worker.start()
+
             self._angle_timer.start(500)
             if self._telem_auto_cb.isChecked():
-                self._telem_timer.start(500)
+                self._telem_timer.start(self._telem_rate_spin.value())
         except Exception as e:
             self.exo = None
             self.exo_connected = False
@@ -2347,6 +2694,9 @@ class HandExoGUI(QWidget):
             self._teleop_worker.stop()
         self._angle_timer.stop()
         self._telem_timer.stop()
+        if self._serial_worker is not None:
+            self._serial_worker.stop()
+            self._serial_worker = None
         try:
             if self.exo:
                 self.exo.close()
@@ -2355,6 +2705,8 @@ class HandExoGUI(QWidget):
         self.exo = None
         self.exo_connected = False
         self._gesture_ready = False
+        self._fw_version  = ""
+        self._fw_cal_name = ""
         self._motor_idx = {}
         self._motor_row = {}
         self._left_motor_names  = []
@@ -2363,6 +2715,7 @@ class HandExoGUI(QWidget):
         self._active_cal_left   = None
         self._active_cal_right  = None
         self._set_active_profile("", None)
+        self._update_device_cal_label()
         self._hand_vis.update_motor_states({}, connected=False)
         # Reset telemetry value cells; leave motor-name column intact
         for row in range(self._telem_table.rowCount()):
@@ -2497,39 +2850,46 @@ class HandExoGUI(QWidget):
         except Exception as e:
             self._log(f"Home error: {e}")
 
-    def _poll_motor_angles(self):
+    def _req_angles(self):
+        """Timer slot — dispatches an angle poll to the serial worker (non-blocking)."""
+        if self._serial_worker is not None:
+            self._serial_worker.request_angles()
+
+    def _req_telem(self):
+        """Timer slot — dispatches a telemetry poll to the serial worker (non-blocking)."""
+        if self._serial_worker is not None:
+            self._serial_worker.request_telem()
+
+    def _on_angles_ready(self, angles: dict):
+        """Signal slot: receives {dxl_id: angle} from SerialWorker, updates all displays.
+
+        Runs on the main thread (via queued signal connection) so all widget
+        updates are safe.  Also drives the teleop tick when streaming is active.
+        """
         if not self.exo_connected:
             return
-        # Source: get_angle:all → firmware getRelativeAngle (zeroed at home, flip applied).
-        # HandExo returns {Dynamixel_ID: angle}; map to widget index via _motor_dxl_id.
-        angles: dict = {}
-        try:
-            angles = self.exo.get_motor_angle('all')
-            for i, w in enumerate(self.motor_widgets):
-                dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
-                val = angles.get(dxl_id) if dxl_id is not None else None
-                if val is not None:
-                    w["angle_lbl"].setText(f"{float(val):.2f} deg")
-        except Exception:
-            pass
 
-        # Normalise each relative angle to [0, 1] for the Hand State visualisation.
-        t_dict: dict[str, float] = {}
         mode = self.mode_combo.currentText()
+
+        # Update angle labels and compute normalised [0,1] values for visualisation.
+        t_dict:        dict[str, float] = {}
+        joints_left:   dict             = {}
+        joints_right:  dict             = {}
+        joints_single: dict             = {}
 
         for i, w in enumerate(self.motor_widgets):
             name   = w["name"]
+            bare   = w.get("cmd_name", name)
             dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
             val    = angles.get(dxl_id) if dxl_id is not None else None
-            m      = None
+
+            if val is not None:
+                w["angle_lbl"].setText(f"{float(val):.2f} deg")
 
             if mode == "Dual":
-                # Strip L:/R: prefix to look up bare motor name in per-side profile.
                 if name.startswith("L:"):
-                    bare = name[2:]
                     m = (self._active_cal_left or {}).get("motors", {}).get(bare)
-                elif name.startswith("R:"):
-                    bare = name[2:]
+                else:
                     m = (self._active_cal_right or {}).get("motors", {}).get(bare)
             else:
                 m = (self._active_cal_profile or {}).get("motors", {}).get(name)
@@ -2538,24 +2898,48 @@ class HandExoGUI(QWidget):
                 rel_a = normalize_angle(m["limit_min"], m["home"], m["flip"])
                 rel_b = normalize_angle(m["limit_max"], m["home"], m["flip"])
                 lo, hi = min(rel_a, rel_b), max(rel_a, rel_b)
-                span = hi - lo
-                t_dict[name] = (
-                    max(0.0, min(1.0, (float(val) - lo) / span)) if span > 0 else 0.0
-                )
+                span   = hi - lo
+                t      = max(0.0, min(1.0, (float(val) - lo) / span)) if span > 0 else 0.0
+                t_dict[name] = t
+                norm_val     = round(t, 4)
             else:
-                t_dict[name] = 0.0  # no data or no profile: show home position
+                t_dict[name] = 0.0
+                norm_val     = None
 
-        # HandSkeletonWidget uses bare motor names (right-hand view).
-        # In Dual mode, pass only the right-side (or left-side if only left is present).
+            if mode == "Dual":
+                (joints_left if name.startswith("L:") else joints_right)[bare] = norm_val
+            else:
+                joints_single[name] = norm_val
+
+        # Hand State visualisation
         if mode == "Dual":
-            vis_side_pfx = "R:" if self._right_motor_names else "L:"
-            bare_t_dict = {
-                k[2:]: v for k, v in t_dict.items() if k.startswith(vis_side_pfx)
-            }
+            vis_pfx  = "R:" if self._right_motor_names else "L:"
+            bare_vis = {k[2:]: v for k, v in t_dict.items() if k.startswith(vis_pfx)}
         else:
-            bare_t_dict = t_dict  # already bare names in single mode
+            bare_vis = t_dict
+        self._hand_vis.update_motor_states(bare_vis, connected=True)
 
-        self._hand_vis.update_motor_states(bare_t_dict, connected=True)
+        # Teleop: update live table + push WebSocket frame when streaming
+        if self._teleop_streaming:
+            for row, mw in enumerate(self.motor_widgets):
+                item = self._teleop_state_table.item(row, 1)
+                if item is None:
+                    continue
+                b = mw.get("cmd_name", mw["name"])
+                v = (joints_left if mw["name"].startswith("L:") else joints_right).get(b) \
+                    if mode == "Dual" else joints_single.get(mw["name"])
+                item.setText(f"{v:.3f}" if v is not None else "no cal")
+
+            if self._teleop_worker.isRunning():
+                if mode == "Dual":
+                    frame = {"timestamp": time.time(), "source": "hand_exo",
+                             "side": "dual",
+                             "left": joints_left, "right": joints_right}
+                else:
+                    frame = {"timestamp": time.time(), "source": "hand_exo",
+                             "side": self.exo.side or "right",
+                             "joints": joints_single}
+                self._teleop_worker.enqueue(json.dumps(frame, separators=(",", ":")))
 
     def _run_calibration(self):
         if not self.exo_connected:
@@ -2595,17 +2979,32 @@ class HandExoGUI(QWidget):
 
         if dlg.result() == QDialog.Accepted:
             self._log(f"Calibration profile '{name}' saved.")
+            use_eeprom = self._fw_supports_gesture_cal()
+            prompt_msg = (
+                f"Load calibration profile '{name}' to the device now?\n\n"
+                "This will push motor limits and also save the gesture fractions "
+                "and profile name to EEPROM so the device remembers this calibration "
+                "across power cycles."
+                if use_eeprom else
+                f"Apply calibration profile '{name}' to the device now?\n\n"
+                "(Firmware < 0.3.0: motor limits will be applied but gesture fractions "
+                "and profile name will not be saved to EEPROM.)"
+            )
             ans = QMessageBox.question(
-                self, "Apply Profile",
-                f"Apply calibration profile '{name}' to the device now?",
+                self, "Load Calibration to Firmware" if use_eeprom else "Apply Profile",
+                prompt_msg,
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.Yes,
             )
             if ans == QMessageBox.Yes:
                 try:
                     if mode == "Dual":
-                        self.exo.apply_calibration(name,
-                                                   name_to_id=self._make_name_to_id(cal_side))
+                        if use_eeprom:
+                            self.exo.flash_calibration_to_firmware(
+                                name, name_to_id=self._make_name_to_id(cal_side))
+                        else:
+                            self.exo.apply_calibration(
+                                name, name_to_id=self._make_name_to_id(cal_side))
                         profile = load_profile(name)
                         if cal_side == "left":
                             self._active_cal_left = profile
@@ -2613,10 +3012,19 @@ class HandExoGUI(QWidget):
                             self._active_cal_right = profile
                         self._update_vis_status_dual()
                     else:
-                        self.exo.apply_calibration(name,
-                                                   name_to_id=self._make_name_to_id())
+                        if use_eeprom:
+                            self.exo.flash_calibration_to_firmware(
+                                name, name_to_id=self._make_name_to_id())
+                        else:
+                            self.exo.apply_calibration(
+                                name, name_to_id=self._make_name_to_id())
                         self._set_active_profile(name, load_profile(name))
-                    self._log(f"Applied calibration profile: {name}")
+                    if use_eeprom:
+                        self._fw_cal_name = name
+                        self._update_device_cal_label()
+                        self._log(f"Calibration profile '{name}' loaded to firmware and saved to EEPROM.")
+                    else:
+                        self._log(f"Applied calibration profile: {name}")
                 except Exception as e:
                     QMessageBox.critical(self, "Error", f"Failed to apply profile:\n{e}")
                     self._log(f"Apply profile error: {e}")
@@ -2687,17 +3095,32 @@ class HandExoGUI(QWidget):
         if profile_name:
             self._refresh_profiles()
             self._log(f"ROM-derived calibration profile '{profile_name}' saved.")
+            use_eeprom = self._fw_supports_gesture_cal()
+            prompt_msg = (
+                f"Load calibration profile '{profile_name}' to the device now?\n\n"
+                "This will push motor limits and also save the gesture fractions "
+                "and profile name to EEPROM so the device remembers this calibration "
+                "across power cycles."
+                if use_eeprom else
+                f"Apply calibration profile '{profile_name}' to the device now?\n\n"
+                "(Firmware < 0.3.0: motor limits will be applied but gesture fractions "
+                "and profile name will not be saved to EEPROM.)"
+            )
             ans = QMessageBox.question(
-                self, "Apply Calibration Profile",
-                f"Apply calibration profile '{profile_name}' to the device now?",
+                self, "Load Calibration to Firmware" if use_eeprom else "Apply Profile",
+                prompt_msg,
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.Yes,
             )
             if ans == QMessageBox.Yes:
                 try:
                     if mode == "Dual":
-                        self.exo.apply_calibration(profile_name,
-                                                   name_to_id=self._make_name_to_id(cal_side))
+                        if use_eeprom:
+                            self.exo.flash_calibration_to_firmware(
+                                profile_name, name_to_id=self._make_name_to_id(cal_side))
+                        else:
+                            self.exo.apply_calibration(
+                                profile_name, name_to_id=self._make_name_to_id(cal_side))
                         profile = load_profile(profile_name)
                         if cal_side == "left":
                             self._active_cal_left = profile
@@ -2705,13 +3128,55 @@ class HandExoGUI(QWidget):
                             self._active_cal_right = profile
                         self._update_vis_status_dual()
                     else:
-                        self.exo.apply_calibration(profile_name,
-                                                   name_to_id=self._make_name_to_id())
+                        if use_eeprom:
+                            self.exo.flash_calibration_to_firmware(
+                                profile_name, name_to_id=self._make_name_to_id())
+                        else:
+                            self.exo.apply_calibration(
+                                profile_name, name_to_id=self._make_name_to_id())
                         self._set_active_profile(profile_name, load_profile(profile_name))
-                    self._log(f"Applied calibration profile: {profile_name}")
+                    if use_eeprom:
+                        self._fw_cal_name = profile_name
+                        self._update_device_cal_label()
+                        self._log(f"Calibration profile '{profile_name}' loaded to firmware and saved to EEPROM.")
+                    else:
+                        self._log(f"Applied calibration profile: {profile_name}")
                 except Exception as e:
                     QMessageBox.critical(self, "Error", f"Failed to apply profile:\n{e}")
                     self._log(f"Apply profile error: {e}")
+
+    # -- Firmware version helpers ------------------------------------------
+
+    def _fw_version_tuple(self) -> tuple:
+        """Return the connected firmware version as (major, minor, patch)."""
+        try:
+            parts = str(self._fw_version).strip().split(".")
+            nums = [int(p) for p in parts[:3]]
+            nums += [0] * (3 - len(nums))
+            return tuple(nums)
+        except (ValueError, AttributeError):
+            return (0, 0, 0)
+
+    def _fw_supports_gesture_cal(self) -> bool:
+        """True when connected firmware supports EEPROM gesture calibration (>=0.3.0)."""
+        return self._fw_version_tuple() >= (0, 3, 0)
+
+    def _update_device_cal_label(self):
+        """Refresh the 'Device profile' label in the Calibration section."""
+        if not self.exo_connected:
+            self._device_cal_lbl.setText("Device profile: —")
+            self._device_cal_lbl.setStyleSheet("color: #555555;")
+            return
+        if not self._fw_supports_gesture_cal():
+            self._device_cal_lbl.setText(
+                f"Device profile: N/A (fw {self._fw_version or '?'} < 0.3.0)")
+            self._device_cal_lbl.setStyleSheet("color: #777777;")
+        else:
+            name = self._fw_cal_name or "(none)"
+            self._device_cal_lbl.setText(
+                f"Device profile: {name}  [fw {self._fw_version}]")
+            self._device_cal_lbl.setStyleSheet(
+                "color: #27ae60;" if self._fw_cal_name else "color: #888888;")
 
     def _update_enabled_state(self):
         on = self.exo_connected
@@ -2722,6 +3187,7 @@ class HandExoGUI(QWidget):
         self.enable_all_btn.setEnabled(on)
         self.disable_all_btn.setEnabled(on)
         self.home_all_btn.setEnabled(on)
+        self.cmd_send_btn.setEnabled(on)
         self.cal_run_btn.setEnabled(on)
         self.apply_profile_btn.setEnabled(on)
         self.rom_run_btn.setEnabled(on)
@@ -2865,151 +3331,10 @@ class HandExoGUI(QWidget):
         self._log("[Teleop] Streaming stopped.")
 
     def _teleop_tick(self):
-        """
-        Timer callback, 100 ms / 10 Hz.  Runs on the GUI thread.
-
-        Responsibilities while streaming is active:
-          1. Poll relative motor angles from the device (one serial round-trip).
-          2. Normalise each angle to [0, 1] against the active calibration profile.
-          3. Update the motor angle labels in the Controls tab (same as
-             _poll_motor_angles normally does at 500 ms).
-          4. Push normalised values to the Hand State visualisation.
-          5. Refresh the live Teleop state table.
-          6. Enqueue a compact JSON frame for the WebSocket worker thread.
-
-        Normalisation formula (identical to _poll_motor_angles):
-            rel_a  = normalize_angle(limit_min, home, flip)
-            rel_b  = normalize_angle(limit_max, home, flip)
-            lo, hi = min(rel_a, rel_b), max(rel_a, rel_b)
-            t      = clamp( (relative_angle - lo) / (hi - lo), 0, 1 )
-
-        Convention: 0 = fully open / extended, 1 = fully closed / flexed.
-        This matches the convention used by HandSkeletonWidget.
-
-        Joints that lack a calibration entry are transmitted as ``null`` in
-        the JSON payload so downstream consumers can detect and ignore them
-        rather than acting on a meaningless zero.
-
-        JSON payload structure
-        ----------------------
-        Single-exo mode:
-        {
-          "timestamp": <float, Unix seconds>,
-          "source":    "hand_exo",
-          "side":      "left" | "right",
-          "joints": {
-            "<name>": <float 0-1> | null,   -- null = no calibration
-            ...
-          }
-        }
-
-        Dual-exo mode (both hands on one shared controller):
-        {
-          "timestamp": <float, Unix seconds>,
-          "source":    "hand_exo",
-          "side":      "dual",
-          "left":  { "<name>": <float 0-1> | null, ... },
-          "right": { "<name>": <float 0-1> | null, ... }
-        }
-        """
-        if not self.exo_connected:
-            return
-
-        # -- 1. Poll relative angles from device ---------------------------
-        # HandExo returns {Dynamixel_ID: angle}; map to widget via _motor_dxl_id.
-        try:
-            angles: dict = self.exo.get_motor_angle('all')
-        except Exception:
-            return
-
-        mode = self.mode_combo.currentText()
-
-        # -- 2 & 3. Normalise and update angle labels ----------------------
-        t_dict: dict[str, float] = {}
-        joints_left:  dict = {}
-        joints_right: dict = {}
-        joints_single: dict = {}
-
-        for i, w in enumerate(self.motor_widgets):
-            name   = w["name"]
-            bare   = w.get("cmd_name", name)   # bare name for cal lookup
-            dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
-            val    = angles.get(dxl_id) if dxl_id is not None else None
-
-            # Update Controls-tab angle label (same display as _poll_motor_angles)
-            if val is not None:
-                w["angle_lbl"].setText(f"{float(val):.2f} deg")
-
-            # Select the correct calibration profile entry for this motor
-            if mode == "Dual":
-                if name.startswith("L:"):
-                    m = (self._active_cal_left or {}).get("motors", {}).get(bare)
-                else:
-                    m = (self._active_cal_right or {}).get("motors", {}).get(bare)
-            else:
-                m = (self._active_cal_profile or {}).get("motors", {}).get(name)
-
-            if val is not None and m is not None:
-                rel_a = normalize_angle(m["limit_min"], m["home"], m["flip"])
-                rel_b = normalize_angle(m["limit_max"], m["home"], m["flip"])
-                lo, hi = min(rel_a, rel_b), max(rel_a, rel_b)
-                span = hi - lo
-                t = (
-                    max(0.0, min(1.0, (float(val) - lo) / span))
-                    if span > 0 else 0.0
-                )
-                t_dict[name] = t
-                norm_val = round(t, 4)
-            else:
-                t_dict[name] = 0.0
-                norm_val = None  # no calibration data
-
-            if mode == "Dual":
-                if name.startswith("L:"):
-                    joints_left[bare]  = norm_val
-                else:
-                    joints_right[bare] = norm_val
-            else:
-                joints_single[name] = norm_val
-
-        # -- 4. Hand State visualisation -----------------------------------
-        if mode == "Dual":
-            vis_side_pfx = "R:" if self._right_motor_names else "L:"
-            bare_t = {k[2:]: v for k, v in t_dict.items() if k.startswith(vis_side_pfx)}
-        else:
-            bare_t = t_dict
-        self._hand_vis.update_motor_states(bare_t, connected=True)
-
-        # -- 5. Live Teleop state table ------------------------------------
-        for row, mw in enumerate(self.motor_widgets):
-            item = self._teleop_state_table.item(row, 1)
-            if item is None:
-                continue
-            bare = mw.get("cmd_name", mw["name"])
-            if mode == "Dual":
-                v = (joints_left if mw["name"].startswith("L:") else joints_right).get(bare)
-            else:
-                v = joints_single.get(mw["name"])
-            item.setText(f"{v:.3f}" if v is not None else "no cal")
-
-        # -- 6. Enqueue JSON frame for the WebSocket worker ----------------
-        if self._teleop_worker.isRunning():
-            if mode == "Dual":
-                frame = {
-                    "timestamp": time.time(),
-                    "source": "hand_exo",
-                    "side": "dual",
-                    "left":  joints_left,
-                    "right": joints_right,
-                }
-            else:
-                frame = {
-                    "timestamp": time.time(),
-                    "source": "hand_exo",
-                    "side": self.exo.side or "right",
-                    "joints": joints_single,
-                }
-            self._teleop_worker.enqueue(json.dumps(frame, separators=(",", ":")))
+        """Timer callback at 100 ms while streaming. Requests an angle poll from the
+        serial worker; _on_angles_ready handles the display update and WebSocket push."""
+        if self.exo_connected and self._serial_worker is not None:
+            self._serial_worker.request_angles()
 
     def _log(self, msg: str):
         ts = datetime.now().strftime("%H:%M:%S")

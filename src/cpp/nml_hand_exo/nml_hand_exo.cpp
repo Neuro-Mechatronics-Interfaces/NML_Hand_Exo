@@ -9,6 +9,7 @@
 #include "config.h"
 //#include "utils.h"
 #include "nml_hand_exo.h"
+#include "gesture_eeprom.h"
 #include <Dynamixel2Arduino.h>
 
 
@@ -223,6 +224,7 @@ String NMLHandExo::getDeviceInfo() {
     String info = "Name: NMLHandExo\n";
     info += "Version: " + String(VERSION) + "\n";
     info += "Side: " + String(HAND_SIDE) + "\n";
+    info += "CalibrationName: " + String(gestureCalGetName()) + "\n";
     info += "Number of Motors: " + String(numMotors_) + "\n";
     for (int i = 0; i < numMotors_; ++i) {
 

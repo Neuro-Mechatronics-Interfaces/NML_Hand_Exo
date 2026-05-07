@@ -5,6 +5,7 @@
  */
 #include "utils.h"
 #include "oled.h"
+#include "gesture_eeprom.h"
 #include <Arduino.h>
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
@@ -750,6 +751,40 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       }
     }
 
+  } else if (cmd == "set_gesture_cal") {
+    // set_gesture_cal:<gesture>:<state>:<joint>:<value>
+    // Updates a single named-pair [0-1] fraction in the live gestureLibrary.
+    // Does NOT write to EEPROM; follow up with save_gesture_cal to persist.
+    String gestureArg = getArg(token, 1);
+    String stateArg   = getArg(token, 2);
+    String jointArg   = getArg(token, 3);
+    float  valArg     = getArg(token, 4).toFloat();
+    if (gestureCalSetValue(gestureArg, stateArg, jointArg, valArg)) {
+        commandPrint("OK: set_gesture_cal " + gestureArg + ":" + stateArg + ":" + jointArg + " = " + String(valArg, 4));
+    } else {
+        commandPrint("[Error] set_gesture_cal: gesture/state/joint not found");
+    }
+
+  } else if (cmd == "save_gesture_cal") {
+    gestureCalSaveToEEPROM();
+    commandPrint("Gesture calibration saved to EEPROM. Name: " + String(gestureCalGetName()));
+
+  } else if (cmd == "load_gesture_cal") {
+    if (gestureCalLoadFromEEPROM()) {
+        commandPrint("Gesture calibration loaded from EEPROM. Name: " + String(gestureCalGetName()));
+    } else {
+        commandPrint("[Error] load_gesture_cal: no valid data in EEPROM (using compile-time defaults)");
+    }
+
+  } else if (cmd == "set_cal_name") {
+    String nameArg = getArg(token, 1);
+    nameArg.trim();
+    gestureCalSetName(nameArg.c_str());
+    commandPrint("Calibration name set: " + nameArg);
+
+  } else if (cmd == "get_cal_name") {
+    commandPrint("CalibrationName: " + String(gestureCalGetName()));
+
   } else if (cmd == "calibrate_exo") {
     debugPrint(F("Command not supported yet"));
     //String mode = getArg(token, 1);
@@ -828,6 +863,11 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_flip              |  ID/NAME:0/1         | // Set motor direction flip (1=inverted, 0=normal)"));
     commandPrint(F(" get_flip              |  ID/NAME/ALL         | // Get motor direction flip status"));
     commandPrint(F(" calibrate_exo         |  VALUE:VALUE         | // start the calibration routine for the exo"));
+    commandPrint(F(" set_gesture_cal       |  G:STATE:JOINT:VAL   | // Set [0-1] fraction for a named joint in a gesture state"));
+    commandPrint(F(" save_gesture_cal      |                      | // Persist current gesture fractions + cal name to EEPROM"));
+    commandPrint(F(" load_gesture_cal      |                      | // Reload gesture fractions + cal name from EEPROM"));
+    commandPrint(F(" set_cal_name          |  NAME                | // Set active calibration profile name (no EEPROM write)"));
+    commandPrint(F(" get_cal_name          |                      | // Get active calibration profile name"));
     commandPrint(F(" get_imu               |                      | // Returns list of accel & gyro values"));
     commandPrint(F(" set_yaw_angle         |  ID/NAME:ANGLE       | // Set motor angle via IMU wrist angle"));
     commandPrint(F(" oled                  |  VALUE               | // Turn OLED on/off, get status"));
