@@ -30,7 +30,9 @@ enum ExoState : uint8_t {
   EXO_KEYGRIP_OPEN,
   EXO_KEYGRIP_CLOSE,
   EXO_GRASP_OPEN,
-  EXO_GRASP_CLOSE
+  EXO_GRASP_CLOSE,
+  EXO_BT_CONNECTED,
+  EXO_BT_DISCONNECTED
 };
 
 /** Initialize the OLED safely (fast-fail). Returns true if enabled & ready. */

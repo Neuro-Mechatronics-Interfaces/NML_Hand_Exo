@@ -56,8 +56,10 @@ const __FlashStringHelper* oledGetStateText(ExoState s) {
     case EXO_KEYGRIP_OPEN:  return F("KEYGRIP OPEN");
     case EXO_KEYGRIP_CLOSE: return F("KEYGRIP CLOSE");
     case EXO_GRASP_OPEN:    return F("GRASP OPEN");
-    case EXO_GRASP_CLOSE:   return F("GRASP CLOSE");
-    default:                return F("UNKNOWN");
+    case EXO_GRASP_CLOSE:       return F("GRASP CLOSE");
+    case EXO_BT_CONNECTED:      return F("BT CONNECTED");
+    case EXO_BT_DISCONNECTED:   return F("BT LOST");
+    default:                    return F("UNKNOWN");
   }
 }
 

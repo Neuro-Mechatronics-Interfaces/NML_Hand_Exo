@@ -163,73 +163,58 @@ class HandExo(object):
             raise TypeError(f"motor_id must be 'all' or int, got {type(motor_id)}")
 
     def _parse_motor_data_block(self, raw: str) -> dict:
-        """
-        Parses a raw motor data string and returns a dictionary of motor data.
-        Handles both single and multi-motor formats.
+        """Parse a raw multi-motor response into {dxl_id: {field: value}} dicts.
 
-        Args:
-            raw (str): Raw string from the serial device.
+        Uses re.finditer on the full raw string rather than splitlines + re.match
+        so that records are found even when BT timing glitches deliver multiple
+        ';'-terminated chunks concatenated without intervening newlines.
 
-        Returns:
-            dict: Dictionary where keys are motor IDs (as int), and values are dicts of parsed motor attributes.
+        All int/float conversions are wrapped in try/except so a single corrupted
+        byte in one field does not discard the entire motor record.
         """
         motor_data = {}
-        lines = [line.strip() for line in raw.strip().splitlines() if line.strip()]
 
-        for line in lines:
-            # Match either "Motor 0: { ... }" or "Motor: { ... }"
-            match = re.match(r"Motor(?:\s+(\d+))?:\s*\{(.+?)\}", line)
-            if not match:
-                continue
-
+        for match in re.finditer(r"Motor(?:\s+(\d+))?:\s*\{(.+?)\}", raw, re.DOTALL):
             motor_id_str, data_block = match.groups()
 
-            # Fallback if no ID in prefix: look inside the block for id
-            motor_info = {}
+            motor_info: dict = {}
             for part in data_block.split(","):
-                key_val = part.strip().split(":", 1)
-                if len(key_val) != 2:
+                kv = part.strip().split(":", 1)
+                if len(kv) != 2:
                     continue
-                key, val = key_val[0].strip(), key_val[1].strip()
+                key, val = kv[0].strip(), kv[1].strip()
+                try:
+                    if key == "id":
+                        motor_info["id"] = int(val)
+                    elif key in ("angle", "absolute_angle", "torque",
+                                 "velocity", "acceleration", "home"):
+                        motor_info[key] = float(val)
+                    elif key in ("current", "current_limit"):
+                        _m = re.match(r'[-+]?[\d.]+', val)
+                        motor_info[key] = float(_m.group()) if _m else float(val)
+                    elif key == "limits":
+                        motor_info["limits"] = [
+                            float(x) for x in re.findall(r"[-+]?[0-9]*\.?[0-9]+", val)
+                        ]
+                    elif key == "enabled":
+                        motor_info["enabled"] = val.lower() == "true"
+                    elif key == "baudrate":
+                        motor_info["baudrate"] = int(val)
+                    else:
+                        motor_info[key] = val
+                except (ValueError, TypeError):
+                    pass  # corrupted field — skip it, keep parsing remaining fields
 
-                if key == "id":
-                    motor_info["id"] = int(val)
-                elif key == "angle":
-                    motor_info["angle"] = float(val)
-                elif key == "limits":
-                    motor_info["limits"] = [float(x) for x in re.findall(r"[-+]?[0-9]*\.?[0-9]+", val)]
-                elif key == "torque":
-                    motor_info["torque"] = float(val)
-                elif key == "enabled":
-                    motor_info["enabled"] = val.lower() == "true"
-                elif key == "velocity":
-                    motor_info["velocity"] = float(val)
-                elif key == "acceleration":
-                    motor_info["acceleration"] = float(val)
-                elif key == "baudrate":
-                    motor_info["baudrate"] = int(val)
-                elif key == "home":
-                    motor_info["home"] = float(val)
-                elif key == "absolute_angle":
-                    motor_info["absolute_angle"] = float(val)
-                elif key == "current":
-                    _m = re.match(r'[-+]?[\d.]+', val.strip())
-                    motor_info["current"] = float(_m.group()) if _m else float(val)
-                elif key == "current_limit":
-                    _m = re.match(r'[-+]?[\d.]+', val.strip())
-                    motor_info["current_limit"] = float(_m.group()) if _m else float(val)
-                else:
-                    motor_info[key] = val
-
-            # Prefer the actual Dynamixel ID from the id: field in the blob.
-            # The Motor X: prefix uses a loop index (0..N-1), NOT the hardware ID.
-            # Firmware embeds the real ID as "id: <N>" inside the braces.
+            # Motor X: prefix is a 0-based loop index, not the DXL hardware ID.
+            # The real ID is inside the block as "id: <N>".
             actual_id = motor_info.get("id")
-            if actual_id is None:
-                actual_id = int(motor_id_str) if motor_id_str else None
-            motor_id = actual_id
-            if motor_id is not None:
-                motor_data[motor_id] = motor_info
+            if actual_id is None and motor_id_str:
+                try:
+                    actual_id = int(motor_id_str)
+                except ValueError:
+                    pass
+            if actual_id is not None:
+                motor_data[actual_id] = motor_info
 
         return motor_data
 
@@ -1154,6 +1139,47 @@ class HandExo(object):
         import re
         m = re.search(r'CalibrationName:\s*(.*)', raw or "")
         return m.group(1).strip() if m else ""
+
+    # -------------------------------------------------------------------------
+    # Bluetooth management commands
+    # -------------------------------------------------------------------------
+
+    def bt_status(self) -> str:
+        """Query the firmware BluetoothManager for the HC-05 connection state.
+
+        Requires the HC-05 STATE pin to be wired and declared as BT_STATE_PIN
+        in firmware config.h.  When the STATE pin is -1 (not wired), the firmware
+        always returns ``'disconnected'``.
+
+        Returns:
+            ``'connected'``, ``'disconnected'``, or ``'unknown'`` if the firmware
+            does not support the ``bt_status`` command.
+        """
+        self.send_command("bt_status")
+        raw = self._receive(wait_until_return=True) or ""
+        if "bt_status:connected" in raw.lower():
+            return "connected"
+        if "bt_status:disconnected" in raw.lower():
+            return "disconnected"
+        return "unknown"
+
+    def bt_configure(self, device_name: str, pin: str = "1234") -> bool:
+        """Send AT configuration commands to the HC-05 module.
+
+        The module must be idle (not paired to a host) for mini-AT mode to work.
+        For full AT mode, pull EN HIGH before powering the module and set
+        BT_EN_PIN in firmware config.h.
+
+        Args:
+            device_name: Bluetooth device name the HC-05 will advertise.
+            pin: 4-digit pairing PIN (default ``"1234"``).
+
+        Returns:
+            True if firmware reports success.
+        """
+        self.send_command(f"bt_configure:{device_name}:{pin}")
+        raw = self._receive(wait_until_return=True) or ""
+        return "bt_configure:ok" in raw.lower()
 
     def flash_calibration_to_firmware(self, profile_name: str,
                                        profiles_dir: str | None = None,

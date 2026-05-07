@@ -378,6 +378,15 @@ constexpr bool DEFAULT_FLIPS[] = {
 
 #endif  // BUILD_LEFT_HAND == 2 vs single-exo
 
+// ---- Bluetooth module (HC-05 or compatible) --------------------------------
+// Wire HC-05 TX/RX to Serial3 D13/D14.  These two pins are optional:
+//   BT_STATE_PIN — reads HIGH when a Bluetooth host is actively connected.
+//                  Leave at -1 if the HC-05 STATE pin is not wired.
+//   BT_EN_PIN    — drive HIGH before module power-on to enter AT config mode.
+//                  Leave at -1 if the HC-05 EN pin is not wired.
+constexpr int BT_STATE_PIN = -1;
+constexpr int BT_EN_PIN    = -1;
+
 /// @brief Default baud rate for the debug serial connection.
 constexpr long DEBUG_BAUD_RATE = 57600;
 

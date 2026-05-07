@@ -12,6 +12,10 @@
 //#include <Adafruit_ISM330DHCX.h>
 #include <Adafruit_BNO055.h>
 
+// Forward declaration — avoids pulling bluetooth_manager.h into every TU that
+// includes utils.h.  The full definition is needed only in utils.cpp.
+class BluetoothManager;
+
 /// @brief Prints a debug message to the debug serial port (VERBOSE specific)
 /// @param msg The message to print
 void debugPrint(const String& msg);
@@ -43,8 +47,11 @@ int getArgMotorID(NMLHandExo& exo, const String& line, const int index);
 /// @brief Parses a message and executes the corresponding command on the exo device or gesture controller
 /// @param exo The NMLHandExo instance to control
 /// @param gc The GestureController instance to control gestures
+/// @param imu The IMU instance
+/// @param bt The BluetoothManager instance
 /// @param token The input string containing the command to parse
-void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token);
+void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu,
+                  BluetoothManager& bt, String token);
 
 /// @brief Initializes the IMU device 
 /// @param imu The imu instance

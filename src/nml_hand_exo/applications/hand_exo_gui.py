@@ -29,7 +29,12 @@ from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QFontMetrics
 
 from serial.tools import list_ports
-from nml_hand_exo.interface import HandExo, SerialComm
+from nml_hand_exo.interface import (
+    HandExo, SerialComm, BluetoothComm,
+    is_bluetooth_port, bt_port_direction,
+    scan_paired_bluetooth_devices, find_bluetooth_port_by_name,
+    BluetoothScanner,
+)
 
 # websockets is optional; teleop tab gracefully degrades if missing.
 try:
@@ -334,8 +339,223 @@ QCheckBox::indicator:checked {
 
 
 # ==========================================================================
+#  Bluetooth Search Thread
+# ==========================================================================
+
+class _BtSearchThread(QThread):
+    """Background BT device search: registry lookup, then optional live scan."""
+    found        = pyqtSignal(str)       # outgoing COM port
+    not_found    = pyqtSignal(str)       # device_name when nothing found
+    need_pairing = pyqtSignal(str, str)  # device_name, MAC when nearby but unpaired
+    status       = pyqtSignal(str)       # progress label update
+
+    def __init__(self, device_name: str, parent=None):
+        super().__init__(parent)
+        self._device_name = device_name
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        name = self._device_name
+        self.status.emit(f"Checking paired devices for '{name}'…")
+        port = find_bluetooth_port_by_name(name, direction="outgoing")
+        if port:
+            self.found.emit(port)
+            return
+        if self._cancelled:
+            return
+        if not BluetoothScanner.is_available():
+            if not self._cancelled:
+                self.not_found.emit(name)
+            return
+        self.status.emit(f"Not paired — scanning nearby (~8 s)…")
+        try:
+            devices = BluetoothScanner.scan()
+            for d in devices:
+                if self._cancelled:
+                    return
+                if name.lower() in d.get("name", "").lower():
+                    self.need_pairing.emit(name, d.get("address", ""))
+                    return
+            if not self._cancelled:
+                self.not_found.emit(name)
+        except Exception as e:
+            if not self._cancelled:
+                self.status.emit(f"Scan error: {e}")
+                self.not_found.emit(name)
+
+
+# ==========================================================================
 #  Calibration Dialog
 # ==========================================================================
+
+class _BTConnectDialog(QDialog):
+    """Select a paired Bluetooth device by name and resolve its outgoing COM port.
+
+    Shows paired BT devices read from the Windows registry (instant, no scan).
+    An optional "Scan nearby" button uses PyBluez2 for live discovery.
+
+    Usage::
+
+        dlg = _BTConnectDialog(parent)
+        if dlg.exec_() == QDialog.Accepted:
+            port = dlg.selected_port()   # e.g. "COM5"
+            baud = dlg.selected_baud()
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Connect via Bluetooth")
+        self.setMinimumWidth(520)
+        self._port: str | None = None
+        self._baud: int = 57600
+
+        layout = QVBoxLayout(self)
+
+        info = QLabel(
+            "Paired Bluetooth Classic devices on this PC.\n"
+            "Select the device you want to connect to — use the ▶ Outgoing row."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        self._table = QTableWidget(0, 3)
+        self._table.setHorizontalHeaderLabels(["Device name", "COM port", "Direction"])
+        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self._table.setSelectionBehavior(QTableWidget.SelectRows)
+        self._table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._table.doubleClicked.connect(self._accept_selection)
+        layout.addWidget(self._table)
+
+        scan_row = QHBoxLayout()
+        self._scan_btn = QPushButton("Scan nearby…")
+        self._scan_btn.setEnabled(BluetoothScanner.is_available())
+        if not BluetoothScanner.is_available():
+            self._scan_btn.setToolTip("Requires: pip install pybluez2")
+        self._scan_btn.clicked.connect(self._scan_nearby)
+        self._scan_lbl = QLabel("")
+        self._scan_lbl.setStyleSheet("color: #888888; font-size: 11px;")
+        scan_row.addWidget(self._scan_btn)
+        scan_row.addWidget(self._scan_lbl)
+        scan_row.addStretch()
+        layout.addLayout(scan_row)
+
+        baud_row = QHBoxLayout()
+        baud_row.addWidget(QLabel("Baud rate:"))
+        self._baud_combo = QComboBox()
+        for b in ["9600", "57600", "115200", "230400"]:
+            self._baud_combo.addItem(b)
+        self._baud_combo.setCurrentText("57600")
+        baud_row.addWidget(self._baud_combo)
+        baud_row.addStretch()
+        layout.addLayout(baud_row)
+
+        btn_row = QHBoxLayout()
+        refresh_btn = QPushButton("⟳ Refresh")
+        refresh_btn.clicked.connect(lambda: self._populate())
+        ok_btn = QPushButton("Connect")
+        ok_btn.setProperty("accent", True)
+        ok_btn.clicked.connect(self._accept_selection)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(refresh_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+
+        self._populate()
+
+    def _populate(self, extra: list[dict] | None = None) -> None:
+        from PyQt5.QtGui import QColor
+        devices = scan_paired_bluetooth_devices()
+        if extra:
+            known = {d["mac"] for d in devices}
+            for e in extra:
+                if e.get("mac", "") not in known:
+                    devices.append(e)
+
+        self._table.setRowCount(0)
+        first_out = None
+        for d in devices:
+            row = self._table.rowCount()
+            self._table.insertRow(row)
+
+            dir_str = ("▶ Outgoing — use this" if d["direction"] == "outgoing"
+                       else ("◀ Incoming — skip" if d["direction"] == "incoming"
+                             else d["direction"]))
+            items = [
+                QTableWidgetItem(d["name"] or "(unknown)"),
+                QTableWidgetItem(d["port"]),
+                QTableWidgetItem(dir_str),
+            ]
+            items[0].setData(Qt.UserRole, d)
+            if d["direction"] == "incoming":
+                gray = QColor("#666666")
+                for it in items:
+                    it.setForeground(gray)
+            for col, it in enumerate(items):
+                self._table.setItem(row, col, it)
+
+            if first_out is None and d["direction"] == "outgoing":
+                first_out = row
+
+        if first_out is not None:
+            self._table.selectRow(first_out)
+
+    def _scan_nearby(self) -> None:
+        self._scan_lbl.setText("Scanning… (~8 s)")
+        self._scan_btn.setEnabled(False)
+        QApplication.processEvents()
+        try:
+            found = BluetoothScanner.scan()
+            extra = [{"name": d["name"],
+                      "mac": d["address"].replace(":", "").lower(),
+                      "port": "(not paired)",
+                      "direction": "unknown"}
+                     for d in found]
+            self._populate(extra=extra)
+            self._scan_lbl.setText(f"Found {len(found)} nearby")
+        except Exception as e:
+            self._scan_lbl.setText(f"Scan error: {e}")
+        finally:
+            self._scan_btn.setEnabled(BluetoothScanner.is_available())
+
+    def _selected_entry(self) -> dict | None:
+        sel = self._table.selectedItems()
+        if not sel:
+            return None
+        return self._table.item(sel[0].row(), 0).data(Qt.UserRole)
+
+    def _accept_selection(self) -> None:
+        entry = self._selected_entry()
+        if entry is None:
+            QMessageBox.warning(self, "No Selection", "Select a device first.")
+            return
+        if entry["direction"] == "incoming":
+            QMessageBox.warning(self, "Wrong Port",
+                                "That is the incoming port — it cannot be used to send commands.\n"
+                                "Select the ▶ Outgoing row instead.")
+            return
+        if not entry["port"] or entry["port"] == "(not paired)":
+            QMessageBox.information(self, "Not Paired",
+                                    "This device was discovered nearby but is not yet paired.\n"
+                                    "Pair it in Windows Bluetooth Settings first, then refresh.")
+            return
+        self._port = entry["port"]
+        self._baud = int(self._baud_combo.currentText())
+        super().accept()
+
+    def selected_port(self) -> str | None:
+        return self._port
+
+    def selected_baud(self) -> int:
+        return self._baud
+
 
 # Anatomical prompts for each known motor name: (extension_desc, flexion_desc).
 # Used for standalone motors. Wrist + wrist2 paired prompts are set in
@@ -363,12 +583,14 @@ class CalibrationDialog(QDialog):
 
     def __init__(self, exo: HandExo, motor_names: list[str],
                  profile_name: str, side: str = "right",
-                 dxl_ids: list | None = None, parent=None):
+                 dxl_ids: list | None = None,
+                 serial_worker=None, parent=None):
         super().__init__(parent)
         self.exo = exo
         self.motor_names = motor_names
         self.profile_name = profile_name
         self._side = side
+        self._serial_worker = serial_worker
         self.setWindowTitle("Calibration Protocol")
         self.setMinimumWidth(500)
 
@@ -425,6 +647,9 @@ class CalibrationDialog(QDialog):
         # main window's _angle_timer.
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll_angles)
+
+        if serial_worker is not None:
+            serial_worker.abs_angles_ready.connect(self._on_abs_angles)
 
         # Disable only the motors being calibrated so inactive-side motors
         # (already disabled at connect time) are not accidentally broadcast over.
@@ -513,13 +738,23 @@ class CalibrationDialog(QDialog):
             self.record_btn.clicked.connect(self.accept)
 
     def _poll_angles(self):
-        """Timer callback — appends one angle reading per motor to the current buffer."""
-        try:
-            angles = self.exo.get_absolute_motor_angle('all')
-        except Exception:
+        """Timer callback — enqueue one absolute-angle request via SerialWorker."""
+        if self._serial_worker is not None:
+            self._serial_worker.request_abs_angles()
+        else:
+            # Fallback for non-SerialWorker setups (USB direct, testing)
+            try:
+                angles = self.exo.get_absolute_motor_angle('all')
+            except Exception:
+                return
+            self._on_abs_angles(angles)
+
+    def _on_abs_angles(self, abs_angles: dict):
+        """Slot — receives absolute angles from SerialWorker and buffers them."""
+        if not self._recording:
             return
         for name, idx in self._motor_idx.items():
-            val = angles.get(idx)
+            val = abs_angles.get(idx)
             if val is not None:
                 self._samples_buf[name].append(float(val))
         count = min(
@@ -631,12 +866,14 @@ class ROMDialog(QDialog):
 
     def __init__(self, exo: HandExo, motor_names: list[str],
                  participant: str, side: str = "right",
-                 dxl_ids: list | None = None, parent=None):
+                 dxl_ids: list | None = None,
+                 serial_worker=None, parent=None):
         super().__init__(parent)
         self.exo = exo
         self.motor_names = motor_names
         self.participant = participant
         self._side = side
+        self._serial_worker = serial_worker
         self.setWindowTitle("ROM Assessment")
         self.setMinimumWidth(600)
 
@@ -699,6 +936,9 @@ class ROMDialog(QDialog):
         # Recording timer
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll_angles)
+
+        if serial_worker is not None:
+            serial_worker.abs_angles_ready.connect(self._on_abs_angles)
 
         # Disable only the motors being assessed (side-specific IDs).
         for _rom_dxl_id in self._motor_dxl_lookup.values():
@@ -765,15 +1005,25 @@ class ROMDialog(QDialog):
             self._finish()
 
     def _poll_angles(self):
-        try:
-            angles = self.exo.get_absolute_motor_angle('all')
-            for name in self.motor_names:
-                dxl_id = self._motor_dxl_lookup.get(name)
-                val = angles.get(dxl_id) if dxl_id is not None else None
-                if val is not None:
-                    self._samples[name].append(float(val))
-        except Exception:
-            pass
+        """Timer callback — enqueue one absolute-angle request via SerialWorker."""
+        if self._serial_worker is not None:
+            self._serial_worker.request_abs_angles()
+        else:
+            try:
+                angles = self.exo.get_absolute_motor_angle('all')
+            except Exception:
+                return
+            self._on_abs_angles(angles)
+
+    def _on_abs_angles(self, abs_angles: dict):
+        """Slot — receives absolute angles from SerialWorker and buffers them."""
+        if not self._recording:
+            return
+        for name in self.motor_names:
+            dxl_id = self._motor_dxl_lookup.get(name)
+            val = abs_angles.get(dxl_id) if dxl_id is not None else None
+            if val is not None:
+                self._samples[name].append(float(val))
         total = min(len(v) for v in self._samples.values()) if self._samples else 0
         self.sample_label.setText(f"Samples: {total}")
 
@@ -1237,17 +1487,19 @@ class SerialWorker(QThread):
       line_received(str)            — every printable line, including errors
     """
 
-    angles_ready  = pyqtSignal(dict)
-    telem_ready   = pyqtSignal(dict, dict, dict)
-    line_received = pyqtSignal(str)
+    angles_ready     = pyqtSignal(dict)
+    abs_angles_ready = pyqtSignal(dict)   # {dxl_id: float} after get_absolute_angle:all
+    telem_ready      = pyqtSignal(dict, dict, dict)
+    line_received    = pyqtSignal(str)
 
     def __init__(self, exo, parent=None):
         super().__init__(parent)
-        self._exo            = exo
-        self._urgent_q       = queue.Queue()   # high-priority: user commands
-        self._cmd_q          = queue.Queue()   # standard: auto-refresh polls
-        self._run            = True
-        self._angles_pending = False
+        self._exo                 = exo
+        self._urgent_q            = queue.Queue()   # high-priority: user commands
+        self._cmd_q               = queue.Queue()   # standard: auto-refresh polls
+        self._run                 = True
+        self._angles_pending      = False
+        self._abs_angles_pending  = False
 
     # ------------------------------------------------------------------ public
 
@@ -1256,6 +1508,16 @@ class SerialWorker(QThread):
         if not self._angles_pending:
             self._angles_pending = True
             self._cmd_q.put(("angles", "get_angle:all"))
+
+    def request_abs_angles(self):
+        """Queue a get_absolute_angle:all poll at high priority (de-duplicated).
+
+        Used by CalibrationDialog and ROMDialog so their polls share the single
+        serial worker thread and never race with it for the port.
+        """
+        if not self._abs_angles_pending:
+            self._abs_angles_pending = True
+            self._urgent_q.put(("abs_angles", "get_absolute_angle:all"))
 
     def request_telem(self):
         """Queue a telemetry poll (3 back-to-back transactions)."""
@@ -1291,6 +1553,8 @@ class SerialWorker(QThread):
             try:
                 if tag == "angles":
                     self._handle_angles(cmd)
+                elif tag == "abs_angles":
+                    self._handle_abs_angles(cmd)
                 elif tag == "telem":
                     self._handle_telem()
                 elif tag == "log":
@@ -1301,6 +1565,15 @@ class SerialWorker(QThread):
                 self.line_received.emit(f"[worker] {type(e).__name__}: {e}")
 
     # ------------------------------------------------------------------ handlers
+
+    def _handle_abs_angles(self, cmd: str):
+        self._abs_angles_pending = False
+        raw = self._transact(cmd, timeout=3.0)
+        parsed = self._exo._parse_motor_data_block(raw)
+        abs_angles = {mid: m["absolute_angle"] for mid, m in parsed.items()
+                      if "absolute_angle" in m}
+        if abs_angles:
+            self.abs_angles_ready.emit(abs_angles)
 
     def _handle_angles(self, cmd: str):
         self._angles_pending = False
@@ -1451,6 +1724,14 @@ class HandExoGUI(QWidget):
         # Telemetry poll timer (Telemetry tab) — dispatches to serial worker
         self._telem_timer = QTimer(self)
         self._telem_timer.timeout.connect(self._req_telem)
+
+        # Bluetooth STATE-pin poll (3 s interval, only active on BT ports)
+        self._bt_poll_timer = QTimer(self)
+        self._bt_poll_timer.setInterval(3000)
+        self._bt_poll_timer.timeout.connect(self._req_bt_status)
+        self._port_is_bt: bool = False  # set in _do_connect()
+        self._bt_search_progress: QProgressDialog | None = None
+        self._bt_search_thread: _BtSearchThread | None = None
 
         self._build_ui()
 
@@ -1795,7 +2076,7 @@ class HandExoGUI(QWidget):
         box = QGroupBox("Connection")
         outer = QVBoxLayout()
 
-        # --- Row 0: Mode selector ---
+        # --- Row 0: Mode + connection type toggle ---
         row0 = QHBoxLayout()
         row0.addWidget(QLabel("Mode:"))
         self.mode_combo = QComboBox()
@@ -1806,23 +2087,51 @@ class HandExoGUI(QWidget):
         )
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
         row0.addWidget(self.mode_combo)
+        row0.addSpacing(16)
+        row0.addWidget(QLabel("Via:"))
+        self.conn_type_combo = QComboBox()
+        self.conn_type_combo.addItems(["USB / Serial", "Bluetooth"])
+        self.conn_type_combo.setToolTip(
+            "USB / Serial: connect through a COM port.\n"
+            "Bluetooth: find the device by name and connect automatically."
+        )
+        self.conn_type_combo.currentTextChanged.connect(self._on_conn_type_changed)
+        row0.addWidget(self.conn_type_combo)
         row0.addStretch()
         outer.addLayout(row0)
 
-        # --- Row 1: Primary port (label updates based on mode) ---
+        # --- Row 1: Port (serial) or device/PIN (BT) + shared controls ---
         row1 = QHBoxLayout()
+
+        # Serial-mode widgets
         self.port_label = QLabel("Port (R):")
         self.port_combo = QComboBox()
         self.port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
         self.refresh_btn = QPushButton("⟳")
         self.refresh_btn.setFixedWidth(32)
+        self.refresh_btn.setToolTip("Refresh serial port list")
         self.refresh_btn.clicked.connect(self._refresh_ports)
+
+        # BT-mode widgets (hidden until Bluetooth mode is selected)
+        self._bt_device_label = QLabel("Device:")
+        self._bt_device_edit = QLineEdit("NML_EXO")
+        self._bt_device_edit.setFixedWidth(130)
+        self._bt_device_edit.setToolTip("Bluetooth device name to search for")
+        self._bt_pin_label = QLabel("PIN:")
+        self._bt_pin_edit = QLineEdit("1234")
+        self._bt_pin_edit.setFixedWidth(72)
+        self._bt_pin_edit.setToolTip(
+            "Bluetooth PIN — shown in pairing instructions when device is not yet paired"
+        )
+        for w in (self._bt_device_label, self._bt_device_edit,
+                  self._bt_pin_label, self._bt_pin_edit):
+            w.setVisible(False)
 
         self.baud_combo = QComboBox()
         for b in ["9600", "57600", "115200", "230400"]:
             self.baud_combo.addItem(b)
         self.baud_combo.setCurrentText("57600")
+        self.baud_combo.setFixedWidth(120)
 
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.setProperty("accent", True)
@@ -1837,6 +2146,10 @@ class HandExoGUI(QWidget):
         row1.addWidget(self.port_label)
         row1.addWidget(self.port_combo, 3)
         row1.addWidget(self.refresh_btn)
+        row1.addWidget(self._bt_device_label)
+        row1.addWidget(self._bt_device_edit, 2)
+        row1.addWidget(self._bt_pin_label)
+        row1.addWidget(self._bt_pin_edit)
         row1.addWidget(QLabel("Baud:"))
         row1.addWidget(self.baud_combo, 1)
         row1.addWidget(self.connect_btn)
@@ -1847,21 +2160,73 @@ class HandExoGUI(QWidget):
         # Populate port combo now that all widgets exist.
         self._refresh_ports()
 
+        # --- Row 2: Bluetooth status (hidden until a BT port is connected) ---
+        row2 = QHBoxLayout()
+        self._bt_status_lbl = QLabel("●  BT module: unknown")
+        self._bt_status_lbl.setStyleSheet("color: #888888; font-size: 11px;")
+        self._bt_status_lbl.setVisible(False)
+        row2.addWidget(self._bt_status_lbl)
+        row2.addStretch()
+        outer.addLayout(row2)
+
         box.setLayout(outer)
         self.main_layout.addWidget(box)
 
+    def _on_conn_type_changed(self, text: str):
+        """Toggle between USB/Serial and Bluetooth connection UI."""
+        is_bt = text == "Bluetooth"
+        self.port_label.setVisible(not is_bt)
+        self.port_combo.setVisible(not is_bt)
+        self.refresh_btn.setVisible(not is_bt)
+        self._bt_device_label.setVisible(is_bt)
+        self._bt_device_edit.setVisible(is_bt)
+        self._bt_pin_label.setVisible(is_bt)
+        self._bt_pin_edit.setVisible(is_bt)
+
     def _refresh_ports(self):
         ports = list_ports.comports()
+        # Build a name map from the registry so BT ports show their device name.
+        bt_info = {e["port"]: e for e in scan_paired_bluetooth_devices()}
+
         self.port_combo.clear()
         for p in ports:
-            self.port_combo.addItem(f"{p.device} - {p.description}", p.device)
+            if is_bluetooth_port(p):
+                direction = bt_port_direction(p)
+                device_name = bt_info.get(p.device, {}).get("name", "")
+                if direction == "outgoing":
+                    # Show device name if available, otherwise fall back to description.
+                    name_part = device_name if device_name else p.description
+                    label = f"[BT ▶] {p.device} — {name_part}"
+                    tooltip = (
+                        f"Bluetooth outgoing port — use this one to connect.\n"
+                        f"Device: {device_name or '(name unknown)'}\n"
+                        f"Port:   {p.device}"
+                    )
+                elif direction == "incoming":
+                    label = f"[BT ◀] {p.device} — {device_name or p.description} (incoming, skip)"
+                    tooltip = (
+                        "Bluetooth incoming port — not needed for sending commands.\n"
+                        "Use the [BT ▶] outgoing port instead."
+                    )
+                else:
+                    label = f"[BT] {p.device} — {device_name or p.description}"
+                    tooltip = f"Bluetooth port (direction unknown)\nPort: {p.device}"
+                self.port_combo.addItem(label, p.device)
+                self.port_combo.setItemData(
+                    self.port_combo.count() - 1, tooltip, Qt.ToolTipRole
+                )
+            else:
+                self.port_combo.addItem(f"{p.device} — {p.description}", p.device)
 
-        # Auto-select last-used port, baud, and mode if still available.
+        # Auto-select last-used port if still present; otherwise auto-select the
+        # sole outgoing BT port when no last-used port is saved or found.
         last = load_last_device()
+        selected = False
         if last:
             for i in range(self.port_combo.count()):
                 if self.port_combo.itemData(i) == last["port"]:
                     self.port_combo.setCurrentIndex(i)
+                    selected = True
                     break
             if last.get("baud") and hasattr(self, "baud_combo"):
                 idx = self.baud_combo.findText(str(last["baud"]))
@@ -1871,6 +2236,16 @@ class HandExoGUI(QWidget):
                 idx = self.mode_combo.findText(last["mode"])
                 if idx >= 0:
                     self.mode_combo.setCurrentIndex(idx)
+
+        if not selected:
+            # Fall back: auto-select the single outgoing BT port if one exists.
+            outgoing = [p for p in ports
+                        if is_bluetooth_port(p) and bt_port_direction(p) == "outgoing"]
+            if len(outgoing) == 1:
+                for i in range(self.port_combo.count()):
+                    if self.port_combo.itemData(i) == outgoing[0].device:
+                        self.port_combo.setCurrentIndex(i)
+                        break
 
     def _on_mode_changed(self, mode_text: str):
         """Update port label and dual-mode widgets based on mode."""
@@ -2574,19 +2949,37 @@ class HandExoGUI(QWidget):
     def _connect(self):
         if self.exo_connected:
             return
+        baud = int(self.baud_combo.currentText())
+        is_bt = self.conn_type_combo.currentText() == "Bluetooth"
+        if is_bt:
+            device_name = self._bt_device_edit.text().strip() or "NML_EXO"
+            port = find_bluetooth_port_by_name(device_name, direction="outgoing")
+            if port:
+                self._do_connect(port, baud)
+            else:
+                self._bt_scan_and_connect(device_name, baud)
+            return
         if self.port_combo.count() == 0:
             QMessageBox.warning(self, "No Ports", "No serial ports found. Click Refresh.")
             return
-
-        mode = self.mode_combo.currentText()
         port = self.port_combo.currentData() or self.port_combo.currentText().split()[0]
-        baud = int(self.baud_combo.currentText())
+        self._do_connect(port, baud)
 
+    def _do_connect(self, port: str, baud: int):
+        mode = self.mode_combo.currentText()
         try:
             # One controller, one serial connection for all modes.
             # Both hands share the same OpenRB-150 board and Dynamixel bus.
             side = "left" if mode == "Left Only" else ("right" if mode == "Right Only" else None)
-            comm = SerialComm(port=port, baudrate=baud)
+
+            # Use BluetoothComm for BT virtual COM ports (auto-reconnect on drop).
+            selected_port_info = next(
+                (p for p in list_ports.comports() if p.device == port), None
+            )
+            self._port_is_bt = (selected_port_info is not None
+                                 and is_bluetooth_port(selected_port_info))
+            comm = (BluetoothComm(port=port, baudrate=baud)
+                    if self._port_is_bt else SerialComm(port=port, baudrate=baud))
             self.exo = HandExo(comm, side=side, auto_connect=True,
                                verbose=False, command_delimiter='\r\n')
             conn_desc = f"{port} @ {baud} [{mode}]"
@@ -2696,7 +3089,18 @@ class HandExoGUI(QWidget):
             self._serial_worker.angles_ready.connect(self._on_angles_ready)
             self._serial_worker.telem_ready.connect(self._on_telem_ready)
             self._serial_worker.line_received.connect(self._log)
+            self._serial_worker.line_received.connect(self._on_bt_status_line)
             self._serial_worker.start()
+
+            # Show / start BT indicator for Bluetooth ports.
+            if self._port_is_bt:
+                self._bt_status_lbl.setText("●  BT module: querying…")
+                self._bt_status_lbl.setStyleSheet("color: #888888; font-size: 11px;")
+                self._bt_status_lbl.setVisible(True)
+                self._bt_poll_timer.start()
+            else:
+                self._bt_status_lbl.setVisible(False)
+                self._bt_poll_timer.stop()
 
             self._angle_timer.start(500)
             if self._telem_auto_cb.isChecked():
@@ -2719,6 +3123,8 @@ class HandExoGUI(QWidget):
             self._teleop_worker.stop()
         self._angle_timer.stop()
         self._telem_timer.stop()
+        self._bt_poll_timer.stop()
+        self._bt_status_lbl.setVisible(False)
         if self._serial_worker is not None:
             self._serial_worker.stop()
             self._serial_worker = None
@@ -2885,6 +3291,111 @@ class HandExoGUI(QWidget):
         if self._serial_worker is not None:
             self._serial_worker.request_telem()
 
+    def _req_bt_status(self):
+        """Timer slot — ask firmware for the HC-05 STATE pin reading (fire-and-forget)."""
+        if self._serial_worker is not None and self._port_is_bt:
+            self._serial_worker.enqueue_fire("bt_status")
+
+    def _on_bt_status_line(self, line: str):
+        """Parse bt_status firmware responses and update the BT indicator label."""
+        low = line.lower()
+        if "bt_status:" not in low:
+            return
+        if "bt_status:connected" in low:
+            self._bt_status_lbl.setText("●  BT module: connected")
+            self._bt_status_lbl.setStyleSheet("color: #2ecc71; font-size: 11px;")
+        elif "bt_status:disconnected" in low:
+            self._bt_status_lbl.setText("●  BT module: disconnected")
+            self._bt_status_lbl.setStyleSheet("color: #e74c3c; font-size: 11px;")
+        else:
+            self._bt_status_lbl.setText("●  BT module: unknown")
+            self._bt_status_lbl.setStyleSheet("color: #888888; font-size: 11px;")
+
+    def _bt_scan_and_connect(self, device_name: str, baud: int):
+        """Show a progress dialog and search for device_name in the background."""
+        self._bt_search_progress = QProgressDialog(
+            f"Searching for '{device_name}'…", "Cancel", 0, 0, self
+        )
+        self._bt_search_progress.setWindowTitle("Bluetooth Search")
+        self._bt_search_progress.setWindowModality(Qt.WindowModal)
+        self._bt_search_progress.show()
+        QApplication.processEvents()
+
+        self._bt_search_thread = _BtSearchThread(device_name, self)
+        self._bt_search_thread.status.connect(
+            lambda msg: self._bt_search_progress.setLabelText(msg)
+            if self._bt_search_progress else None
+        )
+        self._bt_search_thread.found.connect(
+            lambda p: self._on_bt_scan_found(p, baud)
+        )
+        self._bt_search_thread.not_found.connect(self._on_bt_scan_not_found)
+        self._bt_search_thread.need_pairing.connect(self._on_bt_scan_need_pairing)
+        self._bt_search_thread.finished.connect(self._on_bt_search_finished)
+        self._bt_search_progress.canceled.connect(self._bt_search_thread.cancel)
+        self._bt_search_thread.start()
+
+    def _on_bt_search_finished(self):
+        if self._bt_search_progress:
+            self._bt_search_progress.close()
+            self._bt_search_progress = None
+        self._bt_search_thread = None
+
+    def _on_bt_scan_found(self, port: str, baud: int):
+        name = self._bt_device_edit.text().strip() or "NML_EXO"
+        self._log(f"BT: found '{name}' on {port}")
+        self._do_connect(port, baud)
+
+    def _on_bt_scan_not_found(self, device_name: str):
+        QMessageBox.warning(
+            self, "Device Not Found",
+            f"'{device_name}' was not found in paired devices"
+            + (" or nearby." if BluetoothScanner.is_available() else ".\n\n"
+               "Install pybluez2 to enable live scanning:\n"
+               "    pip install pybluez2")
+            + "\n\nMake sure the exoskeleton is powered on. "
+            "To pair for the first time, open Windows Bluetooth Settings, "
+            f"add '{device_name}', and enter the PIN shown above."
+        )
+
+    def _on_bt_scan_need_pairing(self, device_name: str, mac: str):
+        pin = self._bt_pin_edit.text() or "1234"
+        QMessageBox.information(
+            self, "Pair Device First",
+            f"'{device_name}' ({mac}) is nearby but not yet paired.\n\n"
+            "To pair:\n"
+            "  1. Open Windows Bluetooth Settings\n"
+            "  2. Click 'Add a device' → Bluetooth\n"
+            f"  3. Select '{device_name}'\n"
+            f"  4. Enter PIN: {pin}\n\n"
+            "Then click Connect again."
+        )
+
+    def _show_bt_connect_dialog(self):
+        """Open the Bluetooth device selector dialog."""
+        dlg = _BTConnectDialog(self)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        port = dlg.selected_port()
+        baud = dlg.selected_baud()
+        if not port:
+            return
+
+        # Select the resolved port in the dropdown then trigger the normal connect flow.
+        for i in range(self.port_combo.count()):
+            if self.port_combo.itemData(i) == port:
+                self.port_combo.setCurrentIndex(i)
+                break
+        else:
+            # Port resolved but not yet in the list — insert it.
+            self.port_combo.insertItem(0, f"[BT ▶] {port}", port)
+            self.port_combo.setCurrentIndex(0)
+
+        idx = self.baud_combo.findText(str(baud))
+        if idx >= 0:
+            self.baud_combo.setCurrentIndex(idx)
+        self._connect()
+
     def _on_angles_ready(self, angles: dict):
         """Signal slot: receives {dxl_id: angle} from SerialWorker, updates all displays.
 
@@ -2990,13 +3501,17 @@ class HandExoGUI(QWidget):
             id_range = LEFT_IDS if cal_side == "left" else RIGHT_IDS
             side_dxl_ids = [i for i in self._motor_dxl_id if i in id_range]
             dlg = CalibrationDialog(self.exo, side_motor_names, name, side=cal_side,
-                                    dxl_ids=side_dxl_ids, parent=self)
+                                    dxl_ids=side_dxl_ids,
+                                    serial_worker=self._serial_worker, parent=self)
         else:
             side = "left" if mode == "Left Only" else "right"
             dlg = CalibrationDialog(self.exo, self.motor_names, name, side=side,
-                                    dxl_ids=list(self._motor_dxl_id), parent=self)
+                                    dxl_ids=list(self._motor_dxl_id),
+                                    serial_worker=self._serial_worker, parent=self)
 
+        self._angle_timer.stop()
         dlg.exec_()
+        self._angle_timer.start(500)
         # CalibrationDialog disables motors. Reset the flag so the next gesture
         # call re-runs _ensure_gesture_ready() and re-enables them.
         self._gesture_ready = False
@@ -3202,13 +3717,17 @@ class HandExoGUI(QWidget):
             id_range = LEFT_IDS if cal_side == "left" else RIGHT_IDS
             side_dxl_ids = [i for i in self._motor_dxl_id if i in id_range]
             dlg = ROMDialog(self.exo, side_motor_names, participant, side=cal_side,
-                            dxl_ids=side_dxl_ids, parent=self)
+                            dxl_ids=side_dxl_ids,
+                            serial_worker=self._serial_worker, parent=self)
         else:
             side = "left" if mode == "Left Only" else "right"
             dlg = ROMDialog(self.exo, self.motor_names, participant, side=side,
-                            dxl_ids=list(self._motor_dxl_id), parent=self)
+                            dxl_ids=list(self._motor_dxl_id),
+                            serial_worker=self._serial_worker, parent=self)
 
+        self._angle_timer.stop()
         dlg.exec_()
+        self._angle_timer.start(500)
         self._log(f"ROM assessment complete for '{participant}'.")
 
         profile_name = getattr(dlg, "saved_profile_name", None)
@@ -3302,8 +3821,9 @@ class HandExoGUI(QWidget):
         on = self.exo_connected
         self.connect_btn.setEnabled(not on)
         self.disconnect_btn.setEnabled(on)
-        # Disable the mode combo while connected so the user can't change it mid-session.
+        # Lock mode and connection type while connected.
         self.mode_combo.setEnabled(not on)
+        self.conn_type_combo.setEnabled(not on)
         self.enable_all_btn.setEnabled(on)
         self.disable_all_btn.setEnabled(on)
         self.home_all_btn.setEnabled(on)

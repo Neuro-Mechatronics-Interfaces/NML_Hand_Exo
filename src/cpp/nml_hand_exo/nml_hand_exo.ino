@@ -28,6 +28,7 @@ SOFTWARE.
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
 #include "gesture_eeprom.h"
+#include "bluetooth_manager.h"
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 // #include <Adafruit_LSM6DSOX.h>
@@ -44,6 +45,10 @@ Adafruit_BNO055 bno055;  //= Adafruit_BNO055(55, 0x28)
 // Create the exo device with the motor parameters and id values
 NMLHandExo exo(MOTOR_IDS, N_MOTORS, jointLimits, HOME_STATES);
 GestureController gc(exo);  // pass exo reference
+
+// Bluetooth manager — wired to COMMAND_SERIAL (Serial3, HC-05 TX/RX).
+// Set BT_STATE_PIN / BT_EN_PIN in config.h once you wire those HC-05 pins.
+BluetoothManager bt(COMMAND_SERIAL, BT_STATE_PIN, BT_EN_PIN);
 
 
 // OLED display instance
@@ -98,6 +103,9 @@ void setup() {
   //gc.setGestureButtonCallback("pinch", GESTURE_PINCH_BUTTON_PIN); // Old button
   gc.setPinchCycleButton(GESTURE_PINCH_BUTTON_PIN);
 
+  // Start Bluetooth manager (monitors STATE pin, ready to handle bt_* commands)
+  bt.begin();
+
   // Flash LEDs to let user know system ready to go
   flashPin(STATUS_LED_PIN, 100, 4);
   debugPrint(F("Exo device ready to receive commands"));
@@ -109,7 +117,7 @@ void loop() {
     String input = DEBUG_SERIAL.readStringUntil('\n');
     input.trim();
     debugPrint("Received: " + input);
-    parseMessage(exo, gc, bno055, input);
+    parseMessage(exo, gc, bno055, bt, input);
   }
 
   // Handle data from the BLE/command connection
@@ -117,7 +125,7 @@ void loop() {
     String input = COMMAND_SERIAL.readStringUntil('\n');
     input.trim();
     debugPrint("Received: " + input);
-    parseMessage(exo, gc, bno055, input);
+    parseMessage(exo, gc, bno055, bt, input);
   }
 
   //updateIMU(bno055); //constantly updating the IMU values. Keeps position consistent
@@ -127,6 +135,9 @@ void loop() {
 
   // Check for any updates needed with the gesture controller
   gc.update();
+
+  // Poll BT STATE pin and update OLED on connect/disconnect transitions
+  bt.update();
 
   oledTick();
 

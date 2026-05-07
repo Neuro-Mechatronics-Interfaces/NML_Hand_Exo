@@ -6,6 +6,7 @@
 #include "utils.h"
 #include "oled.h"
 #include "gesture_eeprom.h"
+#include "bluetooth_manager.h"
 #include <Arduino.h>
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
@@ -209,7 +210,8 @@ int getArgMotorID(NMLHandExo& exo, const String& line, const int index) {
   return exo.getMotorID(getArg(line, index));
 }
 
-void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token) {
+void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu,
+                  BluetoothManager& bt, String token) {
 
   token.trim();        // Remove any trailing white space
   token.toLowerCase(); // Set all characters to lowercase
@@ -882,7 +884,27 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" get_imu               |                      | // Returns list of accel & gyro values"));
     commandPrint(F(" set_yaw_angle         |  ID/NAME:ANGLE       | // Set motor angle via IMU wrist angle"));
     commandPrint(F(" oled                  |  VALUE               | // Turn OLED on/off, get status"));
+    commandPrint(F(" bt_status             |                      | // Query Bluetooth connection state"));
+    commandPrint(F(" bt_configure          |  NAME[:PIN]          | // AT-configure HC-05 name and PIN"));
+    commandPrint(F(" bt_set_state_pin      |  PIN                 | // Set GPIO pin for HC-05 STATE input"));
     commandPrint(F(" =========================================================================================="));
+
+  } else if (cmd == "bt_status") {
+    commandPrint("bt_status:" + bt.getStatus());
+
+  } else if (cmd == "bt_configure") {
+    String name = getArg(token, 1);
+    String pin  = getArg(token, 2);
+    if (name.length() == 0) name = "NML_EXO";
+    if (pin.length()  == 0) pin  = "1234";
+    bool ok = bt.runATConfig(name, pin, COMMAND_BAUD_RATE);
+    commandPrint(ok ? "bt_configure:ok" : "bt_configure:error");
+
+  } else if (cmd == "bt_set_state_pin") {
+    int p = getArg(token, 1).toInt();
+    bt.setStatePin(p);
+    commandPrint("bt_set_state_pin:" + String(p));
+
   } else {
     debugPrint("Unknown command: " + token);
   }
