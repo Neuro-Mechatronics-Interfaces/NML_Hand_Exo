@@ -841,18 +841,24 @@ class HandExo(object):
                 print(f"[ERROR] Invalid response")
         return ""
 
-    def set_gesture(self, gesture: str, state: str = "default"):
+    def set_gesture(self, gesture: str, state: str = "default",
+                    side: str | None = None):
         """
         Sets the gesture for the exoskeleton.
 
         Args:
-            gesture (str): Desired gesture (e.g., "open", "close", "pinch").
+            gesture (str): Desired gesture (e.g., "grasp", "pinch_index").
+            state (str): Gesture state (e.g., "open", "close").
+            side (str or None): "left", "right", or None (default) to command both sides.
 
         Returns:
             None
 
         """
-        self.send_command(f"set_gesture:{gesture}:{state}")
+        if side:
+            self.send_command(f"set_gesture:{gesture}:{state}:{side}")
+        else:
+            self.send_command(f"set_gesture:{gesture}:{state}")
 
     def set_gesture_state(self, state: str):
         """
@@ -1055,30 +1061,76 @@ class HandExo(object):
     # Gesture calibration EEPROM commands
     # -------------------------------------------------------------------------
 
-    # Default gesture fractions used when a profile has no "gestures" section.
-    # Outer key = gesture name, inner key = state name, value = {joint: fraction}.
+    # Default gesture fractions — Python mirror of gestureLibrary in gesture_library.cpp.
+    # Layout: gesture → state → joint → fraction [0.0=open/home, 1.0=fully closed/flexed].
+    # Joint order matches EEPROM canonical order (eeprom_schema.md): wrist, wrist2,
+    # thumbadd, thumbflex, thumbrot, index, middle, ring, pinky.
+    # Verify against gesture_library.cpp before bumping GESTURE_EEPROM_MAGIC.
     _DEFAULT_GESTURE_FRACTIONS: dict = {
-        "grasp":       {"open": {j: 0.0 for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
-                        "close":{j: (0.0 if j in ("wrist","wrist2") else 1.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
-        "keygrip":     {"open": {j: (1.0 if j in ("index","middle","ring","pinky") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
-                        "close":{j: (1.0 if j in ("thumbadd","thumbflex","index","middle","ring","pinky") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
-        "pinch_index": {"open": {j: 0.0 for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
-                        "close":{j: (1.0 if j in ("thumbadd","thumbflex","thumbrot","index") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
-        "pinch_middle":{"open": {j: 0.0 for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
-                        "close":{j: (1.0 if j in ("thumbadd","thumbflex","thumbrot","middle") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
-        "pinch_ring":  {"open": {j: 0.0 for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
-                        "close":{j: (1.0 if j in ("thumbadd","thumbflex","thumbrot","ring") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
-        "peace":       {"open": {j: 0.0 for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")},
-                        "close":{j: (1.0 if j in ("thumbadd","thumbflex","thumbrot","ring","pinky") else 0.0) for j in ("wrist","wrist2","thumbadd","thumbflex","thumbrot","index","middle","ring","pinky")}},
+        # ── grasp ─────────────────────────────────────────────────────────────
+        # All fingers + thumb close fully; wrists stay at home.
+        "grasp": {
+            "open":  {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 0.0, "thumbflex": 0.0, "thumbrot": 0.0,
+                      "index": 0.0, "middle": 0.0, "ring": 0.0, "pinky": 0.0},
+            "close": {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 1.0, "thumbflex": 1.0, "thumbrot": 1.0,
+                      "index": 1.0, "middle": 1.0, "ring": 1.0, "pinky": 1.0},
+        },
+        # ── keygrip ───────────────────────────────────────────────────────────
+        # Fingers held extended (1.0 open); thumb closes on open, full close = all thumb+fingers.
+        # thumbrot stays at 0 (side pinch orientation, not opposition).
+        "keygrip": {
+            "open":  {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 0.0, "thumbflex": 0.0, "thumbrot": 0.0,
+                      "index": 1.0, "middle": 1.0, "ring": 1.0, "pinky": 1.0},
+            "close": {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 1.0, "thumbflex": 1.0, "thumbrot": 0.0,
+                      "index": 1.0, "middle": 1.0, "ring": 1.0, "pinky": 1.0},
+        },
+        # ── pinch_index ───────────────────────────────────────────────────────
+        # Index + full thumb opposition close; other fingers stay open.
+        "pinch_index": {
+            "open":  {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 0.0, "thumbflex": 0.0, "thumbrot": 0.0,
+                      "index": 0.0, "middle": 0.0, "ring": 0.0, "pinky": 0.0},
+            "close": {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 1.0, "thumbflex": 1.0, "thumbrot": 1.0,
+                      "index": 1.0, "middle": 0.0, "ring": 0.0, "pinky": 0.0},
+        },
+        # ── pinch_middle ──────────────────────────────────────────────────────
+        # Middle + full thumb opposition close; index, ring, pinky stay open.
+        "pinch_middle": {
+            "open":  {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 0.0, "thumbflex": 0.0, "thumbrot": 0.0,
+                      "index": 0.0, "middle": 0.0, "ring": 0.0, "pinky": 0.0},
+            "close": {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 1.0, "thumbflex": 1.0, "thumbrot": 1.0,
+                      "index": 0.0, "middle": 1.0, "ring": 0.0, "pinky": 0.0},
+        },
+        # ── pinch_ring ────────────────────────────────────────────────────────
+        # Ring + full thumb opposition close; index, middle, pinky stay open.
+        "pinch_ring": {
+            "open":  {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 0.0, "thumbflex": 0.0, "thumbrot": 0.0,
+                      "index": 0.0, "middle": 0.0, "ring": 0.0, "pinky": 0.0},
+            "close": {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 1.0, "thumbflex": 1.0, "thumbrot": 1.0,
+                      "index": 0.0, "middle": 0.0, "ring": 1.0, "pinky": 0.0},
+        },
+        # ── peace ─────────────────────────────────────────────────────────────
+        # Index + middle extended; ring, pinky + thumb close.
+        "peace": {
+            "open":  {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 0.0, "thumbflex": 0.0, "thumbrot": 0.0,
+                      "index": 0.0, "middle": 0.0, "ring": 0.0, "pinky": 0.0},
+            "close": {"wrist": 0.0, "wrist2": 0.0, "thumbadd": 1.0, "thumbflex": 1.0, "thumbrot": 1.0,
+                      "index": 0.0, "middle": 0.0, "ring": 1.0, "pinky": 1.0},
+        },
     }
 
     def set_gesture_cal_value(self, gesture: str, state: str, joint: str,
-                               value: float) -> None:
+                               value: float, side: str | None = None) -> None:
         """Update one [0-1] fraction in the firmware's live gestureLibrary.
+
+        Args:
+            side: "left", "right", or None (default) to update both sides.
 
         Does NOT write to EEPROM; call save_gesture_cal() afterward to persist.
         """
-        self.send_command(f"set_gesture_cal:{gesture}:{state}:{joint}:{value:.4f}")
+        if side:
+            self.send_command(f"set_gesture_cal:{gesture}:{state}:{joint}:{value:.4f}:{side}")
+        else:
+            self.send_command(f"set_gesture_cal:{gesture}:{state}:{joint}:{value:.4f}")
 
     def save_gesture_cal(self) -> None:
         """Persist the current gestureLibrary fractions and cal name to EEPROM."""
@@ -1105,8 +1157,16 @@ class HandExo(object):
 
     def flash_calibration_to_firmware(self, profile_name: str,
                                        profiles_dir: str | None = None,
-                                       name_to_id: dict | None = None) -> None:
+                                       name_to_id: dict | None = None,
+                                       side: str | None = None) -> None:
         """Apply calibration profile to firmware and persist to EEPROM.
+
+        Args:
+            profile_name: Name of the calibration profile (JSON file stem).
+            profiles_dir: Directory containing profile JSONs (default: repo profiles/).
+            name_to_id: Motor name → Dynamixel ID mapping for dual firmware.
+            side: "left", "right", or None (default) to flash both sides.
+                  Use when left and right profiles have different gesture fractions.
 
         Steps:
           1. apply_calibration() — pushes per-motor home / limits / flip
@@ -1136,7 +1196,8 @@ class HandExo(object):
         for gesture, states in fractions.items():
             for state, joints in states.items():
                 for joint, value in joints.items():
-                    self.set_gesture_cal_value(gesture, state, joint, float(value))
+                    self.set_gesture_cal_value(gesture, state, joint, float(value),
+                                               side=side)
 
         self.set_cal_name(profile_name)
         self.save_gesture_cal()

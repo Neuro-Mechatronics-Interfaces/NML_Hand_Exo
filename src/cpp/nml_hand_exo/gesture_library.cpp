@@ -54,11 +54,21 @@ void resolveStateAngles(const GestureState& state,
     }
 }
 
-// ====== Library contents ======
-// Note: "pinch"/"keygrip" left as absolute dense to avoid breaking existing logic.
-// You can convert them to relative later if you want.
+void gestureLibraryInit() {
+#if N_HAND_SIDES > 1
+    for (int g = 0; g < N_GESTURES; ++g) {
+        gestureLibrary[1][g] = gestureLibrary[0][g];
+    }
+#endif
+}
 
-GestureMap gestureLibrary[N_GESTURES] = {
+// ====== Library contents ======
+// Side 0 is initialised statically below.  Side 1 (right, dual mode only) is
+// a runtime copy of side 0 produced by gestureLibraryInit() in setup(), and
+// then overwritten by gestureCalLoadFromEEPROM() if EEPROM data is present.
+
+GestureMap gestureLibrary[N_HAND_SIDES][N_GESTURES] = {
+  {  // [0] = left side (or the only side in single-exo mode)
 
     // --- GRASP: (relative + sparse, normalized 0.0–1.0) ---
     // Values are fraction of calibrated range: 0.0 = home/open, 1.0 = fully closed
@@ -246,4 +256,7 @@ GestureMap gestureLibrary[N_GESTURES] = {
           }, 9 }
       }, 2
     },
+  }
+  // [1] = right side — zero-initialised here; gestureLibraryInit() copies
+  // side 0 at runtime so both sides start with identical defaults.
 };

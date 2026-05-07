@@ -23,7 +23,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTextEdit, QGridLayout, QMessageBox, QGroupBox, QComboBox,
     QDialog, QInputDialog, QScrollArea, QFrame, QSizePolicy, QSpacerItem,
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QSpinBox,
+    QSpinBox, QProgressDialog,
 )
 from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QFontMetrics
@@ -1262,8 +1262,12 @@ class SerialWorker(QThread):
         self._cmd_q.put(("telem", None))
 
     def enqueue(self, cmd: str):
-        """Queue a user-initiated command at high priority."""
+        """Queue a user-initiated command at high priority; response lines go to line_received."""
         self._urgent_q.put(("log", cmd))
+
+    def enqueue_fire(self, cmd: str):
+        """Queue a fire-and-forget command at high priority (no firmware response expected)."""
+        self._urgent_q.put(("fire", cmd))
 
     def stop(self):
         self._run = False
@@ -1291,6 +1295,8 @@ class SerialWorker(QThread):
                     self._handle_telem()
                 elif tag == "log":
                     self._handle_log(cmd)
+                elif tag == "fire":
+                    self._handle_fire(cmd)
             except Exception as e:
                 self.line_received.emit(f"[worker] {type(e).__name__}: {e}")
 
@@ -1331,6 +1337,16 @@ class SerialWorker(QThread):
                     self.line_received.emit(ln)
         else:
             self.line_received.emit(f"[cmd] no response for: {cmd}")
+
+    def _handle_fire(self, cmd: str):
+        """Send a command that has no firmware response (e.g. set_gesture)."""
+        delim = self._exo.command_delimiter
+        full  = cmd if cmd.endswith(delim) else cmd + delim
+        try:
+            self._exo.device.device.reset_input_buffer()
+        except AttributeError:
+            pass
+        self._exo.device.send(full)
 
     # ------------------------------------------------------------------ serial primitives
 
@@ -1919,6 +1935,15 @@ class HandExoGUI(QWidget):
         elif choice == "Reboot Motors":
             self._serial_worker.enqueue("reboot:all")
             self._log("[cmd] → reboot:all")
+        elif choice == "Reset Firmware Cal":
+            reply = QMessageBox.question(
+                self, "Reset Firmware Calibration",
+                "Reset all gesture fractions to factory defaults (profile: 'nml') "
+                "and save to EEPROM?\n\nThis does not change motor home/limits.",
+                QMessageBox.Yes | QMessageBox.Cancel,
+            )
+            if reply == QMessageBox.Yes:
+                self._flash_gesture_cal_to_firmware("nml", use_defaults=True)
         elif choice == "Send Raw":
             raw   = self.raw_cmd_input.text()
             clean = raw.rstrip(';\r\n').strip()
@@ -2357,7 +2382,7 @@ class HandExoGUI(QWidget):
                     self._ensure_gesture_ready()
                 cmd = f"set_gesture:{gesture}:{state}"
                 self._log(f"[Gesture] target={target}  cmd={cmd}")
-                self.exo.send_command(cmd)
+                self._serial_worker.enqueue_fire(cmd)
                 self._log(f"Gesture: {gesture} -> {state}")
             except Exception as e:
                 self._log(f"Gesture error: {e}")
@@ -2523,7 +2548,7 @@ class HandExoGUI(QWidget):
         # Quick-command row: dropdown + optional raw input + Send button.
         cmd_row = QHBoxLayout()
         self.quick_cmd_combo = QComboBox()
-        self.quick_cmd_combo.addItems(["List Commands", "Reboot Motors", "Send Raw"])
+        self.quick_cmd_combo.addItems(["List Commands", "Reboot Motors", "Reset Firmware Cal", "Send Raw"])
         self.quick_cmd_combo.currentTextChanged.connect(self._on_quick_cmd_changed)
         cmd_row.addWidget(self.quick_cmd_combo)
         self.raw_cmd_input = QLineEdit()
@@ -3054,9 +3079,104 @@ class HandExoGUI(QWidget):
                                            name_to_id=self._make_name_to_id())
                 self._set_active_profile(name, load_profile(name))
             self._log(f"Applied calibration profile: {name}")
+            # Offer to persist gesture fractions to firmware EEPROM.
+            reply = QMessageBox.question(
+                self, "Flash to Firmware",
+                f"Also flash gesture calibration for '{name}' to firmware EEPROM?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if reply == QMessageBox.Yes:
+                flash_side = cal_side if mode == "Dual" else None
+                self._flash_gesture_cal_to_firmware(name, side=flash_side)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to apply profile:\n{e}")
             self._log(f"Apply profile error: {e}")
+
+    def _flash_gesture_cal_to_firmware(self, profile_name: str,
+                                        side: str | None = None,
+                                        use_defaults: bool = False):
+        """Enqueue gesture-cal commands and show a progress dialog until EEPROM save completes.
+
+        Sends set_gesture_cal (fire-and-forget) for each fraction, then
+        set_cal_name and save_gesture_cal via the normal enqueue so the
+        firmware's acknowledgement response is received and used to close
+        the dialog.  A 15 s QTimer closes the dialog as a safety fallback.
+        """
+        if not self.exo_connected or self._serial_worker is None:
+            return
+
+        import json, os
+
+        # Resolve gesture fractions: profile "gestures" section, or class defaults.
+        fractions = HandExo._DEFAULT_GESTURE_FRACTIONS
+        if not use_defaults:
+            filepath = os.path.join(PROFILES_DIR, f"{profile_name}.json")
+            if os.path.exists(filepath):
+                with open(filepath) as f:
+                    gestures_data = json.load(f).get("gestures", {})
+                if gestures_data:
+                    fractions = gestures_data
+
+        side_suffix = f":{side}" if side else ""
+
+        # Enqueue all set_gesture_cal as fire-and-forget (no response needed per command).
+        n = 0
+        for gesture, states in fractions.items():
+            for state, joints in states.items():
+                for joint, value in joints.items():
+                    cmd = f"set_gesture_cal:{gesture}:{state}:{joint}:{float(value):.4f}{side_suffix}"
+                    self._serial_worker.enqueue_fire(cmd)
+                    n += 1
+
+        # set_cal_name also fire-and-forget.
+        self._serial_worker.enqueue_fire(f"set_cal_name:{profile_name}")
+
+        # save_gesture_cal goes through the normal queue so we read the firmware response.
+        self._serial_worker.enqueue("save_gesture_cal")
+        self._log(f"[flash] Flashing {n} gesture fractions (profile='{profile_name}'"
+                  + (f", side={side}" if side else "") + ") …")
+
+        # --- Progress dialog --------------------------------------------------
+        dlg = QProgressDialog(
+            f"Flashing gesture calibration to firmware…\n"
+            f"Profile: {profile_name}" + (f"  Side: {side}" if side else ""),
+            None, 0, 0, self,
+        )
+        dlg.setWindowTitle("Flashing Firmware")
+        dlg.setWindowModality(Qt.WindowModal)
+        dlg.setCancelButton(None)
+        dlg.setMinimumWidth(380)
+        dlg.show()
+
+        # Fallback: auto-close after 15 s in case firmware never responds.
+        timeout = QTimer(self)
+        timeout.setSingleShot(True)
+        timeout.setInterval(15_000)
+
+        def _finish(line: str = ""):
+            if not dlg.isVisible():
+                return
+            timeout.stop()
+            try:
+                self._serial_worker.line_received.disconnect(_on_line)
+            except Exception:
+                pass
+            dlg.close()
+            if "saved" in line.lower():
+                self._log(f"[flash] Firmware EEPROM save confirmed: {line.strip()}")
+            elif line:
+                self._log(f"[flash] Firmware responded: {line.strip()}")
+            else:
+                self._log("[flash] Timed out waiting for firmware acknowledgement.")
+
+        def _on_line(line: str):
+            if "Gesture calibration saved" in line or \
+               ("save_gesture_cal" in line.lower() and "[error]" in line.lower()):
+                _finish(line)
+
+        self._serial_worker.line_received.connect(_on_line)
+        timeout.timeout.connect(_finish)
+        timeout.start()
 
     def _run_rom(self):
         if not self.exo_connected:

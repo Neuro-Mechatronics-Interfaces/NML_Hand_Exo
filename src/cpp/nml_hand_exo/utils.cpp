@@ -672,15 +672,21 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       String out = "Gestures:\n";
       for (int i = 0; i < N_GESTURES; ++i) {
         out += "  - ";
-        out += gestureLibrary[i].name;
+        out += gestureLibrary[0][i].name;
         out += "\n";
       }
       commandPrint(out);
 
-  } else if (cmd == "set_gesture") { 
+  } else if (cmd == "set_gesture") {
+    // set_gesture:<gesture>:<state>[:<side>]
+    // <side> is optional: "left", "right", or omitted/empty = both sides.
     String gestureStr = getArg(token, 1);
-    String stateStr = getArg(token, 2);
-    gc.executeGesture(gestureStr, stateStr);
+    String stateStr   = getArg(token, 2);
+    String sideStr    = getArg(token, 3);
+    uint8_t sideIdx = GESTURE_SIDE_ALL;
+    if (sideStr.equalsIgnoreCase("left"))       sideIdx = 0;
+    else if (sideStr.equalsIgnoreCase("right")) sideIdx = 1;
+    gc.executeGesture(gestureStr, stateStr, sideIdx);
 
   } else if (cmd == "cycle_gesture") {
     debugPrint(F("[GestureController] cycle gesture button pressed"));
@@ -752,14 +758,19 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     }
 
   } else if (cmd == "set_gesture_cal") {
-    // set_gesture_cal:<gesture>:<state>:<joint>:<value>
+    // set_gesture_cal:<gesture>:<state>:<joint>:<value>[:<side>]
+    // <side> is optional: "left", "right", or omitted/empty = both sides.
     // Updates a single named-pair [0-1] fraction in the live gestureLibrary.
     // Does NOT write to EEPROM; follow up with save_gesture_cal to persist.
     String gestureArg = getArg(token, 1);
     String stateArg   = getArg(token, 2);
     String jointArg   = getArg(token, 3);
     float  valArg     = getArg(token, 4).toFloat();
-    if (gestureCalSetValue(gestureArg, stateArg, jointArg, valArg)) {
+    String sideArg    = getArg(token, 5);
+    uint8_t sideIdx = GESTURE_SIDE_ALL;
+    if (sideArg.equalsIgnoreCase("left"))       sideIdx = 0;
+    else if (sideArg.equalsIgnoreCase("right")) sideIdx = 1;
+    if (gestureCalSetValue(gestureArg, stateArg, jointArg, valArg, sideIdx)) {
         commandPrint("OK: set_gesture_cal " + gestureArg + ":" + stateArg + ":" + jointArg + " = " + String(valArg, 4));
     } else {
         commandPrint("[Error] set_gesture_cal: gesture/state/joint not found");
@@ -853,7 +864,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" get_exo_mode          |                      | // Get exo device operation mode"));
     commandPrint(F(" set_exo_mode          |  VALUE               | // Set exo device operation mode (FREE', 'GESTURE_FIXED', 'GESTURE_CONTINUOUS')"));
     commandPrint(F(" gesture_list          |                      | // Get gestures in library"));
-    commandPrint(F(" set_gesture           |  NAME:VALUE          | // Set exo gesture"));
+    commandPrint(F(" set_gesture           |  G:STATE[:SIDE]      | // Set exo gesture; SIDE=left|right|omit=both"));
     commandPrint(F(" get_gesture           |                      | // Get exo gesture"));
     commandPrint(F(" set_gesture_state     |  NAME:VALUE          | // Set exo gesture state"));
     commandPrint(F(" get_gesture_state     |                      | // Get exo gesture state"));
@@ -863,7 +874,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_flip              |  ID/NAME:0/1         | // Set motor direction flip (1=inverted, 0=normal)"));
     commandPrint(F(" get_flip              |  ID/NAME/ALL         | // Get motor direction flip status"));
     commandPrint(F(" calibrate_exo         |  VALUE:VALUE         | // start the calibration routine for the exo"));
-    commandPrint(F(" set_gesture_cal       |  G:STATE:JOINT:VAL   | // Set [0-1] fraction for a named joint in a gesture state"));
+    commandPrint(F(" set_gesture_cal       |  G:STATE:JOINT:VAL[:SIDE] | // Set [0-1] fraction; SIDE=left|right|omit=both"));
     commandPrint(F(" save_gesture_cal      |                      | // Persist current gesture fractions + cal name to EEPROM"));
     commandPrint(F(" load_gesture_cal      |                      | // Reload gesture fractions + cal name from EEPROM"));
     commandPrint(F(" set_cal_name          |  NAME                | // Set active calibration profile name (no EEPROM write)"));

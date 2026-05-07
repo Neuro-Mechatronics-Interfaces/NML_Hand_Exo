@@ -35,18 +35,24 @@ struct GestureMap {
     int numStates;
 };
 
-/// @brief Number of gestures defined in the library.
-extern GestureMap gestureLibrary[N_GESTURES];
+/// @brief Gesture library indexed [side][gesture].
+/// Side 0 = left (or the only side in single-exo mode), side 1 = right (dual only).
+/// gestureLibraryInit() must be called from setup() to copy side-0 defaults to side-1.
+extern GestureMap gestureLibrary[N_HAND_SIDES][N_GESTURES];
 
 int jointIndexByName(const char* jointName);
 void resolveStateAngles(const GestureState& state,
                         const float* homeAngles,   // length N_MOTORS
                         float* outAngles);         // length N_MOTORS
-                        
-/// @brief Helper function to find the index of a gesture by name.
+
+/// @brief Copy side-0 defaults into side-1 at runtime (dual mode only).
+/// Call once from setup() before gestureCalLoadFromEEPROM().
+void gestureLibraryInit();
+
+/// @brief Find a gesture index by name (searches side 0; all sides share the same names).
 inline int findGestureIndex(const String& gestureName) {
     for (int i = 0; i < N_GESTURES; i++) {
-        if (gestureName.equalsIgnoreCase(gestureLibrary[i].name)) {
+        if (gestureName.equalsIgnoreCase(gestureLibrary[0][i].name)) {
             return i;
         }
     }

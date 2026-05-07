@@ -28,10 +28,11 @@ SOFTWARE.
 #include "nml_hand_exo.h"
 #include "gesture_controller.h"
 #include "gesture_eeprom.h"
-//#include <Adafruit_ISM330DHCX.h>
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
+// #include <Adafruit_LSM6DSOX.h>
 #include <Adafruit_BNO055.h>
+#include <Adafruit_SSD1306.h>
 
 // Create IMU device (The Adafruit_BNO055 library can be downloaded from Arduino's Library Manager)
 Adafruit_BNO055 bno055;  //= Adafruit_BNO055(55, 0x28)
@@ -60,7 +61,7 @@ void setup() {
   COMMAND_SERIAL.begin(COMMAND_BAUD_RATE);     // (Optional) Establish port with TX/RX pins for incomming serial data/commands
 
   // Setup IMU
-  initializeIMU(ism330dhcx);
+  // initializeIMU(ism330dhcx);
   initializeIMU(bno055);
 
   // Setup OLED with startup animation
@@ -74,6 +75,9 @@ void setup() {
   exo.initializeMotors();       // Initialize motors and set them to "current position" mode
   // exo.resetAllZeros();       // (Optional) Defines the current position of the motors as the home position
   exo.setMotorNames(MOTOR_NAMES);
+
+  // Copy side-0 gesture defaults into side-1 (dual mode) before EEPROM load.
+  gestureLibraryInit();
 
   // Load gesture calibration (fractions + profile name) from EEPROM if available.
   // Falls back silently to compile-time defaults on first boot or if EEPROM is blank.

@@ -30,14 +30,17 @@ GestureController::GestureController(NMLHandExo& exo)
     lastCycleGestureButtonState(HIGH),
     lastGestureStateButtonState(HIGH),
     cycleGestureButtonState(HIGH),
-    gestureStateButtonState(HIGH) 
+    gestureStateButtonState(HIGH)
 {
-    currentGesture_ = gestureLibrary[0].name;
-    currentGestureState_ = gestureLibrary[0].states[0].name;
+    for (uint8_t si = 0; si < N_HAND_SIDES; ++si) {
+        currentGesture_[si]      = gestureLibrary[0][0].name;
+        currentGestureState_[si] = gestureLibrary[0][0].states[0].name;
+    }
     numGestures_ = N_GESTURES;
 }
 
-void GestureController::executeGesture(const String& gesture, const String& state) {
+void GestureController::executeGesture(const String& gesture, const String& state,
+                                       uint8_t side) {
 
   int gIdx = findGestureIndex(gesture);
   if (gIdx == -1) {
@@ -45,73 +48,69 @@ void GestureController::executeGesture(const String& gesture, const String& stat
     return;
   }
 
-  int sIdx = findStateIndex(gestureLibrary[gIdx], state);
+  // Use side 0 for state-name lookup (structure is identical across all sides).
+  int sIdx = findStateIndex(gestureLibrary[0][gIdx], state);
   if (sIdx == -1) {
     debugPrint("[GestureController] Unknown state: " + state + " for gesture " + gesture);
     return;
   }
 
-  const GestureState& st = gestureLibrary[gIdx].states[sIdx];
-
-  // Build home baseline in *index order*
-  float home[N_MOTORS];
+  // For each motor, determine its side, skip if not targeted, then look up
+  // the per-side fraction and compute the absolute target angle.
   for (int i = 0; i < exo_.getMotorCount(); ++i) {
     uint8_t id = exo_.getMotorIDByIndex(i);
-    home[i] = exo_.getZeroAngle(id);
-  }
 
-  // Resolve this state into absolute angles.
-  // Gesture values are normalized 0.0–1.0 (fraction of motor range).
-  float absAngles[N_MOTORS];
-  resolveStateAngles(gestureLibrary[gIdx].states[sIdx], home, absAngles);
+    // Side 0 = left (IDs 1-9), side 1 = right (IDs 11-19).
+    // In single-exo builds N_HAND_SIDES == 1 so motorSide is always 0.
+    uint8_t motorSide = (N_HAND_SIDES > 1 && id > 9) ? 1 : 0;
+    if (side != GESTURE_SIDE_ALL && motorSide != side) continue;
 
-  if (st.isRelative) {
-    // Scale normalized offsets by each motor's calibrated range,
-    // then apply flip direction.
-    for (int i = 0; i < exo_.getMotorCount(); ++i) {
-      uint8_t id = exo_.getMotorIDByIndex(i);
-      float fraction = absAngles[i] - home[i];  // 0.0–1.0 from resolveStateAngles
-      float range = exo_.getMotorLimitMax(id) - exo_.getMotorLimitMin(id);
-      if (exo_.isMotorFlipped(id)) {
-        absAngles[i] = home[i] - fraction * range;
-      } else {
-        absAngles[i] = home[i] + fraction * range;
+    const GestureState& st = gestureLibrary[motorSide][gIdx].states[sIdx];
+
+    float fraction = 0.0f;
+    if (st.isSparse) {
+      // Match by motor name (MOTOR_NAMES[] index == loop index in dual mode).
+      String motorName = String(MOTOR_NAMES[i]);
+      motorName.toLowerCase();
+      for (uint8_t k = 0; k < st.nPairs; ++k) {
+        if (st.namedPairs[k].joint &&
+            String(st.namedPairs[k].joint).equalsIgnoreCase(motorName)) {
+          fraction = st.namedPairs[k].value;
+          break;
+        }
       }
+    } else {
+      fraction = st.jointAngles[i];
     }
+
+    float home = exo_.getZeroAngle(id);
+    float absAngle;
+    if (st.isRelative) {
+      float range = exo_.getMotorLimitMax(id) - exo_.getMotorLimitMin(id);
+      absAngle = exo_.isMotorFlipped(id)
+                 ? home - fraction * range
+                 : home + fraction * range;
+    } else {
+      absAngle = fraction;
+    }
+
+    debugPrint("[GestureController] motor " + String(id) +
+               " (side " + String(motorSide) + ") -> abs " + String(absAngle, 2));
+    exo_.setAbsoluteAngle(id, absAngle);
   }
 
-  // Command absolute targets
-  for (int i = 0; i < exo_.getMotorCount(); ++i) {
-    uint8_t id = exo_.getMotorIDByIndex(i);
-    debugPrint("[GestureController] motor " + String(id) + " -> abs " + String(absAngles[i], 2));
-    exo_.setAbsoluteAngle(id, absAngles[i]);
+  // Update per-side gesture tracking for the affected sides.
+  uint8_t startSide = (side == GESTURE_SIDE_ALL) ? 0              : side;
+  uint8_t endSide   = (side == GESTURE_SIDE_ALL) ? N_HAND_SIDES   : side + 1;
+  for (uint8_t si = startSide; si < endSide; ++si) {
+    currentGesture_[si]      = gesture;
+    currentGestureState_[si] = state;
   }
 
-  // float* angles = gestureLibrary[gIdx].states[sIdx].jointAngles;
-  // const GestureState& st = gestureLibrary[gIdx].states[sIdx];
-  // for (int i = 0; i < exo_.getMotorCount(); i++) {
-  //   uint8_t id = exo_.getMotorIDByIndex(i);  // ID from index
-  //   float rel = angles[i];
-  //   float abs_preview = exo_.getZeroAngle(id) + rel;
-  //   char buffer[96];
-  //   snprintf(buffer, sizeof(buffer), "[GestureController] motor %d: %s %.2f deg (abs preview %.2f)",
-  //         i, st.isRelative ? "relative" : "absolute", rel, abs_preview);
-  //   debugPrint(buffer);
-
-  //   // If your gesture values are relative, send as relative for clearer logs:
-  //   if (st.isRelative) {
-  //     exo_.setRelativeAngle(id, rel);
-  //   } else {
-  //     exo_.setAbsoluteAngle(id, rel);
-  //   }
-  // }
-
-  currentGesture_ = gesture;
-  currentGestureState_ = state;
   debugPrint("[GestureController] Executed gesture: " + gesture + ", state: " + state);
 
-  // OLED: reflect the new state
-  oledSetState(mapGestureStateToExoState(currentGesture_, currentGestureState_));
+  // OLED: reflect the left/only-side state.
+  oledSetState(mapGestureStateToExoState(currentGesture_[0], currentGestureState_[0]));
 }
 void GestureController::executeCurrentGestureNewState(const String& state) {
   // Get the current gesture
@@ -125,7 +124,7 @@ void GestureController::executeCurrentGestureNewState(const String& state) {
   }
 
   // Check if the state exists for the gesture
-  int sIdx = findStateIndex(gestureLibrary[gIdx], state);
+  int sIdx = findStateIndex(gestureLibrary[0][gIdx], state);
   if (sIdx == -1) {
     debugPrint("[GestureController] Error: State '" + state + "' not found for gesture '" + gesture + "'.");
     return;
@@ -249,8 +248,8 @@ bool GestureController::checkPinchCycleButtonPressed() {
 }
 void GestureController::cycleGesture() {
     // Cycle through the gestures
-    debugPrint("Current gesture: " + currentGesture_);
-    int gIdx = findGestureIndex(currentGesture_);
+    debugPrint("Current gesture: " + currentGesture_[0]);
+    int gIdx = findGestureIndex(currentGesture_[0]);
     if (gIdx == -1) {
         debugPrint(F("[GestureController] Error: current gesture not found."));
         return;
@@ -261,42 +260,45 @@ void GestureController::cycleGesture() {
         debugPrint(F("[GestureController] Wrapped back to first gesture."));
     }
 
-    currentGesture_ = gestureLibrary[newIdx].name;
+    for (uint8_t si = 0; si < N_HAND_SIDES; ++si)
+        currentGesture_[si] = gestureLibrary[0][newIdx].name;
 
-    if (gestureLibrary[newIdx].numStates > 0) {
-      currentGestureState_ = gestureLibrary[newIdx].states[0].name;
-      debugPrint("[GestureController] Cycling gesture to: '" + currentGesture_ +"' (index: " + String(newIdx) + "), state: '" + currentGestureState_ + "'");
-      executeGesture(currentGesture_, currentGestureState_);
+    if (gestureLibrary[0][newIdx].numStates > 0) {
+      for (uint8_t si = 0; si < N_HAND_SIDES; ++si)
+          currentGestureState_[si] = gestureLibrary[0][newIdx].states[0].name;
+      debugPrint("[GestureController] Cycling gesture to: '" + currentGesture_[0] +"' (index: " + String(newIdx) + "), state: '" + currentGestureState_[0] + "'");
+      executeGesture(currentGesture_[0], currentGestureState_[0]);
     } else {
-      debugPrint("[GestureController] Gesture " + currentGesture_ + " has no states.");
+      debugPrint("[GestureController] Gesture " + currentGesture_[0] + " has no states.");
     }
 }
 String GestureController::getCurrentGesture() {
-    return currentGesture_;
+    return currentGesture_[0];
 }
 String GestureController::getCurrentGestureState() {
-    return currentGestureState_;
+    return currentGestureState_[0];
 }
 void GestureController::cycleGestureState() {
     // Cycle through the states of the current gesture
-    int gIdx = findGestureIndex(currentGesture_);
+    int gIdx = findGestureIndex(currentGesture_[0]);
     if (gIdx == -1) {
         debugPrint(F("[GestureController] Error: current gesture not found."));
         return;
-    }    
+    }
     debugPrint("Gesture index: " + String(gIdx));
-    int currentStateIdx = findStateIndex(gestureLibrary[gIdx], currentGestureState_);
+    int currentStateIdx = findStateIndex(gestureLibrary[0][gIdx], currentGestureState_[0]);
     if (currentStateIdx == -1) {
-        debugPrint("[GestureController] Error: state not found for gesture: " + currentGesture_);
+        debugPrint("[GestureController] Error: state not found for gesture: " + currentGesture_[0]);
+
         return;
     }
 
-    int nextStateIdx = (currentStateIdx + 1) % gestureLibrary[gIdx].numStates;
-    String newState = gestureLibrary[gIdx].states[nextStateIdx].name;
+    int nextStateIdx = (currentStateIdx + 1) % gestureLibrary[0][gIdx].numStates;
+    String newState = gestureLibrary[0][gIdx].states[nextStateIdx].name;
 
     debugPrint("[GestureController] Cycling state to: " + newState +
                " (index: " + String(nextStateIdx) + ")");
-    executeGesture(currentGesture_, newState);
+    executeGesture(currentGesture_[0], newState);
 }
 void GestureController::update() {
     // Check if the gesture state button was pressed
@@ -335,11 +337,12 @@ void GestureController::update() {
     if (checkPinchCycleButtonPressed()) {
         activePinchIdx_ = (activePinchIdx_ + 1) % 3;  // index->middle->ring->index
         const char* names[3] = { "pinch_index", "pinch_middle", "pinch_ring" };
-        currentGesture_ = names[activePinchIdx_];
+        for (uint8_t si = 0; si < N_HAND_SIDES; ++si)
+            currentGesture_[si] = names[activePinchIdx_];
         flashPin(STATUS_LED_PIN, 100, activePinchIdx_ + 1);
-        debugPrint("[GestureController] Gesture button pressed for: " + gb.gestureName + ", specific: " + currentGesture_);
+        debugPrint("[GestureController] Gesture button pressed for: " + gb.gestureName + ", specific: " + currentGesture_[0]);
         // re-apply current state so posture updates immediately
-        executeGesture(currentGesture_, currentGestureState_);
+        executeGesture(currentGesture_[0], currentGestureState_[0]);
     }
 
 
@@ -351,10 +354,12 @@ void GestureController::update() {
                 debugPrint("[GestureController] Gesture button pressed for: " + gb.gestureName);
 
                 int gIdx = findGestureIndex(gb.gestureName);
-                if (gIdx != -1 && gestureLibrary[gIdx].numStates > 0) {
-                    currentGesture_ = gestureLibrary[gIdx].name;
-                    currentGestureState_ = gestureLibrary[gIdx].states[0].name;
-                    executeGesture(currentGesture_, currentGestureState_);
+                if (gIdx != -1 && gestureLibrary[0][gIdx].numStates > 0) {
+                    for (uint8_t si = 0; si < N_HAND_SIDES; ++si) {
+                        currentGesture_[si]      = gestureLibrary[0][gIdx].name;
+                        currentGestureState_[si] = gestureLibrary[0][gIdx].states[0].name;
+                    }
+                    executeGesture(currentGesture_[0], currentGestureState_[0]);
                 }
             }
         }

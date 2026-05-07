@@ -28,8 +28,10 @@ public:
 
     /// @brief Execute a predefined gesture with a specific state
     /// @param gesture Name of the gesture to execute (e.g. "pinch")
-    /// @param state State of the gesture (e.g., "a")
-    void executeGesture(const String& gesture, const String& state);
+    /// @param state State of the gesture (e.g., "open", "close")
+    /// @param side 0=left, 1=right, GESTURE_SIDE_ALL (0xFF)=both (default)
+    void executeGesture(const String& gesture, const String& state,
+                        uint8_t side = GESTURE_SIDE_ALL);
 
     /// @brief Execute a predefined state with the current gesture
     /// @param state State of the gesture (e.g., "a")
@@ -89,11 +91,11 @@ private:
     /// @brief Pointer to the gesture library
     int numGestures_;  // Number of gestures in the library
 
-    /// @brief Current gesture being executed
-    String currentGesture_ = "";  // Default gesture
+    /// @brief Current gesture per side (index = side index; side 0 also used in single-exo mode)
+    String currentGesture_[N_HAND_SIDES];
 
-    /// @brief Current gesture state
-    String currentGestureState_ = "";
+    /// @brief Current gesture state per side
+    String currentGestureState_[N_HAND_SIDES];
 
     /// @brief Mode switch pin
     int gestureStateSwitchPin = -1;

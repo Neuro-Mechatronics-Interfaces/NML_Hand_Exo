@@ -390,8 +390,7 @@ class NMLHandExo {
     String getMotorMode();
 
     /// @brief Current software version.
-    // static constexpr const char* VERSION = "0.2.13";
-    static constexpr const char* VERSION = "0.3.0"; // max
+    static constexpr const char* VERSION = "0.3.2"; 
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.

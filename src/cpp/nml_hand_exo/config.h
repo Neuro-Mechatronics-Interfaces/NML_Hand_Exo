@@ -139,6 +139,18 @@ constexpr bool DEFAULT_VERBOSE = true;
   constexpr const char* HAND_SIDE = "dual";
 #endif
 
+// ---- Number of hand sides ---------------------------------------------------
+// Used to size gestureLibrary, EEPROM struct, and gesture execution.
+// Side index: 0 = left (or the only side in single-exo mode), 1 = right (dual only).
+#if BUILD_LEFT_HAND == 2
+constexpr uint8_t N_HAND_SIDES = 2;
+#else
+constexpr uint8_t N_HAND_SIDES = 1;
+#endif
+
+// Sentinel passed to gesture APIs meaning "apply to all sides".
+constexpr uint8_t GESTURE_SIDE_ALL = 0xFF;
+
 // ---- Motor enable flags (single-exo modes only) ----------------------------
 // Set to 0 to exclude a motor that is not connected.
 // In dual mode (BUILD_LEFT_HAND == 2) all 18 motors are always included.
@@ -184,18 +196,24 @@ constexpr float HOME_STATES[] = {
 };
 
 /// @brief Physical joint limits [min, max] for each motor.
+/// Note that as of v0.3.0 if these are modified, it would also change the meaning of
+/// endstops encoded in the normalized [0-1] range of the corresponding motor, which are
+/// saved on the current user profile in EEPROM flashed on the board. So if you change these, 
+/// you should also reset the EEPROM (e.g. by bumping the GESTURE_EEPROM_MAGIC). Then,
+/// please also ensure that any related documentation in `gesture_eeprom.h` and `docs/eeprom_schema.md` 
+/// is updated to reflect the new meaning of the saved endstop values.
 constexpr float jointLimits[][2] = {
-  // left (IDs 1-9) — placeholders
-  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},
-  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},
+  // left (IDs 1-9) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
+  {-189, 2840}, {125.75, 197.74}, {168.78, 248.25}, {220.26, 251.86}, {374.53, 415.27},
+  {162.8, 224.93}, {64.5, 106.83}, {68.99, 119.06}, {74.1, 115.37},
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  {-189, 2840}, {0.0, 360.0}, {0.0, 360.0}, {220.26, 251.86}, {374.53, 415.27},
+  {-189, 2840}, {125.75, 197.74}, {168.78, 248.25}, {220.26, 251.86}, {374.53, 415.27},
   {162.8, 224.93}, {64.5, 106.83}, {68.99, 119.06}, {74.1, 115.37}
 };
 
 /// @brief Default flip direction per motor.
 constexpr bool DEFAULT_FLIPS[] = {
-  // left (IDs 1-9) — placeholders
+  // left (IDs 1-9) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
   false, false, false, false, false, false, false, false, false,
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
   false, false, false, true, false, false, true, false, true
@@ -271,10 +289,10 @@ constexpr float HOME_STATES[] = {
   149.1,
 #endif
 #if ENABLE_WRIST2
-  180.0,           // placeholder -- needs real calibration
+  191.4,           
 #endif
 #if ENABLE_THUMBADD
-  180.0,           // placeholder -- needs real calibration
+  241.21,         
 #endif
 #if ENABLE_THUMBROT
   251.86,
@@ -302,10 +320,10 @@ constexpr float jointLimits[][2] = {
   {-189, 2840},
 #endif
 #if ENABLE_WRIST2
-  {0.0, 360.0},   // placeholder -- needs real calibration
+  {125.75, 197.74},  
 #endif
 #if ENABLE_THUMBADD
-  {0.0, 360.0},   // placeholder -- needs real calibration
+  {168.78, 248.25},  
 #endif
 #if ENABLE_THUMBROT
   {220.26, 251.86},
