@@ -6,3 +6,5 @@ scikit-learn
 pylsl
 setuptools
 wheel
+bleak
+git+https://github.com/pybluez/pybluez.git#egg=pybluez

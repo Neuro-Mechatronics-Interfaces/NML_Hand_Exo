@@ -105,3 +105,4 @@ See [docs/dual_exo_architecture.md](docs/dual_exo_architecture.md) for the full 
 | [docs/gui_workflow.md](docs/gui_workflow.md) | GUI class map, CalibrationDialog, ROMDialog, mode selection |
 | [docs/serial_protocol.md](docs/serial_protocol.md) | Firmware commands, baud rates, response format |
 | [docs/gotchas.md](docs/gotchas.md) | Known bugs, traps, firmware quirks, dual-mode traps |
+| [docs/eeprom_schema.md](docs/eeprom_schema.md) | EEPROM struct layout, gesture/state/joint index orders, magic versioning, how to add gestures/joints |

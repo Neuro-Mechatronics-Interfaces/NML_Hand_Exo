@@ -1,58 +1,59 @@
 {
+  "side": "left",
   "motors": {
     "wrist": {
-      "home": 157.34,
-      "limit_min": 119.24,
-      "limit_max": 157.34,
-      "flip": true
+      "home": 163.15,
+      "flip": true,
+      "limit_min": 95.13,
+      "limit_max": 190.26
     },
     "wrist2": {
-      "home": 0.0,
-      "limit_min": 0.0,
-      "limit_max": 0.0,
-      "flip": false
+      "home": 190.52,
+      "flip": false,
+      "limit_min": 164.47,
+      "limit_max": 269.63
     },
     "thumbadd": {
-      "home": 205.66,
-      "limit_min": 205.66,
-      "limit_max": 245.52,
-      "flip": false
+      "home": 233.42,
+      "flip": false,
+      "limit_min": 225.63,
+      "limit_max": 252.74
     },
     "thumbrot": {
-      "home": 234.7,
-      "limit_min": 230.56,
-      "limit_max": 234.7,
-      "flip": true
+      "home": 226.91,
+      "flip": false,
+      "limit_min": 223.17,
+      "limit_max": 245.26
     },
     "thumbflex": {
-      "home": 131.12,
-      "limit_min": 131.12,
-      "limit_max": 158.84,
-      "flip": false
+      "home": 344.96,
+      "flip": true,
+      "limit_min": 333.7,
+      "limit_max": 358.07
     },
     "index": {
-      "home": 203.02,
-      "limit_min": 203.02,
-      "limit_max": 251.42,
-      "flip": false
+      "home": 184.45,
+      "flip": true,
+      "limit_min": 143.35,
+      "limit_max": 184.62
     },
     "middle": {
-      "home": 102.43,
-      "limit_min": 46.73,
-      "limit_max": 102.43,
-      "flip": true
+      "home": 163.06,
+      "flip": false,
+      "limit_min": 162.54,
+      "limit_max": 200.73
     },
     "ring": {
-      "home": 74.89,
-      "limit_min": 74.89,
-      "limit_max": 112.82,
-      "flip": false
+      "home": 199.98,
+      "flip": true,
+      "limit_min": 143.88,
+      "limit_max": 200.11
     },
     "pinky": {
-      "home": 105.78,
-      "limit_min": 42.68,
-      "limit_max": 105.78,
-      "flip": true
+      "home": 64.55,
+      "flip": false,
+      "limit_min": 64.5,
+      "limit_max": 163.06
     }
   }
 }

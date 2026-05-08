@@ -23,12 +23,13 @@ Tested on **Windows 11**, **Python 3.11**.
 4. [Connection Modes](#4-connection-modes)
 5. [Installation](#5-installation)
 6. [Launching the GUI](#6-launching-the-gui)
-7. [Calibration Workflow](#7-calibration-workflow)
-8. [Serial Command Reference](#8-serial-command-reference)
-9. [Serial Command Examples](#9-serial-command-examples)
-10. [Important Caveats / Gotchas](#10-important-caveats--gotchas)
-11. [Repository Map](#11-repository-map)
-12. [How to Cite](#12-how-to-cite)
+7. [Bluetooth Connection (Windows 11)](#7-bluetooth-connection-windows-11)
+8. [Calibration Workflow](#8-calibration-workflow)
+9. [Serial Command Reference](#9-serial-command-reference)
+10. [Serial Command Examples](#10-serial-command-examples)
+11. [Important Caveats / Gotchas](#11-important-caveats--gotchas)
+12. [Repository Map](#12-repository-map)
+13. [How to Cite](#13-how-to-cite)
 
 ---
 
@@ -77,7 +78,7 @@ wrist  wrist2  thumbadd  thumbrot  thumbflex  index  middle  ring  pinky
 
 ### Duplicate motor names in dual mode
 
-In dual firmware, `MOTOR_NAMES[]` contains both sides' names — so "wrist" appears twice: once for ID 1 (left) and once for ID 11 (right). Firmware name lookup always returns the **first match**, which is always the left motor. See [Section 10](#10-important-caveats--gotchas) for how the software handles this safely.
+In dual firmware, `MOTOR_NAMES[]` contains both sides' names — so "wrist" appears twice: once for ID 1 (left) and once for ID 11 (right). Firmware name lookup always returns the **first match**, which is always the left motor. See [Section 11](#11-important-caveats--gotchas) for how the software handles this safely.
 
 ### Serial connections
 
@@ -153,7 +154,7 @@ In **Dual** mode all detected motors are active, so nothing is pre-disabled. The
 | `set_gesture` | Firmware broadcast — moves all motors on bus |
 | `enable:all` / `disable:all` | Firmware broadcast — affects all motors on bus |
 
-See [Section 10](#10-important-caveats--gotchas) for broadcast implications.
+See [Section 11](#11-important-caveats--gotchas) for broadcast implications.
 
 ---
 
@@ -206,12 +207,16 @@ Open `src/cpp/nml_hand_exo/nml_hand_exo.ino` in the Arduino IDE.
 
 **Board:** OpenRB-150 (install the ROBOTIS board package via Arduino IDE board manager)
 
-**Required Arduino libraries:**
-- Dynamixel2Arduino
-- Adafruit BNO055
-- Adafruit Unified Sensor
-- Adafruit SSD1306
-- Adafruit GFX Library
+**Required Arduino libraries:**  
+_v0.2.13+:_
+- [Dynamixel2Arduino](https://github.com/ROBOTIS-GIT/dynamixel2arduino): Motor drivers.
+- [Adafruit BNO055](https://github.com/adafruit/Adafruit_BNO055): IMU drivers.
+- [Adafruit Unified Sensor](https://github.com/adafruit/adafruit_sensor): Sensor abstraction layer. 
+- [Adafruit SSD1306](https://github.com/adafruit/adafruit_ssd1306): OLED drivers.
+- [Adafruit GFX Library](https://github.com/adafruit/Adafruit-gfx-library): OLED graphics. 
+
+_v0.3.0+:_  
+- [FlashStorage_SAMD](https://github.com/khoih-prog/FlashStorage_SAMD): EEPROM/non-volatile memory. 
 
 Upload → board flashes LED 4× and prints `"Exo device ready to receive commands"`.
 
@@ -253,7 +258,71 @@ exo.disable_motor(1)
 
 ---
 
-## 7. Calibration Workflow
+## 7. Bluetooth Connection (Windows 11)
+
+The HC-05 module connects to the Arduino's `Serial3` (pins D13/D14) at **57600 baud**. On Windows it appears as a standard virtual COM port once paired.
+
+### One-time setup: pairing
+
+1. Power on the exoskeleton.
+2. Open **Windows Bluetooth Settings** → **Add a device** → **Bluetooth**.
+3. Select **NML_EXO** from the device list.
+4. Enter PIN **1234** when prompted.
+5. Windows creates a persistent COM port entry that remains in Device Manager even when the device is off.
+
+### COM port numbering quirk
+
+Windows may assign the Bluetooth COM port the **same number previously used by the USB cable** (e.g. both become COM14). If both cables are plugged in simultaneously, they will conflict.
+
+**Always unplug the USB cable before connecting via Bluetooth.**
+
+### Connecting via the GUI
+
+The "Via:" combo in the connection panel offers two modes:
+
+**USB / Serial** (simplest after first pairing):
+1. Set "Via:" to **USB / Serial**.
+2. Select the COM port from the dropdown — the BT port appears even when the device is off, labelled `[BT ▶] COMx — NML_EXO` if the device is already paired.
+3. Click **Connect**.
+
+**Bluetooth** (auto-detect by name):
+1. Set "Via:" to **Bluetooth**.
+2. The Device field is pre-filled with **NML_EXO** — change it only if you renamed the module.
+3. Click **Connect** — the app searches the Windows registry for the paired device's COM port and connects automatically without selecting a port manually.
+   - If the device is not yet paired, a live scan runs (~8 s, requires `pybluez2`) and shows step-by-step pairing instructions.
+
+### "Not Connected" in Windows BT Settings
+
+After connecting from Python, Windows Bluetooth Settings may still show the device as **"Not Connected"** under Other Devices. This is normal — Windows 11 does not track serial port profile (SPP) connections as "connected" in its Bluetooth panel. As long as the Python GUI shows **"Connected — N motors"**, the device is working correctly.
+
+### First-time HC-05 baud rate setup
+
+HC-05 modules ship from factory at **9600 baud**. The firmware expects **57600 baud**. If the module has never been configured:
+
+1. Wire the EN pin HIGH to enter full AT mode.
+2. Connect a terminal at **38400 baud** (full AT mode baud).
+3. Send the following commands (each followed by `\r\n`):
+
+   ```
+   AT
+   AT+NAME=NML_EXO
+   AT+PSWD=1234
+   AT+UART=57600,0,0
+   ```
+
+4. Power-cycle the module. It will now advertise as **NML_EXO** at 57600 baud.
+
+**Alternatively**, after connecting the GUI over USB, send the `bt_configure` serial command from the command box:
+
+```
+bt_configure:NML_EXO:1234
+```
+
+This triggers the firmware to issue the AT commands to the HC-05 via mini-AT mode (no EN pin required while the module is in data mode and not actively hosting a BT connection).
+
+---
+
+## 8. Calibration Workflow
 
 ### Profile storage
 
@@ -325,7 +394,7 @@ output_data/<participant>_rom_<date>_<run>.csv
 
 ---
 
-## 8. Serial Command Reference
+## 9. Serial Command Reference
 
 Commands are plain ASCII, colon-delimited, newline-terminated:
 
@@ -420,7 +489,7 @@ Available gestures (6 total): `grasp`, `keygrip`, `pinch_index`, `pinch_middle`,
 
 ---
 
-## 9. Serial Command Examples
+## 10. Serial Command Examples
 
 ### Query motor info
 
@@ -543,7 +612,7 @@ get_goal_velocity:all
 
 ---
 
-## 10. Important Caveats / Gotchas
+## 11. Important Caveats / Gotchas
 
 ### Duplicate motor names in dual mode
 
@@ -579,7 +648,7 @@ The torque telemetry response format has a known firmware bug (wrong variable, m
 
 ---
 
-## 11. Repository Map
+## 12. Repository Map
 
 | What you need | Where to look |
 |---------------|---------------|
@@ -607,7 +676,7 @@ The torque telemetry response format has a known firmware bug (wrong variable, m
 
 ---
 
-## 12. How to Cite
+## 13. How to Cite
 
 If you use this project in your research, please cite:
 
