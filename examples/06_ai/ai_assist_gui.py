@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def _neurobridge_src_candidates() -> list[Path]:
-    repo_root = Path(__file__).resolve().parent
+    repo_root = Path(__file__).resolve().parents[2]
     return [
         repo_root / "external" / "NeuroBridge" / "src",
         repo_root.parent / "NeuroBridge" / "src",
@@ -45,7 +45,7 @@ def _should_detach() -> bool:
 
 
 def _detach_gui_process() -> int:
-    repo_root = Path(__file__).resolve().parent
+    repo_root = Path(__file__).resolve().parents[2]
     pythonw = repo_root / ".venv" / "Scripts" / "pythonw.exe"
     executable = str(pythonw if pythonw.exists() else Path(sys.executable))
     forwarded_args = [arg for arg in sys.argv[1:] if arg != "--foreground"]

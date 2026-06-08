@@ -33,6 +33,9 @@ examples/
 │       ├── training_task.py           # Training task with GUI
 │       ├── task_gui_minimal.py        # Minimal task GUI
 │       └── task_config.json           # Task configuration
+├── 06_ai/                             # AI assistant launchers
+│   ├── README.md                      # AI assistant notes
+│   └── ai_assist_gui.py               # AI assistant GUI launcher
 └── 06_lsl_streaming/                  # Lab Streaming Layer
     └── LSL/
         ├── lsl_classifier_trigger.py  # EMG classifier control
@@ -209,6 +212,26 @@ Complete training task with GUI for data collection.
 
 ```bash
 python examples/05_applications/task/training_task.py
+```
+
+---
+
+### AI Assistant GUI
+
+The AI assistant GUI is available as an examples launcher that bootstraps the NeuroBridge submodule runtime.
+
+#### Assistant GUI (`06_ai/ai_assist_gui.py`)
+
+```bash
+python examples/06_ai/ai_assist_gui.py
+```
+
+On Windows, this launcher detaches by default. Use `--foreground` if you want the GUI to stay attached to the terminal for debugging.
+
+If dependencies are missing, initialize the submodule environment first:
+
+```bash
+python scripts/setup_ai_submodule_env.py
 ```
 
 ---
