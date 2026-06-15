@@ -17,6 +17,7 @@ dependencies = [
     "pyserial",
     "pyyaml",
     "PyQt5",
+    "pygame",
     "pyqtgraph",
     "pylsl",
     "pandas",
@@ -32,8 +33,15 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["nml_hand_exo"]
 package-dir = { "" = "src" }
+py-modules = ["handexo_cli"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["nml_hand_exo*"]
+
+[project.scripts]
+handexo = "handexo_cli:main"
 
 [project.optional-dependencies]
 docs = [

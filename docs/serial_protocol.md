@@ -10,14 +10,14 @@
 Python (host PC)
   SerialComm / TCPComm  (src/nml_hand_exo/interface/_interfaces.py)
        |
-       | USB serial  → DEBUG_SERIAL  = Serial   (57600 baud)
+      | USB serial  → DEBUG_SERIAL  = Serial   (115200 baud)
        | BT HC-05    → COMMAND_SERIAL = Serial2  (9600 baud, D13=RX D14=TX)
        |
 Arduino OpenRB-150
   loop() polls both channels identically
   → parseMessage()  (utils.cpp) — dispatches all command strings
   → NMLHandExo      (nml_hand_exo.cpp) — motor control
-  → Serial1 (DXL_SERIAL, 57600 baud) — Dynamixel bus
+   → Serial1 (DXL_SERIAL, 57600 baud) — Dynamixel bus
 ```
 
 Both channels are always active. Any command sent to either port is processed
@@ -43,6 +43,8 @@ set_zero_offset:wrist:149.1
 set_flip:middle:1
 enable:all
 disable:all
+enable_ids:11:12:13
+disable_ids:11:12:13
 set_exo_mode:gesture_fixed
 info
 version
@@ -50,21 +52,46 @@ version
 
 Responses are terminated with `;`. `SerialComm.receive()` reads until `;` is seen.
 
+### Direct velocity/current control
+
+Direct control is global-mode, per-motor-commanded, and uses explicit Dynamixel IDs:
+
+```text
+set_control_mode:all:velocity
+set_velocity:16:2.5
+set_control_mode:all:current
+set_current:16:50
+stop:16
+stop:all
+set_command_timeout:250
+```
+
+- `set_velocity` uses signed rpm and is clamped to `DIRECT_VELOCITY_LIMIT_RPM`.
+- `set_current` uses signed mA and is clamped to `DIRECT_CURRENT_LIMIT_MA`.
+- `enable_ids` / `disable_ids` accept colon-separated explicit DXL IDs and
+   toggle torque for the provided list in one parser command.
+- Mode changes turn torque off. Motors must be explicitly enabled afterward.
+- The firmware zeros stale direct commands after the configured watchdog timeout.
+- The firmware also zeros a direct command when the motor reaches its calibrated
+  joint-limit margin.
+- `set_goal_velocity` remains the position-mode profile-velocity setting; it is
+  not a direct velocity command.
+
 ---
 
 ## Baud rate map `[VERIFIED]`
 
 | Channel          | Arduino object | Baud  | Physical connection  |
 |------------------|----------------|-------|----------------------|
-| USB debug        | Serial         | 57600 | USB port             |
+| USB debug        | Serial         | 115200 | USB port             |
 | Dynamixel bus    | Serial1        | 57600 | JST DXL connector    |
-| HC-05 Bluetooth  | Serial3        | 57600 | D13 (TX), D14 (RX)   |
+| HC-05 Bluetooth  | Serial3        | 115200 | D13 (TX), D14 (RX)   |
 
 All three constants are defined in `src/cpp/nml_hand_exo/config.h`:
 `DEBUG_BAUD_RATE`, `DYNAMIXEL_BAUD_RATE`, `COMMAND_BAUD_RATE`.
 
-HC-05 factory default is 9600. The firmware is configured for 57600 (`COMMAND_BAUD_RATE`).
-If you swap an HC-05 module, use AT command mode to set it to 57600 before use.
+HC-05 factory default is 9600. The firmware is configured for 115200 (`COMMAND_BAUD_RATE`).
+If you swap an HC-05 module, use AT command mode to set it to 115200 before use.
 
 ---
 

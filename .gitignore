@@ -5,6 +5,9 @@
 .idea
 .ipynb_checkpoints/
 
+# External packages (for now)
+external/
+
 # Byte-compiled, chache directories
 intan_utilities/__pycache__
 __pycache__/
@@ -41,6 +44,7 @@ temp/*
 # Distribution / packaging
 .Python
 env/
+.env
 venv/
 ENV/
 .venv/

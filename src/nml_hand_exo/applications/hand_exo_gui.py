@@ -12,6 +12,7 @@ import math
 import os
 import queue
 import re
+import socket
 import statistics
 import sys
 import threading
@@ -22,13 +23,18 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QLineEdit, QTextEdit, QGridLayout, QMessageBox, QGroupBox, QComboBox,
     QDialog, QInputDialog, QScrollArea, QFrame, QSizePolicy, QSpacerItem,
-    QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
+    QTabWidget, QTabBar, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
+    QSpinBox, QDoubleSpinBox,
 )
-from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QEvent, QSettings, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QFontMetrics
 
 from serial.tools import list_ports
 from nml_hand_exo.interface import HandExo, SerialComm
+from nml_hand_exo.interface._telemetry_streaming import (
+    NumericLSLTelemetryOutlet,
+    UDPTelemetryPublisher,
+)
 
 # websockets is optional; teleop tab gracefully degrades if missing.
 try:
@@ -119,6 +125,36 @@ def determine_run_number(participant: str, date_str: str) -> int:
                 except ValueError:
                     pass
     return run
+
+
+def _format_port_label(port) -> str:
+    description = port.description or ""
+    hwid = getattr(port, "hwid", "") or ""
+    desc_lower = description.lower()
+    hwid_lower = hwid.lower()
+
+    tags = []
+    if "bluetooth" in desc_lower or "rfcomm" in hwid_lower or "bthenum" in hwid_lower:
+        tags.append("BT")
+    if "usb serial device" in desc_lower or "usb" in desc_lower:
+        tags.append("USB")
+    if "nml_exo" in desc_lower or "nml_exo" in hwid_lower:
+        tags.append("NML_EXO")
+
+    parts = [port.device]
+    if tags:
+        parts.append(f"[{', '.join(tags)}]")
+    if description:
+        parts.append(description)
+    if getattr(port, "manufacturer", None):
+        parts.append(port.manufacturer)
+    if getattr(port, "serial_number", None):
+        parts.append(f"SN:{port.serial_number}")
+    if getattr(port, "vid", None) is not None and getattr(port, "pid", None) is not None:
+        parts.append(f"VID:{port.vid:04X} PID:{port.pid:04X}")
+    if getattr(port, "hwid", None):
+        parts.append(port.hwid)
+    return " - ".join(parts)
 
 
 # -- Stylesheet ------------------------------------------------------------
@@ -1100,6 +1136,7 @@ class TeleopWorker(QThread):
     """
 
     status_changed = pyqtSignal(str, str)
+    frame_sent = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1171,6 +1208,7 @@ class TeleopWorker(QThread):
                     try:
                         msg = self._queue.get(timeout=0.05)
                         ws.send(msg)
+                        self.frame_sent.emit(msg)
                     except queue.Empty:
                         pass    # nothing ready — yield back and check stop flag
         except OSError as exc:
@@ -1181,6 +1219,133 @@ class TeleopWorker(QThread):
             final_color = "#c0392b"
 
         self.status_changed.emit(final_msg, final_color)
+
+
+class UDPCommandWorker(QThread):
+    """Receive UDP command datagrams without blocking the GUI thread."""
+
+    command_received = pyqtSignal(str, str)
+    status_changed = pyqtSignal(str, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._host = "0.0.0.0"
+        self._port = 10001
+        self._stop_event = threading.Event()
+        self._sock = None
+
+    def configure(self, host: str, port: int):
+        self._host = host.strip() or "0.0.0.0"
+        self._port = int(port)
+
+    def stop(self):
+        self._stop_event.set()
+        sock = self._sock
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+    def run(self):
+        self._stop_event.clear()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock = sock
+        try:
+            sock.settimeout(0.25)
+            sock.bind((self._host, self._port))
+            self.status_changed.emit(
+                f"Listening on {self._host}:{self._port}", "#27ae60"
+            )
+            while not self._stop_event.is_set():
+                try:
+                    data, addr = sock.recvfrom(4096)
+                except socket.timeout:
+                    continue
+                except OSError:
+                    break
+                message = data.decode("utf-8", errors="ignore").strip()
+                if message:
+                    self.command_received.emit(message, f"{addr[0]}:{addr[1]}")
+        except OSError as exc:
+            self.status_changed.emit(f"UDP command error: {exc}", "#c0392b")
+        finally:
+            try:
+                sock.close()
+            except OSError:
+                pass
+            self._sock = None
+            if self._stop_event.is_set():
+                self.status_changed.emit("Command receiver stopped", "#888888")
+
+
+class SynchronizedHandExo:
+    """Serialize complete HandExo method calls across GUI and worker threads."""
+
+    def __init__(self, exo):
+        self._exo = exo
+        self._lock = threading.RLock()
+
+    def __getattr__(self, name):
+        attr = getattr(self._exo, name)
+        if not callable(attr):
+            return attr
+
+        def synchronized_call(*args, **kwargs):
+            with self._lock:
+                return attr(*args, **kwargs)
+
+        return synchronized_call
+
+    def run_locked(self, callback):
+        """Run a callback while holding the serial access lock exactly once."""
+        with self._lock:
+            return callback(self._exo)
+
+
+class DevicePollWorker(QThread):
+    """Perform blocking serial telemetry reads away from the Qt event loop."""
+
+    completed = pyqtSignal(object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._exo = None
+        self._include_telemetry = False
+
+    def configure(self, exo, include_telemetry: bool):
+        self._exo = exo
+        self._include_telemetry = bool(include_telemetry)
+
+    def run(self):
+        exo = self._exo
+        result = {
+            "relative": None,
+            "positions": None,
+            "torques": None,
+            "currents": None,
+        }
+        if exo is None:
+            self.completed.emit(result)
+            return
+        try:
+            result["relative"] = exo.get_motor_angle("all")
+        except Exception:
+            pass
+        if self._include_telemetry:
+            try:
+                result["positions"] = exo.get_absolute_motor_angle("all")
+            except Exception:
+                pass
+            try:
+                result["torques"] = exo.get_motor_torque("all")
+            except Exception:
+                pass
+            try:
+                result["currents"] = exo.get_motor_current("all")
+            except Exception:
+                pass
+        self.completed.emit(result)
 
 
 # ==========================================================================
@@ -1218,21 +1383,49 @@ class HandExoGUI(QWidget):
         # Dynamixel ID for each widget index — needed to look up telemetry/angle
         # results since HandExo returns dicts keyed by Dynamixel ID, not 0-based index.
         self._motor_dxl_id: list[int] = []
+        self._last_telemetry_update_monotonic: float | None = None
+        self._telemetry_rate_ema: float | None = None
+        self._direct_armed_ids: set[int] = set()
+        self._direct_mode: str | None = None
+        self._direct_command_active = False
+        self._suspend_device_poll_requests = False
+
+        self._udp_telemetry = UDPTelemetryPublisher()
+        self._lsl_angles = NumericLSLTelemetryOutlet(
+            "NMLHandExoJointAngles", "JointAngles", "degrees"
+        )
+        self._lsl_torque = NumericLSLTelemetryOutlet(
+            "NMLHandExoMotorTorque", "MotorTorque", "Nm"
+        )
+        self._udp_command_worker = UDPCommandWorker(self)
+        self._udp_command_worker.command_received.connect(self._on_udp_command)
+        self._udp_command_worker.status_changed.connect(self._on_udp_command_status)
+        self._udp_stream_pending: dict[tuple[str, int], tuple[str, str, str]] = {}
+        self._udp_stream_last_status = 0.0
+        self._udp_stream_sent_since_status = 0
+        self._udp_stream_timer = QTimer(self)
+        self._udp_stream_timer.setInterval(20)
+        self._udp_stream_timer.timeout.connect(self._flush_udp_stream_commands)
+        self._udp_stream_timer.start()
+        self._device_poll_worker = DevicePollWorker(self)
+        self._device_poll_worker.completed.connect(self._on_device_poll_completed)
 
         self._build_ui()
 
         # Motor angle poll timer (Controls tab)
         self._angle_timer = QTimer(self)
-        self._angle_timer.timeout.connect(self._poll_motor_angles)
-
-        # Telemetry poll timer (Telemetry tab)
-        self._telem_timer = QTimer(self)
-        self._telem_timer.timeout.connect(self._poll_telemetry)
+        self._angle_timer.timeout.connect(self._request_device_poll)
+        self._direct_command_timer = QTimer(self)
+        self._direct_command_timer.setInterval(50)
+        self._direct_command_timer.timeout.connect(self._send_direct_command_tick)
+        self._udp_direct_idle_timer = QTimer(self)
+        self._udp_direct_idle_timer.setSingleShot(True)
+        self._udp_direct_idle_timer.timeout.connect(self._resume_normal_polling)
 
         # ------------------------------------------------------------------
         # Teleop state
         # ------------------------------------------------------------------
-        # True while the 100 ms teleop tick is running (motors disabled,
+        # True while the configured teleop tick is running (motors disabled,
         # exo used as sensor only).
         self._teleop_streaming: bool = False
         # True while the WebSocket connection is established (green status).
@@ -1241,11 +1434,12 @@ class HandExoGUI(QWidget):
         # connect/disconnect cycles don't leave dangling threads.
         self._teleop_worker = TeleopWorker(self)
         self._teleop_worker.status_changed.connect(self._on_teleop_status)
-        # Teleop tick timer — 100 ms, active only while streaming.
-        # Replaces _angle_timer while streaming so the serial bus carries
-        # exactly one angle-poll per tick at ~10 Hz (not two overlapping).
+        self._teleop_worker.frame_sent.connect(self._on_teleop_frame_sent)
+        # Teleop tick timer, active only while streaming. It replaces
+        # _angle_timer so serial polls never overlap.
         self._teleop_timer = QTimer(self)
         self._teleop_timer.timeout.connect(self._teleop_tick)
+        self._load_stream_settings()
 
     # -- UI Construction ---------------------------------------------------
 
@@ -1257,6 +1451,9 @@ class HandExoGUI(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._main_scroll = scroll
         outer.addWidget(scroll)
 
         container = QWidget()
@@ -1270,6 +1467,9 @@ class HandExoGUI(QWidget):
 
         # Tab widget: Controls | Telemetry
         self.main_tabs = QTabWidget()
+        self.main_tabs.setUsesScrollButtons(True)
+        self.main_tabs.setElideMode(Qt.ElideRight)
+        self.main_tabs.tabBar().installEventFilter(self)
         self.main_layout.addWidget(self.main_tabs)
 
         # Build the Controls tab by temporarily redirecting self.main_layout so
@@ -1290,10 +1490,35 @@ class HandExoGUI(QWidget):
         self.main_tabs.addTab(controls_container, "Controls")
         self.main_tabs.addTab(self._build_telemetry_tab(), "Telemetry")
         self.main_tabs.addTab(self._build_visualization_tab(), "Hand State")
+        self.main_tabs.addTab(self._build_direct_control_tab(), "Direct Control")
         self.main_tabs.addTab(self._build_teleop_tab(), "Teleop")
+        self.main_tabs.addTab(self._build_settings_tab(), "Settings")
 
         self._build_log_section()
+        for button in self.findChildren(QPushButton):
+            if button is not self.refresh_btn:
+                self._fit_button_text(button)
+        for input_widget in (
+            self.findChildren(QComboBox)
+            + self.findChildren(QSpinBox)
+            + self.findChildren(QDoubleSpinBox)
+        ):
+            input_widget.installEventFilter(self)
         self._update_enabled_state()
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel and isinstance(obj, QTabBar):
+            # Require explicit click to change tabs; ignore wheel cycling.
+            return True
+        if (
+            event.type() == QEvent.Wheel
+            and isinstance(obj, (QComboBox, QSpinBox, QDoubleSpinBox))
+        ):
+            bar = self._main_scroll.verticalScrollBar()
+            steps = event.angleDelta().y() / 120.0
+            bar.setValue(int(bar.value() - steps * bar.singleStep() * 3))
+            return True
+        return super().eventFilter(obj, event)
 
     def _build_telemetry_tab(self) -> QWidget:
         widget = QWidget()
@@ -1305,13 +1530,9 @@ class HandExoGUI(QWidget):
         ctrl_row = QHBoxLayout()
         self._telem_refresh_btn = QPushButton("Refresh")
         self._telem_refresh_btn.clicked.connect(self._poll_telemetry)
-        self._telem_auto_cb = QCheckBox("Auto-refresh (500 ms)")
-        self._telem_auto_cb.setChecked(True)
-        self._telem_auto_cb.toggled.connect(self._on_telem_autorefresh)
         self._telem_status_lbl = QLabel("Not connected")
         self._telem_status_lbl.setStyleSheet("color: #888888;")
         ctrl_row.addWidget(self._telem_refresh_btn)
-        ctrl_row.addWidget(self._telem_auto_cb)
         ctrl_row.addStretch()
         ctrl_row.addWidget(self._telem_status_lbl)
         layout.addLayout(ctrl_row)
@@ -1348,6 +1569,116 @@ class HandExoGUI(QWidget):
         layout.addWidget(self._hand_vis, stretch=1)
         return widget
 
+    def _build_direct_control_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        warning = QLabel(
+            "Direct velocity/current control bypasses position targets. Firmware "
+            "joint-limit checks and a command watchdog remain active, but use this "
+            "mode only with the mechanism clear and an emergency stop available."
+        )
+        warning.setWordWrap(True)
+        warning.setStyleSheet(
+            "color: #f39c12; font-weight: bold; padding: 6px;"
+        )
+        layout.addWidget(warning)
+
+        mode_box = QGroupBox("Mode and Watchdog")
+        mode_layout = QVBoxLayout(mode_box)
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Mode:"))
+        self._direct_mode_combo = QComboBox()
+        self._direct_mode_combo.addItems(["Velocity", "Current / Torque"])
+        self._direct_mode_combo.currentTextChanged.connect(
+            self._on_direct_mode_selection_changed
+        )
+        mode_row.addWidget(self._direct_mode_combo)
+        mode_row.addWidget(QLabel("Watchdog:"))
+        self._direct_timeout_spin = QSpinBox()
+        self._direct_timeout_spin.setRange(50, 5000)
+        self._direct_timeout_spin.setValue(250)
+        self._direct_timeout_spin.setSuffix(" ms")
+        mode_row.addWidget(self._direct_timeout_spin)
+        self._direct_apply_mode_btn = QPushButton("Apply Mode")
+        self._direct_apply_mode_btn.setProperty("accent", True)
+        self._direct_apply_mode_btn.clicked.connect(self._apply_direct_mode)
+        mode_row.addWidget(self._direct_apply_mode_btn)
+        mode_row.addStretch()
+        mode_layout.addLayout(mode_row)
+        mode_status_row = QHBoxLayout()
+        self._direct_mode_status = QLabel("Not configured")
+        self._direct_mode_status.setStyleSheet("color: #888888;")
+        mode_status_row.addWidget(self._direct_mode_status, 1)
+        self._direct_position_btn = QPushButton("Return to Position Control")
+        self._direct_position_btn.clicked.connect(self._restore_position_control)
+        mode_status_row.addWidget(self._direct_position_btn)
+        mode_layout.addLayout(mode_status_row)
+        layout.addWidget(mode_box)
+
+        command_box = QGroupBox("Per-Motor Command")
+        command_layout = QVBoxLayout(command_box)
+        target_row = QHBoxLayout()
+        target_row.addWidget(QLabel("Motor:"))
+        self._direct_motor_combo = QComboBox()
+        self._direct_motor_combo.currentIndexChanged.connect(
+            self._update_direct_arm_status
+        )
+        target_row.addWidget(self._direct_motor_combo, 1)
+        self._direct_arm_btn = QCheckBox("Arm Selected Motor")
+        self._direct_arm_btn.toggled.connect(self._on_direct_arm_toggled)
+        target_row.addWidget(self._direct_arm_btn)
+        self._direct_arm_confirm_cb = QCheckBox("Require arm confirmation")
+        self._direct_arm_confirm_cb.setChecked(True)
+        target_row.addWidget(self._direct_arm_confirm_cb)
+        command_layout.addLayout(target_row)
+
+        command_row = QHBoxLayout()
+        command_row.addWidget(QLabel("Command:"))
+        self._direct_command_spin = QDoubleSpinBox()
+        self._direct_command_spin.setDecimals(2)
+        self._direct_command_spin.setSingleStep(0.25)
+        command_row.addWidget(self._direct_command_spin)
+        self._direct_send_btn = QPushButton("Hold to Command")
+        self._direct_send_btn.setProperty("accent", True)
+        self._direct_send_btn.pressed.connect(self._start_direct_command)
+        self._direct_send_btn.released.connect(self._zero_direct_target)
+        command_row.addWidget(self._direct_send_btn)
+        command_layout.addLayout(command_row)
+
+        stop_row = QHBoxLayout()
+        self._direct_arm_status = QLabel("No motor armed")
+        self._direct_arm_status.setStyleSheet("color: #888888;")
+        stop_row.addWidget(self._direct_arm_status, 1)
+        self._direct_zero_btn = QPushButton("Zero Target")
+        self._direct_zero_btn.clicked.connect(self._zero_direct_target)
+        stop_row.addWidget(self._direct_zero_btn)
+        self._direct_stop_all_btn = QPushButton("STOP ALL")
+        self._direct_stop_all_btn.setStyleSheet(
+            "background-color: #8e1b1b; color: white; font-weight: bold;"
+        )
+        self._direct_stop_all_btn.clicked.connect(self._stop_all_direct_control)
+        stop_row.addWidget(self._direct_stop_all_btn)
+        command_layout.addLayout(stop_row)
+        layout.addWidget(command_box)
+
+        detail = QLabel(
+            "Velocity commands use signed rpm and are limited to +/-10 rpm. "
+            "Current commands use signed mA and are limited to +/-200 mA. "
+            "Each nonzero target must be refreshed before the watchdog expires."
+        )
+        detail.setWordWrap(True)
+        detail.setStyleSheet("color: #888888; font-size: 10px;")
+        layout.addWidget(detail)
+        layout.addStretch()
+
+        self._on_direct_mode_selection_changed(
+            self._direct_mode_combo.currentText()
+        )
+        return widget
+
     def _build_teleop_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -1366,9 +1697,18 @@ class HandExoGUI(QWidget):
             warn.setWordWrap(True)
             layout.addWidget(warn)
 
-        # -- WebSocket Server group ----------------------------------------
-        ws_box = QGroupBox("WebSocket Server")
+        # -- Outbound WebSocket telemetry group ----------------------------
+        ws_box = QGroupBox("WebSocket Telemetry Client (Outbound)")
         ws_layout = QVBoxLayout()
+
+        ws_note = QLabel(
+            "Connects to a WebSocket server and sends normalized joint-state "
+            "frames. It does not receive motor commands; inbound commands use "
+            "UDP Command Input in Settings."
+        )
+        ws_note.setWordWrap(True)
+        ws_note.setStyleSheet("color: #888888; font-size: 10px;")
+        ws_layout.addWidget(ws_note)
 
         addr_row = QHBoxLayout()
         addr_row.addWidget(QLabel("Address:"))
@@ -1391,6 +1731,10 @@ class HandExoGUI(QWidget):
         ws_btn_row.addStretch()
         ws_btn_row.addWidget(self._teleop_ws_status_lbl)
         ws_layout.addLayout(ws_btn_row)
+        self._teleop_last_sent_lbl = QLabel("Last frame sent: none")
+        self._teleop_last_sent_lbl.setWordWrap(True)
+        self._teleop_last_sent_lbl.setStyleSheet("color: #888888; font-size: 10px;")
+        ws_layout.addWidget(self._teleop_last_sent_lbl)
         ws_box.setLayout(ws_layout)
         layout.addWidget(ws_box)
 
@@ -1426,11 +1770,13 @@ class HandExoGUI(QWidget):
         layout.addWidget(stream_box)
 
         # -- Live normalised states table ----------------------------------
-        state_box = QGroupBox(
-            "Live Normalised Joint States  "
-            "(0\u202f=\u202fopen\u200a/\u200aextended,  1\u202f=\u202fclosed\u200a/\u200aflexed)"
-        )
+        state_box = QGroupBox("Live Normalised Joint States")
         state_layout = QVBoxLayout()
+
+        state_note = QLabel("0 = open/extended, 1 = closed/flexed")
+        state_note.setWordWrap(True)
+        state_note.setStyleSheet("color: #888888; font-size: 10px;")
+        state_layout.addWidget(state_note)
 
         self._teleop_state_table = QTableWidget(0, 2)
         self._teleop_state_table.setHorizontalHeaderLabels(["Joint", "Value [0\u20131]"])
@@ -1448,6 +1794,419 @@ class HandExoGUI(QWidget):
 
         layout.addStretch()
         return widget
+
+    def _build_settings_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        lsl_box = QGroupBox("Telemetry Sampling and LSL")
+        lsl_layout = QVBoxLayout(lsl_box)
+        sampling_row = QHBoxLayout()
+        self._lsl_enabled_cb = QCheckBox("Enable LSL streaming")
+        self._lsl_enabled_cb.setChecked(False)
+        self._lsl_enabled_cb.toggled.connect(self._on_lsl_enabled_toggled)
+        self._telemetry_rate_spin = QSpinBox()
+        self._telemetry_rate_spin.setRange(1, 20)
+        self._telemetry_rate_spin.setValue(2)
+        self._telemetry_rate_spin.setSuffix(" Hz")
+        self._lsl_angles_cb = QCheckBox("Publish joint angles")
+        self._lsl_angles_cb.setChecked(True)
+        self._lsl_torque_cb = QCheckBox("Publish motor torque")
+        self._lsl_torque_cb.setChecked(True)
+        self._lsl_status_lbl = QLabel("Disabled")
+        self._lsl_status_lbl.setStyleSheet("color: #888888;")
+        sampling_row.addWidget(self._lsl_enabled_cb)
+        sampling_row.addWidget(QLabel("Broadcast Rate:"))
+        sampling_row.addWidget(self._telemetry_rate_spin)
+        sampling_row.addStretch()
+        lsl_layout.addLayout(sampling_row)
+        lsl_row = QHBoxLayout()
+        lsl_row.addWidget(self._lsl_angles_cb)
+        lsl_row.addWidget(self._lsl_torque_cb)
+        lsl_row.addStretch()
+        lsl_row.addWidget(self._lsl_status_lbl)
+        lsl_layout.addLayout(lsl_row)
+        layout.addWidget(lsl_box)
+
+        udp_out_box = QGroupBox("UDP Telemetry Output")
+        udp_out_layout = QVBoxLayout(udp_out_box)
+        udp_out_row = QHBoxLayout()
+        self._udp_telem_cb = QCheckBox("Enable")
+        self._udp_telem_host = QLineEdit("127.0.0.1")
+        self._udp_telem_port = QSpinBox()
+        self._udp_telem_port.setRange(1, 65535)
+        self._udp_telem_port.setValue(10002)
+        self._udp_telem_status_lbl = QLabel("Disabled")
+        self._udp_telem_status_lbl.setStyleSheet("color: #888888;")
+        udp_out_row.addWidget(self._udp_telem_cb)
+        udp_out_row.addWidget(QLabel("Host:"))
+        udp_out_row.addWidget(self._udp_telem_host, 1)
+        udp_out_row.addWidget(QLabel("Port:"))
+        udp_out_row.addWidget(self._udp_telem_port)
+        udp_out_row.addWidget(QLabel("Status:"))
+        udp_out_row.addWidget(self._udp_telem_status_lbl, 1)
+        udp_out_layout.addLayout(udp_out_row)
+        layout.addWidget(udp_out_box)
+
+        udp_in_box = QGroupBox("UDP Command Input")
+        udp_in_layout = QVBoxLayout(udp_in_box)
+        udp_in_row = QHBoxLayout()
+        self._udp_cmd_cb = QCheckBox("Enable")
+        self._udp_cmd_host = QLineEdit("0.0.0.0")
+        self._udp_cmd_port = QSpinBox()
+        self._udp_cmd_port.setRange(1, 65535)
+        self._udp_cmd_port.setValue(10001)
+        self._udp_cmd_advanced_cb = QCheckBox(
+            "Allow advanced protocol commands"
+        )
+        self._udp_cmd_advanced_cb.setToolTip(
+            "Safety-sensitive motion and configuration commands remain blocked."
+        )
+        self._udp_cmd_status_lbl = QLabel("Disabled")
+        self._udp_cmd_status_lbl.setStyleSheet("color: #888888;")
+        udp_in_row.addWidget(self._udp_cmd_cb)
+        udp_in_row.addWidget(QLabel("Listen:"))
+        udp_in_row.addWidget(self._udp_cmd_host, 1)
+        udp_in_row.addWidget(QLabel("Port:"))
+        udp_in_row.addWidget(self._udp_cmd_port)
+        udp_in_row.addWidget(QLabel("Status:"))
+        udp_in_row.addWidget(self._udp_cmd_status_lbl, 1)
+        udp_in_layout.addLayout(udp_in_row)
+        udp_options_row = QHBoxLayout()
+        udp_options_row.addWidget(self._udp_cmd_advanced_cb)
+        self._udp_last_command_lbl = QLabel("Last received: none")
+        self._udp_last_command_lbl.setWordWrap(True)
+        self._udp_last_command_lbl.setStyleSheet("color: #888888;")
+        udp_options_row.addStretch()
+        udp_options_row.addWidget(self._udp_last_command_lbl, 1)
+        udp_in_layout.addLayout(udp_options_row)
+        layout.addWidget(udp_in_box)
+
+        note = QLabel(
+            "Command datagrams may be plain protocol text or JSON such as "
+            '{"command":"set_gesture:pinch_index:close"}. By default only '
+            "set_gesture commands are accepted."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #888888; font-size: 10px;")
+        layout.addWidget(note)
+
+        apply_btn = QPushButton("Apply Streaming Settings")
+        apply_btn.setProperty("accent", True)
+        apply_btn.clicked.connect(self._apply_stream_settings)
+        layout.addWidget(apply_btn)
+        layout.addStretch()
+        return widget
+
+    def _load_stream_settings(self):
+        settings = QSettings("NML", "HandExoGUI")
+        if not settings.contains("telemetry/rate_hz"):
+            settings.setValue("telemetry/rate_hz", 2)
+        elif not settings.contains("telemetry/rate_hz_migrated"):
+            # Migrate the legacy default of 20 Hz to the new 2 Hz default once.
+            if settings.value("telemetry/rate_hz", 2, type=int) == 20:
+                settings.setValue("telemetry/rate_hz", 2)
+            settings.setValue("telemetry/rate_hz_migrated", True)
+        self._lsl_enabled_cb.setChecked(
+            settings.value("lsl/enabled", False, type=bool)
+        )
+        self._telemetry_rate_spin.setValue(
+            settings.value("telemetry/rate_hz", 2, type=int)
+        )
+        self._lsl_angles_cb.setChecked(settings.value("lsl/angles", True, type=bool))
+        self._lsl_torque_cb.setChecked(settings.value("lsl/torque", True, type=bool))
+        self._udp_telem_cb.setChecked(settings.value("udp_telemetry/enabled", False, type=bool))
+        self._udp_telem_host.setText(settings.value("udp_telemetry/host", "127.0.0.1"))
+        self._udp_telem_port.setValue(settings.value("udp_telemetry/port", 10002, type=int))
+        self._udp_cmd_cb.setChecked(settings.value("udp_command/enabled", False, type=bool))
+        self._udp_cmd_host.setText(settings.value("udp_command/host", "0.0.0.0"))
+        self._udp_cmd_port.setValue(settings.value("udp_command/port", 10001, type=int))
+        self._udp_cmd_advanced_cb.setChecked(
+            settings.value("udp_command/advanced", False, type=bool)
+        )
+        self._on_lsl_enabled_toggled(self._lsl_enabled_cb.isChecked())
+        self._apply_stream_settings()
+
+    def _apply_stream_settings(self):
+        settings = QSettings("NML", "HandExoGUI")
+        settings.setValue("lsl/enabled", self._lsl_enabled_cb.isChecked())
+        settings.setValue("telemetry/rate_hz", self._telemetry_rate_spin.value())
+        settings.setValue("lsl/angles", self._lsl_angles_cb.isChecked())
+        settings.setValue("lsl/torque", self._lsl_torque_cb.isChecked())
+        settings.setValue("udp_telemetry/enabled", self._udp_telem_cb.isChecked())
+        settings.setValue("udp_telemetry/host", self._udp_telem_host.text().strip())
+        settings.setValue("udp_telemetry/port", self._udp_telem_port.value())
+        settings.setValue("udp_command/enabled", self._udp_cmd_cb.isChecked())
+        settings.setValue("udp_command/host", self._udp_cmd_host.text().strip())
+        settings.setValue("udp_command/port", self._udp_cmd_port.value())
+        settings.setValue("udp_command/advanced", self._udp_cmd_advanced_cb.isChecked())
+
+        interval_ms = max(50, round(1000 / self._telemetry_rate_spin.value()))
+        self._angle_timer.setInterval(interval_ms)
+        self._teleop_timer.setInterval(interval_ms)
+        if self.exo_connected and not self._teleop_streaming:
+            self._angle_timer.start(interval_ms)
+
+        self._udp_telemetry.configure(
+            self._udp_telem_cb.isChecked(),
+            self._udp_telem_host.text(),
+            self._udp_telem_port.value(),
+        )
+        if self._udp_telem_cb.isChecked():
+            self._udp_telem_status_lbl.setText(
+                f"Sending to {self._udp_telemetry.host}:{self._udp_telemetry.port}"
+            )
+            self._udp_telem_status_lbl.setStyleSheet("color: #27ae60;")
+        else:
+            self._udp_telem_status_lbl.setText("Disabled")
+            self._udp_telem_status_lbl.setStyleSheet("color: #888888;")
+
+        self._configure_lsl_outlets()
+
+        if self._udp_command_worker.isRunning():
+            self._udp_command_worker.stop()
+            self._udp_command_worker.wait(1000)
+        if self._udp_cmd_cb.isChecked():
+            self._udp_command_worker.configure(
+                self._udp_cmd_host.text(), self._udp_cmd_port.value()
+            )
+            self._udp_cmd_status_lbl.setText("Starting...")
+            self._udp_cmd_status_lbl.setStyleSheet("color: #f39c12;")
+            self._udp_command_worker.start()
+        else:
+            self._udp_cmd_status_lbl.setText("Disabled")
+            self._udp_cmd_status_lbl.setStyleSheet("color: #888888;")
+
+    def _on_lsl_enabled_toggled(self, enabled: bool):
+        for widget in (self._lsl_angles_cb, self._lsl_torque_cb):
+            widget.setEnabled(enabled)
+        self._lsl_status_lbl.setText("Disabled" if not enabled else "Enabled")
+        self._lsl_status_lbl.setStyleSheet(
+            "color: #888888;" if not enabled else "color: #27ae60;"
+        )
+        if hasattr(self, "_telemetry_rate_spin"):
+            self._apply_stream_settings()
+
+    def _configure_lsl_outlets(self):
+        nominal_rate = float(self._telemetry_rate_spin.value())
+        enabled = self._lsl_enabled_cb.isChecked()
+        self._lsl_angles.configure(
+            enabled and self._lsl_angles_cb.isChecked(),
+            self.motor_names,
+            nominal_srate=nominal_rate,
+        )
+        self._lsl_torque.configure(
+            enabled and self._lsl_torque_cb.isChecked(),
+            self.motor_names,
+            nominal_srate=nominal_rate,
+        )
+        errors = [e for e in (self._lsl_angles.last_error, self._lsl_torque.last_error) if e]
+        if errors:
+            self._lsl_status_lbl.setText(f"LSL unavailable: {errors[0]}")
+            self._lsl_status_lbl.setStyleSheet("color: #c0392b;")
+        elif enabled and (self._lsl_angles_cb.isChecked() or self._lsl_torque_cb.isChecked()):
+            if self.motor_names:
+                self._lsl_status_lbl.setText(
+                    f"Publishing {len(self.motor_names)} channel(s) at telemetry refresh rate"
+                )
+                self._lsl_status_lbl.setStyleSheet("color: #27ae60;")
+            else:
+                self._lsl_status_lbl.setText("Enabled; waiting for device connection")
+                self._lsl_status_lbl.setStyleSheet("color: #f39c12;")
+        else:
+            self._lsl_status_lbl.setText("Disabled")
+            self._lsl_status_lbl.setStyleSheet("color: #888888;")
+
+    def _on_udp_command_status(self, text: str, color: str):
+        self._udp_cmd_status_lbl.setText(text)
+        self._udp_cmd_status_lbl.setStyleSheet(f"color: {color};")
+        self._log(f"[UDP command] {text}")
+
+    def _set_udp_command_feedback(
+        self, payload: str, sender: str, outcome: str, color: str
+    ):
+        preview = " ".join(payload.split())
+        if len(preview) > 120:
+            preview = preview[:117] + "..."
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._udp_last_command_lbl.setText(
+            f"Last received {ts} from {sender}: {preview} [{outcome}]"
+        )
+        self._udp_last_command_lbl.setStyleSheet(
+            f"color: {color}; font-size: 10px;"
+        )
+
+    def _on_udp_command(self, payload: str, sender: str):
+        if not self.exo_connected:
+            self._set_udp_command_feedback(
+                payload, sender, "ignored: device disconnected", "#c0392b"
+            )
+            self._log(f"[UDP command] Ignored from {sender}: device is not connected")
+            return
+        command = payload
+        if payload.startswith("{"):
+            try:
+                command = str(json.loads(payload).get("command", "")).strip()
+            except (TypeError, ValueError, json.JSONDecodeError):
+                self._set_udp_command_feedback(
+                    payload, sender, "rejected: invalid JSON", "#c0392b"
+                )
+                self._log(f"[UDP command] Invalid JSON from {sender}")
+                return
+        if not command:
+            self._set_udp_command_feedback(
+                payload, sender, "rejected: empty command", "#c0392b"
+            )
+            return
+
+        if not command.startswith("set_gesture:"):
+            if not self._udp_cmd_advanced_cb.isChecked():
+                self._set_udp_command_feedback(
+                    payload, sender, "rejected: gesture commands only", "#c0392b"
+                )
+                self._log(f"[UDP command] Rejected non-gesture command from {sender}: {command}")
+                return
+            allowed_prefixes = (
+                "get_", "info", "version", "set_exo_mode:", "enable:",
+                "disable:", "home:", "oled:", "set_velocity:", "set_current:",
+                "stop:", "set_control_mode:", "set_command_timeout:",
+            )
+            if not command.startswith(allowed_prefixes):
+                self._set_udp_command_feedback(
+                    payload, sender, "rejected: command blocked", "#c0392b"
+                )
+                self._log(f"[UDP command] Blocked command from {sender}: {command}")
+                return
+            for prefix in ("enable:", "disable:", "home:"):
+                if command.startswith(prefix):
+                    target = command.removeprefix(prefix).strip()
+                    try:
+                        target_id = int(target)
+                    except ValueError:
+                        self._set_udp_command_feedback(
+                            payload,
+                            sender,
+                            "rejected: active motor ID required",
+                            "#c0392b",
+                        )
+                        self._log(
+                            f"[UDP command] {prefix[:-1]} requires an active motor ID; "
+                            f"rejected '{target}' from {sender}"
+                        )
+                        return
+            if command.startswith(("set_velocity:", "set_current:")):
+                parts = command.split(":")
+                try:
+                    target_id = int(parts[1])
+                    target_value = float(parts[2])
+                except (IndexError, ValueError):
+                    self._set_udp_command_feedback(
+                        payload, sender, "rejected: expected ID and value", "#c0392b"
+                    )
+                    return
+                max_abs = 10.0 if command.startswith("set_velocity:") else 200.0
+                if target_id not in self._motor_dxl_id or abs(target_value) > max_abs:
+                    self._set_udp_command_feedback(
+                        payload,
+                        sender,
+                        "rejected: inactive ID or unsafe value",
+                        "#c0392b",
+                    )
+                    return
+                required_mode = (
+                    "velocity" if command.startswith("set_velocity:") else "current"
+                )
+                if self._direct_mode != required_mode:
+                    self._set_udp_command_feedback(
+                        payload,
+                        sender,
+                        f"rejected: set {required_mode} mode first",
+                        "#c0392b",
+                    )
+                    return
+                if target_id not in self._direct_armed_ids:
+                    self._set_udp_command_feedback(
+                        payload,
+                        sender,
+                        "rejected: motor not armed for direct control",
+                        "#c0392b",
+                    )
+                    return
+                # High-rate direct streaming commands are coalesced to avoid
+                # flooding the GUI thread and serial link with stale packets.
+                key = (parts[0], target_id)
+                self._udp_stream_pending[key] = (command, payload, sender)
+                self._angle_timer.stop()
+                self._udp_direct_idle_timer.start(
+                    self._direct_timeout_spin.value() + 100
+                )
+                now = time.monotonic()
+                if now - self._udp_stream_last_status >= 0.25:
+                    pending = len(self._udp_stream_pending)
+                    self._set_udp_command_feedback(
+                        payload,
+                        sender,
+                        f"streaming ({pending} latest target(s) queued)",
+                        "#27ae60",
+                    )
+                    self._udp_stream_last_status = now
+                return
+            if command.startswith("set_control_mode:"):
+                parts = command.split(":")
+                if (
+                    len(parts) != 3
+                    or parts[1] != "all"
+                    or parts[2] not in ("position", "current_position", "velocity", "current")
+                ):
+                    self._set_udp_command_feedback(
+                        payload, sender, "rejected: invalid control mode", "#c0392b"
+                    )
+                    return
+        self._set_udp_command_feedback(payload, sender, "received", "#f39c12")
+        try:
+            self.exo.send_command(command)
+            if command.startswith("set_control_mode:all:"):
+                selected_mode = command.rsplit(":", 1)[-1]
+                if selected_mode in ("velocity", "current"):
+                    self._direct_mode = selected_mode
+                    self._angle_timer.stop()
+                else:
+                    self._direct_mode = None
+                    self._resume_normal_polling()
+            self._set_udp_command_feedback(payload, sender, "accepted", "#27ae60")
+            self._log(f"[UDP command] {sender} -> {command}")
+        except Exception as exc:
+            self._set_udp_command_feedback(
+                payload, sender, f"failed: {exc}", "#c0392b"
+            )
+            self._log(f"[UDP command] Failed from {sender}: {exc}")
+
+    def _flush_udp_stream_commands(self):
+        if not self.exo_connected or not self._udp_stream_pending:
+            return
+        pending_items = list(self._udp_stream_pending.values())
+        self._udp_stream_pending.clear()
+        for command, payload, sender in pending_items:
+            try:
+                self.exo.send_command(command)
+                self._udp_stream_sent_since_status += 1
+            except Exception as exc:
+                self._set_udp_command_feedback(
+                    payload, sender, f"failed: {exc}", "#c0392b"
+                )
+                self._log(f"[UDP command] Failed from {sender}: {exc}")
+
+        now = time.monotonic()
+        if now - self._udp_stream_last_status >= 0.5:
+            sent = self._udp_stream_sent_since_status
+            self._udp_stream_sent_since_status = 0
+            self._udp_stream_last_status = now
+            self._udp_last_command_lbl.setText(
+                f"Streaming direct commands active ({sent} command(s) sent / 0.5 s)"
+            )
+            self._udp_last_command_lbl.setStyleSheet("color: #27ae60; font-size: 10px;")
 
     def _rebuild_teleop_table(self):
         """Repopulate the normalised-states table from the current motor list."""
@@ -1482,13 +2241,6 @@ class HandExoGUI(QWidget):
             self._vis_status_lbl.setText("No profiles loaded — showing home position")
             self._vis_status_lbl.setStyleSheet("color: #888888; font-size: 10px;")
 
-    def _on_telem_autorefresh(self, checked: bool):
-        if checked:
-            if self.exo_connected:
-                self._telem_timer.start(500)
-        else:
-            self._telem_timer.stop()
-
     def _rebuild_telem_table(self):
         """Populate telemetry table rows from self.motor_names after connect."""
         self._telem_table.setRowCount(len(self.motor_names))
@@ -1500,37 +2252,66 @@ class HandExoGUI(QWidget):
                 self._telem_table.setItem(row, col, item)
 
     def _poll_telemetry(self):
+        self._request_device_poll(force_telemetry=True)
+
+    def _run_bulk_serial_action(self, action_callback):
+        """Run a bulk serial action with poll scheduling paused, then refresh UI."""
+        was_angle_timer_active = self._angle_timer.isActive()
+        self._angle_timer.stop()
+        self._suspend_device_poll_requests = True
+        try:
+            # Let any in-flight poll finish so bulk commands don't queue behind it.
+            if self._device_poll_worker.isRunning():
+                self._device_poll_worker.wait(1200)
+            action_callback()
+        finally:
+            self._suspend_device_poll_requests = False
+            if was_angle_timer_active:
+                self._resume_normal_polling()
+        self._request_device_poll(force_telemetry=True)
+
+    def _request_device_poll(self, force_telemetry: bool = False):
         if not self.exo_connected:
             return
-        # Each call is independent: a failure in torque/current must not block position.
-        positions = None
-        torques   = None
-        currents  = None
-        try:
-            positions = self.exo.get_absolute_motor_angle('all')
-        except Exception:
-            pass
-        try:
-            torques = self.exo.get_motor_torque('all')
-        except Exception:
-            pass
-        try:
-            currents = self.exo.get_motor_current('all')
-        except Exception:
-            pass
+        if self._suspend_device_poll_requests:
+            return
+        if self._device_poll_worker.isRunning():
+            return
+        # Telemetry now always follows the configured broadcast rate.
+        include_telemetry = True
+        self._device_poll_worker.configure(self.exo, include_telemetry)
+        self._device_poll_worker.start()
 
+    def _on_device_poll_completed(self, result: dict):
+        if not self.exo_connected:
+            return
+        relative = result.get("relative")
+        if relative is not None:
+            self._apply_motor_angles(relative)
+
+        positions = result.get("positions")
+        torques = result.get("torques")
+        currents = result.get("currents")
         if positions is None and torques is None and currents is None:
             ts = datetime.now().strftime("%H:%M:%S")
             self._telem_status_lbl.setText(f"Read failed  {ts}")
             self._telem_status_lbl.setStyleSheet("color: #c0392b;")
             return
+        self._apply_telemetry_result(positions, torques, currents)
 
+    def _apply_telemetry_result(self, positions, torques, currents):
+        positions_by_name = {}
+        torque_by_name = {}
+        current_by_name = {}
         for name, row in self._motor_row.items():
             i      = self._motor_idx[name]
             dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
             pos  = positions.get(dxl_id) if (positions is not None and dxl_id is not None) else None
             torq = torques.get(dxl_id)   if (torques   is not None and dxl_id is not None) else None
             curr = currents.get(dxl_id)  if (currents  is not None and dxl_id is not None) else None
+            positions_by_name[name] = pos
+            torque_by_name[name] = torq
+            current_by_name[name] = curr
             self._telem_table.item(row, 1).setText(
                 f"{pos:.2f}"  if pos  is not None else "—"
             )
@@ -1541,9 +2322,64 @@ class HandExoGUI(QWidget):
                 f"{curr:.1f}" if curr is not None else "—"
             )
 
+        now = time.monotonic()
+        actual_rate = None
+        if self._last_telemetry_update_monotonic is not None:
+            elapsed = now - self._last_telemetry_update_monotonic
+            if elapsed > 0:
+                instantaneous = 1.0 / elapsed
+                if self._telemetry_rate_ema is None:
+                    self._telemetry_rate_ema = instantaneous
+                else:
+                    self._telemetry_rate_ema = (
+                        0.25 * instantaneous + 0.75 * self._telemetry_rate_ema
+                    )
+                actual_rate = self._telemetry_rate_ema
+        self._last_telemetry_update_monotonic = now
         ts = datetime.now().strftime("%H:%M:%S")
-        self._telem_status_lbl.setText(f"Last update OK  {ts}")
+        if actual_rate is None:
+            status = (
+                f"Last update OK {ts} "
+                f"({self._telemetry_rate_spin.value()} Hz target)"
+            )
+        else:
+            status = (
+                f"Last update OK {ts} "
+                f"({actual_rate:.1f} Hz actual / "
+                f"{self._telemetry_rate_spin.value()} Hz target)"
+            )
+        self._telem_status_lbl.setText(status)
         self._telem_status_lbl.setStyleSheet("color: #27ae60;")
+        self._publish_telemetry(
+            positions_by_name, torque_by_name, current_by_name
+        )
+
+    def _publish_telemetry(
+        self,
+        positions: dict[str, float | None],
+        torques: dict[str, float | None],
+        currents: dict[str, float | None],
+    ):
+        self._lsl_angles.publish(positions)
+        self._lsl_torque.publish(torques)
+        if not self._udp_telemetry.enabled:
+            return
+        frame = {
+            "timestamp": time.time(),
+            "source": "nml_hand_exo",
+            "side": (
+                "dual" if self.mode_combo.currentText() == "Dual"
+                else self.mode_combo.currentText().split()[0].lower()
+            ),
+            "joint_angles_deg": positions,
+            "motor_torque_nm": torques,
+            "motor_current_ma": currents,
+        }
+        try:
+            self._udp_telemetry.publish(frame)
+        except (OSError, ValueError) as exc:
+            self._udp_telem_status_lbl.setText(f"Send error: {exc}")
+            self._udp_telem_status_lbl.setStyleSheet("color: #c0392b;")
 
     def _build_header(self):
         title = QLabel("NML EXO")
@@ -1578,40 +2414,61 @@ class HandExoGUI(QWidget):
         row0.addStretch()
         outer.addLayout(row0)
 
-        # --- Row 1: Primary port (label updates based on mode) ---
+        # --- Row 1: Serial port. Give long USB descriptions the full width. ---
         row1 = QHBoxLayout()
         self.port_label = QLabel("Port (R):")
         self.port_combo = QComboBox()
         self.port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.port_combo.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.port_combo.setMinimumContentsLength(24)
 
-        self.refresh_btn = QPushButton("⟳")
-        self.refresh_btn.setFixedWidth(32)
+        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.setToolTip("Rescan serial ports")
         self.refresh_btn.clicked.connect(self._refresh_ports)
 
+        self.probe_btn = QPushButton("Probe Ports")
+        self.probe_btn.setToolTip(
+            "Try each serial port at the selected baud and mark the ones that answer the exo info command."
+        )
+        self.probe_btn.clicked.connect(self._probe_ports)
+
+        row1.addWidget(self.port_label)
+        row1.addWidget(self.port_combo, 1)
+        row1.addWidget(self.refresh_btn)
+        row1.addWidget(self.probe_btn)
+        outer.addLayout(row1)
+
+        # --- Row 2: Baud, connection actions, and status. ---
+        row2 = QHBoxLayout()
         self.baud_combo = QComboBox()
         for b in ["9600", "57600", "115200", "230400"]:
             self.baud_combo.addItem(b)
-        self.baud_combo.setCurrentText("57600")
+        self.baud_combo.setCurrentText("115200")
+        self.baud_combo.setMinimumContentsLength(6)
 
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.setProperty("accent", True)
         self.connect_btn.clicked.connect(self._connect)
+        self._fit_button_text(self.connect_btn)
 
         self.disconnect_btn = QPushButton("Disconnect")
         self.disconnect_btn.clicked.connect(self._disconnect)
+        self._fit_button_text(self.disconnect_btn)
 
         self.status_label = QLabel("Disconnected")
         self.status_label.setObjectName("status-disconnected")
+        self.status_label.setWordWrap(True)
+        self.status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-        row1.addWidget(self.port_label)
-        row1.addWidget(self.port_combo, 3)
-        row1.addWidget(self.refresh_btn)
-        row1.addWidget(QLabel("Baud:"))
-        row1.addWidget(self.baud_combo, 1)
-        row1.addWidget(self.connect_btn)
-        row1.addWidget(self.disconnect_btn)
-        row1.addWidget(self.status_label, 2)
-        outer.addLayout(row1)
+        row2.addWidget(QLabel("Baud:"))
+        row2.addWidget(self.baud_combo)
+        row2.addWidget(self.connect_btn)
+        row2.addWidget(self.disconnect_btn)
+        row2.addSpacing(8)
+        row2.addWidget(self.status_label, 1)
+        outer.addLayout(row2)
 
         # Populate port combo now that all widgets exist.
         self._refresh_ports()
@@ -1619,11 +2476,83 @@ class HandExoGUI(QWidget):
         box.setLayout(outer)
         self.main_layout.addWidget(box)
 
+    @staticmethod
+    def _fit_button_text(button: QPushButton):
+        """Prevent layouts from compressing a button below its readable text."""
+        button.setMinimumWidth(button.sizeHint().width())
+        button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+
     def _refresh_ports(self):
+        previous_port = self.port_combo.currentData()
         ports = list_ports.comports()
+        self.port_combo.blockSignals(True)
         self.port_combo.clear()
         for p in ports:
-            self.port_combo.addItem(f"{p.device} - {p.description}", p.device)
+            self.port_combo.addItem(_format_port_label(p), p.device)
+        if previous_port is not None:
+            previous_index = self.port_combo.findData(previous_port)
+            if previous_index >= 0:
+                self.port_combo.setCurrentIndex(previous_index)
+        self.port_combo.blockSignals(False)
+        if hasattr(self, "status_label") and not self.exo_connected:
+            self.status_label.setText(
+                f"Disconnected - {len(ports)} serial port(s) found"
+                if ports
+                else "Disconnected - no serial ports found"
+            )
+            self.status_label.setObjectName("status-disconnected")
+            self.status_label.setStyle(self.status_label.style())
+        if hasattr(self, "connect_btn"):
+            has_ports = self.port_combo.count() > 0
+            self.connect_btn.setEnabled((not self.exo_connected) and has_ports)
+            self.port_combo.setEnabled((not self.exo_connected) and has_ports)
+            self.probe_btn.setEnabled((not self.exo_connected) and has_ports)
+
+    def _probe_ports(self):
+        ports = list_ports.comports()
+        if not ports:
+            QMessageBox.information(self, "No Ports", "No serial ports were found.")
+            return
+        baud = int(self.baud_combo.currentText())
+        matches = []
+        for port in ports:
+            try:
+                comm = SerialComm(port=port.device, baudrate=baud, response_timeout=0.5)
+                exo = HandExo(
+                    comm,
+                    auto_connect=True,
+                    verbose=False,
+                    command_delimiter='\r\n',
+                )
+                info = exo.info(timeout=1.5)
+                motors = info.get("motors", {}) if isinstance(info, dict) else {}
+                if motors:
+                    matches.append((port.device, port.description, info.get("side", "unknown")))
+                exo.close()
+            except Exception:
+                try:
+                    comm.close()
+                except Exception:
+                    pass
+
+        if not matches:
+            QMessageBox.information(
+                self,
+                "Probe Result",
+                f"No ports answered an exo info request at {baud} baud.\n\n"
+                "Tip: the USB cable is usually the USB Serial Device entry; the Bluetooth link entries often show as 'Standard Serial over Bluetooth link'.",
+            )
+            return
+
+        lines = []
+        for device, description, side in matches:
+            label = f"{device} - {description}" if description else device
+            lines.append(f"{label}  [{side}]")
+        QMessageBox.information(
+            self,
+            "Probe Result",
+            "Ports that answered the exo info command:\n\n" + "\n".join(lines),
+        )
 
     def _on_mode_changed(self, mode_text: str):
         """Update port label and dual-mode widgets based on mode."""
@@ -1697,7 +2626,7 @@ class HandExoGUI(QWidget):
         col_header = QHBoxLayout()
         for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("", 1)]:
             lbl = QLabel(text)
-            lbl.setStyleSheet("color: #888888; font-size: 11px;")
+            lbl.setStyleSheet("color: #9a9a9a; font-size: 13px; font-weight: 600;")
             col_header.addWidget(lbl, stretch)
         self._motor_panel_v.addLayout(col_header)
 
@@ -1764,10 +2693,12 @@ class HandExoGUI(QWidget):
         hdr.addWidget(title_lbl)
         hdr.addStretch()
         en_btn = QPushButton(f"Enable {title}")
-        en_btn.setFixedHeight(22)
+        en_btn.setMinimumHeight(28)
+        en_btn.setStyleSheet("padding: 4px 12px;")
         en_btn.clicked.connect(lambda _, s=side: self._motor_side("enable", s))
         dis_btn = QPushButton(f"Disable {title}")
-        dis_btn.setFixedHeight(22)
+        dis_btn.setMinimumHeight(28)
+        dis_btn.setStyleSheet("padding: 4px 12px;")
         dis_btn.clicked.connect(lambda _, s=side: self._motor_side("disable", s))
         hdr.addWidget(en_btn)
         hdr.addWidget(dis_btn)
@@ -1784,7 +2715,7 @@ class HandExoGUI(QWidget):
         col_hdr = QHBoxLayout()
         for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("", 1)]:
             lbl = QLabel(text)
-            lbl.setStyleSheet("color: #888888; font-size: 11px;")
+            lbl.setStyleSheet("color: #9a9a9a; font-size: 13px; font-weight: 600;")
             col_hdr.addWidget(lbl, stretch)
         layout.addLayout(col_hdr)
 
@@ -1817,7 +2748,8 @@ class HandExoGUI(QWidget):
         status_lbl = QLabel("--")
 
         toggle_btn = QPushButton("Enable")
-        toggle_btn.setFixedWidth(80)
+        toggle_btn.setMinimumWidth(102)
+        toggle_btn.setStyleSheet("padding: 4px 12px;")
         dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
         toggle_btn.clicked.connect(self._make_motor_toggle(i, dxl_id))
 
@@ -1857,17 +2789,28 @@ class HandExoGUI(QWidget):
                     self.exo.disable_motor(motor_ref)
                     w["enabled"] = False
                     w["user_disabled"] = True   # explicit user action — block gesture re-enable
+                    if dxl_id in self._direct_armed_ids:
+                        self._direct_armed_ids.discard(dxl_id)
+                        self._update_direct_arm_status()
                     w["toggle_btn"].setText("Enable")
                     w["status_lbl"].setText("OFF")
                     w["status_lbl"].setStyleSheet("color: #c0392b;")
                     self._log(f"Disabled motor {motor_ref}")
                 else:
+                    if not self._ensure_position_control():
+                        raise RuntimeError("Could not restore current-position mode")
                     self.exo.enable_motor(motor_ref)
                     w["enabled"] = True
                     w["user_disabled"] = False  # explicit user action — clear the block
+                    if self._direct_mode is not None and dxl_id is not None:
+                        self._direct_armed_ids.add(dxl_id)
+                        w["status_lbl"].setText("DIRECT")
+                        w["status_lbl"].setStyleSheet("color: #f39c12;")
+                        self._update_direct_arm_status()
+                    else:
+                        w["status_lbl"].setText("ON")
+                        w["status_lbl"].setStyleSheet("color: #27ae60;")
                     w["toggle_btn"].setText("Disable")
-                    w["status_lbl"].setText("ON")
-                    w["status_lbl"].setStyleSheet("color: #27ae60;")
                     self._log(f"Enabled motor {motor_ref}")
             except Exception as e:
                 self._log(f"Error toggling motor {motor_ref}: {e}")
@@ -1941,6 +2884,8 @@ class HandExoGUI(QWidget):
         moved by gesture commands until explicitly re-enabled.  Only motors
         whose ``user_disabled`` flag is False are enabled here.
         """
+        if not self._ensure_position_control():
+            raise RuntimeError("Could not restore current-position mode")
         if not self._gesture_ready:
             mode = self.mode_combo.currentText() if hasattr(self, "mode_combo") else "Right Only"
 
@@ -2232,15 +3177,17 @@ class HandExoGUI(QWidget):
             # One controller, one serial connection for all modes.
             # Both hands share the same OpenRB-150 board and Dynamixel bus.
             side = "left" if mode == "Left Only" else ("right" if mode == "Right Only" else None)
-            comm = SerialComm(port=port, baudrate=baud)
-            self.exo = HandExo(comm, side=side, auto_connect=True,
-                               verbose=False, command_delimiter='\r\n')
+            comm = SerialComm(port=port, baudrate=baud, response_timeout=0.5)
+            self.exo = SynchronizedHandExo(
+                HandExo(comm, side=side, auto_connect=True,
+                        verbose=False, command_delimiter='\r\n')
+            )
             conn_desc = f"{port} @ {baud} [{mode}]"
 
             self._log(f"Connecting: mode={mode}, port={port}, baud={baud}, "
                       f"expected_side={side or 'all'}")
 
-            info = self.exo.info()
+            info = self.exo.info(timeout=5.0)
             motors_dict = info.get("motors", {})  # keyed by Dynamixel ID
 
             # ID ranges that define handedness on the shared bus.
@@ -2278,6 +3225,31 @@ class HandExoGUI(QWidget):
                 self._motor_dxl_id.append(dxl_id)
 
             self.n_motors = len(self.motor_names)
+            if self.n_motors == 0:
+                detected_ids = sorted(motors_dict.keys())
+                reported_side = info.get("side", "unknown")
+                reported_count = info.get("n_motors", "unknown")
+                if detected_ids:
+                    raise ConnectionError(
+                        f"The device reported motor IDs {detected_ids} "
+                        f"(firmware side: {reported_side}), but {mode} expects "
+                        f"{'IDs 1-9' if mode == 'Left Only' else 'IDs 11-19'}. "
+                        "Select the matching GUI mode or flash the intended firmware build."
+                    )
+
+                raw_preview = " ".join(info.get("_raw", "").split())[:240]
+                detail = (
+                    f" Parsed header: side={reported_side}, "
+                    f"motor_count={reported_count}."
+                    if info else ""
+                )
+                preview = f" Response preview: {raw_preview}" if raw_preview else ""
+                raise ConnectionError(
+                    f"No complete motor records were received from {port} at {baud} baud."
+                    f"{detail}{preview} The firmware in this repository defaults the "
+                    "OpenRB USB serial port to 115200 baud; use the exact baud that shows "
+                    "readable output in Arduino Serial Monitor."
+                )
 
             self._log(f"Detected motor IDs: {self._motor_dxl_id}")
             self._log(f"Left motors ({len(self._left_motor_names)}): {self._left_motor_names}")
@@ -2321,15 +3293,24 @@ class HandExoGUI(QWidget):
             self._motor_row = {name: row for row, name in enumerate(self.motor_names)}
 
             self._build_motor_rows()
+            self._sync_motor_enabled_states_after_connect()
             self._rebuild_telem_table()
             self._rebuild_teleop_table()
+            self._rebuild_direct_motor_combo()
+            self._configure_lsl_outlets()
+            self._last_telemetry_update_monotonic = None
+            self._telemetry_rate_ema = None
             self._telem_status_lbl.setText("Connected — waiting for first poll")
             self._telem_status_lbl.setStyleSheet("color: #888888;")
             self._refresh_profiles()
-            self._angle_timer.start(500)
-            if self._telem_auto_cb.isChecked():
-                self._telem_timer.start(500)
+            self._angle_timer.start(self._angle_timer.interval() or 50)
+            self._request_device_poll()
         except Exception as e:
+            try:
+                if self.exo:
+                    self.exo.close()
+            except Exception:
+                pass
             self.exo = None
             self.exo_connected = False
             QMessageBox.critical(self, "Connection Error", str(e))
@@ -2345,8 +3326,8 @@ class HandExoGUI(QWidget):
             self._on_teleop_stop()
         if self._teleop_worker.isRunning():
             self._teleop_worker.stop()
+        self._stop_all_direct_control()
         self._angle_timer.stop()
-        self._telem_timer.stop()
         try:
             if self.exo:
                 self.exo.close()
@@ -2360,6 +3341,12 @@ class HandExoGUI(QWidget):
         self._left_motor_names  = []
         self._right_motor_names = []
         self._motor_dxl_id      = []
+        self.motor_names        = []
+        self._direct_motor_combo.clear()
+        self._direct_mode = None
+        self._direct_mode_status.setText("Not configured")
+        self._direct_mode_status.setStyleSheet("color: #888888;")
+        self._configure_lsl_outlets()
         self._active_cal_left   = None
         self._active_cal_right  = None
         self._set_active_profile("", None)
@@ -2372,6 +3359,8 @@ class HandExoGUI(QWidget):
                     item.setText("—")
         self._telem_status_lbl.setText("Not connected")
         self._telem_status_lbl.setStyleSheet("color: #888888;")
+        self._last_telemetry_update_monotonic = None
+        self._telemetry_rate_ema = None
         self.status_label.setText("Disconnected")
         self.status_label.setObjectName("status-disconnected")
         self.status_label.setStyle(self.status_label.style())
@@ -2391,27 +3380,96 @@ class HandExoGUI(QWidget):
             return
         try:
             if action == "enable":
-                for dxl_id in self._motor_dxl_id:
-                    self.exo.enable_motor(dxl_id)
+                # Do not rely only on cached _direct_mode. UDP direct commands
+                # can leave firmware in velocity/current mode; force position mode
+                # before torque-enable so motors do not feel limp.
+                self.exo.set_control_mode("current_position")
+                self._direct_mode = None
+                self._direct_armed_ids.clear()
+                self._update_direct_arm_status()
+                self._log("Set control mode to current_position before enabling motors.")
+                def _enable_all(exo):
+                    for dxl_id in self._motor_dxl_id:
+                        exo.enable_motor(dxl_id)
+
+                self._run_bulk_serial_action(lambda: self.exo.run_locked(_enable_all))
                 for w in self.motor_widgets:
                     w["enabled"] = True
                     w["user_disabled"] = False  # explicit "Enable All" clears user-disabled
                     w["toggle_btn"].setText("Disable")
                     w["status_lbl"].setText("ON")
                     w["status_lbl"].setStyleSheet("color: #27ae60;")
-                self._log("Enabled all motors.")
+                self._log(f"Enabled all motors: IDs {self._motor_dxl_id}")
             else:
-                for dxl_id in self._motor_dxl_id:
-                    self.exo.disable_motor(dxl_id)
+                def _disable_all(exo):
+                    for dxl_id in self._motor_dxl_id:
+                        exo.disable_motor(dxl_id)
+
+                self._run_bulk_serial_action(lambda: self.exo.run_locked(_disable_all))
                 for w in self.motor_widgets:
                     w["enabled"] = False
                     w["user_disabled"] = True   # explicit "Disable All" marks all user-disabled
                     w["toggle_btn"].setText("Enable")
                     w["status_lbl"].setText("OFF")
                     w["status_lbl"].setStyleSheet("color: #c0392b;")
-                self._log("Disabled all motors.")
+                self._log(f"Disabled all motors: IDs {self._motor_dxl_id}")
         except Exception as e:
             self._log(f"Error: {e}")
+
+    def _sync_motor_enabled_states_after_connect(self):
+        """Read per-motor torque state from firmware and update row widgets.
+
+        Runs once after connect so each row reflects the real startup state
+        instead of assuming all motors are OFF.
+        """
+        if not self.exo_connected or not self.motor_widgets:
+            return
+        try:
+            enabled_by_id = self.exo.run_locked(lambda exo: exo.is_enabled("all"))
+        except Exception as exc:
+            self._log(f"Warning: could not read initial motor enabled states: {exc}")
+            return
+
+        if not isinstance(enabled_by_id, dict):
+            self._log("Warning: unexpected enabled-state response; leaving motor row states unchanged.")
+            return
+
+        resolved = 0
+        enabled_count = 0
+        unresolved_ids = []
+        for w in self.motor_widgets:
+            dxl_id = w.get("dxl_id")
+            if dxl_id is None:
+                continue
+
+            state = enabled_by_id.get(dxl_id)
+            if state is None:
+                unresolved_ids.append(dxl_id)
+                continue
+
+            is_enabled = bool(state)
+            w["enabled"] = is_enabled
+            # Keep user_disabled reserved for explicit user actions only.
+            w["user_disabled"] = False
+            if is_enabled:
+                enabled_count += 1
+                w["toggle_btn"].setText("Disable")
+                w["status_lbl"].setText("ON")
+                w["status_lbl"].setStyleSheet("color: #27ae60;")
+            else:
+                w["toggle_btn"].setText("Enable")
+                w["status_lbl"].setText("OFF")
+                w["status_lbl"].setStyleSheet("color: #c0392b;")
+            resolved += 1
+
+        if resolved:
+            self._log(
+                f"Synced initial motor states: {enabled_count}/{resolved} enabled."
+            )
+        if unresolved_ids:
+            self._log(
+                f"Warning: could not resolve enabled state for motor IDs {sorted(unresolved_ids)}."
+            )
 
     def _motor_side(self, action: str, side: str):
         """Enable or disable all motors belonging to one exo side.
@@ -2428,24 +3486,38 @@ class HandExoGUI(QWidget):
             self._log(f"No {side} motors to {action}.")
             return
         try:
+            if action == "enable":
+                # Force position mode before side enable to avoid stale direct mode.
+                self.exo.set_control_mode("current_position")
+                self._direct_mode = None
+                self._direct_armed_ids.clear()
+                self._update_direct_arm_status()
+                self._log(
+                    f"Set control mode to current_position before enabling {side} motors."
+                )
+            side_ids = [w.get("dxl_id") for w in side_widgets if w.get("dxl_id")]
+            def _toggle_side(exo):
+                for dxl_id in side_ids:
+                    if action == "enable":
+                        exo.enable_motor(dxl_id)
+                    else:
+                        exo.disable_motor(dxl_id)
+
+            self._run_bulk_serial_action(lambda: self.exo.run_locked(_toggle_side))
             for w in side_widgets:
-                # Use integer DXL ID so commands don't collide on duplicate names
-                motor_ref = w.get("dxl_id") or w["cmd_name"]
                 if action == "enable":
-                    self.exo.enable_motor(motor_ref)
                     w["enabled"]       = True
                     w["user_disabled"] = False
                     w["toggle_btn"].setText("Disable")
                     w["status_lbl"].setText("ON")
                     w["status_lbl"].setStyleSheet("color: #27ae60;")
                 else:
-                    self.exo.disable_motor(motor_ref)
                     w["enabled"]       = False
                     w["user_disabled"] = True
                     w["toggle_btn"].setText("Enable")
                     w["status_lbl"].setText("OFF")
                     w["status_lbl"].setStyleSheet("color: #c0392b;")
-            self._log(f"{action.capitalize()}d all {side} motors.")
+            self._log(f"{action.capitalize()}d all {side} motors: IDs {side_ids}")
         except Exception as e:
             self._log(f"Error {action}ing {side} motors: {e}")
 
@@ -2491,27 +3563,24 @@ class HandExoGUI(QWidget):
         if not self.exo_connected:
             return
         try:
+            if not self._ensure_position_control():
+                raise RuntimeError("Could not restore current-position mode")
             for dxl_id in self._motor_dxl_id:
                 self.exo.home(dxl_id)
             self._log("Homed all motors.")
         except Exception as e:
             self._log(f"Home error: {e}")
 
-    def _poll_motor_angles(self):
+    def _apply_motor_angles(self, angles: dict):
         if not self.exo_connected:
             return
         # Source: get_angle:all → firmware getRelativeAngle (zeroed at home, flip applied).
         # HandExo returns {Dynamixel_ID: angle}; map to widget index via _motor_dxl_id.
-        angles: dict = {}
-        try:
-            angles = self.exo.get_motor_angle('all')
-            for i, w in enumerate(self.motor_widgets):
-                dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
-                val = angles.get(dxl_id) if dxl_id is not None else None
-                if val is not None:
-                    w["angle_lbl"].setText(f"{float(val):.2f} deg")
-        except Exception:
-            pass
+        for i, w in enumerate(self.motor_widgets):
+            dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
+            val = angles.get(dxl_id) if dxl_id is not None else None
+            if val is not None:
+                w["angle_lbl"].setText(f"{float(val):.2f} deg")
 
         # Normalise each relative angle to [0, 1] for the Hand State visualisation.
         t_dict: dict[str, float] = {}
@@ -2715,10 +3784,14 @@ class HandExoGUI(QWidget):
 
     def _update_enabled_state(self):
         on = self.exo_connected
-        self.connect_btn.setEnabled(not on)
+        has_ports = self.port_combo.count() > 0
+        self.connect_btn.setEnabled((not on) and has_ports)
         self.disconnect_btn.setEnabled(on)
-        # Disable the mode combo while connected so the user can't change it mid-session.
+        # Disable connection controls while connected so the serial target is stable.
         self.mode_combo.setEnabled(not on)
+        self.port_combo.setEnabled((not on) and has_ports)
+        self.baud_combo.setEnabled(not on)
+        self.refresh_btn.setEnabled(not on)
         self.enable_all_btn.setEnabled(on)
         self.disable_all_btn.setEnabled(on)
         self.home_all_btn.setEnabled(on)
@@ -2731,6 +3804,282 @@ class HandExoGUI(QWidget):
         self._teleop_start_btn.setEnabled(
             on and self._teleop_ws_connected and not self._teleop_streaming
         )
+        for widget in (
+            self._direct_apply_mode_btn,
+            self._direct_position_btn,
+            self._direct_arm_btn,
+            self._direct_send_btn,
+            self._direct_zero_btn,
+            self._direct_stop_all_btn,
+        ):
+            widget.setEnabled(on)
+
+    # -- Direct control tab handlers --------------------------------------
+
+    def _on_direct_mode_selection_changed(self, text: str):
+        self._zero_direct_target()
+        if text == "Velocity":
+            self._direct_command_spin.setRange(-10.0, 10.0)
+            self._direct_command_spin.setSuffix(" rpm")
+        else:
+            self._direct_command_spin.setRange(-200.0, 200.0)
+            self._direct_command_spin.setSuffix(" mA")
+
+    def _rebuild_direct_motor_combo(self):
+        self._direct_motor_combo.clear()
+        for name, dxl_id in zip(self.motor_names, self._motor_dxl_id):
+            self._direct_motor_combo.addItem(f"{name} (ID {dxl_id})", dxl_id)
+        self._update_direct_arm_status()
+
+    def _selected_direct_motor_id(self) -> int | None:
+        value = self._direct_motor_combo.currentData()
+        return int(value) if value is not None else None
+
+    def _apply_direct_mode(self):
+        if not self.exo_connected:
+            return
+        self._stop_all_direct_control()
+        mode = (
+            "velocity"
+            if self._direct_mode_combo.currentText() == "Velocity"
+            else "current"
+        )
+        try:
+            for dxl_id in self._motor_dxl_id:
+                self.exo.disable_motor(dxl_id)
+            self.exo.set_direct_command_timeout(self._direct_timeout_spin.value())
+            self.exo.set_control_mode(mode)
+            self._direct_mode = mode
+            self._angle_timer.stop()
+            self._direct_armed_ids.clear()
+            for motor in self.motor_widgets:
+                motor["enabled"] = False
+                motor["toggle_btn"].setText("Enable")
+                motor["status_lbl"].setText("OFF")
+                motor["status_lbl"].setStyleSheet("color: #c0392b;")
+            self._direct_mode_status.setText(
+                f"{mode.title()} mode; torque off"
+            )
+            self._direct_mode_status.setStyleSheet("color: #f39c12;")
+            self._update_direct_arm_status()
+            self._log(
+                f"[Direct] Applied {mode} mode with "
+                f"{self._direct_timeout_spin.value()} ms watchdog."
+            )
+        except Exception as exc:
+            self._direct_mode = None
+            self._direct_mode_status.setText(f"Mode error: {exc}")
+            self._direct_mode_status.setStyleSheet("color: #c0392b;")
+            self._log(f"[Direct] Mode change failed: {exc}")
+
+    def _restore_position_control(self) -> bool:
+        if not self.exo_connected:
+            return False
+        self._stop_all_direct_control()
+        try:
+            for dxl_id in self._motor_dxl_id:
+                self.exo.disable_motor(dxl_id)
+            self.exo.set_control_mode("current_position")
+            self._direct_mode = None
+            self._direct_armed_ids.clear()
+            self._direct_mode_status.setText(
+                "Current-position mode; torque off"
+            )
+            self._direct_mode_status.setStyleSheet("color: #27ae60;")
+            self._update_direct_arm_status()
+            self._log("[Direct] Returned to current-position control.")
+            self._resume_normal_polling(force_refresh=True)
+            return True
+        except Exception as exc:
+            self._log(f"[Direct] Could not restore position control: {exc}")
+            return False
+
+    def _ensure_position_control(self) -> bool:
+        if self._direct_mode is None:
+            return True
+        return self._restore_position_control()
+
+    def _on_direct_arm_toggled(self, checked: bool):
+        if not checked:
+            self._set_direct_motor_armed(False)
+            return
+        if self._set_direct_motor_armed(True):
+            return
+        # Revert toggle when arming failed or was cancelled.
+        self._direct_arm_btn.blockSignals(True)
+        self._direct_arm_btn.setChecked(False)
+        self._direct_arm_btn.blockSignals(False)
+
+    def _set_direct_motor_armed(self, armed: bool) -> bool:
+        if not self.exo_connected or self._direct_mode is None:
+            if armed:
+                QMessageBox.warning(
+                    self,
+                    "Direct Mode Not Ready",
+                    "Apply a direct-control mode before arming a motor.",
+                )
+            return False
+
+        dxl_id = self._selected_direct_motor_id()
+        if dxl_id is None:
+            return False
+
+        if armed and self._direct_arm_confirm_cb.isChecked():
+            answer = QMessageBox.warning(
+                self,
+                "Arm Direct Control",
+                f"Enable direct {self._direct_mode} control for motor ID {dxl_id}?\n\n"
+                "Keep the mechanism clear. Releasing Hold to Command sends zero.",
+                QMessageBox.Yes | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if answer != QMessageBox.Yes:
+                return False
+
+        try:
+            if armed:
+                self.exo.stop_direct_control(dxl_id)
+                self.exo.enable_motor(dxl_id)
+                self._direct_armed_ids.add(dxl_id)
+            else:
+                self.exo.stop_direct_control(dxl_id)
+                self.exo.disable_motor(dxl_id)
+                self._direct_armed_ids.discard(dxl_id)
+
+            for motor in self.motor_widgets:
+                if motor.get("dxl_id") != dxl_id:
+                    continue
+                motor["enabled"] = armed
+                motor["toggle_btn"].setText("Disable" if armed else "Enable")
+                motor["status_lbl"].setText("DIRECT" if armed else "OFF")
+                motor["status_lbl"].setStyleSheet(
+                    "color: #f39c12;" if armed else "color: #c0392b;"
+                )
+                break
+
+            self._update_direct_arm_status()
+            self._log(
+                f"[Direct] {'Armed' if armed else 'Disarmed'} motor ID {dxl_id}."
+            )
+            return True
+        except Exception as exc:
+            self._log(
+                f"[Direct] Could not {'arm' if armed else 'disarm'} motor ID {dxl_id}: {exc}"
+            )
+            return False
+
+    def _arm_direct_motor(self):
+        # Backward-compatible shim: arm currently selected motor.
+        self._set_direct_motor_armed(True)
+
+    def _update_direct_arm_status(self):
+        if not hasattr(self, "_direct_arm_status"):
+            return
+        dxl_id = self._selected_direct_motor_id()
+        armed = dxl_id is not None and dxl_id in self._direct_armed_ids
+        if hasattr(self, "_direct_arm_btn"):
+            self._direct_arm_btn.blockSignals(True)
+            self._direct_arm_btn.setChecked(armed)
+            self._direct_arm_btn.blockSignals(False)
+        if armed:
+            self._direct_arm_status.setText(f"Motor ID {dxl_id} armed")
+            self._direct_arm_status.setStyleSheet("color: #27ae60;")
+        else:
+            self._direct_arm_status.setText("Selected motor is not armed")
+            self._direct_arm_status.setStyleSheet("color: #888888;")
+
+    def _start_direct_command(self):
+        dxl_id = self._selected_direct_motor_id()
+        if (
+            not self.exo_connected
+            or self._direct_mode is None
+            or dxl_id not in self._direct_armed_ids
+        ):
+            self._direct_send_btn.setDown(False)
+            self._update_direct_arm_status()
+            return
+        try:
+            # Direct mode changes torque state globally; force selected motor on
+            # at command start so "DIRECT" never maps to a torque-off motor.
+            self.exo.enable_motor(dxl_id)
+            for motor in self.motor_widgets:
+                if motor.get("dxl_id") == dxl_id:
+                    motor["enabled"] = True
+                    motor["user_disabled"] = False
+                    motor["toggle_btn"].setText("Disable")
+                    motor["status_lbl"].setText("DIRECT")
+                    motor["status_lbl"].setStyleSheet("color: #f39c12;")
+                    break
+        except Exception as exc:
+            self._log(f"[Direct] Could not enable motor ID {dxl_id}: {exc}")
+            self._direct_send_btn.setDown(False)
+            return
+        self._direct_command_active = True
+        self._angle_timer.stop()
+        self._send_direct_command_tick()
+        self._direct_command_timer.start()
+
+    def _send_direct_command_tick(self):
+        if not self._direct_command_active or not self.exo_connected:
+            return
+        dxl_id = self._selected_direct_motor_id()
+        if dxl_id is None or dxl_id not in self._direct_armed_ids:
+            self._zero_direct_target()
+            return
+        value = self._direct_command_spin.value()
+        try:
+            if self._direct_mode == "velocity":
+                self.exo.set_direct_velocity(dxl_id, value)
+            elif self._direct_mode == "current":
+                self.exo.set_direct_current(dxl_id, value)
+        except Exception as exc:
+            self._log(f"[Direct] Command failed for motor ID {dxl_id}: {exc}")
+            self._zero_direct_target()
+
+    def _zero_direct_target(self):
+        self._direct_command_active = False
+        if hasattr(self, "_direct_command_timer"):
+            self._direct_command_timer.stop()
+        if not self.exo_connected:
+            return
+        dxl_id = self._selected_direct_motor_id()
+        if dxl_id is None:
+            return
+        try:
+            self.exo.stop_direct_control(dxl_id)
+        except Exception as exc:
+            self._log(f"[Direct] Zero target failed for motor ID {dxl_id}: {exc}")
+        self._resume_normal_polling()
+
+    def _stop_all_direct_control(self):
+        self._direct_command_active = False
+        if hasattr(self, "_direct_command_timer"):
+            self._direct_command_timer.stop()
+        if self.exo_connected:
+            try:
+                self.exo.stop_direct_control("all")
+                for dxl_id in list(self._direct_armed_ids):
+                    self.exo.disable_motor(dxl_id)
+            except Exception as exc:
+                self._log(f"[Direct] Stop all failed: {exc}")
+        self._direct_armed_ids.clear()
+        self._update_direct_arm_status()
+        if hasattr(self, "_direct_mode_status") and self._direct_mode is not None:
+            self._direct_mode_status.setText(
+                f"{self._direct_mode.title()} mode; all targets stopped"
+            )
+            self._direct_mode_status.setStyleSheet("color: #f39c12;")
+        self._resume_normal_polling()
+
+    def _resume_normal_polling(self, force_refresh: bool = False):
+        if (
+            self.exo_connected
+            and not self._teleop_streaming
+            and self._direct_mode is None
+        ):
+            self._angle_timer.start(self._angle_timer.interval() or 50)
+            if force_refresh:
+                self._request_device_poll(force_telemetry=True)
 
     # -- Teleop tab handlers -----------------------------------------------
 
@@ -2794,6 +4143,24 @@ class HandExoGUI(QWidget):
 
         self._log(f"[Teleop WS] {msg}")
 
+    def _on_teleop_frame_sent(self, payload: str):
+        try:
+            frame = json.loads(payload)
+            if frame.get("side") == "dual":
+                joints = sum(
+                    len(frame.get(key, {})) for key in ("left", "right")
+                )
+            else:
+                joints = len(frame.get("joints", {}))
+            detail = f"{frame.get('side', 'unknown')} side, {joints} joints"
+        except (TypeError, ValueError, json.JSONDecodeError):
+            detail = f"{len(payload)} bytes"
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._teleop_last_sent_lbl.setText(f"Last frame sent {ts}: {detail}")
+        self._teleop_last_sent_lbl.setStyleSheet(
+            "color: #27ae60; font-size: 10px;"
+        )
+
     def _on_teleop_start(self):
         """
         Begin teleop streaming.
@@ -2803,7 +4170,7 @@ class HandExoGUI(QWidget):
           2. Reset gesture_ready so the next gesture call re-enables motors
              intentionally through _ensure_gesture_ready().
           3. Suspend _angle_timer so the serial bus carries exactly one
-             get_angle:all per _teleop_tick (100 ms / 10 Hz).
+             get_angle:all request per configured teleop tick.
         """
         if not self.exo_connected:
             QMessageBox.warning(
@@ -2816,7 +4183,8 @@ class HandExoGUI(QWidget):
 
         # -- Disable all motors (torque-off) --------------------------------
         try:
-            self.exo.disable_motor('all')
+            for dxl_id in self._motor_dxl_id:
+                self.exo.disable_motor(dxl_id)
             for w in self.motor_widgets:
                 w["enabled"] = False
                 w["user_disabled"] = True   # block automatic re-enable
@@ -2829,7 +4197,7 @@ class HandExoGUI(QWidget):
         # Reset gesture state so gestures don't fire while streaming.
         self._gesture_ready = False
 
-        # Suspend the 500 ms angle timer; teleop tick takes over at 100 ms.
+        # Suspend normal polling; the configured teleop tick takes over.
         self._angle_timer.stop()
 
         # Populate the live-states table with current motor names.
@@ -2837,11 +4205,13 @@ class HandExoGUI(QWidget):
 
         # -- Start streaming ------------------------------------------------
         self._teleop_streaming = True
-        self._teleop_timer.start(100)
+        self._teleop_timer.start(self._teleop_timer.interval() or 50)
 
         self._teleop_start_btn.setEnabled(False)
         self._teleop_stop_btn.setEnabled(True)
-        self._teleop_stream_status_lbl.setText("\u25cf  Streaming  (10 Hz)")
+        self._teleop_stream_status_lbl.setText(
+            f"\u25cf  Streaming  ({self._telemetry_rate_spin.value()} Hz target)"
+        )
         self._teleop_stream_status_lbl.setStyleSheet("color: #27ae60;")
         self._log("[Teleop] Streaming started — motors disabled.")
 
@@ -2852,9 +4222,9 @@ class HandExoGUI(QWidget):
         self._teleop_streaming = False
         self._teleop_timer.stop()
 
-        # Restart the normal 500 ms angle poll if the exo is still connected.
+        # Restart normal polling at the configured target if still connected.
         if self.exo_connected:
-            self._angle_timer.start(500)
+            self._angle_timer.start(self._angle_timer.interval() or 50)
 
         self._teleop_start_btn.setEnabled(
             self.exo_connected and self._teleop_ws_connected
@@ -2866,7 +4236,7 @@ class HandExoGUI(QWidget):
 
     def _teleop_tick(self):
         """
-        Timer callback, 100 ms / 10 Hz.  Runs on the GUI thread.
+        Timer callback at the configured target rate. Runs on the GUI thread.
 
         Responsibilities while streaming is active:
           1. Poll relative motor angles from the device (one serial round-trip).
@@ -3011,6 +4381,27 @@ class HandExoGUI(QWidget):
                 }
             self._teleop_worker.enqueue(json.dumps(frame, separators=(",", ":")))
 
+    def closeEvent(self, event):
+        self._angle_timer.stop()
+        self._teleop_timer.stop()
+        self._direct_command_timer.stop()
+        self._stop_all_direct_control()
+        if self._teleop_worker.isRunning():
+            self._teleop_worker.stop()
+            self._teleop_worker.wait(1000)
+        if self._udp_command_worker.isRunning():
+            self._udp_command_worker.stop()
+            self._udp_command_worker.wait(1000)
+        self._udp_telemetry.close()
+        self._lsl_angles.close()
+        self._lsl_torque.close()
+        try:
+            if self.exo:
+                self.exo.close()
+        except Exception:
+            pass
+        event.accept()
+
     def _log(self, msg: str):
         ts = datetime.now().strftime("%H:%M:%S")
         self.log_text.append(f"[{ts}] {msg}")
@@ -3032,21 +4423,29 @@ class HandExoGUI(QWidget):
 def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(DARK_STYLE)
+    # Qt already performs DPI scaling on Windows. Scaling the point size again
+    # makes controls oversized and causes otherwise responsive rows to clip.
+    app.setFont(QFont("Segoe UI", 10))
 
-    # Scale font to screen DPI
     screen = app.primaryScreen()
-    if screen:
-        dpi = screen.logicalDotsPerInch()
-        base_size = max(9, int(10 * dpi / 96))
-        app.setFont(QFont("Segoe UI", base_size))
 
     window = HandExoGUI()
 
-    # Size to 85% of screen, launch maximized
+    # Keep controls readable below this size, but never demand more space than
+    # the current screen can provide.
     if screen:
         geom = screen.availableGeometry()
-        window.resize(int(geom.width() * 0.85), int(geom.height() * 0.85))
-    window.showMaximized()
+        min_width = min(900, geom.width())
+        min_height = min(650, geom.height())
+        window.setMinimumSize(min_width, min_height)
+        window.resize(
+            min(geom.width(), max(min_width, int(geom.width() * 0.85))),
+            min(geom.height(), max(min_height, int(geom.height() * 0.85))),
+        )
+    else:
+        window.setMinimumSize(900, 650)
+        window.resize(1100, 760)
+    window.show()
 
     sys.exit(app.exec_())
 

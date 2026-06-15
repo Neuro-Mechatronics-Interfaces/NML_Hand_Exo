@@ -1,4 +1,4 @@
----
+﻿---
 layout: single
 title: "Assembly"
 permalink: /assembly/
@@ -14,12 +14,12 @@ description: "Complete, step-by-step build instructions for the NML Hand Exoskel
 ## At a Glance
 
 - **Audience:** researchers, graduate students, and advanced makers  
-- **Build time:** ~6–10 hours over 2 sessions (mechanics + electronics)  
+- **Build time:** ~6â€“10 hours over 2 sessions (mechanics + electronics)  
 - **Difficulty:** Intermediate (precision mechanical + light electronics)  
 - **Safety:** E-stop accessible; no power during wiring; eye protection
 
 > **Safety first**  
-> Always disconnect power before adjusting wiring, and keep fingers clear of force paths. Treat energized actuators as **powered tools**—they can pinch and crush.  
+> Always disconnect power before adjusting wiring, and keep fingers clear of force paths. Treat energized actuators as **powered tools**â€”they can pinch and crush.  
 {: .notice--warning}
 
 ---
@@ -30,23 +30,23 @@ Use the table below for quick reference, or download the full spreadsheet.
 
 - **Download:** [`/assets/bom/nml_hand_exo_bom.xlsx`](/assets/bom/nml_hand_exo_bom.xlsx){: .btn .btn--primary }  
 - **Vendors & alternates:** see Notes column for drop-in equivalents  
-- **Quantities:** per single exo (mirror build requires ×2 for handed parts)
+- **Quantities:** per single exo (mirror build requires Ã—2 for handed parts)
 
 | Group | Part / Spec | Qty | Example PN / Link | Notes |
 |---|---|---:|---|---|
-| Actuation | Dynamixel (or your model) | 5 | — | Match torque to finger section |
-| Control | OpenRB-150 (or compatible) | 1 | — | Default baud 57600 |
-| Power | 12 V DC PSU, 5 A | 1 | — | Bench supply OK |
-| Fasteners | M2/M3/M4 assortment | — | — | Button/SHCS + nylocs |
-| Sensors | (optional) IMU/EMG set | — | — | Skip for basic build |
-| Printed | See **Print list** below | — | — | PETG/ABS recommended |
-| Cabling | JST-XH/PH, Dupont leads | — | — | Color-code harness |
+| Actuation | Dynamixel (or your model) | 5 | â€” | Match torque to finger section |
+| Control | OpenRB-150 (or compatible) | 1 | â€” | Default baud 57600 |
+| Power | 12 V DC PSU, 5 A | 1 | â€” | Bench supply OK |
+| Fasteners | M2/M3/M4 assortment | â€” | â€” | Button/SHCS + nylocs |
+| Sensors | (optional) IMU/EMG set | â€” | â€” | Skip for basic build |
+| Printed | See **Print list** below | â€” | â€” | PETG/ABS recommended |
+| Cabling | JST-XH/PH, Dupont leads | â€” | â€” | Color-code harness |
 
 ---
 
 ## Tools & Materials
 
-- Metric hex drivers (1.5–3 mm), torque screwdriver (recommended)  
+- Metric hex drivers (1.5â€“3 mm), torque screwdriver (recommended)  
 - Side cutters, needle-nose pliers, flush trimmer  
 - Soldering iron + heatshrink (for custom harness)  
 - Threadlocker (medium), PTFE dry lube for sliding surfaces  
@@ -58,7 +58,7 @@ Use the table below for quick reference, or download the full spreadsheet.
 
 - **Material:** PETG or ABS (PLA acceptable for early protos; avoid for load-bearing parts)  
 - **Layer height:** 0.2 mm (0.28 mm for large shells)  
-- **Walls:** 3–4; **Infill:** 20–35% (gyroid/cubic)  
+- **Walls:** 3â€“4; **Infill:** 20â€“35% (gyroid/cubic)  
 - **Orientation:** prioritize **hole alignment & layer-line strength** on living hinges and thin walls  
 - **Critical fit:** Ream/clear M3/M4 holes to nominal after print; chase heat-set inserts carefully.
 
@@ -174,8 +174,8 @@ Before starting mechanical assembly, verify:
 **Goal:** actuated thumb with clean tendon routing.
 
 1. Mount motor to thumb bracket (do not overtighten; see torque table).  
-2. Route tendon through guides; leave 30–40 mm service slack.  
-3. Verify full travel manually—no scraping or binding.
+2. Route tendon through guides; leave 30â€“40 mm service slack.  
+3. Verify full travel manuallyâ€”no scraping or binding.
 
 **QA checks**  
 - [ ] Tendon sheaths anchored; no kinks.  
@@ -183,17 +183,17 @@ Before starting mechanical assembly, verify:
 
 ---
 
-### 3) Finger Modules (Index–Ring)
+### 3) Finger Modules (Indexâ€“Ring)
 
 **Goal:** repeatable assembly across fingers.
 
-1. Install proximal links to palm with M3 × (length) screws.  
+1. Install proximal links to palm with M3 Ã— (length) screws.  
 2. Add intermediate/terminal phalanges, checking hinge motion.  
 3. Add return elastic/assist if used.
 
 **QA checks**  
 - [ ] All hinges move freely with even resistance.  
-- [ ] Parallel fingers when fully extended (±1.5 mm).
+- [ ] Parallel fingers when fully extended (Â±1.5 mm).
 
 ---
 
@@ -223,7 +223,7 @@ Before starting mechanical assembly, verify:
 > Power stays **off** until final bring-up!  
 {: .notice--danger}
 
-1. Route main power: **+12 V** → fuse/E-stop → distribution board → motor bus.
+1. Route main power: **+12 V** â†’ fuse/E-stop â†’ distribution board â†’ motor bus.
 2. Verify polarity at every connection point.
 3. Use proper gauge wire for current requirements (typically 18-20 AWG for 5A).
 4. Secure power connections with strain relief.
@@ -248,7 +248,7 @@ Before starting mechanical assembly, verify:
 ### 4) Cable Management
 
 1. Dress cables along the dorsal (back-of-hand) channel with velcro ties.
-2. Keep sharp bends away from moving joints (minimum bend radius: 10× cable diameter).
+2. Keep sharp bends away from moving joints (minimum bend radius: 10Ã— cable diameter).
 3. Add strain relief at each cable exit point.
 4. Verify cables don't interfere with finger motion through full range.
 
@@ -267,9 +267,9 @@ Before starting mechanical assembly, verify:
 
 | Thread | Into | Start Torque | Notes |
 |---:|---|---:|---|
-| M2 | plastic | 0.15–0.2 N·m | stop at first solid resistance |
-| M3 | plastic | 0.35–0.5 N·m | prefer heat-set inserts where possible |
-| M4 | plastic | 0.8–1.0 N·m | washers reduce creep |
+| M2 | plastic | 0.15â€“0.2 NÂ·m | stop at first solid resistance |
+| M3 | plastic | 0.35â€“0.5 NÂ·m | prefer heat-set inserts where possible |
+| M4 | plastic | 0.8â€“1.0 NÂ·m | washers reduce creep |
 
 Add a tiny amount of **medium threadlocker** on metal-to-metal fasteners only.
 
@@ -285,7 +285,7 @@ Add a tiny amount of **medium threadlocker** on metal-to-metal fasteners only.
 1. **Triple-check** all connections one more time.
 2. Connect USB cable to PC.
 3. **Apply power** to the system (12V supply).
-4. Watch for any smoke, unusual sounds, or overheating → **Power off immediately** if detected.
+4. Watch for any smoke, unusual sounds, or overheating â†’ **Power off immediately** if detected.
 
 ---
 
@@ -348,8 +348,8 @@ Test each motor one at a time:
 
 ```powershell
 # Test each motor individually (adjust script/commands as needed)
-python examples\02_motor_control\example_motor_control.py --connect COM5 --motor 1
-python examples\02_motor_control\example_motor_control.py --connect COM5 --motor 2
+python examples\motor_control\example_motor_control.py --connect COM5 --motor 1
+python examples\motor_control\example_motor_control.py --connect COM5 --motor 2
 # ... repeat for motors 3, 4, 5
 ```
 
@@ -366,7 +366,7 @@ python examples\02_motor_control\example_motor_control.py --connect COM5 --motor
 Run the homing sequence:
 
 ```powershell
-python examples\04_advanced\example_motor_config.py --connect COM5 --home
+python examples\advanced\example_motor_config.py --connect COM5 --home
 ```
 
 **Checks:**  
@@ -379,13 +379,13 @@ python examples\04_advanced\example_motor_config.py --connect COM5 --home
 ### 3) Safety Limit Tests
 
 ```powershell
-python examples\04_advanced\example_advanced_config.py --connect COM5 --test-limits
+python examples\advanced\example_advanced_config.py --connect COM5 --test-limits
 ```
 
 **Verify:**  
 - [ ] Current limits prevent damage at end-stops
 - [ ] Motors stop when limits exceeded
-- [ ] No unexpected heat buildup (< 50°C motor case)
+- [ ] No unexpected heat buildup (< 50 C motor case)
 - [ ] No unusual smells or smoke
 
 ---
@@ -395,7 +395,7 @@ python examples\04_advanced\example_advanced_config.py --connect COM5 --test-lim
 Once individual motors pass, test coordinated movements:
 
 ```powershell
-python examples\01_basic\example_connect.py --connect COM5
+python examples\basic\example_connect.py --connect COM5
 ```
 
 **Checks:**
@@ -423,17 +423,19 @@ python examples\01_basic\example_connect.py --connect COM5
 
 ---
 
-## What’s Next?
+## Whatâ€™s Next?
 
 - **Examples:** try *Quick Gestures*, then *Telemetry + GUI* on the [Examples page](/examples/).  
 - **API:** integrate the Python SDK for scripted experiments: [/python-api/](/python-api/).  
-- **ROS 2:** coming soon—track progress on the roadmap.
+- **ROS 2:** coming soonâ€”track progress on the roadmap.
 
 ---
 
 ### Image & File Conventions (for maintainers)
 
 - Place assembly photos under: `/assets/images/assembly/`  
-- Name by step: `01_palm_base.jpg`, `02_thumb_stage.jpg`, …  
-- Keep max width ≈ 1600 px (JPG, 80–85 % quality); use PNG for line art.  
+- Name by step: `01_palm_base.jpg`, `02_thumb_stage.jpg`, â€¦  
+- Keep max width â‰ˆ 1600 px (JPG, 80â€“85 % quality); use PNG for line art.  
 - CAD & printables live under `/hardware/` with a top-level README.
+
+

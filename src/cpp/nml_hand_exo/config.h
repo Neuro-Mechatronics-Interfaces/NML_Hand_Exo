@@ -189,8 +189,8 @@ constexpr float jointLimits[][2] = {
   {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},
   {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  {-189, 2840}, {0.0, 360.0}, {0.0, 360.0}, {220.26, 251.86}, {374.53, 415.27},
-  {162.8, 224.93}, {64.5, 106.83}, {68.99, 119.06}, {74.1, 115.37}
+  {320, 166}, {42.0, 190.0}, {140.0, 260.0}, {160.26, 260.86}, {88.53, 174.27},
+  {166.8, 239.93}, {50.5, 104.83}, {66.99, 125.06}, {400.1, 460.37}
 };
 
 /// @brief Default flip direction per motor.
@@ -361,10 +361,10 @@ constexpr bool DEFAULT_FLIPS[] = {
 #endif  // BUILD_LEFT_HAND == 2 vs single-exo
 
 /// @brief Default baud rate for the debug serial connection.
-constexpr long DEBUG_BAUD_RATE = 57600;
+constexpr long DEBUG_BAUD_RATE = 115200;
 
 /// @brief Default baud rates for BLE communication.
-constexpr long COMMAND_BAUD_RATE = 57600;
+constexpr long COMMAND_BAUD_RATE = 115200;
 
 /// @brief Default baud rate for Dynamixel communication.
 constexpr long DYNAMIXEL_BAUD_RATE = 57600;
@@ -380,6 +380,12 @@ constexpr long MAX_STATES_PER_GESTURE = 5;
 
 /// @brief Default current limit for Dynamixel servos.
 constexpr int MOTOR_CURRENT_LIMIT = 200;
+
+/// @brief Conservative direct-control limits used by serial velocity/current commands.
+constexpr float DIRECT_VELOCITY_LIMIT_RPM = 10.0f;
+constexpr int DIRECT_CURRENT_LIMIT_MA = MOTOR_CURRENT_LIMIT;
+constexpr unsigned long DIRECT_COMMAND_TIMEOUT_MS = 250;
+constexpr float DIRECT_LIMIT_MARGIN_DEG = 2.0f;
 
 /// @brief Debounce duration for mode switch button in milliseconds.
 constexpr int BUTTON_DEBOUNCE_DURATION = 50; // ms debounce for physical button

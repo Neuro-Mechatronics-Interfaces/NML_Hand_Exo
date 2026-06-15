@@ -121,7 +121,9 @@ class HandExo(object):
         except Exception as e:
             print(f"[ERROR] Failed to send command: {e}")
 
-    def _receive(self, wait_until_return: bool = False) -> str:
+    def _receive(
+        self, wait_until_return: bool = False, timeout: float | None = None
+    ) -> str:
         """
         Reads a response from the exoskeleton over the serial connection.
         
@@ -129,9 +131,19 @@ class HandExo(object):
             str: The response from the exoskeleton, or an empty string if no response.
 
         """
-        return self.device.receive(wait_until_return=wait_until_return)
+        if timeout is None:
+            return self.device.receive(wait_until_return=wait_until_return)
+        return self.device.receive(
+            wait_until_return=wait_until_return, timeout=timeout
+        )
 
-    def _get_motor_attribute(self, attr: str, motor_id: (int or str) = 'all', wait_until_return: bool = False) -> float or list or bool or dict:
+    def _get_motor_attribute(
+        self,
+        attr: str,
+        motor_id: (int or str) = 'all',
+        wait_until_return: bool = False,
+        command: str | None = None,
+    ) -> float or list or bool or dict:
         """
         Generic method to retrieve a specified attribute from the motor(s).
 
@@ -142,7 +154,7 @@ class HandExo(object):
         Returns:
             Single value if a motor ID is given, or a dict of {motor_id: attr_value} if 'all'.
         """
-        self.send_command(f"get_{attr}:{motor_id}")
+        self.send_command(f"{command or f'get_{attr}'}:{motor_id}")
         raw = self._receive(wait_until_return=wait_until_return)
         if self.verbose:
             print(f"Raw return: {raw}")
@@ -203,7 +215,8 @@ class HandExo(object):
                 elif key == "enabled":
                     motor_info["enabled"] = val.lower() == "true"
                 elif key == "velocity":
-                    motor_info["velocity"] = float(val)
+                    _m = re.match(r'[-+]?[\d.]+', val.strip())
+                    motor_info["velocity"] = float(_m.group()) if _m else float(val)
                 elif key == "acceleration":
                     motor_info["acceleration"] = float(val)
                 elif key == "baudrate":
@@ -218,6 +231,9 @@ class HandExo(object):
                 elif key == "current_limit":
                     _m = re.match(r'[-+]?[\d.]+', val.strip())
                     motor_info["current_limit"] = float(_m.group()) if _m else float(val)
+                elif key == "goal_current":
+                    _m = re.match(r'[-+]?[\d.]+', val.strip())
+                    motor_info["goal_current"] = float(_m.group()) if _m else float(val)
                 else:
                     motor_info[key] = val
 
@@ -246,6 +262,17 @@ class HandExo(object):
         """
         self.send_command(f"enable:{motor_id}")
 
+    def enable_motors_by_id(self, motor_ids):
+        """Enable torque for a list of explicit Dynamixel IDs.
+
+        Uses per-ID legacy commands for firmware compatibility.
+        """
+        ids = sorted({int(mid) for mid in motor_ids if int(mid) > 0})
+        if not ids:
+            return
+        for mid in ids:
+            self.send_command(f"enable:{mid}")
+
     def is_enabled(self, motor_id: (int or str) = 'all') -> bool:
         """
         Checks if the specified motor is enabled.
@@ -257,7 +284,7 @@ class HandExo(object):
             bool: True if the motor is enabled, False otherwise.
 
         """
-        self._get_motor_attribute('enabled', motor_id, wait_until_return=True)
+        return self._get_motor_attribute('enabled', motor_id, wait_until_return=True)
 
     def disable_motor(self, motor_id: (int or str) = 'all'):
         """
@@ -271,6 +298,17 @@ class HandExo(object):
 
         """
         self.send_command(f"disable:{motor_id}")
+
+    def disable_motors_by_id(self, motor_ids):
+        """Disable torque for a list of explicit Dynamixel IDs.
+
+        Uses per-ID legacy commands for firmware compatibility.
+        """
+        ids = sorted({int(mid) for mid in motor_ids if int(mid) > 0})
+        if not ids:
+            return
+        for mid in ids:
+            self.send_command(f"disable:{mid}")
 
     def enable_led(self, motor_id: (int or str) = 'all'):
         """
@@ -347,7 +385,7 @@ class HandExo(object):
         """
         self.send_command(f"home:{motor_id}")
 
-    def info(self) -> dict:
+    def info(self, timeout: float = 5.0) -> dict:
         """
         Request and parse exoskeleton info into a structured dictionary.
 
@@ -364,13 +402,14 @@ class HandExo(object):
         import re
 
         self.send_command("info")
-        raw = self._receive(wait_until_return=True)
+        raw = self._receive(wait_until_return=True, timeout=timeout)
         if self.verbose:
             print(f"Raw return: {raw}")
 
         info: dict = {}
         if not raw:
             return info
+        info["_raw"] = raw
 
         # Normalize lines and drop empties
         lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
@@ -521,6 +560,14 @@ class HandExo(object):
 
         """
         self.send_command(f"set_goal_velocity:{motor_id}:{velocity}")
+
+    def get_present_velocity(self, motor_id: (int or str) = 'all'):
+        """Read signed present velocity in rpm."""
+        return self._get_motor_attribute('velocity', motor_id, True, command='get_velocity')
+
+    def set_direct_velocity(self, motor_id: int, velocity_rpm: float):
+        """Command signed velocity in rpm while firmware is in velocity mode."""
+        self.send_command(f"set_velocity:{int(motor_id)}:{float(velocity_rpm)}")
 
     def get_motor_acceleration(self, motor_id: (int or str) = 'all') -> float:
         """
@@ -689,6 +736,33 @@ class HandExo(object):
 
         """
         self.send_command(f"set_current_lim:{motor_id}:{current_limit}")
+
+    def get_goal_current(self, motor_id: (int or str) = 'all'):
+        """Read signed direct-current goal in mA."""
+        return self._get_motor_attribute(
+            'goal_current', motor_id, True, command='get_goal_current'
+        )
+
+    def set_direct_current(self, motor_id: int, current_mA: float):
+        """Command signed current in mA while firmware is in current mode."""
+        self.send_command(f"set_current:{int(motor_id)}:{float(current_mA)}")
+
+    def stop_direct_control(self, motor_id: (int or str) = 'all'):
+        """Immediately zero direct velocity and current goals."""
+        target = motor_id if isinstance(motor_id, str) else int(motor_id)
+        self.send_command(f"stop:{target}")
+
+    def set_direct_command_timeout(self, timeout_ms: int):
+        """Set the firmware direct-control watchdog timeout."""
+        self.send_command(f"set_command_timeout:{int(timeout_ms)}")
+
+    def set_control_mode(self, mode: str):
+        """Set the global motor mode; firmware leaves torque disabled."""
+        normalized = mode.strip().lower()
+        allowed = {"position", "current_position", "velocity", "current"}
+        if normalized not in allowed:
+            raise ValueError(f"Unsupported control mode: {mode}")
+        self.send_command(f"set_control_mode:all:{normalized}")
 
     def get_motor_limits(self, motor_id: (int or str) = 'all') -> tuple:
         """
