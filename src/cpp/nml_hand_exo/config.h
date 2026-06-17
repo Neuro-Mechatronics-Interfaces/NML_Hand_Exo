@@ -378,10 +378,14 @@ constexpr int MAX_GESTURE_BUTTONS = 6; // Maximum number of gesture buttons that
 /// @brief Maximum number of states configurable per gesture
 constexpr long MAX_STATES_PER_GESTURE = 5;
 
-/// @brief Default current limit for Dynamixel servos.
-constexpr int MOTOR_CURRENT_LIMIT = 200;
+/// @brief Current limit for XC330-T288 motors.
+///
+/// ROBOTIS documents Current Limit(38) for the XC330-T288 as 0-910 units,
+/// about 1 mA per unit. This project uses the full documented range because
+/// participant finger spasticity can require higher assistive torque.
+constexpr int MOTOR_CURRENT_LIMIT = 910;
 
-/// @brief Conservative direct-control limits used by serial velocity/current commands.
+/// @brief Direct-control limits used by serial velocity/current commands.
 constexpr float DIRECT_VELOCITY_LIMIT_RPM = 10.0f;
 constexpr int DIRECT_CURRENT_LIMIT_MA = MOTOR_CURRENT_LIMIT;
 constexpr unsigned long DIRECT_COMMAND_TIMEOUT_MS = 250;
@@ -396,8 +400,12 @@ constexpr float DXL_PROTOCOL_VERSION = 2.0;
 /// @brief Ticks per revolution for the Dynamixel servos.
 constexpr int PULSE_RESOLUTION = 4096;
 
-/// @brief Torque constant for XL330 servos, in N*m/mA.
-constexpr float XL330_TORQUE_CONSTANT = 0.00038; // Nm / mA
+/// @brief Estimated torque constant for XC330-T288 servos, in N*m/mA.
+///
+/// Based on ROBOTIS stall torque/current at the recommended 11.1 V supply:
+/// 0.92 N*m / 0.80 A = 0.00115 N*m/mA. XC330 current telemetry is measured at
+/// the input power source, so displayed torque should be treated as an estimate.
+constexpr float XC330_T288_TORQUE_CONSTANT = 0.00115f; // Nm / mA
 
 // =======================================================================================================
 // =======================================================================================================

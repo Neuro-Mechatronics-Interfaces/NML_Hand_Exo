@@ -64,7 +64,7 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
   // Allocate and initialize current limits
   currentLimits_ = new uint16_t[numMotors_];
   for (int i = 0; i < numMotors_; ++i) {
-      currentLimits_[i] = MOTOR_CURRENT_LIMIT; // default 200 mA or whatever safe default
+      currentLimits_[i] = MOTOR_CURRENT_LIMIT;
   }
 
   // Allocate flip flags and initialize from config defaults (overwritten by calibration)
@@ -681,12 +681,12 @@ void NMLHandExo::setCurrentLimit(uint8_t id, uint16_t current_mA) {
   debugPrint(buffer);
 }
 int16_t NMLHandExo::getCurrent(uint8_t id) {
-  // XL330 PRESENT_CURRENT uses 1 mA per raw unit.
+  // XC330 PRESENT_CURRENT uses about 1 mA per raw unit.
   return dxl_.readControlTableItem(PRESENT_CURRENT, id);
 }
 float NMLHandExo::getTorque(uint8_t id) {
   float current_mA = NMLHandExo::getCurrent(id);
-  float torque_Nm = current_mA * XL330_TORQUE_CONSTANT;
+  float torque_Nm = current_mA * XC330_T288_TORQUE_CONSTANT;
   return torque_Nm;  // in N·m
 }
 bool NMLHandExo::setGoalCurrent(uint8_t id, float current_mA) {
@@ -750,7 +750,7 @@ void NMLHandExo::setTorque(uint8_t id, float torque_Nm) {
   }
 
   // Convert Nm to mA
-  uint16_t current_mA = (uint16_t)(torque_Nm / XL330_TORQUE_CONSTANT);
+  uint16_t current_mA = (uint16_t)(torque_Nm / XC330_T288_TORQUE_CONSTANT);
   setCurrentLimit(id, current_mA);
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "Torque limit for motor %d: set to %.2f N·m", id, torque_Nm);

@@ -262,7 +262,7 @@ Use UDP Command Input for inbound commands, even when both endpoints are on loca
 
 The **Direct Control tab** supports guarded velocity and current/estimated-torque
 control with explicit motor arming. Velocity is limited to ±10 rpm, current to
-±200 mA, and the command button must be held down. Releasing it sends zero; the
+±910 mA, and the command button must be held down. Releasing it sends zero; the
 firmware independently stops stale commands after its watchdog timeout. Direct
 control requires firmware version `0.2.14` or newer. Normal multi-query telemetry
 polling pauses in direct mode so command refreshes have priority on the serial bus,
@@ -405,7 +405,7 @@ Motor references accept either an **integer DXL ID** (e.g. `11`) or a **bare mot
 |---------|------|-------------|-------|
 | `get_current` | `<motor\|all>` | Motor current (mA) | |
 | `get_current_lim` | `<motor\|all>` | Current limit (mA) | |
-| `set_current_lim` | `<motor>:<mA>` | Set current limit | Do not exceed 200 mA without reason |
+| `set_current_lim` | `<motor>:<mA>` | Set current limit | XC330-T288 build clamps to 910 mA |
 | `get_torque` | `<motor\|all>` | Estimated torque (N·m) | Requires reflash of torque fix |
 | `get_goal_velocity` | `<motor\|all>` | Velocity limit (rpm) | |
 | `set_goal_velocity` | `<motor\|all>:<val>` | Set velocity limit | |

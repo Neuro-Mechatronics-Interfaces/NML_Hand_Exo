@@ -67,7 +67,8 @@ set_command_timeout:250
 ```
 
 - `set_velocity` uses signed rpm and is clamped to `DIRECT_VELOCITY_LIMIT_RPM`.
-- `set_current` uses signed mA and is clamped to `DIRECT_CURRENT_LIMIT_MA`.
+- `set_current` uses signed mA and is clamped to `DIRECT_CURRENT_LIMIT_MA`
+  (910 mA for XC330-T288 in this firmware build).
 - `enable_ids` / `disable_ids` accept colon-separated explicit DXL IDs and
    toggle torque for the provided list in one parser command.
 - Mode changes turn torque off. Motors must be explicitly enabled afterward.
@@ -209,10 +210,10 @@ when the GUI passes a `name_to_id` mapping. See [docs/dual_exo_architecture.md](
 | `DEBUG_BAUD_RATE`       | 57600    | USB serial baud                      |
 | `COMMAND_BAUD_RATE`     | 57600    | HC-05 Bluetooth baud (firmware side) |
 | `DYNAMIXEL_BAUD_RATE`   | 57600    | Dynamixel bus baud                   |
-| `MOTOR_CURRENT_LIMIT`   | 200      | Default current cap per motor (mA)   |
+| `MOTOR_CURRENT_LIMIT`   | 910      | XC330-T288 current cap per motor (mA) |
 | `DXL_PROTOCOL_VERSION`  | 2.0      | Dynamixel protocol version           |
 | `PULSE_RESOLUTION`      | 4096     | Encoder ticks per revolution         |
-| `XL330_TORQUE_CONSTANT` | 0.00038  | N·m per mA                          |
+| `XC330_T288_TORQUE_CONSTANT` | 0.00115  | Estimated N*m per mA at 11.1 V       |
 | `N_GESTURES`            | 6        | Gestures in the library              |
 | `STATUS_LED_PIN`        | 0        | Onboard LED pin                      |
 | `COMMAND_DELIMITER`     | `;`      | End-of-message character             |

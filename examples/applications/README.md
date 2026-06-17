@@ -68,7 +68,7 @@ if you want physical gamepad input.
 
 **Notes:**
 - Uses JSON UDP payloads in the form `{"command":"set_velocity:<id>:<value>"}`.
-- Safety limits are clamped to +/-10 rpm (velocity) and +/-200 mA (current/torque).
+- Safety limits are clamped to +/-10 rpm (velocity) and +/-910 mA (current/torque).
 - Use explicit integer motor IDs that are active in the current GUI mode.
 - Includes a deadman profile: left stick Y controls command magnitude and the
     right trigger must be held to stream nonzero commands.

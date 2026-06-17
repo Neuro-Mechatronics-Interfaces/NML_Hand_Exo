@@ -54,6 +54,8 @@ def _repo_root():
 PROFILES_DIR = os.path.join(_repo_root(), "examples", "calibration", "profiles")
 CONFIG_FILE = os.path.join(PROFILES_DIR, "config.json")
 OUTPUT_DIR = os.path.join(_repo_root(), "output_data")
+DIRECT_VELOCITY_LIMIT_RPM = 10.0
+DIRECT_CURRENT_LIMIT_MA = 910.0
 
 
 # -- Helpers ---------------------------------------------------------------
@@ -1303,49 +1305,166 @@ class SynchronizedHandExo:
             return callback(self._exo)
 
 
-class DevicePollWorker(QThread):
-    """Perform blocking serial telemetry reads away from the Qt event loop."""
+class SerialWorker(QThread):
+    """Persistent queued serial worker adapted from origin/dev/max.
+
+    Automatic polls are de-duplicated so a 20 Hz timer cannot build a serial
+    backlog if the board needs longer than one timer interval to answer.
+    """
 
     completed = pyqtSignal(object)
+    line_received = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._exo = None
-        self._include_telemetry = False
+        self._urgent_q = queue.Queue()
+        self._poll_q = queue.Queue()
+        self._run = True
+        self._poll_pending = False
+        self._last_poll_error_log = 0.0
+        self._state_lock = threading.Lock()
 
-    def configure(self, exo, include_telemetry: bool):
+    def set_exo(self, exo):
         self._exo = exo
-        self._include_telemetry = bool(include_telemetry)
+
+    def request_poll(self, include_telemetry: bool = True):
+        with self._state_lock:
+            if self._poll_pending:
+                return
+            self._poll_pending = True
+        self._poll_q.put(("poll", bool(include_telemetry)))
+
+    def has_pending_poll(self) -> bool:
+        with self._state_lock:
+            return self._poll_pending
+
+    def enqueue(self, command: str, timeout: float = 1.0):
+        self._urgent_q.put(("command", command, float(timeout)))
+
+    def stop(self):
+        self._run = False
+        self._urgent_q.put(("stop", None, None))
+        self.wait(3000)
 
     def run(self):
-        exo = self._exo
+        while self._run:
+            try:
+                item = self._urgent_q.get_nowait()
+            except queue.Empty:
+                try:
+                    item = self._poll_q.get(timeout=0.05)
+                except queue.Empty:
+                    continue
+
+            tag = item[0]
+            if tag == "stop":
+                break
+            if tag == "command":
+                _, command, timeout = item
+                self._handle_command(command, timeout)
+            elif tag == "poll":
+                _, include_telemetry = item
+                try:
+                    self._handle_poll(include_telemetry)
+                finally:
+                    with self._state_lock:
+                        self._poll_pending = False
+
+    def _handle_poll(self, include_telemetry: bool):
         result = {
             "relative": None,
             "positions": None,
             "torques": None,
             "currents": None,
+            "telemetry_requested": include_telemetry,
         }
+        exo = self._exo
         if exo is None:
             self.completed.emit(result)
             return
         try:
-            result["relative"] = exo.get_motor_angle("all")
-        except Exception:
-            pass
-        if self._include_telemetry:
+            result["relative"] = self._get_motor_attribute("get_angle:all", "angle", 0.5)
+        except Exception as exc:
+            self._log_poll_error(f"[poll] angle read failed: {exc}")
+        if include_telemetry:
             try:
-                result["positions"] = exo.get_absolute_motor_angle("all")
-            except Exception:
-                pass
+                result["positions"] = self._get_motor_attribute(
+                    "get_absolute_angle:all", "absolute_angle", 0.5
+                )
+            except Exception as exc:
+                self._log_poll_error(f"[poll] position read failed: {exc}")
             try:
-                result["torques"] = exo.get_motor_torque("all")
-            except Exception:
-                pass
+                result["torques"] = self._get_motor_attribute("get_torque:all", "torque", 0.5)
+            except Exception as exc:
+                self._log_poll_error(f"[poll] torque read failed: {exc}")
             try:
-                result["currents"] = exo.get_motor_current("all")
-            except Exception:
-                pass
+                result["currents"] = self._get_motor_attribute("get_current:all", "current", 0.5)
+            except Exception as exc:
+                self._log_poll_error(f"[poll] current read failed: {exc}")
         self.completed.emit(result)
+
+    def _log_poll_error(self, message: str):
+        now = time.monotonic()
+        if now - self._last_poll_error_log >= 2.0:
+            self._last_poll_error_log = now
+            self.line_received.emit(message)
+
+    def _handle_command(self, command: str, timeout: float):
+        try:
+            raw = self._transact(command, timeout)
+            for line in raw.splitlines():
+                line = line.strip().rstrip(";").strip()
+                if line:
+                    self.line_received.emit(line)
+        except Exception as exc:
+            self.line_received.emit(f"[cmd] {command} failed: {exc}")
+
+    def _get_motor_attribute(self, command: str, attr: str, timeout: float) -> dict:
+        raw = self._transact(command, timeout)
+
+        def parse(raw_exo):
+            return {
+                mid: data.get(attr)
+                for mid, data in raw_exo._parse_motor_data_block(raw).items()
+            }
+
+        return self._with_raw_exo(parse)
+
+    def _transact(self, command: str, timeout: float) -> str:
+        def do_transact(raw_exo):
+            delimiter = raw_exo.command_delimiter
+            full = command if command.endswith(delimiter) else command + delimiter
+            comm = raw_exo.device
+            serial_dev = getattr(comm, "device", None)
+            if serial_dev is not None:
+                try:
+                    serial_dev.reset_input_buffer()
+                except Exception:
+                    pass
+            comm.send(full)
+
+            if serial_dev is None or not hasattr(serial_dev, "read_until"):
+                return comm.receive(wait_until_return=True, timeout=timeout)
+
+            original_timeout = serial_dev.timeout
+            try:
+                serial_dev.timeout = timeout
+                data = serial_dev.read_until(b";")
+            finally:
+                serial_dev.timeout = original_timeout
+            return data.decode(errors="ignore").replace(";", "\n").strip()
+
+        return self._with_raw_exo(do_transact)
+
+    def _with_raw_exo(self, callback):
+        exo = self._exo
+        if exo is None:
+            raise ConnectionError("Serial worker has no connected exo")
+        run_locked = getattr(exo, "run_locked", None)
+        if callable(run_locked):
+            return run_locked(callback)
+        return callback(exo)
 
 
 # ==========================================================================
@@ -1407,8 +1526,10 @@ class HandExoGUI(QWidget):
         self._udp_stream_timer.setInterval(20)
         self._udp_stream_timer.timeout.connect(self._flush_udp_stream_commands)
         self._udp_stream_timer.start()
-        self._device_poll_worker = DevicePollWorker(self)
-        self._device_poll_worker.completed.connect(self._on_device_poll_completed)
+        self._serial_worker = SerialWorker(self)
+        self._serial_worker.completed.connect(self._on_device_poll_completed)
+        self._serial_worker.line_received.connect(self._log)
+        self._serial_worker.start()
 
         self._build_ui()
 
@@ -1665,8 +1786,10 @@ class HandExoGUI(QWidget):
         layout.addWidget(command_box)
 
         detail = QLabel(
-            "Velocity commands use signed rpm and are limited to +/-10 rpm. "
-            "Current commands use signed mA and are limited to +/-200 mA. "
+            f"Velocity commands use signed rpm and are limited to "
+            f"+/-{DIRECT_VELOCITY_LIMIT_RPM:g} rpm. "
+            f"Current commands use signed mA and are limited to "
+            f"+/-{DIRECT_CURRENT_LIMIT_MA:g} mA. "
             "Each nonzero target must be refreshed before the watchdog expires."
         )
         detail.setWordWrap(True)
@@ -2106,7 +2229,11 @@ class HandExoGUI(QWidget):
                         payload, sender, "rejected: expected ID and value", "#c0392b"
                     )
                     return
-                max_abs = 10.0 if command.startswith("set_velocity:") else 200.0
+                max_abs = (
+                    DIRECT_VELOCITY_LIMIT_RPM
+                    if command.startswith("set_velocity:")
+                    else DIRECT_CURRENT_LIMIT_MA
+                )
                 if target_id not in self._motor_dxl_id or abs(target_value) > max_abs:
                     self._set_udp_command_feedback(
                         payload,
@@ -2261,8 +2388,7 @@ class HandExoGUI(QWidget):
         self._suspend_device_poll_requests = True
         try:
             # Let any in-flight poll finish so bulk commands don't queue behind it.
-            if self._device_poll_worker.isRunning():
-                self._device_poll_worker.wait(1200)
+            self._wait_for_pending_poll(1200)
             action_callback()
         finally:
             self._suspend_device_poll_requests = False
@@ -2270,17 +2396,24 @@ class HandExoGUI(QWidget):
                 self._resume_normal_polling()
         self._request_device_poll(force_telemetry=True)
 
+    def _wait_for_pending_poll(self, timeout_ms: int):
+        """Give an in-flight automatic poll a brief chance to finish."""
+        deadline = time.monotonic() + (timeout_ms / 1000.0)
+        while time.monotonic() < deadline:
+            if not self._serial_worker.has_pending_poll():
+                return
+            QApplication.processEvents()
+            time.sleep(0.02)
+
     def _request_device_poll(self, force_telemetry: bool = False):
         if not self.exo_connected:
             return
         if self._suspend_device_poll_requests:
             return
-        if self._device_poll_worker.isRunning():
-            return
         # Telemetry now always follows the configured broadcast rate.
         include_telemetry = True
-        self._device_poll_worker.configure(self.exo, include_telemetry)
-        self._device_poll_worker.start()
+        self._serial_worker.set_exo(self.exo)
+        self._serial_worker.request_poll(include_telemetry)
 
     def _on_device_poll_completed(self, result: dict):
         if not self.exo_connected:
@@ -2292,6 +2425,8 @@ class HandExoGUI(QWidget):
         positions = result.get("positions")
         torques = result.get("torques")
         currents = result.get("currents")
+        if not result.get("telemetry_requested", True):
+            return
         if positions is None and torques is None and currents is None:
             ts = datetime.now().strftime("%H:%M:%S")
             self._telem_status_lbl.setText(f"Read failed  {ts}")
@@ -3277,6 +3412,7 @@ class HandExoGUI(QWidget):
                         self._log(f"  Warning: could not disable inactive motor {_inactive_id}: {_e}")
 
             self.exo_connected = True
+            self._serial_worker.set_exo(self.exo)
             self._gesture_ready = False
             self._active_cal_profile = None
             self._active_cal_left    = None
@@ -3328,6 +3464,8 @@ class HandExoGUI(QWidget):
             self._teleop_worker.stop()
         self._stop_all_direct_control()
         self._angle_timer.stop()
+        self._wait_for_pending_poll(1200)
+        self._serial_worker.set_exo(None)
         try:
             if self.exo:
                 self.exo.close()
@@ -3584,10 +3722,14 @@ class HandExoGUI(QWidget):
 
         # Normalise each relative angle to [0, 1] for the Hand State visualisation.
         t_dict: dict[str, float] = {}
+        joints_left: dict = {}
+        joints_right: dict = {}
+        joints_single: dict = {}
         mode = self.mode_combo.currentText()
 
         for i, w in enumerate(self.motor_widgets):
             name   = w["name"]
+            bare   = w.get("cmd_name", name)
             dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
             val    = angles.get(dxl_id) if dxl_id is not None else None
             m      = None
@@ -3595,10 +3737,8 @@ class HandExoGUI(QWidget):
             if mode == "Dual":
                 # Strip L:/R: prefix to look up bare motor name in per-side profile.
                 if name.startswith("L:"):
-                    bare = name[2:]
                     m = (self._active_cal_left or {}).get("motors", {}).get(bare)
                 elif name.startswith("R:"):
-                    bare = name[2:]
                     m = (self._active_cal_right or {}).get("motors", {}).get(bare)
             else:
                 m = (self._active_cal_profile or {}).get("motors", {}).get(name)
@@ -3608,11 +3748,22 @@ class HandExoGUI(QWidget):
                 rel_b = normalize_angle(m["limit_max"], m["home"], m["flip"])
                 lo, hi = min(rel_a, rel_b), max(rel_a, rel_b)
                 span = hi - lo
-                t_dict[name] = (
+                t = (
                     max(0.0, min(1.0, (float(val) - lo) / span)) if span > 0 else 0.0
                 )
+                t_dict[name] = t
+                norm_val = round(t, 4)
             else:
                 t_dict[name] = 0.0  # no data or no profile: show home position
+                norm_val = None
+
+            if mode == "Dual":
+                if name.startswith("L:"):
+                    joints_left[bare] = norm_val
+                else:
+                    joints_right[bare] = norm_val
+            else:
+                joints_single[name] = norm_val
 
         # HandSkeletonWidget uses bare motor names (right-hand view).
         # In Dual mode, pass only the right-side (or left-side if only left is present).
@@ -3625,6 +3776,42 @@ class HandExoGUI(QWidget):
             bare_t_dict = t_dict  # already bare names in single mode
 
         self._hand_vis.update_motor_states(bare_t_dict, connected=True)
+        self._publish_teleop_state(joints_left, joints_right, joints_single)
+
+    def _publish_teleop_state(self, joints_left: dict, joints_right: dict, joints_single: dict):
+        if not self._teleop_streaming:
+            return
+        mode = self.mode_combo.currentText()
+        for row, mw in enumerate(self.motor_widgets):
+            item = self._teleop_state_table.item(row, 1)
+            if item is None:
+                continue
+            bare = mw.get("cmd_name", mw["name"])
+            if mode == "Dual":
+                values = joints_left if mw["name"].startswith("L:") else joints_right
+                value = values.get(bare)
+            else:
+                value = joints_single.get(mw["name"])
+            item.setText(f"{value:.3f}" if value is not None else "no cal")
+
+        if not self._teleop_worker.isRunning():
+            return
+        if mode == "Dual":
+            frame = {
+                "timestamp": time.time(),
+                "source": "hand_exo",
+                "side": "dual",
+                "left": joints_left,
+                "right": joints_right,
+            }
+        else:
+            frame = {
+                "timestamp": time.time(),
+                "source": "hand_exo",
+                "side": self.exo.side or "right",
+                "joints": joints_single,
+            }
+        self._teleop_worker.enqueue(json.dumps(frame, separators=(",", ":")))
 
     def _run_calibration(self):
         if not self.exo_connected:
@@ -3819,10 +4006,14 @@ class HandExoGUI(QWidget):
     def _on_direct_mode_selection_changed(self, text: str):
         self._zero_direct_target()
         if text == "Velocity":
-            self._direct_command_spin.setRange(-10.0, 10.0)
+            self._direct_command_spin.setRange(
+                -DIRECT_VELOCITY_LIMIT_RPM, DIRECT_VELOCITY_LIMIT_RPM
+            )
             self._direct_command_spin.setSuffix(" rpm")
         else:
-            self._direct_command_spin.setRange(-200.0, 200.0)
+            self._direct_command_spin.setRange(
+                -DIRECT_CURRENT_LIMIT_MA, DIRECT_CURRENT_LIMIT_MA
+            )
             self._direct_command_spin.setSuffix(" mA")
 
     def _rebuild_direct_motor_combo(self):
@@ -4235,157 +4426,20 @@ class HandExoGUI(QWidget):
         self._log("[Teleop] Streaming stopped.")
 
     def _teleop_tick(self):
-        """
-        Timer callback at the configured target rate. Runs on the GUI thread.
-
-        Responsibilities while streaming is active:
-          1. Poll relative motor angles from the device (one serial round-trip).
-          2. Normalise each angle to [0, 1] against the active calibration profile.
-          3. Update the motor angle labels in the Controls tab (same as
-             _poll_motor_angles normally does at 500 ms).
-          4. Push normalised values to the Hand State visualisation.
-          5. Refresh the live Teleop state table.
-          6. Enqueue a compact JSON frame for the WebSocket worker thread.
-
-        Normalisation formula (identical to _poll_motor_angles):
-            rel_a  = normalize_angle(limit_min, home, flip)
-            rel_b  = normalize_angle(limit_max, home, flip)
-            lo, hi = min(rel_a, rel_b), max(rel_a, rel_b)
-            t      = clamp( (relative_angle - lo) / (hi - lo), 0, 1 )
-
-        Convention: 0 = fully open / extended, 1 = fully closed / flexed.
-        This matches the convention used by HandSkeletonWidget.
-
-        Joints that lack a calibration entry are transmitted as ``null`` in
-        the JSON payload so downstream consumers can detect and ignore them
-        rather than acting on a meaningless zero.
-
-        JSON payload structure
-        ----------------------
-        Single-exo mode:
-        {
-          "timestamp": <float, Unix seconds>,
-          "source":    "hand_exo",
-          "side":      "left" | "right",
-          "joints": {
-            "<name>": <float 0-1> | null,   -- null = no calibration
-            ...
-          }
-        }
-
-        Dual-exo mode (both hands on one shared controller):
-        {
-          "timestamp": <float, Unix seconds>,
-          "source":    "hand_exo",
-          "side":      "dual",
-          "left":  { "<name>": <float 0-1> | null, ... },
-          "right": { "<name>": <float 0-1> | null, ... }
-        }
-        """
+        """Queue a relative-angle read; worker results publish the teleop frame."""
         if not self.exo_connected:
             return
-
-        # -- 1. Poll relative angles from device ---------------------------
-        # HandExo returns {Dynamixel_ID: angle}; map to widget via _motor_dxl_id.
-        try:
-            angles: dict = self.exo.get_motor_angle('all')
-        except Exception:
-            return
-
-        mode = self.mode_combo.currentText()
-
-        # -- 2 & 3. Normalise and update angle labels ----------------------
-        t_dict: dict[str, float] = {}
-        joints_left:  dict = {}
-        joints_right: dict = {}
-        joints_single: dict = {}
-
-        for i, w in enumerate(self.motor_widgets):
-            name   = w["name"]
-            bare   = w.get("cmd_name", name)   # bare name for cal lookup
-            dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
-            val    = angles.get(dxl_id) if dxl_id is not None else None
-
-            # Update Controls-tab angle label (same display as _poll_motor_angles)
-            if val is not None:
-                w["angle_lbl"].setText(f"{float(val):.2f} deg")
-
-            # Select the correct calibration profile entry for this motor
-            if mode == "Dual":
-                if name.startswith("L:"):
-                    m = (self._active_cal_left or {}).get("motors", {}).get(bare)
-                else:
-                    m = (self._active_cal_right or {}).get("motors", {}).get(bare)
-            else:
-                m = (self._active_cal_profile or {}).get("motors", {}).get(name)
-
-            if val is not None and m is not None:
-                rel_a = normalize_angle(m["limit_min"], m["home"], m["flip"])
-                rel_b = normalize_angle(m["limit_max"], m["home"], m["flip"])
-                lo, hi = min(rel_a, rel_b), max(rel_a, rel_b)
-                span = hi - lo
-                t = (
-                    max(0.0, min(1.0, (float(val) - lo) / span))
-                    if span > 0 else 0.0
-                )
-                t_dict[name] = t
-                norm_val = round(t, 4)
-            else:
-                t_dict[name] = 0.0
-                norm_val = None  # no calibration data
-
-            if mode == "Dual":
-                if name.startswith("L:"):
-                    joints_left[bare]  = norm_val
-                else:
-                    joints_right[bare] = norm_val
-            else:
-                joints_single[name] = norm_val
-
-        # -- 4. Hand State visualisation -----------------------------------
-        if mode == "Dual":
-            vis_side_pfx = "R:" if self._right_motor_names else "L:"
-            bare_t = {k[2:]: v for k, v in t_dict.items() if k.startswith(vis_side_pfx)}
-        else:
-            bare_t = t_dict
-        self._hand_vis.update_motor_states(bare_t, connected=True)
-
-        # -- 5. Live Teleop state table ------------------------------------
-        for row, mw in enumerate(self.motor_widgets):
-            item = self._teleop_state_table.item(row, 1)
-            if item is None:
-                continue
-            bare = mw.get("cmd_name", mw["name"])
-            if mode == "Dual":
-                v = (joints_left if mw["name"].startswith("L:") else joints_right).get(bare)
-            else:
-                v = joints_single.get(mw["name"])
-            item.setText(f"{v:.3f}" if v is not None else "no cal")
-
-        # -- 6. Enqueue JSON frame for the WebSocket worker ----------------
-        if self._teleop_worker.isRunning():
-            if mode == "Dual":
-                frame = {
-                    "timestamp": time.time(),
-                    "source": "hand_exo",
-                    "side": "dual",
-                    "left":  joints_left,
-                    "right": joints_right,
-                }
-            else:
-                frame = {
-                    "timestamp": time.time(),
-                    "source": "hand_exo",
-                    "side": self.exo.side or "right",
-                    "joints": joints_single,
-                }
-            self._teleop_worker.enqueue(json.dumps(frame, separators=(",", ":")))
+        self._serial_worker.set_exo(self.exo)
+        self._serial_worker.request_poll(include_telemetry=False)
 
     def closeEvent(self, event):
         self._angle_timer.stop()
         self._teleop_timer.stop()
         self._direct_command_timer.stop()
         self._stop_all_direct_control()
+        self._wait_for_pending_poll(1200)
+        if self._serial_worker.isRunning():
+            self._serial_worker.stop()
         if self._teleop_worker.isRunning():
             self._teleop_worker.stop()
             self._teleop_worker.wait(1000)

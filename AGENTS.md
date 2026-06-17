@@ -103,7 +103,8 @@ See [docs/dual_exo_architecture.md](docs/dual_exo_architecture.md) for the full 
 ## Safety rules (mandatory, every session)
 
 1. Never command a motor outside its `jointLimits`. Physical damage + injury risk.
-2. Current limit is 200 mA. Do not raise `MOTOR_CURRENT_LIMIT` without a specific reason.
+2. Current limit is 910 mA for XC330-T288 participants with finger spasticity.
+   Do not raise `MOTOR_CURRENT_LIMIT` beyond the documented control-table max.
 3. Before passive movement: disable only the target-side motors by ID (`disable:<id>`), not
    `disable:all`, to avoid accidentally re-enabling inactive-side motors or confusing GUI state.
 4. Do not add motion to `setup()` — `initializeMotors()` holds position.
