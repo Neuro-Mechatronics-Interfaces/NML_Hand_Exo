@@ -208,6 +208,28 @@ int getArgMotorID(NMLHandExo& exo, const String& line, const int index) {
   return exo.getMotorID(getArg(line, index));
 }
 
+int applyTorqueToMotorIDList(NMLHandExo& exo, const String& token, bool enable) {
+  int updated = 0;
+  for (int argIndex = 1;; ++argIndex) {
+    String arg = getArg(token, argIndex);
+    arg.trim();
+    if (arg.length() == 0) {
+      break;
+    }
+    int requestedID = arg.toInt();
+    if (requestedID <= 0) {
+      continue;
+    }
+    int resolvedID = exo.getMotorID(String(requestedID));
+    if (resolvedID == -1) {
+      continue;
+    }
+    exo.enableTorque(resolvedID, enable);
+    updated++;
+  }
+  return updated;
+}
+
 void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token) {
 
   token.trim();        // Remove any trailing white space
@@ -231,6 +253,14 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       if (id != -1) exo.enableTorque(id, true);
     }
 
+  } else if (cmd == "enable_ids") {
+    int updated = applyTorqueToMotorIDList(exo, token, true);
+    if (updated > 0) {
+      commandPrint("OK: enable_ids " + String(updated));
+    } else {
+      commandPrint("ERROR: enable_ids requires one or more valid DXL IDs");
+    }
+
   } else if (cmd == "disable") {
     // TO-DO: allow support of csv type arguments "1,3"
     String arg = getArg(token, 1);
@@ -243,6 +273,14 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     } else {
       id = getArgMotorID(exo, token, 1);
       if (id != -1) exo.enableTorque(id, false);
+    }
+
+  } else if (cmd == "disable_ids") {
+    int updated = applyTorqueToMotorIDList(exo, token, false);
+    if (updated > 0) {
+      commandPrint("OK: disable_ids " + String(updated));
+    } else {
+      commandPrint("ERROR: disable_ids requires one or more valid DXL IDs");
     }
 
   } else if (cmd == "get_enabled") {
@@ -333,6 +371,35 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
         val = getArg(token, 2).toInt();
         if (id != -1) exo.setVelocityLimit(id, val);
         debugPrint("Set velocity limit for motor " + String(id) + " to " + String(val));
+    }
+
+  } else if (cmd == "set_velocity") {
+    id = getArgMotorID(exo, token, 1);
+    float rpm = getArg(token, 2).toFloat();
+    if (id != -1) {
+      bool ok = exo.setGoalVelocity(id, rpm);
+      commandPrint(ok ? "OK: set_velocity" : "ERROR: set_velocity requires velocity mode and a valid motor ID");
+    }
+
+  } else if (cmd == "get_velocity") {
+    String arg = getArg(token, 1);
+    arg.trim(); arg.toUpperCase();
+    if (arg == "ALL") {
+      String info = "Motor present velocity: \n";
+      for (int i = 0; i < exo.getMotorCount(); ++i) {
+        uint8_t id = exo.getMotorIDByIndex(i);
+        float rpm = exo.getPresentVelocity(id);
+        info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
+            ", velocity: " + String(rpm, 3) + " rpm}\n";
+      }
+      commandPrint(info);
+    } else {
+      id = getArgMotorID(exo, token, 1);
+      if (id != -1) {
+        float rpm = exo.getPresentVelocity(id);
+        commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
+          ", velocity: " + String(rpm, 3) + " rpm}");
+      }
     }
 
   } else if (cmd == "get_goal_acceleration") {
@@ -500,7 +567,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       String info = "Motor absolute angles: \n";
       for (int i = 0; i < exo.getMotorCount(); ++i) {
         uint8_t id = exo.getMotorIDByIndex(i);
-        float current_mA = exo.getCurrent(id) * 2.69f;
+        float current_mA = exo.getCurrent(id);
         info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
             ", current: " + String(current_mA, 3) + " mA}\n";
       }
@@ -508,7 +575,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     } else {
     id = getArgMotorID(exo, token, 1);
     if (id != -1) {
-      float current_mA = exo.getCurrent(id) * 2.69f;
+      float current_mA = exo.getCurrent(id);
         commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
           ", current: " + String(current_mA, 3) + " mA}");
       }
@@ -519,6 +586,35 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     val = getArg(token, 2).toInt();
     if (id != -1) exo.setCurrentLimit(id, val);
 
+  } else if (cmd == "set_current") {
+    id = getArgMotorID(exo, token, 1);
+    float current_mA = getArg(token, 2).toFloat();
+    if (id != -1) {
+      bool ok = exo.setGoalCurrent(id, current_mA);
+      commandPrint(ok ? "OK: set_current" : "ERROR: set_current requires current mode and a valid motor ID");
+    }
+
+  } else if (cmd == "get_goal_current") {
+    String arg = getArg(token, 1);
+    arg.trim(); arg.toUpperCase();
+    if (arg == "ALL") {
+      String info = "Motor goal current: \n";
+      for (int i = 0; i < exo.getMotorCount(); ++i) {
+        uint8_t id = exo.getMotorIDByIndex(i);
+        float current_mA = exo.getGoalCurrent(id);
+        info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
+            ", goal_current: " + String(current_mA, 3) + " mA}\n";
+      }
+      commandPrint(info);
+    } else {
+      id = getArgMotorID(exo, token, 1);
+      if (id != -1) {
+        float current_mA = exo.getGoalCurrent(id);
+        commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
+          ", goal_current: " + String(current_mA, 3) + " mA}");
+      }
+    }
+
   } else if (cmd == "get_current_lim") {
     String arg = getArg(token, 1);  // local copy
     arg.trim(); arg.toUpperCase();
@@ -526,7 +622,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       String info = "Motor absolute angles: \n";
       for (int i = 0; i < exo.getMotorCount(); ++i) {
         uint8_t id = exo.getMotorIDByIndex(i);
-        float current_mA = exo.getCurrentLimit(id) * 2.69f;
+        float current_mA = exo.getCurrentLimit(id);
         info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
             ", current_limit: " + String(current_mA, 3) + "mA}\n";
       }
@@ -534,7 +630,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     } else {
       id = getArgMotorID(exo, token, 1);
       if (id != -1) {
-        float current_mA = exo.getCurrentLimit(id) * 2.69f;
+        float current_mA = exo.getCurrentLimit(id);
         commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
           ", current_limit: " + String(current_mA, 3) + "mA}");
       }
@@ -643,16 +739,45 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       if (id != -1) exo.setHome(id);
     }
 
+  } else if (cmd == "stop") {
+    String target = getArg(token, 1);
+    target.trim(); target.toUpperCase();
+    if (target == "ALL") {
+      exo.stopAllDirectControl();
+    } else {
+      id = getArgMotorID(exo, token, 1);
+      if (id != -1) exo.stopDirectControl(id);
+    }
+    commandPrint("OK: stop");
+
+  } else if (cmd == "set_command_timeout") {
+    unsigned long timeoutMs = (unsigned long)getArg(token, 1).toInt();
+    exo.setDirectCommandTimeout(timeoutMs);
+    commandPrint("Direct command timeout: " + String(exo.getDirectCommandTimeout()) + " ms");
+
+  } else if (cmd == "get_command_timeout") {
+    commandPrint("Direct command timeout: " + String(exo.getDirectCommandTimeout()) + " ms");
+
   } else if (cmd == "get_motor_mode") {
     String mode = exo.getMotorControlMode();
     commandPrint("Motor control mode: " + mode);
 
-  } else if (cmd == "set_motor_mode") {
-    String modeStr = getArg(token, 1);
-    if (modeStr == "position" || modeStr == "current_position" || modeStr == "velocity") {
+  } else if (cmd == "set_motor_mode" || cmd == "set_control_mode") {
+    String modeStr = getArg(token, cmd == "set_control_mode" ? 2 : 1);
+    if (cmd == "set_control_mode") {
+      String target = getArg(token, 1);
+      target.trim(); target.toUpperCase();
+      if (target != "ALL") {
+        commandPrint("Invalid target. Direct control mode changes currently require 'all'.");
+        return;
+      }
+    }
+    if (modeStr == "position" || modeStr == "current_position" ||
+        modeStr == "velocity" || modeStr == "current") {
       exo.setMotorControlMode(modeStr);
+      commandPrint("Motor control mode: " + modeStr + " (torque remains off until explicitly enabled)");
     } else {
-      commandPrint("Invalid motor mode. Use 'position', 'current_position', or 'velocity'.");
+      commandPrint("Invalid motor mode. Use position, current_position, velocity, or current.");
     }
 
   } else if (cmd == "get_exo_mode") {
@@ -792,11 +917,15 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" version               |                      | // Get current software version"));
     commandPrint(F(" enable                |  ID/NAME             | // Enable torque for motor"));
     commandPrint(F(" disable               |  ID/NAME             | // Disable torque for motor"));
+    commandPrint(F(" enable_ids            |  ID:ID:ID...         | // Enable torque for a list of DXL IDs"));
+    commandPrint(F(" disable_ids           |  ID:ID:ID...         | // Disable torque for a list of DXL IDs"));
     commandPrint(F(" get_enable            |  ID/NAME             | // Get the torque enable status of the motor"));
     commandPrint(F(" get_baud              |  ID/NAME             | // Get baud rate for motor"));
     commandPrint(F(" set_baud              |  ID/NAME:VALUE       | // Set baud rate for motor"));
     commandPrint(F(" get_goal_velocity     |  ID/NAME             | // Get current velocity profile for motor"));
     commandPrint(F(" set_goal_velocity     |  ID/NAME/ALL:VALUE   | // Set velocity profile for motor"));
+    commandPrint(F(" get_velocity          |  ID/NAME/ALL         | // Get present velocity in rpm"));
+    commandPrint(F(" set_velocity          |  ID:SIGNED_RPM       | // Direct velocity command (velocity mode)"));
     commandPrint(F(" get_goal_acceleration |  ID/NAME             | // Get current acceleration profile for motor"));
     commandPrint(F(" set_goal_acceleration |  ID/NAME/ALL:VALUE   | // Set acceleration limit for motor"));
     commandPrint(F(" get_home              |  ID/NAME             | // Get stored zero position"));
@@ -808,13 +937,17 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" get_torque            |  ID/NAME             | // Get torque output reading from motor"));
     commandPrint(F(" get_current           |  ID/NAME             | // Get current draw from motor"));
     commandPrint(F(" set_current_lim       |  ID/NAME:VAL         | // Set current draw limit for motor"));
-    commandPrint(F(" set_current_lim       |  ID/NAME:VAL         | // Set current draw limit for motor"));
+    commandPrint(F(" get_goal_current      |  ID/NAME/ALL         | // Get direct current goal in mA"));
+    commandPrint(F(" set_current           |  ID:SIGNED_MA        | // Direct current command (current mode)"));
+    commandPrint(F(" stop                  |  ID/ALL              | // Zero direct velocity/current goals"));
+    commandPrint(F(" set_command_timeout   |  MILLISECONDS        | // Set direct-control watchdog (50-5000 ms)"));
     commandPrint(F(" get_motor_limits      |  ID/NAME             | // Get motor limits (upper and lower bounds)"));
     commandPrint(F(" set_motor_limits      |  ID/NAME:VAL:VAL     | // Set motor limits (upper and lower bounds)"));
     commandPrint(F(" set_upper_limit       |  ID/NAME:ANGLE       | // Set the absolute upper bound position limit for the motor"));
     commandPrint(F(" set_lower_limit       |  ID/NAME:ANGLE       | // Set the absolute lower bound position limit for the motor"));
     commandPrint(F(" get_motor_mode        |                      | // Get motor control mode"));
-    commandPrint(F(" set_motor_mode        |  VALUE               | // Set motor control mode ('POSITION', 'CURRENT_POSITION', 'VELOCITY')"));
+    commandPrint(F(" set_motor_mode        |  VALUE               | // Set POSITION, CURRENT_POSITION, VELOCITY, or CURRENT"));
+    commandPrint(F(" set_control_mode      |  ALL:VALUE           | // Safe direct-mode alias; torque remains off"));
     commandPrint(F(" get_exo_mode          |                      | // Get exo device operation mode"));
     commandPrint(F(" set_exo_mode          |  VALUE               | // Set exo device operation mode (FREE', 'GESTURE_FIXED', 'GESTURE_CONTINUOUS')"));
     commandPrint(F(" gesture_list          |                      | // Get gestures in library"));

@@ -10,7 +10,8 @@ General Questions
 A: The device typically operates at 12V DC. Check your hardware documentation for details.
 
 **Q: What is the maximum supported torque?**
-A: The XL330 servo supports up to 0.43 Nm. For details, refer to the manufacturer's datasheet.
+A: The XC330-T288 servo supports up to 0.92 N*m at the recommended 11.1 V supply.
+For details, refer to the manufacturer's datasheet.
 
 **Q: Can I use a different baud rate?**
 A: Yes, but make sure to configure it both on the device and in your terminal or Python API.

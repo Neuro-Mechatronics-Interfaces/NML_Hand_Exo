@@ -1,7 +1,46 @@
-# CLAUDE.md — NML Hand Exoskeleton
+# AGENTS.md — NML Hand Exoskeleton
 
 Dual-stack: Arduino C++ on OpenRB-150 + Python SDK on host PC.
 9 Dynamixel XL330 motors per side. USB serial (57600) or HC-05 BT on Serial3 D13/D14 (57600).
+
+## Agent quickstart (do first)
+
+1. Read [docs/gotchas.md](docs/gotchas.md), [docs/serial_protocol.md](docs/serial_protocol.md), and [docs/dual_exo_architecture.md](docs/dual_exo_architecture.md) before changing firmware or parsers.
+2. Prefer Python-side fixes first. Touch firmware only when Python-side mitigation is impossible.
+3. In dual firmware, always target motors by integer DXL ID for calibration and motor commands.
+4. Keep firmware/Python protocol in sync: command names, delimiter, and motor-name mapping are shared contracts.
+
+---
+
+## Canonical commands
+
+```powershell
+# Environment + install
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -e .
+
+# Run GUI
+handexo gui
+
+# Build wheel
+python -m build --wheel
+
+# Common diagnostics
+python test_bluetooth_ports.py
+python test_hc05_data_mode.py
+python test_gui_threading.py
+python test_hc05_wiring.py
+
+# Basic connectivity check
+python examples/basic/hand_exo_cli.py --list-ports
+python examples/basic/hand_exo_cli.py --connect COM5 --info
+```
+
+Notes:
+- There is no single repo-wide lint/typecheck/test gate configured in the root project; use targeted scripts relevant to your change.
+- If you build `src/nml_wtf_exo`, clean `build/`, `dist/`, and `*.egg-info/` first to avoid recursive artifacts.
 
 ---
 
@@ -64,7 +103,8 @@ See [docs/dual_exo_architecture.md](docs/dual_exo_architecture.md) for the full 
 ## Safety rules (mandatory, every session)
 
 1. Never command a motor outside its `jointLimits`. Physical damage + injury risk.
-2. Current limit is 200 mA. Do not raise `MOTOR_CURRENT_LIMIT` without a specific reason.
+2. Current limit is 910 mA for XC330-T288 participants with finger spasticity.
+   Do not raise `MOTOR_CURRENT_LIMIT` beyond the documented control-table max.
 3. Before passive movement: disable only the target-side motors by ID (`disable:<id>`), not
    `disable:all`, to avoid accidentally re-enabling inactive-side motors or confusing GUI state.
 4. Do not add motion to `setup()` — `initializeMotors()` holds position.
@@ -82,6 +122,10 @@ See [docs/dual_exo_architecture.md](docs/dual_exo_architecture.md) for the full 
 - In dual firmware, always use integer DXL IDs (not bare names) in calibration commands.
   `HandExo.apply_calibration(name_to_id=...)` enforces this; never call it without `name_to_id`
   when connected to dual firmware.
+
+Additional protocol traps:
+- Firmware `get_torque:single` can include a ` N·m` suffix; parse numeric values defensively.
+- Keep new variables locally scoped inside `utils.cpp:parseMessage()` branches; avoid shared mutable parser state.
 
 ---
 

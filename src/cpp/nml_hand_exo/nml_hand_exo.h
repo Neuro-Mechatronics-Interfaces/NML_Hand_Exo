@@ -8,6 +8,7 @@
 #ifndef NML_HAND_EXO_H
 #define NML_HAND_EXO_H
 
+#include "config.h"
 #include <Dynamixel2Arduino.h>
 using namespace ControlTableItem;
 
@@ -49,6 +50,9 @@ class NMLHandExo {
       delete[] zeroOffsets_;
       delete[] currentLimits_;
       delete[] flipMotor_;
+      delete[] lastDirectCommandMs_;
+      delete[] directCommandActive_;
+      delete[] directCommandDirection_;
     }
 
     // -----------------------------------------------------------
@@ -287,6 +291,12 @@ class NMLHandExo {
     /// @param current_mA Current limit in milliamps.
     void setCurrentLimit(uint8_t id, uint16_t current_mA);
 
+    /// @brief Command signed motor current in mA while in CURRENT mode.
+    bool setGoalCurrent(uint8_t id, float current_mA);
+
+    /// @brief Read the currently configured goal current in mA.
+    float getGoalCurrent(uint8_t id);
+
     /// @brief Set the zero offset for a motor to an arbitrary value.
     /// @param id Motor ID.
     /// @param offset_deg Zero offset in degrees.
@@ -325,6 +335,24 @@ class NMLHandExo {
     /// @param id Motor ID.
     /// @return Velocity limit.
     uint32_t getVelocityLimit(uint8_t id);
+
+    /// @brief Command signed motor velocity in rpm while in VELOCITY mode.
+    bool setGoalVelocity(uint8_t id, float velocity_rpm);
+
+    /// @brief Read present motor velocity in rpm, using calibrated direction.
+    float getPresentVelocity(uint8_t id);
+
+    /// @brief Immediately zero direct velocity/current goals for one motor.
+    void stopDirectControl(uint8_t id);
+
+    /// @brief Immediately zero direct goals for every firmware-managed motor.
+    void stopAllDirectControl();
+
+    /// @brief Configure the direct-command watchdog timeout.
+    void setDirectCommandTimeout(unsigned long timeout_ms);
+
+    /// @brief Return the direct-command watchdog timeout.
+    unsigned long getDirectCommandTimeout() const;
 
     // -----------------------------------------------------------
     // Acceleration commands
@@ -373,7 +401,7 @@ class NMLHandExo {
 
     /// @brief Set the current control mode of a motor.
     /// @param id Motor ID.
-    /// @param mode Control mode as a string (e.g. "POSITION", "CURRENT_POSITION", "VELOCITY").
+    /// @param mode Control mode as a string (POSITION, CURRENT_POSITION, VELOCITY, CURRENT).
     void setMotorControlMode(uint8_t id, const String& mode);
 
     /// @brief Get the current control mode of a motor.
@@ -390,7 +418,7 @@ class NMLHandExo {
     String getMotorMode();
 
     /// @brief Current software version.
-    static constexpr const char* VERSION = "0.2.13";
+    static constexpr const char* VERSION = "0.2.14";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.
@@ -434,6 +462,15 @@ class NMLHandExo {
 
     /// @brief Operating mode of motors.
     String motorControlMode_;            
+
+    /// @brief Per-motor direct-command watchdog state.
+    unsigned long* lastDirectCommandMs_;
+    bool* directCommandActive_;
+    float* directCommandDirection_;
+    unsigned long directCommandTimeoutMs_ = DIRECT_COMMAND_TIMEOUT_MS;
+
+    /// @brief Enforce direct-control watchdogs and calibrated position limits.
+    void serviceDirectControlSafety();
 
     /// @brief Operating mode of exo
     ExoOperatingMode exoMode_ = FREE; // Default mode is free

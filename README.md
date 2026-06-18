@@ -225,8 +225,12 @@ Set `BUILD_LEFT_HAND` in `config.h` before flashing:
 ## 6. Launching the GUI
 
 ```bash
-python src/nml_hand_exo/applications/hand_exo_gui.py
+handexo gui
 ```
+
+Run this after activating the virtual environment and installing the repository
+with `python -m pip install -e .`. The direct Python file command remains available
+for development.
 
 The GUI provides:
 
@@ -236,8 +240,33 @@ The GUI provides:
   - Gesture presets with a lazy-initialize safety gate (profile applied before first gesture)
   - **Calibration** button — opens `CalibrationDialog`
   - **ROM Assessment** button — opens `ROMDialog`
-- **Telemetry tab** — live table: position, torque, current for active motors; manual Refresh + Auto-refresh
+- **Telemetry tab** — live table: position, torque, and current for active motors; manual Refresh
 - **Log panel** — timestamped command/response log
+
+The **Settings tab** configures optional telemetry and command integrations:
+
+- LSL streams `NMLHandExoJointAngles` and `NMLHandExoMotorTorque`
+- UDP telemetry JSON output, default destination `127.0.0.1:10002`
+- UDP command input, default bind `0.0.0.0:10001` and disabled by default
+- Continuous telemetry with a configurable target up to 20 Hz; the Telemetry tab
+  reports the measured rate because serial round trips may limit the achieved rate
+
+UDP command input accepts `set_gesture:*` commands by default. Advanced mode uses a
+restricted allowlist and requires explicit active motor IDs for enable, disable, and
+home commands. Angle and calibration commands are not forwarded over UDP. Settings
+shows the last received command and whether it was accepted or rejected.
+
+The Teleop tab's WebSocket connection is an outbound telemetry client: it sends
+normalized joint-state frames to a WebSocket server. It does not listen for commands.
+Use UDP Command Input for inbound commands, even when both endpoints are on localhost.
+
+The **Direct Control tab** supports guarded velocity and current/estimated-torque
+control with explicit motor arming. Velocity is limited to ±10 rpm, current to
+±910 mA, and the command button must be held down. Releasing it sends zero; the
+firmware independently stops stale commands after its watchdog timeout. Direct
+control requires firmware version `0.2.14` or newer. Normal multi-query telemetry
+polling pauses in direct mode so command refreshes have priority on the serial bus,
+then resumes after returning to current-position control.
 
 ### Python API (scripting)
 
@@ -376,7 +405,7 @@ Motor references accept either an **integer DXL ID** (e.g. `11`) or a **bare mot
 |---------|------|-------------|-------|
 | `get_current` | `<motor\|all>` | Motor current (mA) | |
 | `get_current_lim` | `<motor\|all>` | Current limit (mA) | |
-| `set_current_lim` | `<motor>:<mA>` | Set current limit | Do not exceed 200 mA without reason |
+| `set_current_lim` | `<motor>:<mA>` | Set current limit | XC330-T288 build clamps to 910 mA |
 | `get_torque` | `<motor\|all>` | Estimated torque (N·m) | Requires reflash of torque fix |
 | `get_goal_velocity` | `<motor\|all>` | Velocity limit (rpm) | |
 | `set_goal_velocity` | `<motor\|all>:<val>` | Set velocity limit | |

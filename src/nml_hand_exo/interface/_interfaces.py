@@ -48,11 +48,16 @@ class TCPComm(BaseComm):
 
 
 class SerialComm(BaseComm):
-    def __init__(self, port, baudrate, command_delimiter=';', timeout=1):
+    def __init__(
+        self, port, baudrate, command_delimiter=';', timeout=1,
+        response_timeout=2.0, verbose=False,
+    ):
         self.port = port
         self.baudrate = baudrate
         self.command_delimiter = command_delimiter
         self.timeout = timeout
+        self.response_timeout = response_timeout
+        self.verbose = verbose
         self.device = None
 
     def connect(self):
@@ -65,7 +70,7 @@ class SerialComm(BaseComm):
     def send(self, message: str):
         self.device.write(message.encode())
 
-    def receive(self, wait_until_return=False, timeout=2.0) -> str:
+    def receive(self, wait_until_return=False, timeout=None) -> str:
         """
             Reads data from the serial device. If `wait_until_return` is True,
             waits for a command delimiter until the timeout is reached.
@@ -82,6 +87,7 @@ class SerialComm(BaseComm):
                 raise ConnectionError("Serial device is not connected")
 
             if wait_until_return:
+                timeout = self.response_timeout if timeout is None else timeout
                 if self.verbose:
                     print("Waiting for complete response from serial device...")
 

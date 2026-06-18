@@ -1,4 +1,4 @@
-# Basic Examples - Getting Started
+﻿# Basic Examples - Getting Started
 
 This folder contains introductory examples for connecting to and communicating with the NML Hand Exoskeleton.
 
@@ -71,6 +71,8 @@ python hand_exo_cli.py --connect COM5 --monitor
 ## Next Steps
 
 After mastering these basics, move on to:
-- `02_motor_control/` - Control motors precisely
-- `03_sensors/` - Work with IMU and sensors
-- `04_advanced/` - Advanced configuration
+- `motor_control/` - Control motors precisely
+- `sensors/` - Work with IMU and sensors
+- `advanced/` - Advanced configuration
+
+
