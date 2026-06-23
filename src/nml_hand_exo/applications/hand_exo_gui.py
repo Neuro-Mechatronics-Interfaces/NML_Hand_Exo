@@ -634,6 +634,84 @@ class CalibrationDialog(QDialog):
         # _ensure_gesture_ready() applies the correct profile on the next gesture.
         set_default_profile(self.profile_name, side=self._side)
 
+class JointLimitsDialog(QDialog):
+    """
+    Small viewer and editor for join limits for each motor
+    """
+
+    def __init__(self, exo: HandExo, motor_names: list[str],
+                 dxl_ids: list[int], parent=None):
+        super().__init__(parent)
+        self.exo = exo
+        self.motor_names = motor_names
+        self.dxl_ids = dxl_ids
+        self.setWindowTitle("Joint Limits")
+
+        # must finish editing joint limits before doing anything else
+        self.setModal(True) 
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+
+        self.table = QTableWidget(len(motor_names), 3, self)
+        self.table.setHorizontalHeaderLabels(["Motor (ID)", "Min (°)", "Max (°)"])
+        self.table.verticalHeader().setVisible(False) # already have a Motor column
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setEditTriggers(QTableWidget.AllEditTriggers)
+
+        for row, (name, dxl_id) in enumerate(zip(motor_names, dxl_ids)):
+            label = QTableWidgetItem(f"{name} ({dxl_id})")
+            label.setFlags(Qt.ItemIsEnabled)
+            self.table.setItem(row, 0, label)
+            for col in (1, 2):
+                spin = QDoubleSpinBox()
+                spin.setDecimals(2)
+                spin.setRange(-5000.0, 5000.0) # wrist can turn multiple times 
+                self.table.setCellWidget(row, col, spin)
+        layout.addWidget(self.table)
+
+        btn_row = QHBoxLayout()
+        self.read_btn = QPushButton("Read from device")
+        self.apply_btn = QPushButton("Apply")
+        self.close_btn = QPushButton("Close")
+        btn_row.addWidget(self.read_btn)
+        btn_row.addWidget(self.apply_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(self.close_btn)
+        layout.addLayout(btn_row)
+
+        self.read_btn.clicked.connect(self._read_limits)
+        self.apply_btn.clicked.connect(self._apply_limits)
+        self.close_btn.clicked.connect(self.accept)
+
+        self._read_limits()
+
+    def _read_limits(self):
+        try:
+            limits = self.exo.get_motor_limits('all')
+        except Exception as e:
+            QMessageBox.critical(self, "Read Error", str(e))
+            return
+        for row, dxl_id in enumerate(self.dxl_ids):
+            vals = limits.get(dxl_id)
+            if not vals or len(vals) < 2:
+                continue
+            self.table.cellWidget(row, 1).setValue(float(vals[0]))
+            self.table.cellWidget(row, 2).setValue(float(vals[1]))
+
+    def _apply_limits(self):
+        try:
+            for row, dxl_id in enumerate(self.dxl_ids):
+                lo = self.table.cellWidget(row, 1).value()
+                hi = self.table.cellWidget(row, 2).value()
+                if lo > hi:
+                    QMessageBox.warning(self, "Invalid Limits", f"Motor {dxl_id}: min ({lo}) is greater than max ({hi}).")
+                    return
+                self.exo.set_motor_limits(dxl_id, lo, hi)
+        except Exception as e:
+            QMessageBox.critical(self, "Apply Error", str(e))
+            return
+        QMessageBox.information(self, "Joint Limits", "Limits applied to device\n")
 
 # ==========================================================================
 #  ROM Assessment Dialog
@@ -1472,6 +1550,13 @@ class SerialWorker(QThread):
 # ==========================================================================
 
 class HandExoGUI(QWidget):
+    def _open_joint_limits_dialog(self):
+        if not self.exo_connected:
+            QMessageBox.information(self, "Joint Limits", "Device must be connected")
+            return
+        dxl_ids = [self._motor_dxl_id[self._motor_idx[n]] for n in self.motor_names]
+        dlg = JointLimitsDialog(self.exo, self.motor_names, dxl_ids, parent=self)
+        dlg.exec_()
 
     def __init__(self):
         super().__init__()
@@ -3224,6 +3309,18 @@ class HandExoGUI(QWidget):
 
         box.setLayout(layout)
         self.main_layout.addWidget(box)
+
+        # add joint limits edit button under calibration
+        self._build_joint_limits_section() 
+
+    def _build_joint_limits_section(self):
+        row = QHBoxLayout()
+        btn = QPushButton("Joint Limits…")
+        btn.setToolTip("Edit joint limits")
+        btn.clicked.connect(self._open_joint_limits_dialog)
+        row.addWidget(btn)
+        row.addStretch()
+        self.main_layout.addLayout(row)
 
     def _refresh_profiles(self):
         """Repopulate the profile combo filtered by the current connection mode and side.
