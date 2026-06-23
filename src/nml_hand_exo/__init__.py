@@ -47,7 +47,7 @@ def _trusted_namespace_paths(paths):
 
 __path__ = _trusted_namespace_paths(extend_path(__path__, __name__))
 
-__version__ = "0.0.6"
+__version__ = "0.0.7"
 __author__ = "Neuromechatronics Lab"
 __email__ = "neuromech@andrew.cmu.edu"
 __license__ = "MIT"
