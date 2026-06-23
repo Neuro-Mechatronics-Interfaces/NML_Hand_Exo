@@ -33,6 +33,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
+py-modules = ["handexo_cli"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -57,3 +58,4 @@ docs = [
 
 [project.scripts]
 nml-exo-state-visualizer = "nml_hand_exo.applications.exo_state_visualizer:main"
+handexo = "handexo_cli:main"

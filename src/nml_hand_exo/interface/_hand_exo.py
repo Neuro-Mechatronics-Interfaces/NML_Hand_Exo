@@ -20,15 +20,17 @@ class HandExo(object):
     """
 
     def __init__(self, comm: BaseComm, name='NMLHandExo', command_delimiter: str = '\n', send_delay: float = 0.01,
-                 auto_connect=False, verbose: bool = False):
-        """ 
+                 auto_connect=False, verbose: bool = False, side: str | None = None):
+        """
         Initializes the HandExo interface.
-        
+
         Args:
             name (str): Name of the exoskeleton instance.
             command_delimiter (str): Delimiter used to separate commands (default is '\n').
             send_delay (float): Delay in seconds after sending a command to allow processing (default is 0.01).
             verbose (bool): If True, enables verbose logging of commands and responses (default is False).
+            side (str or None): Hand side this exo is for — ``'right'``, ``'left'``,
+                or ``None`` to auto-detect from the firmware 'info' response.
 
         """
         self.name = name
@@ -37,13 +39,11 @@ class HandExo(object):
         self.send_delay = send_delay
         self.verbose = verbose
         self.device.verbose = verbose
+        # Side is set explicitly or detected via detect_side() / info().
+        self.side: str | None = side
 
         if auto_connect:
             self.device.connect()
-
-    @property
-    def connected(self) -> bool:
-        return bool(self.device and self.device.is_connected())
 
     def logger(self, *argv, warning: bool = False):
         """ 
@@ -61,6 +61,30 @@ class HandExo(object):
             # If a warning, print the text in yellow
             msg = f"\033[93m{msg}\033[0m" if warning else msg
             print(msg)
+
+    def detect_side(self) -> str:
+        """
+        Query the firmware's 'info' response to determine the hand side.
+
+        Updates ``self.side`` and returns it.  Falls back to ``'right'`` if the
+        firmware does not include a Side field (pre-handedness firmware).
+
+        Returns:
+            str: ``'left'`` or ``'right'``.
+        """
+        try:
+            d = self.info()
+            self.side = d.get('side', self.side or 'right')
+        except Exception:
+            self.side = self.side or 'right'
+        return self.side
+
+    def close(self):
+        """Close the underlying communication interface."""
+        try:
+            self.device.close()
+        except Exception:
+            pass
 
     def set_comm(self, comm: BaseComm):
         """
@@ -97,7 +121,9 @@ class HandExo(object):
         except Exception as e:
             print(f"[ERROR] Failed to send command: {e}")
 
-    def _receive(self, wait_until_return: bool = False) -> str:
+    def _receive(
+        self, wait_until_return: bool = False, timeout: float | None = None
+    ) -> str:
         """
         Reads a response from the exoskeleton over the serial connection.
         
@@ -105,9 +131,19 @@ class HandExo(object):
             str: The response from the exoskeleton, or an empty string if no response.
 
         """
-        return self.device.receive(wait_until_return=wait_until_return)
+        if timeout is None:
+            return self.device.receive(wait_until_return=wait_until_return)
+        return self.device.receive(
+            wait_until_return=wait_until_return, timeout=timeout
+        )
 
-    def _get_motor_attribute(self, attr: str, motor_id: (int or str) = 'all', wait_until_return: bool = False) -> float or list or bool or dict:
+    def _get_motor_attribute(
+        self,
+        attr: str,
+        motor_id: (int or str) = 'all',
+        wait_until_return: bool = False,
+        command: str | None = None,
+    ) -> float or list or bool or dict:
         """
         Generic method to retrieve a specified attribute from the motor(s).
 
@@ -118,7 +154,7 @@ class HandExo(object):
         Returns:
             Single value if a motor ID is given, or a dict of {motor_id: attr_value} if 'all'.
         """
-        self.send_command(f"get_{attr}:{motor_id}")
+        self.send_command(f"{command or f'get_{attr}'}:{motor_id}")
         raw = self._receive(wait_until_return=wait_until_return)
         if self.verbose:
             print(f"Raw return: {raw}")
@@ -179,7 +215,8 @@ class HandExo(object):
                 elif key == "enabled":
                     motor_info["enabled"] = val.lower() == "true"
                 elif key == "velocity":
-                    motor_info["velocity"] = float(val)
+                    _m = re.match(r'[-+]?[\d.]+', val.strip())
+                    motor_info["velocity"] = float(_m.group()) if _m else float(val)
                 elif key == "acceleration":
                     motor_info["acceleration"] = float(val)
                 elif key == "baudrate":
@@ -189,13 +226,24 @@ class HandExo(object):
                 elif key == "absolute_angle":
                     motor_info["absolute_angle"] = float(val)
                 elif key == "current":
-                    motor_info["current"] = float(val)
+                    _m = re.match(r'[-+]?[\d.]+', val.strip())
+                    motor_info["current"] = float(_m.group()) if _m else float(val)
                 elif key == "current_limit":
-                    motor_info["current_limit"] = float(val)
+                    _m = re.match(r'[-+]?[\d.]+', val.strip())
+                    motor_info["current_limit"] = float(_m.group()) if _m else float(val)
+                elif key == "goal_current":
+                    _m = re.match(r'[-+]?[\d.]+', val.strip())
+                    motor_info["goal_current"] = float(_m.group()) if _m else float(val)
                 else:
                     motor_info[key] = val
 
-            motor_id = int(motor_id_str) if motor_id_str else motor_info.get("id")
+            # Prefer the actual Dynamixel ID from the id: field in the blob.
+            # The Motor X: prefix uses a loop index (0..N-1), NOT the hardware ID.
+            # Firmware embeds the real ID as "id: <N>" inside the braces.
+            actual_id = motor_info.get("id")
+            if actual_id is None:
+                actual_id = int(motor_id_str) if motor_id_str else None
+            motor_id = actual_id
             if motor_id is not None:
                 motor_data[motor_id] = motor_info
 
@@ -213,6 +261,17 @@ class HandExo(object):
 
         """
         self.send_command(f"enable:{motor_id}")
+
+    def enable_motors_by_id(self, motor_ids):
+        """Enable torque for a list of explicit Dynamixel IDs.
+
+        Uses per-ID legacy commands for firmware compatibility.
+        """
+        ids = sorted({int(mid) for mid in motor_ids if int(mid) > 0})
+        if not ids:
+            return
+        for mid in ids:
+            self.send_command(f"enable:{mid}")
 
     def is_enabled(self, motor_id: (int or str) = 'all') -> bool:
         """
@@ -239,6 +298,17 @@ class HandExo(object):
 
         """
         self.send_command(f"disable:{motor_id}")
+
+    def disable_motors_by_id(self, motor_ids):
+        """Disable torque for a list of explicit Dynamixel IDs.
+
+        Uses per-ID legacy commands for firmware compatibility.
+        """
+        ids = sorted({int(mid) for mid in motor_ids if int(mid) > 0})
+        if not ids:
+            return
+        for mid in ids:
+            self.send_command(f"disable:{mid}")
 
     def enable_led(self, motor_id: (int or str) = 'all'):
         """
@@ -315,7 +385,7 @@ class HandExo(object):
         """
         self.send_command(f"home:{motor_id}")
 
-    def info(self) -> dict:
+    def info(self, timeout: float = 5.0) -> dict:
         """
         Request and parse exoskeleton info into a structured dictionary.
 
@@ -332,13 +402,14 @@ class HandExo(object):
         import re
 
         self.send_command("info")
-        raw = self._receive(wait_until_return=True)
+        raw = self._receive(wait_until_return=True, timeout=timeout)
         if self.verbose:
             print(f"Raw return: {raw}")
 
         info: dict = {}
         if not raw:
             return info
+        info["_raw"] = raw
 
         # Normalize lines and drop empties
         lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
@@ -346,6 +417,7 @@ class HandExo(object):
         # --- Header lines appear one-per-line in your sample ---
         name_pat    = re.compile(r'^Name:\s*(\S+)')
         ver_pat     = re.compile(r'^Version:\s*(\S+)')
+        side_pat    = re.compile(r'^Side:\s*(\S+)')
         nmot_pat    = re.compile(r'^Number of Motors:\s*(\d+)')
         motor_pat   = re.compile(r'^Motor\s+(\d+):\s*\{(.*)\}\s*$')
 
@@ -359,6 +431,13 @@ class HandExo(object):
             m = ver_pat.search(ln)
             if m:
                 info['version'] = m.group(1)
+                continue
+            m = side_pat.search(ln)
+            if m:
+                info['side'] = m.group(1).lower()
+                # Update self.side if not explicitly set by the caller
+                if self.side is None:
+                    self.side = info['side']
                 continue
             m = nmot_pat.search(ln)
             if m:
@@ -419,9 +498,10 @@ class HandExo(object):
             if en_m:
                 m_info['enabled'] = (en_m.group(1).lower() == 'true')
 
-            # Stash
-            motors[motor_id] = m_info
-            info[f'motor_{motor_id}'] = m_info  # back-compat
+            # Stash — use actual Dynamixel ID (from id: field), not loop index
+            actual_id = m_info.get('id', motor_id)
+            motors[actual_id] = m_info
+            info[f'motor_{actual_id}'] = m_info  # back-compat
 
         if 'n_motors' not in info:
             info['n_motors'] = len(motors)
@@ -481,6 +561,14 @@ class HandExo(object):
         """
         self.send_command(f"set_goal_velocity:{motor_id}:{velocity}")
 
+    def get_present_velocity(self, motor_id: (int or str) = 'all'):
+        """Read signed present velocity in rpm."""
+        return self._get_motor_attribute('velocity', motor_id, True, command='get_velocity')
+
+    def set_direct_velocity(self, motor_id: int, velocity_rpm: float):
+        """Command signed velocity in rpm while firmware is in velocity mode."""
+        self.send_command(f"set_velocity:{int(motor_id)}:{float(velocity_rpm)}")
+
     def get_motor_acceleration(self, motor_id: (int or str) = 'all') -> float:
         """
         Retrieves the current acceleration of the specified motor.
@@ -538,12 +626,6 @@ class HandExo(object):
         else:
             cmd = f"set_angle:{int(motor_id)}:{angle}"
         self.send_command(cmd)
-
-    def set_joint(self, motor_id: (int or str), angle: float):
-        """
-        Backwards-compatible alias for set_motor_angle.
-        """
-        self.set_motor_angle(motor_id, angle)
 
     def get_absolute_motor_angle(self, motor_id: (int or str) = 'all') -> float:
         """
@@ -654,6 +736,33 @@ class HandExo(object):
 
         """
         self.send_command(f"set_current_lim:{motor_id}:{current_limit}")
+
+    def get_goal_current(self, motor_id: (int or str) = 'all'):
+        """Read signed direct-current goal in mA."""
+        return self._get_motor_attribute(
+            'goal_current', motor_id, True, command='get_goal_current'
+        )
+
+    def set_direct_current(self, motor_id: int, current_mA: float):
+        """Command signed current in mA while firmware is in current mode."""
+        self.send_command(f"set_current:{int(motor_id)}:{float(current_mA)}")
+
+    def stop_direct_control(self, motor_id: (int or str) = 'all'):
+        """Immediately zero direct velocity and current goals."""
+        target = motor_id if isinstance(motor_id, str) else int(motor_id)
+        self.send_command(f"stop:{target}")
+
+    def set_direct_command_timeout(self, timeout_ms: int):
+        """Set the firmware direct-control watchdog timeout."""
+        self.send_command(f"set_command_timeout:{int(timeout_ms)}")
+
+    def set_control_mode(self, mode: str):
+        """Set the global motor mode; firmware leaves torque disabled."""
+        normalized = mode.strip().lower()
+        allowed = {"position", "current_position", "velocity", "current"}
+        if normalized not in allowed:
+            raise ValueError(f"Unsupported control mode: {mode}")
+        self.send_command(f"set_control_mode:all:{normalized}")
 
     def get_motor_limits(self, motor_id: (int or str) = 'all') -> tuple:
         """
@@ -863,6 +972,153 @@ class HandExo(object):
 
         """
         self.send_command("cycle_gesture_state")
+
+    def set_zero_offset(self, motor_id: (int or str), offset: float):
+        """
+        Sets the zero offset for the specified motor to an arbitrary value.
+
+        Args:
+            motor_id (int or str): ID or name of the motor.
+            offset (float): Zero offset in degrees (absolute angle of the open/home position).
+
+        """
+        self.send_command(f"set_zero_offset:{motor_id}:{offset}")
+
+    def set_flip(self, motor_id: (int or str), flip: bool):
+        """
+        Sets the direction flip flag for a motor.
+
+        Args:
+            motor_id (int or str): ID or name of the motor.
+            flip (bool): True to invert direction, False for normal.
+
+        """
+        self.send_command(f"set_flip:{motor_id}:{'1' if flip else '0'}")
+
+    def apply_calibration(self, profile_or_path: str = None, profiles_dir: str = None,
+                          name_to_id: dict = None):
+        """
+        Loads a calibration profile and pushes all values to the device.
+
+        Can be called with a profile name (e.g. "zach"), a full file path,
+        or with no arguments to load the default profile.
+
+        Args:
+            profile_or_path (str or None): One of:
+                - A profile name (e.g. "zach") → loads profiles/zach.json
+                - A full file path to a calibration JSON
+                - None → loads the default profile from profiles/config.json
+            profiles_dir (str or None): Directory containing profile JSONs.
+                Defaults to examples/calibration/profiles/ relative to
+                the repo root.
+            name_to_id (dict[str, int] or None): Optional mapping of bare motor
+                name → Dynamixel ID.  When provided, calibration commands use
+                the explicit integer ID instead of the bare name string so that
+                duplicate motor names in dual firmware (e.g. two "wrist" motors
+                on left ID 1 and right ID 11) are resolved to the correct side
+                without ambiguity.  When None, bare names are used (legacy
+                behaviour, safe only in single-exo firmware builds).
+
+        """
+        import json
+        import os
+
+        if profiles_dir is None:
+            repo_root = os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))))
+            profiles_dir = os.path.join(repo_root, "examples", "calibration", "profiles")
+
+        if profile_or_path is None:
+            config_path = os.path.join(profiles_dir, "config.json")
+            if not os.path.exists(config_path):
+                raise FileNotFoundError(f"No profiles config found at {config_path}")
+            with open(config_path, "r") as f:
+                cfg = json.load(f)
+            # Prefer side-specific default (e.g. "default_right"), fall back to
+            # legacy "default" key so old config.json files still work.
+            my_side = self.side or "right"
+            default_name = cfg.get(f"default_{my_side}") or cfg.get("default")
+            if not default_name:
+                raise ValueError(
+                    f"No default profile set for side='{my_side}'. "
+                    "Pass a profile name or run calibrate_exo.py --set-default."
+                )
+            filepath = os.path.join(profiles_dir, f"{default_name}.json")
+        elif os.path.isfile(profile_or_path):
+            filepath = profile_or_path
+        else:
+            filepath = os.path.join(profiles_dir, f"{profile_or_path}.json")
+
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"Calibration profile not found: {filepath}")
+
+        with open(filepath, "r") as f:
+            cal = json.load(f)
+
+        # Warn if the profile's declared side does not match this exo's side.
+        profile_side = cal.get("side")
+        if profile_side and self.side and profile_side != self.side:
+            self.logger(
+                f"[apply_calibration] WARNING: profile side='{profile_side}' "
+                f"but this exo is side='{self.side}'. Applying anyway.",
+                warning=True,
+            )
+
+        # --- Epoch alignment for multi-turn motors ---
+        # In OP_CURRENT_BASED_POSITION the Dynamixel resets its multi-turn counter
+        # at power-on.  The same physical joint angle may be reported as N*360° away
+        # from the value recorded during calibration.  Query actual positions first
+        # and snap every profile value to the motor's current epoch before pushing to
+        # firmware; otherwise getRelativeAngle() subtracts a home that is ~360° off.
+        self.send_command("get_absolute_angle:all")
+        _raw = self._receive(wait_until_return=True)
+        _parsed = self._parse_motor_data_block(_raw)
+
+        # Key by integer DXL ID for unambiguous lookup in dual firmware where
+        # multiple motors share the same bare name (e.g. two "wrist" motors).
+        # The name-keyed fallback is kept for callers that do not supply name_to_id.
+        abs_by_id = {
+            motor_id: info["absolute_angle"]
+            for motor_id, info in _parsed.items()
+            if "absolute_angle" in info
+        }
+        abs_by_name = {
+            info["name"]: info["absolute_angle"]
+            for info in _parsed.values()
+            if "name" in info and "absolute_angle" in info
+        }
+
+        for name, vals in cal["motors"].items():
+            # Resolve motor reference: prefer explicit DXL ID when map is provided
+            # so the firmware command targets the correct side unambiguously.
+            dxl_id    = name_to_id.get(name) if name_to_id else None
+            motor_ref = dxl_id if dxl_id is not None else name
+
+            profile_home = vals["home"]
+            current_abs  = abs_by_id.get(dxl_id) if dxl_id is not None else abs_by_name.get(name)
+
+            if current_abs is not None:
+                epoch_shift = round((current_abs - profile_home) / 360.0) * 360.0
+            else:
+                epoch_shift = 0.0
+                self.logger(f"[apply_calibration] {name}: position unreadable, no epoch correction", warning=True)
+
+            adj_home      = profile_home       + epoch_shift
+            adj_limit_min = vals["limit_min"]  + epoch_shift
+            adj_limit_max = vals["limit_max"]  + epoch_shift
+
+            self.logger(
+                f"[cal] {name} (id={motor_ref}): profile_home={profile_home:.2f} cur_abs="
+                + (f"{current_abs:.2f}" if current_abs is not None else "N/A")
+                + f" shift={epoch_shift:+.0f} adj_home={adj_home:.2f}"
+            )
+
+            self.set_zero_offset(motor_ref, adj_home)
+            self.set_motor_limits(motor_ref, adj_limit_min, adj_limit_max)
+            self.set_flip(motor_ref, vals["flip"])
+
+        profile_name = os.path.basename(filepath).removesuffix(".json")
+        self.logger(f"Calibration profile '{profile_name}' applied from {filepath}")
 
     def calibrate_exo(self, mode: str = "timed", duration: float = 10.0):
         """
