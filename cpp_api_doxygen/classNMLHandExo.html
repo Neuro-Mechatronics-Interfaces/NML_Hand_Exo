@@ -104,7 +104,7 @@ $(document).ready(function(){initNavTree('classNMLHandExo.html',''); initResizab
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="pub-methods" name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:a5f0008c876662bef170d953537291669" id="r_a5f0008c876662bef170d953537291669"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a5f0008c876662bef170d953537291669">NMLHandExo</a> (const uint8_t *ids, uint8_t numMotors, const float <a class="el" href="config_8h.html#a49eabd02363ddba4a77e6bed3c18118a">jointLimits</a>[][2], const float *homeState=nullptr)</td></tr>
+<tr class="memitem:a5f0008c876662bef170d953537291669" id="r_a5f0008c876662bef170d953537291669"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a5f0008c876662bef170d953537291669">NMLHandExo</a> (const uint8_t *ids, uint8_t numMotors, const float <a class="el" href="config_8h.html#aeae48ca31178aa07e9c5700f94100012">jointLimits</a>[][2], const float *homeState=nullptr)</td></tr>
 <tr class="memdesc:a5f0008c876662bef170d953537291669"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor.  <br /></td></tr>
 <tr class="separator:a5f0008c876662bef170d953537291669"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a0ce26f35c395209dde2285ed04310f0f" id="r_a0ce26f35c395209dde2285ed04310f0f"><td class="memItemLeft" align="right" valign="top"><a id="a0ce26f35c395209dde2285ed04310f0f" name="a0ce26f35c395209dde2285ed04310f0f"></a>
@@ -159,6 +159,9 @@ void&#160;</td><td class="memItemRight" valign="bottom"><b>resetAllZeros</b> ()<
 String&#160;</td><td class="memItemRight" valign="bottom"><b>getDeviceInfo</b> ()</td></tr>
 <tr class="memdesc:a65b2aff16b4221cc13ca1635af028c1b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get a string summarizing the device information. <br /></td></tr>
 <tr class="separator:a65b2aff16b4221cc13ca1635af028c1b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae866ddb40aebdbac7427c318679ad118" id="r_ae866ddb40aebdbac7427c318679ad118"><td class="memItemLeft" align="right" valign="top">const char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#ae866ddb40aebdbac7427c318679ad118">getSide</a> () const</td></tr>
+<tr class="memdesc:ae866ddb40aebdbac7427c318679ad118"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the hand side this board is compiled for ("right" or "left").  <br /></td></tr>
+<tr class="separator:ae866ddb40aebdbac7427c318679ad118"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a679ddf3f750e2d30bfbbc1118ada29f0" id="r_a679ddf3f750e2d30bfbbc1118ada29f0"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a679ddf3f750e2d30bfbbc1118ada29f0">getMotorCount</a> ()</td></tr>
 <tr class="memdesc:a679ddf3f750e2d30bfbbc1118ada29f0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the number of motors.  <br /></td></tr>
 <tr class="separator:a679ddf3f750e2d30bfbbc1118ada29f0"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -236,6 +239,12 @@ void&#160;</td><td class="memItemRight" valign="bottom"><b>homeAllMotors</b> ()<
 <tr class="memitem:a323895dcf281120f156efac795812101" id="r_a323895dcf281120f156efac795812101"><td class="memItemLeft" align="right" valign="top">String&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a323895dcf281120f156efac795812101">getMotorLimits</a> (uint8_t id)</td></tr>
 <tr class="memdesc:a323895dcf281120f156efac795812101"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the joint angle limits for a motor.  <br /></td></tr>
 <tr class="separator:a323895dcf281120f156efac795812101"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5f0db25852d80371221987baa5c3022b" id="r_a5f0db25852d80371221987baa5c3022b"><td class="memItemLeft" align="right" valign="top">float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a5f0db25852d80371221987baa5c3022b">getMotorLimitMin</a> (uint8_t id)</td></tr>
+<tr class="memdesc:a5f0db25852d80371221987baa5c3022b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the lower joint limit for a motor.  <br /></td></tr>
+<tr class="separator:a5f0db25852d80371221987baa5c3022b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a531f6ac84b4d56b8832d190835bc25b4" id="r_a531f6ac84b4d56b8832d190835bc25b4"><td class="memItemLeft" align="right" valign="top">float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a531f6ac84b4d56b8832d190835bc25b4">getMotorLimitMax</a> (uint8_t id)</td></tr>
+<tr class="memdesc:a531f6ac84b4d56b8832d190835bc25b4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the upper joint limit for a motor.  <br /></td></tr>
+<tr class="separator:a531f6ac84b4d56b8832d190835bc25b4"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a401c76bdc2b2f5110befbc8cacf1341e" id="r_a401c76bdc2b2f5110befbc8cacf1341e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a401c76bdc2b2f5110befbc8cacf1341e">setMotorLimits</a> (uint8_t id, float lowerLimit, float upperLimit)</td></tr>
 <tr class="memdesc:a401c76bdc2b2f5110befbc8cacf1341e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the joint angle limits for a motor.  <br /></td></tr>
 <tr class="separator:a401c76bdc2b2f5110befbc8cacf1341e"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -254,6 +263,23 @@ void&#160;</td><td class="memItemRight" valign="bottom"><b>homeAllMotors</b> ()<
 <tr class="memitem:a07676c9aaa793914cd842ceafba777dc" id="r_a07676c9aaa793914cd842ceafba777dc"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a07676c9aaa793914cd842ceafba777dc">setCurrentLimit</a> (uint8_t id, uint16_t current_mA)</td></tr>
 <tr class="memdesc:a07676c9aaa793914cd842ceafba777dc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the current limit for a motor.  <br /></td></tr>
 <tr class="separator:a07676c9aaa793914cd842ceafba777dc"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:abca87c1f6b2f4f2afd5db8165a005dab" id="r_abca87c1f6b2f4f2afd5db8165a005dab"><td class="memItemLeft" align="right" valign="top"><a id="abca87c1f6b2f4f2afd5db8165a005dab" name="abca87c1f6b2f4f2afd5db8165a005dab"></a>
+bool&#160;</td><td class="memItemRight" valign="bottom"><b>setGoalCurrent</b> (uint8_t id, float current_mA)</td></tr>
+<tr class="memdesc:abca87c1f6b2f4f2afd5db8165a005dab"><td class="mdescLeft">&#160;</td><td class="mdescRight">Command signed motor current in mA while in CURRENT mode. <br /></td></tr>
+<tr class="separator:abca87c1f6b2f4f2afd5db8165a005dab"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9a878e036f4ac99eec1525363d5c4534" id="r_a9a878e036f4ac99eec1525363d5c4534"><td class="memItemLeft" align="right" valign="top"><a id="a9a878e036f4ac99eec1525363d5c4534" name="a9a878e036f4ac99eec1525363d5c4534"></a>
+float&#160;</td><td class="memItemRight" valign="bottom"><b>getGoalCurrent</b> (uint8_t id)</td></tr>
+<tr class="memdesc:a9a878e036f4ac99eec1525363d5c4534"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read the currently configured goal current in mA. <br /></td></tr>
+<tr class="separator:a9a878e036f4ac99eec1525363d5c4534"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aba74eff4fc69f41dfa872143fb54c98e" id="r_aba74eff4fc69f41dfa872143fb54c98e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#aba74eff4fc69f41dfa872143fb54c98e">setZeroOffsetValue</a> (uint8_t id, float offset_deg)</td></tr>
+<tr class="memdesc:aba74eff4fc69f41dfa872143fb54c98e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the zero offset for a motor to an arbitrary value.  <br /></td></tr>
+<tr class="separator:aba74eff4fc69f41dfa872143fb54c98e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac34dbfcc2c6d61f050617bc4a12bdcfe" id="r_ac34dbfcc2c6d61f050617bc4a12bdcfe"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#ac34dbfcc2c6d61f050617bc4a12bdcfe">setFlipMotor</a> (uint8_t id, bool flip)</td></tr>
+<tr class="memdesc:ac34dbfcc2c6d61f050617bc4a12bdcfe"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the flip direction flag for a motor.  <br /></td></tr>
+<tr class="separator:ac34dbfcc2c6d61f050617bc4a12bdcfe"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a56b7cc011b3d93c79ac54adcaf4965ab" id="r_a56b7cc011b3d93c79ac54adcaf4965ab"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a56b7cc011b3d93c79ac54adcaf4965ab">getFlipMotor</a> (uint8_t id)</td></tr>
+<tr class="memdesc:a56b7cc011b3d93c79ac54adcaf4965ab"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the flip direction flag for a motor.  <br /></td></tr>
+<tr class="separator:a56b7cc011b3d93c79ac54adcaf4965ab"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aabec09bc326d46fee123e30444701ec6" id="r_aabec09bc326d46fee123e30444701ec6"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#aabec09bc326d46fee123e30444701ec6">setTorque</a> (uint8_t id, float torque_Nm)</td></tr>
 <tr class="memdesc:aabec09bc326d46fee123e30444701ec6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the calculated torque in N·m for a motor.  <br /></td></tr>
 <tr class="separator:aabec09bc326d46fee123e30444701ec6"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -266,6 +292,30 @@ void&#160;</td><td class="memItemRight" valign="bottom"><b>homeAllMotors</b> ()<
 <tr class="memitem:ab86d43c63d481dca10cb3e585bffb170" id="r_ab86d43c63d481dca10cb3e585bffb170"><td class="memItemLeft" align="right" valign="top">uint32_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#ab86d43c63d481dca10cb3e585bffb170">getVelocityLimit</a> (uint8_t id)</td></tr>
 <tr class="memdesc:ab86d43c63d481dca10cb3e585bffb170"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the velocity limit of a motor.  <br /></td></tr>
 <tr class="separator:ab86d43c63d481dca10cb3e585bffb170"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a475d47472e9ee2058b17456837159691" id="r_a475d47472e9ee2058b17456837159691"><td class="memItemLeft" align="right" valign="top"><a id="a475d47472e9ee2058b17456837159691" name="a475d47472e9ee2058b17456837159691"></a>
+bool&#160;</td><td class="memItemRight" valign="bottom"><b>setGoalVelocity</b> (uint8_t id, float velocity_rpm)</td></tr>
+<tr class="memdesc:a475d47472e9ee2058b17456837159691"><td class="mdescLeft">&#160;</td><td class="mdescRight">Command signed motor velocity in rpm while in VELOCITY mode. <br /></td></tr>
+<tr class="separator:a475d47472e9ee2058b17456837159691"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:afd4fed71f1d08294097f70fce526d008" id="r_afd4fed71f1d08294097f70fce526d008"><td class="memItemLeft" align="right" valign="top"><a id="afd4fed71f1d08294097f70fce526d008" name="afd4fed71f1d08294097f70fce526d008"></a>
+float&#160;</td><td class="memItemRight" valign="bottom"><b>getPresentVelocity</b> (uint8_t id)</td></tr>
+<tr class="memdesc:afd4fed71f1d08294097f70fce526d008"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read present motor velocity in rpm, using calibrated direction. <br /></td></tr>
+<tr class="separator:afd4fed71f1d08294097f70fce526d008"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a096f4a09d4d3b2c5f7c5b74bcd536388" id="r_a096f4a09d4d3b2c5f7c5b74bcd536388"><td class="memItemLeft" align="right" valign="top"><a id="a096f4a09d4d3b2c5f7c5b74bcd536388" name="a096f4a09d4d3b2c5f7c5b74bcd536388"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>stopDirectControl</b> (uint8_t id)</td></tr>
+<tr class="memdesc:a096f4a09d4d3b2c5f7c5b74bcd536388"><td class="mdescLeft">&#160;</td><td class="mdescRight">Immediately zero direct velocity/current goals for one motor. <br /></td></tr>
+<tr class="separator:a096f4a09d4d3b2c5f7c5b74bcd536388"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:af6aebb17f47775fce445c0492373c4ec" id="r_af6aebb17f47775fce445c0492373c4ec"><td class="memItemLeft" align="right" valign="top"><a id="af6aebb17f47775fce445c0492373c4ec" name="af6aebb17f47775fce445c0492373c4ec"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>stopAllDirectControl</b> ()</td></tr>
+<tr class="memdesc:af6aebb17f47775fce445c0492373c4ec"><td class="mdescLeft">&#160;</td><td class="mdescRight">Immediately zero direct goals for every firmware-managed motor. <br /></td></tr>
+<tr class="separator:af6aebb17f47775fce445c0492373c4ec"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a49f4abba66f4608286d37c33c1d5e145" id="r_a49f4abba66f4608286d37c33c1d5e145"><td class="memItemLeft" align="right" valign="top"><a id="a49f4abba66f4608286d37c33c1d5e145" name="a49f4abba66f4608286d37c33c1d5e145"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>setDirectCommandTimeout</b> (unsigned long timeout_ms)</td></tr>
+<tr class="memdesc:a49f4abba66f4608286d37c33c1d5e145"><td class="mdescLeft">&#160;</td><td class="mdescRight">Configure the direct-command watchdog timeout. <br /></td></tr>
+<tr class="separator:a49f4abba66f4608286d37c33c1d5e145"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a112bf8dbac103341e5872ade15c77540" id="r_a112bf8dbac103341e5872ade15c77540"><td class="memItemLeft" align="right" valign="top"><a id="a112bf8dbac103341e5872ade15c77540" name="a112bf8dbac103341e5872ade15c77540"></a>
+unsigned long&#160;</td><td class="memItemRight" valign="bottom"><b>getDirectCommandTimeout</b> () const</td></tr>
+<tr class="memdesc:a112bf8dbac103341e5872ade15c77540"><td class="mdescLeft">&#160;</td><td class="mdescRight">Return the direct-command watchdog timeout. <br /></td></tr>
+<tr class="separator:a112bf8dbac103341e5872ade15c77540"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:afb1d445cf99e63d3a1c6e4441fa6dabd" id="r_afb1d445cf99e63d3a1c6e4441fa6dabd"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#afb1d445cf99e63d3a1c6e4441fa6dabd">setAccelerationLimit</a> (uint8_t id, uint32_t acc)</td></tr>
 <tr class="memdesc:afb1d445cf99e63d3a1c6e4441fa6dabd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the acceleration limit of a motor.  <br /></td></tr>
 <tr class="separator:afb1d445cf99e63d3a1c6e4441fa6dabd"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -306,7 +356,7 @@ void&#160;</td><td class="memItemRight" valign="bottom"><b>homeAllMotors</b> ()<
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="pub-static-attribs" name="pub-static-attribs"></a>
 Static Public Attributes</h2></td></tr>
 <tr class="memitem:a21f2a007112d02fbbdd487d5d9a5defd" id="r_a21f2a007112d02fbbdd487d5d9a5defd"><td class="memItemLeft" align="right" valign="top"><a id="a21f2a007112d02fbbdd487d5d9a5defd" name="a21f2a007112d02fbbdd487d5d9a5defd"></a>
-static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><b>VERSION</b> = &quot;0.2.13&quot;</td></tr>
+static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><b>VERSION</b> = &quot;0.2.14&quot;</td></tr>
 <tr class="memdesc:a21f2a007112d02fbbdd487d5d9a5defd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Current software version. <br /></td></tr>
 <tr class="separator:a21f2a007112d02fbbdd487d5d9a5defd"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
@@ -652,6 +702,33 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
 
 </div>
 </div>
+<a id="a56b7cc011b3d93c79ac54adcaf4965ab" name="a56b7cc011b3d93c79ac54adcaf4965ab"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a56b7cc011b3d93c79ac54adcaf4965ab">&#9670;&#160;</a></span>getFlipMotor()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool NMLHandExo::getFlipMotor </td>
+          <td>(</td>
+          <td class="paramtype">uint8_t&#160;</td>
+          <td class="paramname"><em>id</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Get the flip direction flag for a motor. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>True if the motor direction is inverted. </dd></dl>
+
+</div>
+</div>
 <a id="aec362a95e23f2842be47d15b56e6044c" name="aec362a95e23f2842be47d15b56e6044c"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#aec362a95e23f2842be47d15b56e6044c">&#9670;&#160;</a></span>getIndexById()</h2>
 
@@ -852,6 +929,60 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
 
 </div>
 </div>
+<a id="a531f6ac84b4d56b8832d190835bc25b4" name="a531f6ac84b4d56b8832d190835bc25b4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a531f6ac84b4d56b8832d190835bc25b4">&#9670;&#160;</a></span>getMotorLimitMax()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">float NMLHandExo::getMotorLimitMax </td>
+          <td>(</td>
+          <td class="paramtype">uint8_t&#160;</td>
+          <td class="paramname"><em>id</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Get the upper joint limit for a motor. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Upper limit in degrees, or -1 if invalid ID. </dd></dl>
+
+</div>
+</div>
+<a id="a5f0db25852d80371221987baa5c3022b" name="a5f0db25852d80371221987baa5c3022b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5f0db25852d80371221987baa5c3022b">&#9670;&#160;</a></span>getMotorLimitMin()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">float NMLHandExo::getMotorLimitMin </td>
+          <td>(</td>
+          <td class="paramtype">uint8_t&#160;</td>
+          <td class="paramname"><em>id</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Get the lower joint limit for a motor. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Lower limit in degrees, or -1 if invalid ID. </dd></dl>
+
+</div>
+</div>
 <a id="a323895dcf281120f156efac795812101" name="a323895dcf281120f156efac795812101"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a323895dcf281120f156efac795812101">&#9670;&#160;</a></span>getMotorLimits()</h2>
 
@@ -950,6 +1081,26 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Relative angle in degrees. </dd></dl>
+
+</div>
+</div>
+<a id="ae866ddb40aebdbac7427c318679ad118" name="ae866ddb40aebdbac7427c318679ad118"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae866ddb40aebdbac7427c318679ad118">&#9670;&#160;</a></span>getSide()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">const char * NMLHandExo::getSide </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Get the hand side this board is compiled for ("right" or "left"). </p>
+<dl class="section return"><dt>Returns</dt><dd>HAND_SIDE constant as a C-string. </dd></dl>
 
 </div>
 </div>
@@ -1433,6 +1584,43 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
 
 </div>
 </div>
+<a id="ac34dbfcc2c6d61f050617bc4a12bdcfe" name="ac34dbfcc2c6d61f050617bc4a12bdcfe"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac34dbfcc2c6d61f050617bc4a12bdcfe">&#9670;&#160;</a></span>setFlipMotor()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void NMLHandExo::setFlipMotor </td>
+          <td>(</td>
+          <td class="paramtype">uint8_t&#160;</td>
+          <td class="paramname"><em>id</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool&#160;</td>
+          <td class="paramname"><em>flip</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set the flip direction flag for a motor. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
+    <tr><td class="paramname">flip</td><td>True to invert the motor direction, false for normal. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
 <a id="aadd83ade7caf6e099dc6574acb852575" name="aadd83ade7caf6e099dc6574acb852575"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#aadd83ade7caf6e099dc6574acb852575">&#9670;&#160;</a></span>setHome()</h2>
 
@@ -1541,7 +1729,7 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
-    <tr><td class="paramname">mode</td><td>Control mode as a string (e.g. "POSITION", "CURRENT_POSITION", "VELOCITY"). </td></tr>
+    <tr><td class="paramname">mode</td><td>Control mode as a string (POSITION, CURRENT_POSITION, VELOCITY, CURRENT). </td></tr>
   </table>
   </dd>
 </dl>
@@ -1886,6 +2074,43 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="aba74eff4fc69f41dfa872143fb54c98e" name="aba74eff4fc69f41dfa872143fb54c98e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aba74eff4fc69f41dfa872143fb54c98e">&#9670;&#160;</a></span>setZeroOffsetValue()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void NMLHandExo::setZeroOffsetValue </td>
+          <td>(</td>
+          <td class="paramtype">uint8_t&#160;</td>
+          <td class="paramname"><em>id</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float&#160;</td>
+          <td class="paramname"><em>offset_deg</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set the zero offset for a motor to an arbitrary value. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
+    <tr><td class="paramname">offset_deg</td><td>Zero offset in degrees. </td></tr>
   </table>
   </dd>
 </dl>

@@ -13,12 +13,13 @@ var config_8h =
     [ "COMMAND_DELIMITER", "config_8h.html#a6a7411f81eed632a785b6b9c5b460b07", null ],
     [ "DEBUG_BAUD_RATE", "config_8h.html#a8bed1e9934090f89402da0bc43f8dc09", null ],
     [ "DEFAULT_EXO_MODE", "config_8h.html#aa948de5e674a43f3561ca6ab5324306b", null ],
+    [ "DEFAULT_FLIPS", "config_8h.html#acf75e68030805b38b0837ff14492537c", null ],
     [ "DEFAULT_VERBOSE", "config_8h.html#a69065b3a9aeef0869b814c5537be9d65", null ],
+    [ "DIRECT_VELOCITY_LIMIT_RPM", "config_8h.html#a05625c464f642ff1efbabc75a7402692", null ],
     [ "DXL_PROTOCOL_VERSION", "config_8h.html#a31e20e2f8b294241b2f2dd0643eb10bc", null ],
     [ "DYNAMIXEL_BAUD_RATE", "config_8h.html#a80175cb10ba793359eb0a8807638ebdc", null ],
     [ "HOME_STATES", "config_8h.html#a63fdb386b6bec4f6333c23038f736f9a", null ],
-    [ "IS_RIGHT_HAND", "config_8h.html#a4617c1c7f2f228ccd17ff98c7b94dd79", null ],
-    [ "jointLimits", "config_8h.html#a49eabd02363ddba4a77e6bed3c18118a", null ],
+    [ "jointLimits", "config_8h.html#aeae48ca31178aa07e9c5700f94100012", null ],
     [ "MAX_GESTURE_BUTTONS", "config_8h.html#a67357750ad236f09be640e3fa8399e09", null ],
     [ "MAX_STATES_PER_GESTURE", "config_8h.html#a1a3b4f6162e0ad3c772fbc1611d2a466", null ],
     [ "MOTOR_CURRENT_LIMIT", "config_8h.html#a358d5498b420a56ebc41c8fa6b893749", null ],
@@ -28,5 +29,5 @@ var config_8h =
     [ "N_MOTORS", "config_8h.html#ab9330193a20fbbe9cba40be067b5df7f", null ],
     [ "PULSE_RESOLUTION", "config_8h.html#ac8b5696b618a877a775a1a9fe4267b5c", null ],
     [ "STATUS_LED_PIN", "config_8h.html#a077de5a6f39f72c3609365bda45310a1", null ],
-    [ "XL330_TORQUE_CONSTANT", "config_8h.html#a755a9dbe8c14c1efa318fd6a200db283", null ]
+    [ "XC330_T288_TORQUE_CONSTANT", "config_8h.html#a1eb784666f687cf8a78054c26eb033ba", null ]
 ];

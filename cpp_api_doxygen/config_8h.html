@@ -119,6 +119,9 @@ Macros</h2></td></tr>
 <tr class="memitem:ac92a9a840c0e96c3d6d436a5a0b91cd4" id="r_ac92a9a840c0e96c3d6d436a5a0b91cd4"><td class="memItemLeft" align="right" valign="top"><a id="ac92a9a840c0e96c3d6d436a5a0b91cd4" name="ac92a9a840c0e96c3d6d436a5a0b91cd4"></a>
 #define&#160;</td><td class="memItemRight" valign="bottom"><b>IMU_I2C_ADDR_ALTERNATE</b>&#160;&#160;&#160;0x29</td></tr>
 <tr class="separator:ac92a9a840c0e96c3d6d436a5a0b91cd4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:acfade2360e8d99a0de1032f9d38ffc79" id="r_acfade2360e8d99a0de1032f9d38ffc79"><td class="memItemLeft" align="right" valign="top"><a id="acfade2360e8d99a0de1032f9d38ffc79" name="acfade2360e8d99a0de1032f9d38ffc79"></a>
+#define&#160;</td><td class="memItemRight" valign="bottom"><b>BUILD_LEFT_HAND</b>&#160;&#160;&#160;2</td></tr>
+<tr class="separator:acfade2360e8d99a0de1032f9d38ffc79"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a6879d3e637e67ddd78a597808f47858c" id="r_a6879d3e637e67ddd78a597808f47858c"><td class="memItemLeft" align="right" valign="top"><a id="a6879d3e637e67ddd78a597808f47858c" name="a6879d3e637e67ddd78a597808f47858c"></a>
 #define&#160;</td><td class="memItemRight" valign="bottom"><b>OLED_ENABLED_DEFAULT</b>&#160;&#160;&#160;true</td></tr>
 <tr class="memdesc:a6879d3e637e67ddd78a597808f47858c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Enable by default. <br /></td></tr>
@@ -181,60 +184,38 @@ constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><b>DEF
 constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>DEFAULT_VERBOSE</b> = true</td></tr>
 <tr class="memdesc:a69065b3a9aeef0869b814c5537be9d65"><td class="mdescLeft">&#160;</td><td class="mdescRight">Verbose output toggle for debugging. <br /></td></tr>
 <tr class="separator:a69065b3a9aeef0869b814c5537be9d65"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a789d21dbed2cec6f70345ce124f6ae2c" id="r_a789d21dbed2cec6f70345ce124f6ae2c"><td class="memItemLeft" align="right" valign="top"><a id="a789d21dbed2cec6f70345ce124f6ae2c" name="a789d21dbed2cec6f70345ce124f6ae2c"></a>
-constexpr uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>PINKY_ID</b> = 15</td></tr>
-<tr class="separator:a789d21dbed2cec6f70345ce124f6ae2c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a316f7385ee8008cdc3b4958701199ddf" id="r_a316f7385ee8008cdc3b4958701199ddf"><td class="memItemLeft" align="right" valign="top"><a id="a316f7385ee8008cdc3b4958701199ddf" name="a316f7385ee8008cdc3b4958701199ddf"></a>
-constexpr uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>RING_ID</b> = 14</td></tr>
-<tr class="separator:a316f7385ee8008cdc3b4958701199ddf"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a7caaf098db72b46de3386c70f0e4f08d" id="r_a7caaf098db72b46de3386c70f0e4f08d"><td class="memItemLeft" align="right" valign="top"><a id="a7caaf098db72b46de3386c70f0e4f08d" name="a7caaf098db72b46de3386c70f0e4f08d"></a>
-constexpr uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>INDEX_ID</b> = 12</td></tr>
-<tr class="separator:a7caaf098db72b46de3386c70f0e4f08d"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:abe4b5afabff4848a04f8e12245b54ded" id="r_abe4b5afabff4848a04f8e12245b54ded"><td class="memItemLeft" align="right" valign="top"><a id="abe4b5afabff4848a04f8e12245b54ded" name="abe4b5afabff4848a04f8e12245b54ded"></a>
-constexpr uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>MIDDLE_ID</b> = 13</td></tr>
-<tr class="separator:abe4b5afabff4848a04f8e12245b54ded"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a67fed753bd66cbb013970214c4629bee" id="r_a67fed753bd66cbb013970214c4629bee"><td class="memItemLeft" align="right" valign="top"><a id="a67fed753bd66cbb013970214c4629bee" name="a67fed753bd66cbb013970214c4629bee"></a>
-constexpr uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>THUMBFLEX_ID</b> = 11</td></tr>
-<tr class="separator:a67fed753bd66cbb013970214c4629bee"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a522437bc14a07ce27703eeabd0b36ba0" id="r_a522437bc14a07ce27703eeabd0b36ba0"><td class="memItemLeft" align="right" valign="top"><a id="a522437bc14a07ce27703eeabd0b36ba0" name="a522437bc14a07ce27703eeabd0b36ba0"></a>
-constexpr uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>THUMBROT_ID</b> = 10</td></tr>
-<tr class="separator:a522437bc14a07ce27703eeabd0b36ba0"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ae1bbd6b2c17c7953f2e39f61d8869ef5" id="r_ae1bbd6b2c17c7953f2e39f61d8869ef5"><td class="memItemLeft" align="right" valign="top"><a id="ae1bbd6b2c17c7953f2e39f61d8869ef5" name="ae1bbd6b2c17c7953f2e39f61d8869ef5"></a>
-constexpr uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>WRIST_ID</b> = 0</td></tr>
-<tr class="separator:ae1bbd6b2c17c7953f2e39f61d8869ef5"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a4617c1c7f2f228ccd17ff98c7b94dd79" id="r_a4617c1c7f2f228ccd17ff98c7b94dd79"><td class="memItemLeft" align="right" valign="top"><a id="a4617c1c7f2f228ccd17ff98c7b94dd79" name="a4617c1c7f2f228ccd17ff98c7b94dd79"></a>
-constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>IS_RIGHT_HAND</b> = true</td></tr>
-<tr class="memdesc:a4617c1c7f2f228ccd17ff98c7b94dd79"><td class="mdescLeft">&#160;</td><td class="mdescRight">Hand orientation (right or left) <br /></td></tr>
-<tr class="separator:a4617c1c7f2f228ccd17ff98c7b94dd79"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af1ba5713143d2418a7d10c3cb4cb2619" id="r_af1ba5713143d2418a7d10c3cb4cb2619"><td class="memItemLeft" align="right" valign="top"><a id="af1ba5713143d2418a7d10c3cb4cb2619" name="af1ba5713143d2418a7d10c3cb4cb2619"></a>
-constexpr uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>MOTOR_IDS</b> [] = { WRIST_ID, THUMBROT_ID, THUMBFLEX_ID, INDEX_ID, MIDDLE_ID, RING_ID, PINKY_ID}</td></tr>
-<tr class="memdesc:af1ba5713143d2418a7d10c3cb4cb2619"><td class="mdescLeft">&#160;</td><td class="mdescRight">Motor ID Array (ordered by internal mapping you use) <br /></td></tr>
+<tr class="memitem:a0b18931aaecebc6db18a65825536ced1" id="r_a0b18931aaecebc6db18a65825536ced1"><td class="memItemLeft" align="right" valign="top"><a id="a0b18931aaecebc6db18a65825536ced1" name="a0b18931aaecebc6db18a65825536ced1"></a>
+constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><b>HAND_SIDE</b> = &quot;dual&quot;</td></tr>
+<tr class="separator:a0b18931aaecebc6db18a65825536ced1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:af1ba5713143d2418a7d10c3cb4cb2619" id="r_af1ba5713143d2418a7d10c3cb4cb2619"><td class="memItemLeft" align="right" valign="top">constexpr uint8_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#af1ba5713143d2418a7d10c3cb4cb2619">MOTOR_IDS</a> []</td></tr>
+<tr class="memdesc:af1ba5713143d2418a7d10c3cb4cb2619"><td class="mdescLeft">&#160;</td><td class="mdescRight">Motor ID Array: left (1-9) then right (11-19).  <br /></td></tr>
 <tr class="separator:af1ba5713143d2418a7d10c3cb4cb2619"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ae51d2f47b5518266570d053f14d8212a" id="r_ae51d2f47b5518266570d053f14d8212a"><td class="memItemLeft" align="right" valign="top"><a id="ae51d2f47b5518266570d053f14d8212a" name="ae51d2f47b5518266570d053f14d8212a"></a>
-constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><b>MOTOR_NAMES</b> [] = { &quot;wrist&quot;, &quot;thumbrot&quot;, &quot;thumbflex&quot;, &quot;index&quot;, &quot;middle&quot;, &quot;ring&quot;, &quot;pinky&quot; }</td></tr>
-<tr class="memdesc:ae51d2f47b5518266570d053f14d8212a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Motor name Array (must match the order above) <br /></td></tr>
+<tr class="memitem:ae51d2f47b5518266570d053f14d8212a" id="r_ae51d2f47b5518266570d053f14d8212a"><td class="memItemLeft" align="right" valign="top">constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#ae51d2f47b5518266570d053f14d8212a">MOTOR_NAMES</a> []</td></tr>
+<tr class="memdesc:ae51d2f47b5518266570d053f14d8212a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Motor name Array (must match MOTOR_IDS order). Individual motor commands use Dynamixel ID numbers, not names, to avoid duplicate-name collisions between left and right in dual mode.  <br /></td></tr>
 <tr class="separator:ae51d2f47b5518266570d053f14d8212a"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a63fdb386b6bec4f6333c23038f736f9a" id="r_a63fdb386b6bec4f6333c23038f736f9a"><td class="memItemLeft" align="right" valign="top"><a id="a63fdb386b6bec4f6333c23038f736f9a" name="a63fdb386b6bec4f6333c23038f736f9a"></a>
-constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>HOME_STATES</b> [] = { 149.1, 285.0, 242.70, 80.0, 165.22, 179.0, 298.0 }</td></tr>
-<tr class="memdesc:a63fdb386b6bec4f6333c23038f736f9a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Home states for each motor in degrees. <br /></td></tr>
+<tr class="memitem:a63fdb386b6bec4f6333c23038f736f9a" id="r_a63fdb386b6bec4f6333c23038f736f9a"><td class="memItemLeft" align="right" valign="top">constexpr float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a63fdb386b6bec4f6333c23038f736f9a">HOME_STATES</a> []</td></tr>
+<tr class="memdesc:a63fdb386b6bec4f6333c23038f736f9a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Home states [left placeholders, right calibrated]. Left values are placeholders overwritten at runtime by apply_calibration.  <br /></td></tr>
 <tr class="separator:a63fdb386b6bec4f6333c23038f736f9a"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a49eabd02363ddba4a77e6bed3c18118a" id="r_a49eabd02363ddba4a77e6bed3c18118a"><td class="memItemLeft" align="right" valign="top">constexpr float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a49eabd02363ddba4a77e6bed3c18118a">jointLimits</a> [7][2]</td></tr>
-<tr class="memdesc:a49eabd02363ddba4a77e6bed3c18118a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Assign the physical joint limits for each motor after assembly on exo (these are found experimentally)  <br /></td></tr>
-<tr class="separator:a49eabd02363ddba4a77e6bed3c18118a"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aeae48ca31178aa07e9c5700f94100012" id="r_aeae48ca31178aa07e9c5700f94100012"><td class="memItemLeft" align="right" valign="top">constexpr float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#aeae48ca31178aa07e9c5700f94100012">jointLimits</a> [][2]</td></tr>
+<tr class="memdesc:aeae48ca31178aa07e9c5700f94100012"><td class="mdescLeft">&#160;</td><td class="mdescRight">Physical joint limits [min, max] for each motor.  <br /></td></tr>
+<tr class="separator:aeae48ca31178aa07e9c5700f94100012"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:acf75e68030805b38b0837ff14492537c" id="r_acf75e68030805b38b0837ff14492537c"><td class="memItemLeft" align="right" valign="top">constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#acf75e68030805b38b0837ff14492537c">DEFAULT_FLIPS</a> []</td></tr>
+<tr class="memdesc:acf75e68030805b38b0837ff14492537c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default flip direction per motor.  <br /></td></tr>
+<tr class="separator:acf75e68030805b38b0837ff14492537c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a8bed1e9934090f89402da0bc43f8dc09" id="r_a8bed1e9934090f89402da0bc43f8dc09"><td class="memItemLeft" align="right" valign="top"><a id="a8bed1e9934090f89402da0bc43f8dc09" name="a8bed1e9934090f89402da0bc43f8dc09"></a>
-constexpr long&#160;</td><td class="memItemRight" valign="bottom"><b>DEBUG_BAUD_RATE</b> = 57600</td></tr>
+constexpr long&#160;</td><td class="memItemRight" valign="bottom"><b>DEBUG_BAUD_RATE</b> = 2000000</td></tr>
 <tr class="memdesc:a8bed1e9934090f89402da0bc43f8dc09"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default baud rate for the debug serial connection. <br /></td></tr>
 <tr class="separator:a8bed1e9934090f89402da0bc43f8dc09"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ae88f69f2176565cee09dd707e12d73ed" id="r_ae88f69f2176565cee09dd707e12d73ed"><td class="memItemLeft" align="right" valign="top"><a id="ae88f69f2176565cee09dd707e12d73ed" name="ae88f69f2176565cee09dd707e12d73ed"></a>
-constexpr long&#160;</td><td class="memItemRight" valign="bottom"><b>COMMAND_BAUD_RATE</b> = 57600</td></tr>
+constexpr long&#160;</td><td class="memItemRight" valign="bottom"><b>COMMAND_BAUD_RATE</b> = 115200</td></tr>
 <tr class="memdesc:ae88f69f2176565cee09dd707e12d73ed"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default baud rates for BLE communication. <br /></td></tr>
 <tr class="separator:ae88f69f2176565cee09dd707e12d73ed"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a80175cb10ba793359eb0a8807638ebdc" id="r_a80175cb10ba793359eb0a8807638ebdc"><td class="memItemLeft" align="right" valign="top"><a id="a80175cb10ba793359eb0a8807638ebdc" name="a80175cb10ba793359eb0a8807638ebdc"></a>
-constexpr long&#160;</td><td class="memItemRight" valign="bottom"><b>DYNAMIXEL_BAUD_RATE</b> = 57600</td></tr>
+constexpr long&#160;</td><td class="memItemRight" valign="bottom"><b>DYNAMIXEL_BAUD_RATE</b> = 2000000</td></tr>
 <tr class="memdesc:a80175cb10ba793359eb0a8807638ebdc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default baud rate for Dynamixel communication. <br /></td></tr>
 <tr class="separator:a80175cb10ba793359eb0a8807638ebdc"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:afdf26e4ff47a22b0418ebc6acb9ba0d8" id="r_afdf26e4ff47a22b0418ebc6acb9ba0d8"><td class="memItemLeft" align="right" valign="top"><a id="afdf26e4ff47a22b0418ebc6acb9ba0d8" name="afdf26e4ff47a22b0418ebc6acb9ba0d8"></a>
-constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>N_GESTURES</b> = 7</td></tr>
+constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>N_GESTURES</b> = 6</td></tr>
 <tr class="memdesc:afdf26e4ff47a22b0418ebc6acb9ba0d8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Total number of gesture contained in the library. <br /></td></tr>
 <tr class="separator:afdf26e4ff47a22b0418ebc6acb9ba0d8"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a67357750ad236f09be640e3fa8399e09" id="r_a67357750ad236f09be640e3fa8399e09"><td class="memItemLeft" align="right" valign="top"><a id="a67357750ad236f09be640e3fa8399e09" name="a67357750ad236f09be640e3fa8399e09"></a>
@@ -245,10 +226,22 @@ constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>MAX_GESTURE_
 constexpr long&#160;</td><td class="memItemRight" valign="bottom"><b>MAX_STATES_PER_GESTURE</b> = 5</td></tr>
 <tr class="memdesc:a1a3b4f6162e0ad3c772fbc1611d2a466"><td class="mdescLeft">&#160;</td><td class="mdescRight">Maximum number of states configurable per gesture. <br /></td></tr>
 <tr class="separator:a1a3b4f6162e0ad3c772fbc1611d2a466"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a358d5498b420a56ebc41c8fa6b893749" id="r_a358d5498b420a56ebc41c8fa6b893749"><td class="memItemLeft" align="right" valign="top"><a id="a358d5498b420a56ebc41c8fa6b893749" name="a358d5498b420a56ebc41c8fa6b893749"></a>
-constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>MOTOR_CURRENT_LIMIT</b> = 200</td></tr>
-<tr class="memdesc:a358d5498b420a56ebc41c8fa6b893749"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default current limit for Dynamixel servos. <br /></td></tr>
+<tr class="memitem:a358d5498b420a56ebc41c8fa6b893749" id="r_a358d5498b420a56ebc41c8fa6b893749"><td class="memItemLeft" align="right" valign="top">constexpr int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a358d5498b420a56ebc41c8fa6b893749">MOTOR_CURRENT_LIMIT</a> = 910</td></tr>
+<tr class="memdesc:a358d5498b420a56ebc41c8fa6b893749"><td class="mdescLeft">&#160;</td><td class="mdescRight">Current limit for XC330-T288 motors.  <br /></td></tr>
 <tr class="separator:a358d5498b420a56ebc41c8fa6b893749"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a05625c464f642ff1efbabc75a7402692" id="r_a05625c464f642ff1efbabc75a7402692"><td class="memItemLeft" align="right" valign="top"><a id="a05625c464f642ff1efbabc75a7402692" name="a05625c464f642ff1efbabc75a7402692"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>DIRECT_VELOCITY_LIMIT_RPM</b> = 10.0f</td></tr>
+<tr class="memdesc:a05625c464f642ff1efbabc75a7402692"><td class="mdescLeft">&#160;</td><td class="mdescRight">Direct-control limits used by serial velocity/current commands. <br /></td></tr>
+<tr class="separator:a05625c464f642ff1efbabc75a7402692"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7ac8129f189031f5b3a7b6ee436780d0" id="r_a7ac8129f189031f5b3a7b6ee436780d0"><td class="memItemLeft" align="right" valign="top"><a id="a7ac8129f189031f5b3a7b6ee436780d0" name="a7ac8129f189031f5b3a7b6ee436780d0"></a>
+constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>DIRECT_CURRENT_LIMIT_MA</b> = <a class="el" href="config_8h.html#a358d5498b420a56ebc41c8fa6b893749">MOTOR_CURRENT_LIMIT</a></td></tr>
+<tr class="separator:a7ac8129f189031f5b3a7b6ee436780d0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a513a478dd2aea7ea49e4226c3ccf925e" id="r_a513a478dd2aea7ea49e4226c3ccf925e"><td class="memItemLeft" align="right" valign="top"><a id="a513a478dd2aea7ea49e4226c3ccf925e" name="a513a478dd2aea7ea49e4226c3ccf925e"></a>
+constexpr unsigned long&#160;</td><td class="memItemRight" valign="bottom"><b>DIRECT_COMMAND_TIMEOUT_MS</b> = 250</td></tr>
+<tr class="separator:a513a478dd2aea7ea49e4226c3ccf925e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad842a323c41ee4807af31b2db3785921" id="r_ad842a323c41ee4807af31b2db3785921"><td class="memItemLeft" align="right" valign="top"><a id="ad842a323c41ee4807af31b2db3785921" name="ad842a323c41ee4807af31b2db3785921"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>DIRECT_LIMIT_MARGIN_DEG</b> = 2.0f</td></tr>
+<tr class="separator:ad842a323c41ee4807af31b2db3785921"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ac840cec5f897a460afcb6f7482ef7061" id="r_ac840cec5f897a460afcb6f7482ef7061"><td class="memItemLeft" align="right" valign="top"><a id="ac840cec5f897a460afcb6f7482ef7061" name="ac840cec5f897a460afcb6f7482ef7061"></a>
 constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>BUTTON_DEBOUNCE_DURATION</b> = 50</td></tr>
 <tr class="memdesc:ac840cec5f897a460afcb6f7482ef7061"><td class="mdescLeft">&#160;</td><td class="mdescRight">Debounce duration for mode switch button in milliseconds. <br /></td></tr>
@@ -261,10 +254,9 @@ constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>DXL_PROTOC
 constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>PULSE_RESOLUTION</b> = 4096</td></tr>
 <tr class="memdesc:ac8b5696b618a877a775a1a9fe4267b5c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ticks per revolution for the Dynamixel servos. <br /></td></tr>
 <tr class="separator:ac8b5696b618a877a775a1a9fe4267b5c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a755a9dbe8c14c1efa318fd6a200db283" id="r_a755a9dbe8c14c1efa318fd6a200db283"><td class="memItemLeft" align="right" valign="top"><a id="a755a9dbe8c14c1efa318fd6a200db283" name="a755a9dbe8c14c1efa318fd6a200db283"></a>
-constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>XL330_TORQUE_CONSTANT</b> = 0.00038</td></tr>
-<tr class="memdesc:a755a9dbe8c14c1efa318fd6a200db283"><td class="mdescLeft">&#160;</td><td class="mdescRight">Torque constant for XL330 servos, in N*m/mA. <br /></td></tr>
-<tr class="separator:a755a9dbe8c14c1efa318fd6a200db283"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1eb784666f687cf8a78054c26eb033ba" id="r_a1eb784666f687cf8a78054c26eb033ba"><td class="memItemLeft" align="right" valign="top">constexpr float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a1eb784666f687cf8a78054c26eb033ba">XC330_T288_TORQUE_CONSTANT</a> = 0.00115f</td></tr>
+<tr class="memdesc:a1eb784666f687cf8a78054c26eb033ba"><td class="mdescLeft">&#160;</td><td class="mdescRight">Estimated torque constant for XC330-T288 servos, in N*m/mA.  <br /></td></tr>
+<tr class="separator:a1eb784666f687cf8a78054c26eb033ba"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ab9330193a20fbbe9cba40be067b5df7f" id="r_ab9330193a20fbbe9cba40be067b5df7f"><td class="memItemLeft" align="right" valign="top"><a id="ab9330193a20fbbe9cba40be067b5df7f" name="ab9330193a20fbbe9cba40be067b5df7f"></a>
 constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>N_MOTORS</b> = sizeof(<a class="el" href="config_8h.html#af1ba5713143d2418a7d10c3cb4cb2619">MOTOR_IDS</a>) / sizeof(<a class="el" href="config_8h.html#af1ba5713143d2418a7d10c3cb4cb2619">MOTOR_IDS</a>[0])</td></tr>
 <tr class="memdesc:ab9330193a20fbbe9cba40be067b5df7f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Number of motors in the system. <br /></td></tr>
@@ -294,8 +286,8 @@ constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>DXL_DIR_PIN<
 </div>
 </div>
 <h2 class="groupheader">Variable Documentation</h2>
-<a id="a49eabd02363ddba4a77e6bed3c18118a" name="a49eabd02363ddba4a77e6bed3c18118a"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a49eabd02363ddba4a77e6bed3c18118a">&#9670;&#160;</a></span>jointLimits</h2>
+<a id="acf75e68030805b38b0837ff14492537c" name="acf75e68030805b38b0837ff14492537c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acf75e68030805b38b0837ff14492537c">&#9670;&#160;</a></span>DEFAULT_FLIPS</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -304,7 +296,7 @@ constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>DXL_DIR_PIN<
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">constexpr float jointLimits[7][2]</td>
+          <td class="memname">constexpr bool DEFAULT_FLIPS[]</td>
         </tr>
       </table>
   </td>
@@ -314,16 +306,181 @@ constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>DXL_DIR_PIN<
 </table>
 </div><div class="memdoc">
 <b>Initial value:</b><div class="fragment"><div class="line">= {</div>
-<div class="line">  {-189, 2840}, </div>
-<div class="line">  {-126, 1470}, </div>
-<div class="line">  {-126, 1470}, </div>
-<div class="line">  {-242, 3020}, </div>
-<div class="line">  {-142, 1950}, </div>
-<div class="line">  {-158, 2260}, </div>
-<div class="line">  {-138, 2140} </div>
+<div class="line">  </div>
+<div class="line">  <span class="keyword">false</span>, <span class="keyword">false</span>, <span class="keyword">false</span>, <span class="keyword">false</span>, <span class="keyword">false</span>, <span class="keyword">false</span>, <span class="keyword">false</span>, <span class="keyword">false</span>, <span class="keyword">false</span>,</div>
+<div class="line">  </div>
+<div class="line">  <span class="keyword">false</span>, <span class="keyword">false</span>, <span class="keyword">false</span>, <span class="keyword">true</span>, <span class="keyword">false</span>, <span class="keyword">false</span>, <span class="keyword">true</span>, <span class="keyword">false</span>, <span class="keyword">true</span></div>
 <div class="line">}</div>
 </div><!-- fragment -->
-<p>Assign the physical joint limits for each motor after assembly on exo (these are found experimentally) </p>
+<p>Default flip direction per motor. </p>
+
+</div>
+</div>
+<a id="a63fdb386b6bec4f6333c23038f736f9a" name="a63fdb386b6bec4f6333c23038f736f9a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a63fdb386b6bec4f6333c23038f736f9a">&#9670;&#160;</a></span>HOME_STATES</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr float HOME_STATES[]</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+<b>Initial value:</b><div class="fragment"><div class="line">= {</div>
+<div class="line">  </div>
+<div class="line">  180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0,</div>
+<div class="line">  </div>
+<div class="line">  149.1, 180.0, 180.0, 251.86, 374.53, 162.8, 106.83, 68.99, 115.37</div>
+<div class="line">}</div>
+</div><!-- fragment -->
+<p>Home states [left placeholders, right calibrated]. Left values are placeholders overwritten at runtime by apply_calibration. </p>
+
+</div>
+</div>
+<a id="aeae48ca31178aa07e9c5700f94100012" name="aeae48ca31178aa07e9c5700f94100012"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aeae48ca31178aa07e9c5700f94100012">&#9670;&#160;</a></span>jointLimits</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr float jointLimits[][2]</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+<b>Initial value:</b><div class="fragment"><div class="line">= {</div>
+<div class="line">  </div>
+<div class="line">  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},</div>
+<div class="line">  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},</div>
+<div class="line">  </div>
+<div class="line">  {320, 166}, {42.0, 190.0}, {140.0, 260.0}, {160.26, 260.86}, {88.53, 174.27},</div>
+<div class="line">  {166.8, 239.93}, {50.5, 104.83}, {66.99, 125.06}, {400.1, 460.37}</div>
+<div class="line">}</div>
+</div><!-- fragment -->
+<p>Physical joint limits [min, max] for each motor. </p>
+
+</div>
+</div>
+<a id="a358d5498b420a56ebc41c8fa6b893749" name="a358d5498b420a56ebc41c8fa6b893749"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a358d5498b420a56ebc41c8fa6b893749">&#9670;&#160;</a></span>MOTOR_CURRENT_LIMIT</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr int MOTOR_CURRENT_LIMIT = 910</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Current limit for XC330-T288 motors. </p>
+<p>ROBOTIS documents Current Limit(38) for the XC330-T288 as 0-910 units, about 1 mA per unit. This project uses the full documented range because participant finger spasticity can require higher assistive torque. </p>
+
+</div>
+</div>
+<a id="af1ba5713143d2418a7d10c3cb4cb2619" name="af1ba5713143d2418a7d10c3cb4cb2619"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af1ba5713143d2418a7d10c3cb4cb2619">&#9670;&#160;</a></span>MOTOR_IDS</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr uint8_t MOTOR_IDS[]</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+<b>Initial value:</b><div class="fragment"><div class="line">= {</div>
+<div class="line">  1, 2, 3, 4, 5, 6, 7, 8, 9,          </div>
+<div class="line">  11, 12, 13, 14, 15, 16, 17, 18, 19  </div>
+<div class="line">}</div>
+</div><!-- fragment -->
+<p>Motor ID Array: left (1-9) then right (11-19). </p>
+
+</div>
+</div>
+<a id="ae51d2f47b5518266570d053f14d8212a" name="ae51d2f47b5518266570d053f14d8212a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae51d2f47b5518266570d053f14d8212a">&#9670;&#160;</a></span>MOTOR_NAMES</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr const char* MOTOR_NAMES[]</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+<b>Initial value:</b><div class="fragment"><div class="line">= {</div>
+<div class="line">  <span class="stringliteral">&quot;wrist&quot;</span>, <span class="stringliteral">&quot;wrist2&quot;</span>, <span class="stringliteral">&quot;thumbadd&quot;</span>, <span class="stringliteral">&quot;thumbrot&quot;</span>, <span class="stringliteral">&quot;thumbflex&quot;</span>, <span class="stringliteral">&quot;index&quot;</span>, <span class="stringliteral">&quot;middle&quot;</span>, <span class="stringliteral">&quot;ring&quot;</span>, <span class="stringliteral">&quot;pinky&quot;</span>,</div>
+<div class="line">  <span class="stringliteral">&quot;wrist&quot;</span>, <span class="stringliteral">&quot;wrist2&quot;</span>, <span class="stringliteral">&quot;thumbadd&quot;</span>, <span class="stringliteral">&quot;thumbrot&quot;</span>, <span class="stringliteral">&quot;thumbflex&quot;</span>, <span class="stringliteral">&quot;index&quot;</span>, <span class="stringliteral">&quot;middle&quot;</span>, <span class="stringliteral">&quot;ring&quot;</span>, <span class="stringliteral">&quot;pinky&quot;</span></div>
+<div class="line">}</div>
+</div><!-- fragment -->
+<p>Motor name Array (must match MOTOR_IDS order). Individual motor commands use Dynamixel ID numbers, not names, to avoid duplicate-name collisions between left and right in dual mode. </p>
+
+</div>
+</div>
+<a id="a1eb784666f687cf8a78054c26eb033ba" name="a1eb784666f687cf8a78054c26eb033ba"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1eb784666f687cf8a78054c26eb033ba">&#9670;&#160;</a></span>XC330_T288_TORQUE_CONSTANT</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr float XC330_T288_TORQUE_CONSTANT = 0.00115f</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Estimated torque constant for XC330-T288 servos, in N*m/mA. </p>
+<p>Based on ROBOTIS stall torque/current at the recommended 11.1 V supply: 0.92 N*m / 0.80 A = 0.00115 N*m/mA. XC330 current telemetry is measured at the input power source, so displayed torque should be treated as an estimate. </p>
 
 </div>
 </div>
