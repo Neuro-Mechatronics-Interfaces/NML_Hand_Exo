@@ -55,16 +55,18 @@ void setup() {
   digitalWrite(STATUS_LED_PIN, LOW);  // initially off
 
   // Serial connections
-  DEBUG_SERIAL.begin(DEBUG_BAUD_RATE);    // Setting a default baud rate of 57600
+  DEBUG_SERIAL.begin(DEBUG_BAUD_RATE);    // USB command/debug serial
   COMMAND_SERIAL.begin(COMMAND_BAUD_RATE);     // (Optional) Establish port with TX/RX pins for incomming serial data/commands
 
   // Setup IMU
   //initializeIMU(ism330dhcx);
   //initializeIMU(bno055);
 
-  // Setup OLED
-  oledInit();
-  oledSetState(EXO_READY);
+  // Setup OLED with startup animation
+  if (oledInit()) {
+    oledSetState(EXO_READY);
+    oledStartupAnimation();  // Show brain animation for ~3 seconds, then "READY"
+  }
 
   // Setup exo
   exo.initializeSerial(DYNAMIXEL_BAUD_RATE);

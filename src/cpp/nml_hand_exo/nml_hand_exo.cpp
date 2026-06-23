@@ -48,6 +48,8 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
   zeroOffsets_ = new float[numMotors_];
 
   // Create offsets if values passed for homeState
+  // NOTE: These will be OVERRIDDEN in initializeMotors() by reading actual motor positions
+  // This prevents assumptions about where motors are physically located
   if (homeState != nullptr) {
     for (int i = 0; i < numMotors_; ++i) {
       zeroOffsets_[i] = homeState[i];
@@ -62,39 +64,21 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
   // Allocate and initialize current limits
   currentLimits_ = new uint16_t[numMotors_];
   for (int i = 0; i < numMotors_; ++i) {
-      currentLimits_[i] = MOTOR_CURRENT_LIMIT; // default 200 mA or whatever safe default
+      currentLimits_[i] = MOTOR_CURRENT_LIMIT;
   }
 
-  // (Choose one) Disable comment for right/left hand function below
-  bool flips[7] = {false, true, false, false,  true, false,  true}; // right hand
-  //bool flips[7] = { true,  true,  true, true, false,  true, false}; // left hand
-
-  // if (IS_RIGHT_HAND) {
-  //   debugPrint("Configuring for RIGHT hand");
-  //   flips[6] = {false, false, false,  true, false,  true}; // right hand
-  // } else {
-  //   debugPrint("Configuring for LEFT hand");
-  //   flips[6] = { true,  true,  true, true, false,  true, false}; // left hand
-  // }
-  // bool flips[6];
-  // if (IS_RIGHT_HAND) {
-  //   debugPrint("Configuring for RIGHT hand");
-  //   flips[0] = false;
-  //   flips[1] = false;
-  //   flips[2] = false;
-  //   flips[3] = true;
-  //   flips[4] = false;
-  //   flips[5] = true;
-  // } else {
-  //   debugPrint("Configuring for LEFT hand");
-  //   flips[0] = true;
-  //   flips[1] = true;
-  //   flips[2] = true;
-  //   flips[3] = false;
-  //   flips[4] = true;
-  //   flips[5] = false;
-  // }
-  memcpy(flipMotor_, flips, sizeof(flips));
+  // Allocate flip flags and initialize from config defaults (overwritten by calibration)
+  flipMotor_ = new bool[numMotors_];
+  lastDirectCommandMs_ = new unsigned long[numMotors_];
+  directCommandActive_ = new bool[numMotors_];
+  directCommandDirection_ = new float[numMotors_];
+  for (int i = 0; i < numMotors_; ++i) {
+    flipMotor_[i] = DEFAULT_FLIPS[i];
+    lastDirectCommandMs_[i] = 0;
+    directCommandActive_[i] = false;
+    directCommandDirection_[i] = 0;
+  }
+  motorControlMode_ = "CURRENT_POSITION";
 
 
   // If jointLimits_, zeroOffsets_, currentLimits_ were dynamically allocated, make sure to add a destructor.
@@ -109,22 +93,61 @@ void NMLHandExo::initializeSerial(int baud) {
   dxl_.setPortProtocolVersion(DXL_PROTOCOL_VERSION);
 }
 void NMLHandExo::initializeMotors() {
+  // Configure motor operating modes and torque, but DON'T move them yet
   for (int i = 0; i < numMotors_; i++) {
     uint8_t id = motorIds_[i];
     dxl_.torqueOff(id);
-
-    // Set Operating Mode to Current-Based Position Control
-    //dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION);
-    //dxl_.writeControlTableItem(ControlTableItem::OPERATING_MODE, id, 5);
     dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION);
-    //dxl_.setOperatingMode(id, OP_POSITION);  // Default mode is set to position mode
-
     dxl_.torqueOn(id);
-
-    //dxl_.writeControlTableItem(ControlTableItem::GOAL_CURRENT, currentLimits_[i], 100);
-    dxl_.setGoalCurrent(id, currentLimits_[i]);
+    setCurrentLimit(id, MOTOR_CURRENT_LIMIT);
+    dxl_.writeControlTableItem(GOAL_CURRENT, id, currentLimits_[i]);
   }
-  delay(100); // Allow time for motors to initialize
+  delay(500);
+
+  // --- Multi-turn offset correction ---
+  // In OP_CURRENT_BASED_POSITION mode the motor tracks multi-turn position.
+  // After power-on, the reported position may be HOME + N*360 for some integer N.
+  // If we keep zeroOffsets_ = HOME_STATES (single-turn), the first "home" command
+  // targets HOME but the motor is at HOME + N*360, causing N full rotations.
+  //
+  // Fix: read actual position and snap zeroOffsets_ (and jointLimits_) to the
+  // nearest equivalent of HOME_STATES modulo 360 degrees.
+  for (int i = 0; i < numMotors_; i++) {
+    uint8_t id = motorIds_[i];
+    float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
+
+    // Sanity check: if read returns exactly 0.0 but home is far away,
+    // assume the read failed and keep the original HOME_STATES offset.
+    if (currentPos == 0.0f && zeroOffsets_[i] > 10.0f) {
+      debugPrint("[WARN] Motor " + String(id) + " position read returned 0.0, "
+                 "keeping HOME_STATES offset " + String(zeroOffsets_[i], 2));
+      continue;
+    }
+    // Reject wildly out-of-range reads (>100 turns)
+    if (currentPos < -36000.0f || currentPos > 36000.0f) {
+      debugPrint("[WARN] Motor " + String(id) + " position read out of range: "
+                 + String(currentPos, 2) + ", keeping HOME_STATES offset");
+      continue;
+    }
+
+    float home = zeroOffsets_[i];  // original HOME_STATES value
+    float diff = currentPos - home;
+    float turns = round(diff / 360.0f);
+    float offset = turns * 360.0f;
+
+    zeroOffsets_[i] = home + offset;
+    jointLimits_[i][0] += offset;
+    jointLimits_[i][1] += offset;
+
+    if (turns != 0.0f) {
+      debugPrint("[INIT] Motor " + String(id) + " multi-turn correction: "
+                 + String(turns, 0) + " turn(s), new offset "
+                 + String(zeroOffsets_[i], 2));
+    }
+  }
+
+  debugPrint("========== MOTOR INITIALIZATION COMPLETE ==========");
+  debugPrint("Motors configured. Multi-turn offsets corrected.");
 }
 int NMLHandExo::getMotorID(const String& token) {
   String target = token;
@@ -198,11 +221,16 @@ void NMLHandExo::resetAllZeros() {
     debugPrint("[DEBUG] Zero offset set for motor " + String(id) + ": " + String(current_angle, 2) + " deg");
   }
 }
+const char* NMLHandExo::getSide() const {
+  return HAND_SIDE;
+}
+
 String NMLHandExo::getDeviceInfo() {
 
     // Need to return a single string with all the information
     String info = "Name: NMLHandExo\n";
     info += "Version: " + String(VERSION) + "\n";
+    info += "Side: " + String(HAND_SIDE) + "\n";
     info += "Number of Motors: " + String(numMotors_) + "\n";
     for (int i = 0; i < numMotors_; ++i) {
 
@@ -289,6 +317,8 @@ bool NMLHandExo::isExoCalibrating() {
 // ================================= Mode commands ====================================
 // ====================================================================================
 void NMLHandExo::update() {
+
+    serviceDirectControlSafety();
 
     // First check if we are calibrating
     if (isExoCalibrating()) {
@@ -425,9 +455,14 @@ void NMLHandExo::setRelativeAngle(uint8_t id, float relativeAngle) {
   // Clamp the absolute goal to the joint limits (if necessary)
   abs_goal = constrain(abs_goal, jointLimits_[index][0], jointLimits_[index][1]);
 
+  // Shortest-path guard: avoid 360° rotations in extended position mode
+  float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  float diff = abs_goal - currentPos;
+  if (diff > 180.0f)       abs_goal -= 360.0f;
+  else if (diff < -180.0f) abs_goal += 360.0f;
+
   // Command the motor to the absolute position
   dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE);
-  //dxl_.writeControlTableItem(ControlTableItem::GOAL_POSITION, id, abs_goal_ticks);
 
   char buffer[128];
   snprintf(buffer, sizeof(buffer), "Motor %d set to relative angle %.2f deg (absolute: %.2f deg)", id, relativeAngle, abs_goal);
@@ -447,13 +482,20 @@ void NMLHandExo::setAbsoluteAngle(uint8_t id, float absoluteAngle) {
     debugPrint("Invalid motor ID: " + String(id));
     return;
   }
-  //   float clamped = constrain(absoluteAngle, jointLimits_[index][0], jointLimits_[index][1]);
-  //dxl_.setGoalPosition(id, clamped, UNIT_DEGREE);
-  dxl_.setGoalPosition(id, absoluteAngle, UNIT_DEGREE);
-  //char buffer[64];
-  //snprintf(buffer, sizeof(buffer), "Setting motor %d to absolute angle %.2f", id, absoluteAngle);
-  //debugPrint(buffer);
-  debugPrint("[NMLHandExo] Setting motor " + String(id) + " to absolute angle " + String(absoluteAngle, 2));
+  float clamped = constrain(absoluteAngle, jointLimits_[index][0], jointLimits_[index][1]);
+
+  // In extended/current-based position mode the motor travels directly from
+  // present to goal on a linear tick number line (no shortest-path wrapping).
+  // If present and goal differ by ~360° they represent the same physical angle
+  // but the motor will spin a full revolution.  Snap goal to within ±180° of
+  // the current position to always take the short route.
+  float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  float diff = clamped - currentPos;
+  if (diff > 180.0f)       clamped -= 360.0f;
+  else if (diff < -180.0f) clamped += 360.0f;
+
+  dxl_.setGoalPosition(id, clamped, UNIT_DEGREE);
+  debugPrint("[NMLHandExo] Setting motor " + String(id) + " to absolute angle " + String(clamped, 2));
 }
 float NMLHandExo::getZeroAngle(uint8_t id){
   int index = getIndexById(id);
@@ -473,6 +515,13 @@ void NMLHandExo::setHome(uint8_t id){
 
   // Command the motor to move to the stored zero offset position
   float homeAngle = zeroOffsets_[index];
+
+  // Shortest-path guard: avoid 360° rotations in extended position mode
+  float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  float diff = homeAngle - currentPos;
+  if (diff > 180.0f)       homeAngle -= 360.0f;
+  else if (diff < -180.0f) homeAngle += 360.0f;
+
   dxl_.setGoalPosition(id, homeAngle, UNIT_DEGREE);
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "Motor %d homing to %.2f deg", id, homeAngle);
@@ -493,6 +542,12 @@ void NMLHandExo::setAngleById(uint8_t id, float angle_deg) {
 
   // Clamp angle to joint limits (in degrees)
   abs_goal = constrain(abs_goal, jointLimits_[index][0], jointLimits_[index][1]);
+
+  // Shortest-path guard: avoid 360° rotations in extended position mode
+  float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  float diff = abs_goal - currentPos;
+  if (diff > 180.0f)       abs_goal -= 360.0f;
+  else if (diff < -180.0f) abs_goal += 360.0f;
 
   // Set new goal tick position
   dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE);
@@ -552,7 +607,7 @@ void NMLHandExo::setMotorLimits(uint8_t id, float lowerLimit, float upperLimit) 
   }
 
   // Check if limits are valid
-  if (lowerLimit >= upperLimit) {
+  if (lowerLimit > upperLimit) {
     char buffer[64];
     snprintf(buffer, sizeof(buffer), "Invalid limits for motor %d: [%.2f, %.2f]", id, lowerLimit, upperLimit);
     debugPrint(buffer);
@@ -564,6 +619,16 @@ void NMLHandExo::setMotorLimits(uint8_t id, float lowerLimit, float upperLimit) 
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "Set limits for motor %d: [%.2f, %.2f]", id, lowerLimit, upperLimit);
   debugPrint(buffer);
+}
+float NMLHandExo::getMotorLimitMin(uint8_t id) {
+  int index = getIndexById(id);
+  if (index == -1) return -1;
+  return jointLimits_[index][0];
+}
+float NMLHandExo::getMotorLimitMax(uint8_t id) {
+  int index = getIndexById(id);
+  if (index == -1) return -1;
+  return jointLimits_[index][1];
 }
 
 
@@ -602,22 +667,80 @@ void NMLHandExo::setCurrentLimit(uint8_t id, uint16_t current_mA) {
       debugPrint(F("Invalid motor ID"));
       return;
   }
+  current_mA = min(current_mA, (uint16_t)MOTOR_CURRENT_LIMIT);
   currentLimits_[index] = current_mA;
-  dxl_.writeControlTableItem(GOAL_CURRENT, id, current_mA);
+  bool wasEnabled = getTorqueEnabledStatus(id);
+  if (wasEnabled) dxl_.torqueOff(id);
+  dxl_.writeControlTableItem(CURRENT_LIMIT, id, current_mA);
+  if (wasEnabled) dxl_.torqueOn(id);
+  if (motorControlMode_ == "CURRENT_POSITION") {
+    dxl_.writeControlTableItem(GOAL_CURRENT, id, current_mA);
+  }
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "Set current limit for motor %d: %.2f mA", id, current_mA);
   debugPrint(buffer);
 }
 int16_t NMLHandExo::getCurrent(uint8_t id) {
-  // Reads the current in mA from the motor's control table.
+  // XC330 PRESENT_CURRENT uses about 1 mA per raw unit.
   return dxl_.readControlTableItem(PRESENT_CURRENT, id);
 }
 float NMLHandExo::getTorque(uint8_t id) {
-  // Each unit = 2.69 mA; torque constant = 0.38 mN·m/mA = 0.00038 N·m/mA
-  int16_t raw_current = NMLHandExo::getCurrent(id);
-  float current_mA = raw_current * 2.69;
-  float torque_Nm = current_mA * XL330_TORQUE_CONSTANT;
+  float current_mA = NMLHandExo::getCurrent(id);
+  float torque_Nm = current_mA * XC330_T288_TORQUE_CONSTANT;
   return torque_Nm;  // in N·m
+}
+bool NMLHandExo::setGoalCurrent(uint8_t id, float current_mA) {
+  int index = getIndexById(id);
+  if (index == -1 || motorControlMode_ != "CURRENT") return false;
+
+  current_mA = constrain(
+      current_mA,
+      -(float)DIRECT_CURRENT_LIMIT_MA,
+      (float)DIRECT_CURRENT_LIMIT_MA);
+  if (flipMotor_[index]) current_mA *= -1.0f;
+
+  float position = getAbsoluteAngle(id);
+  if ((current_mA > 0 && position >= jointLimits_[index][1] - DIRECT_LIMIT_MARGIN_DEG) ||
+      (current_mA < 0 && position <= jointLimits_[index][0] + DIRECT_LIMIT_MARGIN_DEG)) {
+    current_mA = 0;
+  }
+
+  dxl_.writeControlTableItem(GOAL_CURRENT, id, (int16_t)round(current_mA));
+  lastDirectCommandMs_[index] = millis();
+  directCommandActive_[index] = (current_mA != 0);
+  directCommandDirection_[index] = current_mA;
+  return true;
+}
+float NMLHandExo::getGoalCurrent(uint8_t id) {
+  int index = getIndexById(id);
+  if (index == -1) return 0;
+  float current_mA = (int16_t)dxl_.readControlTableItem(GOAL_CURRENT, id);
+  return flipMotor_[index] ? -current_mA : current_mA;
+}
+void NMLHandExo::setZeroOffsetValue(uint8_t id, float offset_deg) {
+  int index = getIndexById(id);
+  if (index == -1) {
+    debugPrint("Invalid motor ID for zero offset: " + String(id));
+    return;
+  }
+  zeroOffsets_[index] = offset_deg;
+  char buffer[64];
+  snprintf(buffer, sizeof(buffer), "Zero offset for motor %d set to %.2f deg", id, offset_deg);
+  debugPrint(buffer);
+}
+void NMLHandExo::setFlipMotor(uint8_t id, bool flip) {
+  int index = getIndexById(id);
+  if (index == -1) {
+    debugPrint("Invalid motor ID for flip: " + String(id));
+    return;
+  }
+  flipMotor_[index] = flip;
+  debugPrint("Motor " + String(id) + " flip set to " + String(flip ? "true" : "false"));
+}
+bool NMLHandExo::getFlipMotor(uint8_t id) {
+  int index = getIndexById(id);
+  if (index == -1) return false;
+  return flipMotor_[index];
 }
 void NMLHandExo::setTorque(uint8_t id, float torque_Nm) {
   int index = getIndexById(id);
@@ -627,7 +750,7 @@ void NMLHandExo::setTorque(uint8_t id, float torque_Nm) {
   }
 
   // Convert Nm to mA
-  uint16_t current_mA = (uint16_t)(torque_Nm / XL330_TORQUE_CONSTANT);
+  uint16_t current_mA = (uint16_t)(torque_Nm / XC330_T288_TORQUE_CONSTANT);
   setCurrentLimit(id, current_mA);
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "Torque limit for motor %d: set to %.2f N·m", id, torque_Nm);
@@ -642,6 +765,77 @@ void NMLHandExo::setVelocityLimit(uint8_t id, uint32_t vel) {
 }
 uint32_t NMLHandExo::getVelocityLimit(uint8_t id) {
   return dxl_.readControlTableItem(PROFILE_VELOCITY, id);
+}
+bool NMLHandExo::setGoalVelocity(uint8_t id, float velocity_rpm) {
+  int index = getIndexById(id);
+  if (index == -1 || motorControlMode_ != "VELOCITY") return false;
+
+  velocity_rpm = constrain(
+      velocity_rpm,
+      -DIRECT_VELOCITY_LIMIT_RPM,
+      DIRECT_VELOCITY_LIMIT_RPM);
+  if (flipMotor_[index]) velocity_rpm *= -1.0f;
+
+  float position = getAbsoluteAngle(id);
+  if ((velocity_rpm > 0 && position >= jointLimits_[index][1] - DIRECT_LIMIT_MARGIN_DEG) ||
+      (velocity_rpm < 0 && position <= jointLimits_[index][0] + DIRECT_LIMIT_MARGIN_DEG)) {
+    velocity_rpm = 0;
+  }
+
+  int32_t raw = (int32_t)round(velocity_rpm / 0.229f);
+  dxl_.writeControlTableItem(GOAL_VELOCITY, id, raw);
+  lastDirectCommandMs_[index] = millis();
+  directCommandActive_[index] = (raw != 0);
+  directCommandDirection_[index] = velocity_rpm;
+  return true;
+}
+float NMLHandExo::getPresentVelocity(uint8_t id) {
+  int index = getIndexById(id);
+  if (index == -1) return 0;
+  int32_t raw = (int32_t)dxl_.readControlTableItem(PRESENT_VELOCITY, id);
+  float rpm = raw * 0.229f;
+  return flipMotor_[index] ? -rpm : rpm;
+}
+void NMLHandExo::stopDirectControl(uint8_t id) {
+  int index = getIndexById(id);
+  if (index == -1) return;
+  if (motorControlMode_ == "VELOCITY") {
+    dxl_.writeControlTableItem(GOAL_VELOCITY, id, 0);
+  } else if (motorControlMode_ == "CURRENT") {
+    dxl_.writeControlTableItem(GOAL_CURRENT, id, 0);
+  }
+  directCommandActive_[index] = false;
+  directCommandDirection_[index] = 0;
+  lastDirectCommandMs_[index] = millis();
+}
+void NMLHandExo::stopAllDirectControl() {
+  for (int i = 0; i < numMotors_; ++i) {
+    stopDirectControl(motorIds_[i]);
+  }
+}
+void NMLHandExo::setDirectCommandTimeout(unsigned long timeout_ms) {
+  directCommandTimeoutMs_ = constrain(timeout_ms, 50UL, 5000UL);
+}
+unsigned long NMLHandExo::getDirectCommandTimeout() const {
+  return directCommandTimeoutMs_;
+}
+void NMLHandExo::serviceDirectControlSafety() {
+  if (motorControlMode_ != "VELOCITY" && motorControlMode_ != "CURRENT") return;
+  unsigned long now = millis();
+  for (int i = 0; i < numMotors_; ++i) {
+    if (!directCommandActive_[i]) continue;
+    uint8_t id = motorIds_[i];
+    float position = getAbsoluteAngle(id);
+    bool timedOut = now - lastDirectCommandMs_[i] > directCommandTimeoutMs_;
+    bool drivingIntoLimit = (
+        (directCommandDirection_[i] < 0 &&
+         position <= jointLimits_[i][0] + DIRECT_LIMIT_MARGIN_DEG) ||
+        (directCommandDirection_[i] > 0 &&
+         position >= jointLimits_[i][1] - DIRECT_LIMIT_MARGIN_DEG));
+    if (timedOut || drivingIntoLimit) {
+      stopDirectControl(id);
+    }
+  }
 }
 
 // Acceleration commands
@@ -697,6 +891,9 @@ void NMLHandExo::setMotorControlMode(uint8_t id, const String& mode){
   } else if (m == "VELOCITY") {
     dxl_.setOperatingMode(id, OP_VELOCITY);
     debugPrint("Set motor " + String(id) + " to VELOCITY mode");
+  } else if (m == "CURRENT") {
+    dxl_.setOperatingMode(id, OP_CURRENT);
+    debugPrint("Set motor " + String(id) + " to CURRENT mode");
   } else {
     debugPrint("[ERROR] Unknown operating mode: " + m);
   }
@@ -705,10 +902,16 @@ void NMLHandExo::setMotorControlMode(const String& mode) {
   String m = mode;
   m.toUpperCase();
   for (int i = 0; i < numMotors_; i++) {
-    uint8_t id = motorIds_[i];
-    dxl_.torqueOff(id); // Turn off torque before changing mode
-    NMLHandExo::setMotorControlMode(id, m); // Set the mode for each motor
+    dxl_.torqueOff(motorIds_[i]);
   }
+  for (int i = 0; i < numMotors_; i++) {
+    uint8_t id = motorIds_[i];
+    NMLHandExo::setMotorControlMode(id, m); // Set the mode for each motor
+    directCommandActive_[i] = false;
+    directCommandDirection_[i] = 0;
+  }
+  motorControlMode_ = m;
+  stopAllDirectControl();
 }
 String NMLHandExo::getMotorControlMode() {
   String mode = "UNKNOWN";
