@@ -1,0 +1,4 @@
+#ifndef ADAFRUIT_SSD1306
+#define ADAFRUIT_SSD1306
+
+#endif

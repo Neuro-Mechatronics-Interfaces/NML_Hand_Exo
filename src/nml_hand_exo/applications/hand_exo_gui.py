@@ -647,7 +647,7 @@ class JointLimitsDialog(QDialog):
         self.dxl_ids = dxl_ids
         self.setWindowTitle("Joint Limits")
 
-        # must finish editing joint limits before doing anything else
+        # must close out or finish editing joint limits before doing anything else
         self.setModal(True) 
 
         layout = QVBoxLayout(self)
@@ -1550,14 +1550,6 @@ class SerialWorker(QThread):
 # ==========================================================================
 
 class HandExoGUI(QWidget):
-    def _open_joint_limits_dialog(self):
-        if not self.exo_connected:
-            QMessageBox.information(self, "Joint Limits", "Device must be connected")
-            return
-        dxl_ids = [self._motor_dxl_id[self._motor_idx[n]] for n in self.motor_names]
-        dlg = JointLimitsDialog(self.exo, self.motor_names, dxl_ids, parent=self)
-        dlg.exec_()
-
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NML EXO")
@@ -2108,6 +2100,14 @@ class HandExoGUI(QWidget):
         layout.addStretch()
         return widget
 
+    def _open_joint_limits_dialog(self):
+        if not self.exo_connected:
+            QMessageBox.information(self, "Joint Limits", "Device must be connected")
+            return
+        dxl_ids = [self._motor_dxl_id[self._motor_idx[n]] for n in self.motor_names]
+        dlg = JointLimitsDialog(self.exo, self.motor_names, dxl_ids, parent=self)
+        dlg.exec_()
+
     def _load_stream_settings(self):
         settings = QSettings("NML", "HandExoGUI")
         if not settings.contains("telemetry/rate_hz"):
@@ -2136,6 +2136,7 @@ class HandExoGUI(QWidget):
         )
         self._on_lsl_enabled_toggled(self._lsl_enabled_cb.isChecked())
         self._apply_stream_settings()
+
 
     def _apply_stream_settings(self):
         settings = QSettings("NML", "HandExoGUI")

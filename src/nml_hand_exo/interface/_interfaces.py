@@ -61,7 +61,7 @@ class SerialComm(BaseComm):
         self.device = None
 
     def connect(self):
-        self.device = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
+        self.device = serial.serial_for_url(self.port, self.baudrate, timeout=self.timeout)
 
     def close(self):
         if self.device and self.device.is_open:
