@@ -2639,6 +2639,7 @@ class HandExoGUI(QWidget):
         row1 = QHBoxLayout()
         self.port_label = QLabel("Port (R):")
         self.port_combo = QComboBox()
+        self.port_combo.setEditable(True)
         self.port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.port_combo.setSizeAdjustPolicy(
             QComboBox.AdjustToMinimumContentsLengthWithIcon
