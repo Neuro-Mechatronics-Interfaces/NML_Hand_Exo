@@ -351,6 +351,12 @@ class DualHandExo:
     def set_flip(self, motor_id, flip: bool):
         self._route("set_flip", motor_id, flip)
 
+    def get_motor_limits(self, motor_id='all'):
+        result = {}
+        for side, exo in self._active():
+            result.update(exo.get_motor_limits('all'))
+        return result
+
     def set_motor_limits(self, motor_id, lo: float, hi: float):
         self._route("set_motor_limits", motor_id, lo, hi)
 

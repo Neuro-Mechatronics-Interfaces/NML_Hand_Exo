@@ -665,7 +665,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       for (int i = 0; i < exo.getMotorCount(); ++i) {
         uint8_t id = exo.getMotorIDByIndex(i);
         info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-            ", Limits: " + exo.getMotorLimits(id) + "}\n";
+            ", limits: " + exo.getMotorLimits(id) + "}\n";
       }
       commandPrint(info);
     } else {

@@ -209,7 +209,7 @@ class HandExo(object):
                 elif key == "angle":
                     motor_info["angle"] = float(val)
                 elif key == "limits":
-                    motor_info["limits"] = [float(x) for x in re.findall(r"[-+]?[0-9]*\.?[0-9]+", val)]
+                    motor_info["limits"] = [float(x) for x in val.split(";")]
                 elif key == "torque":
                     motor_info["torque"] = float(val)
                 elif key == "enabled":
@@ -775,7 +775,7 @@ class HandExo(object):
             tuple: A tuple containing the minimum and maximum angles of the motor.
 
         """
-        return self._get_motor_attribute('limits', motor_id, True)
+        return self._get_motor_attribute('limits', motor_id, True, command='get_motor_limits')
 
     def set_motor_upper_limit(self, motor_id: (int or str), upper_limit: float):
         """

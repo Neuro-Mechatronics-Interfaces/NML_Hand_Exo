@@ -246,7 +246,7 @@ String NMLHandExo::getDeviceInfo() {
       info += "Motor " + String(i) + ": {name: " + String(name) +
             ", id: " + String(id) +
             ", angle: " + String(angle, 2) + "(abs: " + String(abs) + ")"
-            ", limits: [" + String(minLimit, 2) + ", " + String(maxLimit, 2) + "]" +
+            ", limits: [" + String(minLimit, 2) + ";" + String(maxLimit, 2) + "]" +
             ", torque: " + String(torque, 2) +
             ", enabled: " + (isEnabled ? "true" : "false") + "}\n";
       }
