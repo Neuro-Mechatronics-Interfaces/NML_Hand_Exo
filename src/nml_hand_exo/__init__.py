@@ -16,6 +16,7 @@ from .interface import HandExo, SerialComm, TCPComm, FakeHandExo
 
 submodules = [
     'applications',
+    'calibration',
     'interface',
     'processing',
     'plotting',

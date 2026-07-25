@@ -92,13 +92,15 @@ The CLI is out of sync with the GUI — it still uses the old single-snapshot ap
 
 ---
 
-## Duplicated helpers `[VERIFIED]`
+## Shared calibration utilities `[VERIFIED]`
 
-Both `hand_exo_gui.py` and the calibration scripts contain:
-`list_profiles`, `load_profile`, `save_profile`, `get_default_profile_name`,
-`set_default_profile`, `normalize_angle`, `determine_run_number`
+Reusable calibration logic is centralized under `src/nml_hand_exo/calibration/`:
 
-Any change must be applied to both, or extracted into a shared `calibration_utils.py`.
+- `profiles.py` owns profile paths, listing, loading, saving, and side-specific defaults through `CalibrationProfileStore`.
+- `rom.py` owns angle normalization, orientation defaults, and ROM output run numbering.
+- Both the GUI and calibration CLI import these helpers; `rom_assessment.py` imports the ROM helpers as well.
+
+The legacy `default` config key is a right-hand compatibility key only. Left-hand lookup requires `default_left`, preventing a right profile from being applied to the left side.
 
 ---
 
@@ -159,4 +161,3 @@ in a name-keyed dict.
 - [ ] Mirror streaming calibration into `calibrate_exo.py` CLI (or document divergence explicitly)
 - [ ] Live device test: apply profile, confirm per-motor limits received by firmware
 - [ ] Decide: GUI call `update_config_h()` after save? (CLI does; GUI does not)
-- [ ] Extract shared helpers into `calibration_utils.py` (reduces duplication risk)

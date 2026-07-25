@@ -49,9 +49,7 @@ On device reboot, firmware defaults from `config.h` (`HOME_STATES[]`, `jointLimi
 }
 ```
 
-`"default"` is kept for backward compat with the CLI. The GUI prefers `"default_left"` /
-`"default_right"`. `get_default_profile_name(side="left")` checks `"default_left"` first,
-then falls back to `"default"`.
+`"default"` is kept as a right-hand backward-compatibility key. The GUI and CLI prefer `"default_left"` / `"default_right"`; left-hand lookup never falls back to the legacy right-hand key.
 
 - The GUI's "Apply Profile" dropdown reads the default marker to show `(default)`.
 - `CalibrationDialog` always sets the saved profile as default (via `set_default_profile(name, side=self._side)`) on complete.

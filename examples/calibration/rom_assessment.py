@@ -27,7 +27,6 @@ Usage:
 
 import argparse
 import csv
-import json
 import os
 import re
 import sys
@@ -37,64 +36,15 @@ import serial
 import serial.tools.list_ports
 from datetime import datetime
 
-
-PROFILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles")
-CONFIG_FILE = os.path.join(PROFILES_DIR, "config.json")
+from nml_hand_exo.calibration import (
+    build_motor_orientation,
+    determine_run_number,
+    load_profile as load_calibration_profile,
+    normalize_angle,
+)
 
 
 # ── Calibration profile helpers ───────────────────────────────────────────
-
-def load_calibration_profile(name: str | None) -> dict | None:
-    """Load a calibration profile by name, falling back to the default.
-
-    Returns the profile dict or None if no profile is available.
-    """
-    if name is None:
-        # Try the default profile
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f:
-                cfg = json.load(f)
-            name = cfg.get("default")
-        if name is None:
-            return None
-
-    path = os.path.join(PROFILES_DIR, f"{name}.json")
-    if not os.path.exists(path):
-        print(f"  Warning: calibration profile '{name}' not found at {path}")
-        return None
-
-    with open(path, "r") as f:
-        return json.load(f)
-
-
-def build_motor_orientation(cal: dict | None, motor_names: list[str]) -> dict:
-    """Build a per-motor orientation dict from a calibration profile.
-
-    Returns {motor_name: {"home": float, "flip": bool}} for every motor.
-    Motors not in the profile default to home=0, flip=False.
-    """
-    orientation = {}
-    for name in motor_names:
-        if cal and name in cal.get("motors", {}):
-            m = cal["motors"][name]
-            orientation[name] = {"home": m["home"], "flip": m["flip"]}
-        else:
-            orientation[name] = {"home": 0.0, "flip": False}
-    return orientation
-
-
-def normalize_angle(absolute: float, home: float, flip: bool) -> float:
-    """Convert an absolute encoder angle to a normalized ROM angle.
-
-    Normalized angle = 0 at the home (open) position, positive in the
-    closing direction.  This makes ROM values always positive regardless
-    of whether the physical encoder counts up or down when closing.
-    """
-    if flip:
-        return home - absolute  # flipped motors decrease when closing
-    else:
-        return absolute - home  # normal motors increase when closing
-
 
 # ── Serial helpers (same conventions as calibrate_exo.py) ─────────────────
 
@@ -264,26 +214,11 @@ def run_rom_phase(ser: serial.Serial, motor_names: list[str],
 
 # ── CSV output ────────────────────────────────────────────────────────────
 
-def determine_run_number(output_dir: str, participant: str, date_str: str) -> int:
-    """Find the next available run number for this participant + date."""
-    prefix = f"{participant}_rom_{date_str}_"
-    run = 1
-    if os.path.isdir(output_dir):
-        for fname in os.listdir(output_dir):
-            if fname.startswith(prefix) and fname.endswith(".csv"):
-                try:
-                    n = int(fname.removeprefix(prefix).removesuffix(".csv"))
-                    run = max(run, n + 1)
-                except ValueError:
-                    pass
-    return run
-
-
 def save_results(output_dir: str, participant: str, date_str: str,
                  motor_names: list[str],
                  unassisted: dict, assisted: dict):
     os.makedirs(output_dir, exist_ok=True)
-    run = determine_run_number(output_dir, participant, date_str)
+    run = determine_run_number(participant, date_str, output_dir)
     filename = f"{participant}_rom_{date_str}_{run}.csv"
     filepath = os.path.join(output_dir, filename)
 

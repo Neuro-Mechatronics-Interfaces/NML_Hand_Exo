@@ -1,8 +1,7 @@
+# Install this checkout plus the runtime dependencies declared in pyproject.toml.
+-e .
+
+# Decoder and analysis integrations used by the bundled workflows and examples.
 nml-wtf-mindrove
-PySerial
-PyQt5
-pyqtgraph
 scikit-learn
-pylsl
-setuptools
-wheel
+matplotlib

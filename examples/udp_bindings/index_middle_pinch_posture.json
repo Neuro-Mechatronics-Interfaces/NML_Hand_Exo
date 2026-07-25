@@ -1,0 +1,16 @@
+{
+  "schema_version": 3,
+  "name": "Index/Middle Pinch (Posture)",
+  "control_mode": "position",
+  "target": "Both",
+  "repeat_ms": 100,
+  "pulse_shape": "raised_cosine",
+  "pulse_duration_ms": 1000,
+  "pulse_step_ms": 20,
+  "ease_duration_ms": 800,
+  "bindings": [
+    {"value": 0, "command": "set_gesture:pinch_index:open\nset_gesture:pinch_middle:open", "description": "REST / open both pinches"},
+    {"value": 2, "command": "set_gesture:pinch_index:close", "description": "Index pinch"},
+    {"value": 3, "command": "set_gesture:pinch_middle:close", "description": "Middle pinch"}
+  ]
+}
