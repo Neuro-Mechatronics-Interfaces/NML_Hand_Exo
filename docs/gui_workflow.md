@@ -126,33 +126,77 @@ Normalized angles: `0 = home/open`, positive = closing direction.
 
 ---
 
-## Duplicated helpers (GUI vs CLI) `[VERIFIED]`
+## Shared utility modules `[VERIFIED]`
 
-These functions exist in both `hand_exo_gui.py` and the calibration scripts with
-identical or near-identical implementations:
+The GUI imports reusable non-Qt logic instead of defining it in `hand_exo_gui.py`:
 
-```
-list_profiles          load_profile           save_profile
-get_default_profile_name  set_default_profile
-normalize_angle        determine_run_number
-```
+- Calibration profile persistence: `nml_hand_exo.calibration.profiles`
+- ROM calculations and run numbering: `nml_hand_exo.calibration.rom`
+- Repository data paths: `nml_hand_exo._paths`
+- Serial-port label formatting: `nml_hand_exo.interface._serial_ports`
 
-Before adding new calibration logic, decide whether to extract a shared
-`calibration_utils.py` module. Either way, any change must be applied to both.
+The GUI and CLI use the same profile directory and profile-store implementation.
 
 ---
 
 ## Profile paths (GUI) `[VERIFIED]`
 
-The GUI resolves paths relative to the repo root via `_repo_root()`:
+Canonical application data paths are defined in `nml_hand_exo._paths`:
 
 ```python
-PROFILES_DIR = <repo_root>/examples/calibration/profiles/
-CONFIG_FILE  = <repo_root>/examples/calibration/profiles/config.json
-OUTPUT_DIR   = <repo_root>/output_data/
+CALIBRATION_PROFILES_DIR = <repo_root>/examples/calibration/profiles/
+ROM_OUTPUT_DIR            = <repo_root>/output_data/
 ```
 
 These are the same paths used by the CLI scripts — profiles are fully shared.
+
+---
+
+## UDP command bindings `[VERIFIED]`
+
+The **UDP Bindings** tab maps inbound integer datagrams to serial actions through binding
+profiles stored in `<repo_root>/examples/udp_bindings/*.json` (`UDP_BINDINGS_DIR`). Each
+profile runs in one `control_mode`:
+
+- **Posture (`position`)** — emits `set_gesture:<name>:<state>` commands in `current_position`
+  control. The seeded default `index_middle_pinch_posture.json` focuses on two gestures:
+  UDP `2` → `set_gesture:pinch_index:close`, UDP `3` → `set_gesture:pinch_middle:close`, and
+  REST `0` opens both pinches.
+- **Torque** — plays a **bell-shaped (raised-cosine / Hann) current pulse** toward a target
+  endpoint for each discrete non-zero value, instead of holding a flat current. The pulse
+  streams `set_current` updates at a high rate (`pulse_step_ms`, default 20 ms / 50 Hz) over
+  `pulse_duration_ms` (default 1000 ms), ramping 0 → peak → 0. Peaks come from the binding's
+  `set_current` magnitude/sign. See `nml_hand_exo.interface._udp_torque_pulse`
+  (`raised_cosine_amplitude`, `TorquePulse`, `smoothstep`) — a Qt-free, unit-tested module.
+
+### REST (value 0) in torque mode: revert then ease home `[VERIFIED]`
+
+Because the source sends discrete gesture states, torque mode tracks the **net applied peak
+current per motor** (`_udp_pulse_applied`, clamped to `DIRECT_CURRENT_LIMIT_MA`). On REST:
+
+1. `_begin_udp_revert_and_ease()` plays one **inverse** Hann pulse (peak = negated net) to
+   unwind the applied torque.
+2. When the reverse pulse completes, `_start_udp_ease_to_home()` switches to position control,
+   reads each active joint's current relative angle (`get_motor_angle('all')`, zeroed at home),
+   and eases it toward `0` with a `smoothstep` interpolation of `set_angle:<id>:<target>` over
+   `ease_duration_ms` (default 800 ms), landing exactly at home.
+
+Repeated REST packets are ignored while a revert/ease is already running. Disconnect, heartbeat
+loss, disarm, and profile changes all route through `_stop_udp_binding_output`, which stops the
+pulse/ease timers and clears the applied-pulse ledger.
+
+Schema is `UDP_BINDING_SCHEMA_VERSION = 3`. The added `pulse_shape`, `pulse_duration_ms`,
+`pulse_step_ms`, and `ease_duration_ms` fields are optional — `normalize_binding_profile`
+defaults them, so legacy v2 profiles still load.
+
+### Testing a mapping without UDP `[VERIFIED]`
+
+Each binding-table row has a momentary **Send** button (column 4) that emulates receipt of
+that row's integer value via `_emulate_udp_binding_row` → `_process_udp_binding_integer(...,
+emulated=True)`. Emulated receipts bypass the live-source gate and the repeat-stream debounce
+(and keep pulse/ease playback running with no UDP source, tracked by `_udp_output_emulated`),
+but still require an exo connection and — for torque maps — armed output. Click the value-2/3
+row to fire a pulse or gesture, then the value-0 row to trigger the revert/ease-to-home path.
 
 ---
 

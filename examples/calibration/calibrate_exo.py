@@ -33,79 +33,12 @@ import time
 import serial
 import serial.tools.list_ports
 
-
-PROFILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles")
-CONFIG_FILE = os.path.join(PROFILES_DIR, "config.json")
-
-
-# ---------------------------------------------------------------------------
-# Profile helpers
-# ---------------------------------------------------------------------------
-
-def get_profile_path(name: str) -> str:
-    """Return the full path to a named profile JSON."""
-    return os.path.join(PROFILES_DIR, f"{name}.json")
-
-
-def list_profiles(side: str | None = None) -> list[str]:
-    """Return a sorted list of saved profile names.
-
-    If *side* is ``'left'`` or ``'right'``, only return profiles whose JSON
-    contains a matching ``"side"`` field.  Profiles without a ``"side"``
-    field are treated as ``'right'`` for backward compatibility.
-    """
-    os.makedirs(PROFILES_DIR, exist_ok=True)
-    names = []
-    for f in os.listdir(PROFILES_DIR):
-        if not (f.endswith(".json") and f != "config.json"):
-            continue
-        name = f.removesuffix(".json")
-        if side is not None:
-            try:
-                with open(os.path.join(PROFILES_DIR, f)) as fh:
-                    data = json.load(fh)
-                profile_side = data.get("side", "right")
-                if profile_side != side:
-                    continue
-            except Exception:
-                pass
-        names.append(name)
-    return sorted(names)
-
-
-def get_default_profile(side: str = "right") -> str | None:
-    """Read the default profile name for *side* from config.json, or None.
-
-    Checks ``default_right`` / ``default_left`` keys first, then falls back
-    to the legacy ``default`` key (treated as right-hand) for backward
-    compatibility with old config.json files.
-    """
-    if not os.path.exists(CONFIG_FILE):
-        return None
-    with open(CONFIG_FILE, "r") as f:
-        cfg = json.load(f)
-    # Side-specific key first, then legacy "default" key (right-hand compat).
-    return cfg.get(f"default_{side}") or (cfg.get("default") if side == "right" else None)
-
-
-def set_default_profile(name: str, side: str = "right"):
-    """Write *name* as the default profile for *side* in config.json.
-
-    Writes ``default_right`` or ``default_left`` keys.  Also maintains the
-    legacy ``default`` key (pointing to the right-hand default) so that
-    older code that reads only ``default`` continues to work.
-    """
-    cfg = {}
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
-            cfg = json.load(f)
-    cfg[f"default_{side}"] = name
-    # Keep the legacy "default" key in sync with the right-hand default.
-    if side == "right":
-        cfg["default"] = name
-    os.makedirs(PROFILES_DIR, exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(cfg, f, indent=2)
+from nml_hand_exo.calibration import (
+    get_default_profile_name as get_default_profile,
+    list_profiles,
+    profile_path as get_profile_path,
+    set_default_profile,
+)
 
 
 # ---------------------------------------------------------------------------

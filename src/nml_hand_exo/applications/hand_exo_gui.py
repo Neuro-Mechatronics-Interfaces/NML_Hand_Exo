@@ -27,10 +27,40 @@ from PyQt5.QtWidgets import (
     QSpinBox, QDoubleSpinBox,
 )
 from PyQt5.QtCore import Qt, QEvent, QSettings, QThread, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QFontMetrics
+from PyQt5.QtGui import QColor, QFont, QFontMetrics
 
 from serial.tools import list_ports
+from nml_hand_exo._paths import ROM_OUTPUT_DIR as OUTPUT_DIR, UDP_BINDINGS_DIR
+from nml_hand_exo.calibration import (
+    determine_run_number,
+    get_default_profile_name,
+    list_profiles,
+    load_profile,
+    normalize_angle,
+    save_profile,
+    set_default_profile,
+)
+from nml_hand_exo.applications.styles import DARK_STYLE
 from nml_hand_exo.interface import HandExo, SerialComm
+from nml_hand_exo.interface._serial_ports import format_port_label
+from nml_hand_exo.interface._udp_metrics import TimeWeightedBacklogEMA
+from nml_hand_exo.interface._udp_command_bindings import (
+    DEFAULT_EASE_DURATION_MS,
+    DEFAULT_PULSE_DURATION_MS,
+    DEFAULT_PULSE_SHAPE,
+    DEFAULT_PULSE_STEP_MS,
+    UDP_CONNECTION_PORT_MAX,
+    UDP_CONNECTION_PORT_THRESHOLD,
+    UDP_HEARTBEAT_REQUEST_VALUE,
+    binding_lookup,
+    default_bindings,
+    expand_command_templates,
+    make_default_binding_profile,
+    make_index_middle_pinch_profile,
+    normalize_binding_profile,
+    parse_udp_integer,
+)
+from nml_hand_exo.interface._udp_torque_pulse import TorquePulse, smoothstep
 from nml_hand_exo.interface._telemetry_streaming import (
     NumericLSLTelemetryOutlet,
     UDPTelemetryPublisher,
@@ -45,305 +75,13 @@ except ImportError:
     _WEBSOCKETS_AVAILABLE = False
 
 
-# -- Paths -----------------------------------------------------------------
-
-def _repo_root():
-    return os.path.dirname(os.path.dirname(os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__)))))
-
-PROFILES_DIR = os.path.join(_repo_root(), "examples", "calibration", "profiles")
-CONFIG_FILE = os.path.join(PROFILES_DIR, "config.json")
-OUTPUT_DIR = os.path.join(_repo_root(), "output_data")
 DIRECT_VELOCITY_LIMIT_RPM = 10.0
 DIRECT_CURRENT_LIMIT_MA = 910.0
-
-
-# -- Helpers ---------------------------------------------------------------
-
-def list_profiles() -> list[str]:
-    os.makedirs(PROFILES_DIR, exist_ok=True)
-    names = []
-    for f in os.listdir(PROFILES_DIR):
-        if f.endswith(".json") and f != "config.json":
-            names.append(f.removesuffix(".json"))
-    return sorted(names)
-
-
-def load_profile(name: str) -> dict | None:
-    path = os.path.join(PROFILES_DIR, f"{name}.json")
-    if not os.path.exists(path):
-        return None
-    with open(path, "r") as f:
-        return json.load(f)
-
-
-def get_default_profile_name(side: str = "right") -> str | None:
-    if not os.path.exists(CONFIG_FILE):
-        return None
-    with open(CONFIG_FILE, "r") as f:
-        cfg = json.load(f)
-    # Check side-specific key first, then legacy "default" (right-hand compat)
-    return cfg.get(f"default_{side}") or cfg.get("default")
-
-
-def save_profile(name: str, data: dict, side: str = "right"):
-    os.makedirs(PROFILES_DIR, exist_ok=True)
-    path = os.path.join(PROFILES_DIR, f"{name}.json")
-    data_with_side = {"side": side, **data}
-    with open(path, "w") as f:
-        json.dump(data_with_side, f, indent=2)
-
-
-def set_default_profile(name: str, side: str = "right"):
-    cfg = {}
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
-            cfg = json.load(f)
-    cfg[f"default_{side}"] = name
-    # Maintain legacy "default" key for right-hand backward compat
-    if side == "right":
-        cfg["default"] = name
-    os.makedirs(PROFILES_DIR, exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(cfg, f, indent=2)
-
-
-def normalize_angle(absolute: float, home: float, flip: bool) -> float:
-    if flip:
-        return home - absolute
-    else:
-        return absolute - home
-
-
-def determine_run_number(participant: str, date_str: str) -> int:
-    prefix = f"{participant}_rom_{date_str}_"
-    run = 1
-    if os.path.isdir(OUTPUT_DIR):
-        for fname in os.listdir(OUTPUT_DIR):
-            if fname.startswith(prefix) and fname.endswith(".csv"):
-                try:
-                    n = int(fname.removeprefix(prefix).removesuffix(".csv"))
-                    run = max(run, n + 1)
-                except ValueError:
-                    pass
-    return run
-
-
-def _format_port_label(port) -> str:
-    description = port.description or ""
-    hwid = getattr(port, "hwid", "") or ""
-    desc_lower = description.lower()
-    hwid_lower = hwid.lower()
-
-    tags = []
-    if "bluetooth" in desc_lower or "rfcomm" in hwid_lower or "bthenum" in hwid_lower:
-        tags.append("BT")
-    if "usb serial device" in desc_lower or "usb" in desc_lower:
-        tags.append("USB")
-    if "nml_exo" in desc_lower or "nml_exo" in hwid_lower:
-        tags.append("NML_EXO")
-
-    parts = [port.device]
-    if tags:
-        parts.append(f"[{', '.join(tags)}]")
-    if description:
-        parts.append(description)
-    if getattr(port, "manufacturer", None):
-        parts.append(port.manufacturer)
-    if getattr(port, "serial_number", None):
-        parts.append(f"SN:{port.serial_number}")
-    if getattr(port, "vid", None) is not None and getattr(port, "pid", None) is not None:
-        parts.append(f"VID:{port.vid:04X} PID:{port.pid:04X}")
-    if getattr(port, "hwid", None):
-        parts.append(port.hwid)
-    return " - ".join(parts)
-
-
-# -- Stylesheet ------------------------------------------------------------
-
-DARK_STYLE = """
-QWidget {
-    background-color: #1a1a1a;
-    color: #e0e0e0;
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-}
-QGroupBox {
-    background-color: #222222;
-    border: 1px solid #333333;
-    border-radius: 6px;
-    margin-top: 1.2em;
-    padding-top: 1.0em;
-    font-weight: bold;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 12px;
-    padding: 0 6px;
-    color: #c0392b;
-}
-QPushButton {
-    background-color: #2e2e2e;
-    color: #e0e0e0;
-    border: 1px solid #444444;
-    border-radius: 4px;
-    padding: 5px 14px;
-    min-height: 1.4em;
-}
-QPushButton:hover {
-    background-color: #3a3a3a;
-    border-color: #c0392b;
-}
-QPushButton:pressed {
-    background-color: #c0392b;
-    color: #ffffff;
-}
-QPushButton:disabled {
-    background-color: #252525;
-    color: #555555;
-    border-color: #333333;
-}
-QPushButton[accent="true"] {
-    background-color: #8b1a1a;
-    color: #ffffff;
-    border-color: #c0392b;
-}
-QPushButton[accent="true"]:hover {
-    background-color: #a52222;
-}
-QPushButton[accent="true"]:pressed {
-    background-color: #c0392b;
-}
-QPushButton[accent="true"]:disabled {
-    background-color: #3a2020;
-    color: #666666;
-    border-color: #442222;
-}
-QLineEdit, QComboBox {
-    background-color: #2a2a2a;
-    color: #e0e0e0;
-    border: 1px solid #444444;
-    border-radius: 4px;
-    padding: 4px 8px;
-}
-QLineEdit:focus, QComboBox:focus {
-    border-color: #c0392b;
-}
-QComboBox::drop-down {
-    border: none;
-    background: #333333;
-    width: 20px;
-}
-QComboBox QAbstractItemView {
-    background-color: #2a2a2a;
-    color: #e0e0e0;
-    selection-background-color: #c0392b;
-}
-QTextEdit {
-    background-color: #111111;
-    color: #aaaaaa;
-    border: 1px solid #333333;
-    border-radius: 4px;
-    font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
-}
-QScrollArea {
-    border: none;
-    background-color: #1a1a1a;
-}
-QScrollBar:vertical {
-    background: #1a1a1a;
-    width: 10px;
-}
-QScrollBar::handle:vertical {
-    background: #444444;
-    border-radius: 4px;
-    min-height: 20px;
-}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-    height: 0px;
-}
-QLabel#title {
-    color: #ffffff;
-    font-weight: bold;
-}
-QLabel#accent-line {
-    background-color: #c0392b;
-    max-height: 2px;
-    min-height: 2px;
-}
-QLabel#status-connected {
-    color: #27ae60;
-    font-weight: bold;
-}
-QLabel#status-disconnected {
-    color: #c0392b;
-    font-weight: bold;
-}
-QFrame#motor-row {
-    background-color: #252525;
-    border-radius: 4px;
-    padding: 4px;
-}
-QDialog {
-    background-color: #1a1a1a;
-    color: #e0e0e0;
-}
-QTabWidget::pane {
-    border: 1px solid #333333;
-    background-color: #1a1a1a;
-}
-QTabBar::tab {
-    background-color: #2e2e2e;
-    color: #e0e0e0;
-    padding: 6px 18px;
-    border: 1px solid #444444;
-    border-bottom: none;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
-    min-width: 80px;
-}
-QTabBar::tab:selected {
-    background-color: #1a1a1a;
-    color: #ffffff;
-    border-color: #c0392b;
-    border-bottom: 2px solid #c0392b;
-}
-QTabBar::tab:hover:!selected {
-    background-color: #3a3a3a;
-}
-QTableWidget {
-    background-color: #1a1a1a;
-    alternate-background-color: #222222;
-    color: #e0e0e0;
-    gridline-color: #333333;
-    border: 1px solid #333333;
-}
-QTableWidget::item {
-    color: #e0e0e0;
-    padding: 4px;
-}
-QHeaderView::section {
-    background-color: #2e2e2e;
-    color: #e0e0e0;
-    border: 1px solid #333333;
-    padding: 4px 8px;
-    font-weight: bold;
-}
-QCheckBox {
-    color: #e0e0e0;
-    spacing: 6px;
-}
-QCheckBox::indicator {
-    width: 14px;
-    height: 14px;
-    border: 1px solid #555555;
-    background-color: #2a2a2a;
-    border-radius: 2px;
-}
-QCheckBox::indicator:checked {
-    background-color: #c0392b;
-    border-color: #c0392b;
-}
-"""
+UDP_HEARTBEAT_INTERVAL_MS = 15000
+UDP_HEARTBEAT_RESPONSE_TIMEOUT_MS = 500
+UDP_HEARTBEAT_RECHECK_MS = 50
+UDP_METRIC_EMA_ALPHA = 0.2
+UDP_BACKLOG_EMA_TIME_CONSTANT_S = 2.0
 
 
 # ==========================================================================
@@ -1227,6 +965,7 @@ class UDPCommandWorker(QThread):
     """Receive UDP command datagrams without blocking the GUI thread."""
 
     command_received = pyqtSignal(str, str)
+    heartbeat_received = pyqtSignal(float, str, int, float)
     status_changed = pyqtSignal(str, str)
 
     def __init__(self, parent=None):
@@ -1235,6 +974,16 @@ class UDPCommandWorker(QThread):
         self._port = 10001
         self._stop_event = threading.Event()
         self._sock = None
+        self._backlog_lock = threading.Lock()
+        self._gui_backlog = TimeWeightedBacklogEMA(
+            UDP_BACKLOG_EMA_TIME_CONSTANT_S
+        )
+        self._heartbeat_lock = threading.Lock()
+        self._heartbeat_expected_value: int | None = None
+        self._heartbeat_expected_host = ""
+        self._heartbeat_sent_monotonic: float | None = None
+        self._heartbeat_response_for: float | None = None
+        self._heartbeat_response_latency_ms: float | None = None
 
     def configure(self, host: str, port: int):
         self._host = host.strip() or "0.0.0.0"
@@ -1249,11 +998,49 @@ class UDPCommandWorker(QThread):
             except OSError:
                 pass
 
+    def reset_gui_backlog_metrics(self):
+        with self._backlog_lock:
+            self._gui_backlog.reset()
+
+    def gui_backlog_metrics(self) -> tuple[int, float]:
+        with self._backlog_lock:
+            return self._gui_backlog.snapshot()
+
+    def mark_gui_command_handled(self):
+        with self._backlog_lock:
+            self._gui_backlog.complete()
+
+    def expect_heartbeat(self, value: int, host: str, sent_monotonic: float):
+        with self._heartbeat_lock:
+            self._heartbeat_expected_value = int(value)
+            self._heartbeat_expected_host = host
+            self._heartbeat_sent_monotonic = float(sent_monotonic)
+            self._heartbeat_response_for = None
+            self._heartbeat_response_latency_ms = None
+
+    def clear_heartbeat_expectation(self):
+        with self._heartbeat_lock:
+            self._heartbeat_expected_value = None
+            self._heartbeat_expected_host = ""
+            self._heartbeat_sent_monotonic = None
+            self._heartbeat_response_for = None
+            self._heartbeat_response_latency_ms = None
+
+    def heartbeat_response_latency(self, sent_monotonic: float) -> float | None:
+        with self._heartbeat_lock:
+            if self._heartbeat_response_for != sent_monotonic:
+                return None
+            return self._heartbeat_response_latency_ms
+
     def run(self):
         self._stop_event.clear()
+        with self._backlog_lock:
+            self._gui_backlog.reset()
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock = sock
         try:
+            # recvfrom() wakes as soon as a datagram arrives. This timeout only
+            # bounds how long stop() must wait when no traffic is present.
             sock.settimeout(0.25)
             sock.bind((self._host, self._port))
             self.status_changed.emit(
@@ -1266,9 +1053,35 @@ class UDPCommandWorker(QThread):
                     continue
                 except OSError:
                     break
+                received_at = time.monotonic()
                 message = data.decode("utf-8", errors="ignore").strip()
                 if message:
-                    self.command_received.emit(message, f"{addr[0]}:{addr[1]}")
+                    heartbeat_result = None
+                    integer_value = parse_udp_integer(message)
+                    if integer_value is not None:
+                        with self._heartbeat_lock:
+                            if (
+                                integer_value == self._heartbeat_expected_value
+                                and addr[0] == self._heartbeat_expected_host
+                                and self._heartbeat_sent_monotonic is not None
+                            ):
+                                sent_at = self._heartbeat_sent_monotonic
+                                latency_ms = (received_at - sent_at) * 1000.0
+                                self._heartbeat_response_for = sent_at
+                                self._heartbeat_response_latency_ms = latency_ms
+                                self._heartbeat_expected_value = None
+                                self._heartbeat_expected_host = ""
+                                self._heartbeat_sent_monotonic = None
+                                heartbeat_result = (latency_ms, sent_at)
+                    sender = f"{addr[0]}:{addr[1]}"
+                    with self._backlog_lock:
+                        self._gui_backlog.enqueue(now=received_at)
+                    if heartbeat_result is not None:
+                        latency_ms, sent_at = heartbeat_result
+                        self.heartbeat_received.emit(
+                            latency_ms, sender, integer_value, sent_at
+                        )
+                    self.command_received.emit(message, sender)
         except OSError as exc:
             self.status_changed.emit(f"UDP command error: {exc}", "#c0392b")
         finally:
@@ -1510,6 +1323,7 @@ class HandExoGUI(QWidget):
         self._suspend_device_poll_requests = False
 
         self._udp_telemetry = UDPTelemetryPublisher()
+        self._udp_response_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._lsl_angles = NumericLSLTelemetryOutlet(
             "NMLHandExoJointAngles", "JointAngles", "degrees"
         )
@@ -1518,6 +1332,9 @@ class HandExoGUI(QWidget):
         )
         self._udp_command_worker = UDPCommandWorker(self)
         self._udp_command_worker.command_received.connect(self._on_udp_command)
+        self._udp_command_worker.heartbeat_received.connect(
+            self._on_udp_worker_heartbeat_received
+        )
         self._udp_command_worker.status_changed.connect(self._on_udp_command_status)
         self._udp_stream_pending: dict[tuple[str, int], tuple[str, str, str]] = {}
         self._udp_stream_last_status = 0.0
@@ -1526,12 +1343,75 @@ class HandExoGUI(QWidget):
         self._udp_stream_timer.setInterval(20)
         self._udp_stream_timer.timeout.connect(self._flush_udp_stream_commands)
         self._udp_stream_timer.start()
+        self._udp_binding_profile_name = ""
+        self._udp_binding_last_value: int | None = None
+        self._udp_binding_highlighted_row: int | None = None
+        self._udp_binding_active_commands: list[str] = []
+        self._udp_binding_active_ids: set[int] = set()
+        self._udp_binding_output_armed = False
+        self._udp_binding_last_command_log = 0.0
+        self._udp_binding_suppressed_logs = 0
+        self._udp_source_live = False
+        self._udp_registered_connection_port: int | None = None
+        self._udp_registered_connection_host = ""
+        self._udp_registered_sender = ""
+        self._udp_heartbeat_awaiting_response = False
+        self._udp_heartbeat_sent_monotonic: float | None = None
+        self._udp_latency_ema_ms: float | None = None
+        self._udp_heartbeat_wait_ema_ms: float | None = None
+        self._udp_queue_length_current = 0
+        self._udp_queue_length_ema: float | None = None
+        self._udp_ack_count = 0
+        self._udp_last_ack_value: int | None = None
+        self._udp_heartbeat_timer = QTimer(self)
+        self._udp_heartbeat_timer.setInterval(UDP_HEARTBEAT_INTERVAL_MS)
+        self._udp_heartbeat_timer.timeout.connect(
+            self._send_registered_udp_heartbeat
+        )
+        self._udp_heartbeat_response_timer = QTimer(self)
+        self._udp_heartbeat_response_timer.setSingleShot(True)
+        self._udp_heartbeat_response_timer.setInterval(
+            UDP_HEARTBEAT_RESPONSE_TIMEOUT_MS
+        )
+        self._udp_heartbeat_response_timer.timeout.connect(
+            self._on_udp_heartbeat_response_timeout
+        )
+        self._udp_metrics_timer = QTimer(self)
+        self._udp_metrics_timer.setInterval(250)
+        self._udp_metrics_timer.timeout.connect(self._refresh_udp_metrics)
+        self._udp_binding_hold_timer = QTimer(self)
+        self._udp_binding_hold_timer.setInterval(100)
+        self._udp_binding_hold_timer.timeout.connect(
+            self._repeat_udp_binding_commands
+        )
+        # Bell-shaped torque-pulse playback and revert/ease-to-home state.
+        self._udp_pulse_shape = DEFAULT_PULSE_SHAPE
+        self._udp_pulse_duration_ms = DEFAULT_PULSE_DURATION_MS
+        self._udp_pulse_step_ms = DEFAULT_PULSE_STEP_MS
+        self._udp_ease_duration_ms = DEFAULT_EASE_DURATION_MS
+        self._udp_active_pulse: TorquePulse | None = None
+        self._udp_pulse_is_revert = False
+        # True while the active output was triggered by a local test button, so
+        # pulse/ease playback keeps running without a live UDP source.
+        self._udp_output_emulated = False
+        # Net signed peak current (mA) applied per motor since the last REST,
+        # so a revert can play an equal-and-opposite pulse to unwind it.
+        self._udp_pulse_applied: dict[int, float] = {}
+        self._udp_pulse_timer = QTimer(self)
+        self._udp_pulse_timer.setInterval(DEFAULT_PULSE_STEP_MS)
+        self._udp_pulse_timer.timeout.connect(self._step_udp_torque_pulse)
+        self._udp_ease_start_angles: dict[int, float] = {}
+        self._udp_ease_start_ms = 0.0
+        self._udp_ease_timer = QTimer(self)
+        self._udp_ease_timer.setInterval(DEFAULT_PULSE_STEP_MS)
+        self._udp_ease_timer.timeout.connect(self._step_udp_ease_to_home)
         self._serial_worker = SerialWorker(self)
         self._serial_worker.completed.connect(self._on_device_poll_completed)
         self._serial_worker.line_received.connect(self._log)
         self._serial_worker.start()
 
         self._build_ui()
+        self._udp_metrics_timer.start()
 
         # Motor angle poll timer (Controls tab)
         self._angle_timer = QTimer(self)
@@ -1613,6 +1493,7 @@ class HandExoGUI(QWidget):
         self.main_tabs.addTab(self._build_visualization_tab(), "Hand State")
         self.main_tabs.addTab(self._build_direct_control_tab(), "Direct Control")
         self.main_tabs.addTab(self._build_teleop_tab(), "Teleop")
+        self.main_tabs.addTab(self._build_udp_bindings_tab(), "UDP Bindings")
         self.main_tabs.addTab(self._build_settings_tab(), "Settings")
 
         self._build_log_section()
@@ -1918,6 +1799,225 @@ class HandExoGUI(QWidget):
         layout.addStretch()
         return widget
 
+    def _build_udp_bindings_tab(self) -> QWidget:
+        """Build the integer UDP input, port registration, and binding-map page."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        receiver_box = QGroupBox("UDP Receiver and Source Status")
+        receiver_layout = QVBoxLayout(receiver_box)
+        receiver_row = QHBoxLayout()
+        self._udp_cmd_cb = QCheckBox("Enable receiver")
+        self._udp_cmd_host = QLineEdit("0.0.0.0")
+        self._udp_cmd_host.editingFinished.connect(
+            self._cache_udp_command_endpoint
+        )
+        self._udp_cmd_port = QSpinBox()
+        self._udp_cmd_port.setRange(1, 65535)
+        self._udp_cmd_port.setValue(10003)
+        self._udp_cmd_port.valueChanged.connect(
+            self._cache_udp_command_endpoint
+        )
+        self._udp_cmd_status_lbl = QLabel("Disabled")
+        self._udp_cmd_status_lbl.setStyleSheet("color: #888888;")
+        receiver_row.addWidget(self._udp_cmd_cb)
+        receiver_row.addWidget(QLabel("Listen:"))
+        receiver_row.addWidget(self._udp_cmd_host, 1)
+        receiver_row.addWidget(QLabel("Port:"))
+        receiver_row.addWidget(self._udp_cmd_port)
+        receiver_row.addWidget(QLabel("Socket:"))
+        receiver_row.addWidget(self._udp_cmd_status_lbl, 1)
+        receiver_layout.addLayout(receiver_row)
+
+        live_row = QHBoxLayout()
+        self._udp_live_lamp = QLabel()
+        self._udp_live_lamp.setFixedSize(18, 18)
+        self._udp_live_lamp.setToolTip(
+            "Green after a callback port (>64, except reserved value "
+            f"{UDP_HEARTBEAT_REQUEST_VALUE}) is "
+            "registered. Either endpoint closes with the matching negative "
+            "port value."
+        )
+        self._udp_live_status_lbl = QLabel("Source status unknown")
+        self._udp_live_status_lbl.setStyleSheet("color: #888888;")
+        self._udp_last_command_lbl = QLabel("Last received: none")
+        self._udp_last_command_lbl.setWordWrap(True)
+        self._udp_last_command_lbl.setStyleSheet(
+            "color: #888888; font-size: 10px;"
+        )
+        live_row.addWidget(QLabel("Source:"))
+        live_row.addWidget(self._udp_live_lamp)
+        live_row.addWidget(self._udp_live_status_lbl)
+        live_row.addStretch()
+        live_row.addWidget(self._udp_last_command_lbl, 1)
+        receiver_layout.addLayout(live_row)
+        self._udp_metrics_lbl = QLabel(
+            "Heartbeat: off    |    GUI backlog: 0 now / 0.00 EMA"
+            "    |    Last ACK: —"
+        )
+        self._udp_metrics_lbl.setToolTip(
+            "Current backlog counts received datagrams not yet fully handled. "
+            f"Its EMA is time-weighted over {UDP_BACKLOG_EMA_TIME_CONSTANT_S:g} s; "
+            "the operating system's UDP receive buffer is not included."
+        )
+        self._udp_metrics_lbl.setStyleSheet(
+            "color: #888888; font-size: 10px;"
+        )
+        receiver_layout.addWidget(self._udp_metrics_lbl)
+
+        receiver_options = QHBoxLayout()
+        self._udp_cmd_advanced_cb = QCheckBox(
+            "Allow legacy raw protocol datagrams"
+        )
+        self._udp_cmd_advanced_cb.setToolTip(
+            "Integer bindings remain mode-restricted. This option preserves the "
+            "older raw-command input, with its safety filter."
+        )
+        self._udp_heartbeat_cb = QCheckBox("Enable heartbeat supervision")
+        self._udp_heartbeat_cb.setToolTip(
+            f"When enabled, send {UDP_HEARTBEAT_REQUEST_VALUE} every 15 seconds "
+            "and require the registered port N in response. Disabled by default."
+        )
+        self._udp_heartbeat_cb.toggled.connect(
+            self._on_udp_heartbeat_enabled_toggled
+        )
+        apply_receiver_btn = QPushButton("Apply / Restart Receiver")
+        apply_receiver_btn.setProperty("accent", True)
+        apply_receiver_btn.clicked.connect(self._apply_stream_settings)
+        receiver_options.addWidget(self._udp_cmd_advanced_cb)
+        receiver_options.addWidget(self._udp_heartbeat_cb)
+        receiver_options.addStretch()
+        receiver_options.addWidget(apply_receiver_btn)
+        receiver_layout.addLayout(receiver_options)
+        layout.addWidget(receiver_box)
+
+        profile_box = QGroupBox("Binding Map")
+        profile_layout = QVBoxLayout(profile_box)
+        profile_row = QHBoxLayout()
+        profile_row.addWidget(QLabel("Map:"))
+        self._udp_binding_profile_combo = QComboBox()
+        profile_row.addWidget(self._udp_binding_profile_combo, 1)
+        new_btn = QPushButton("New")
+        new_btn.clicked.connect(self._new_udp_binding_profile)
+        load_btn = QPushButton("Load")
+        load_btn.clicked.connect(self._load_selected_udp_binding_profile)
+        save_btn = QPushButton("Save")
+        save_btn.setProperty("accent", True)
+        save_btn.clicked.connect(self._save_udp_binding_profile)
+        defaults_btn = QPushButton("Load Mode Defaults")
+        defaults_btn.clicked.connect(self._load_udp_mode_defaults)
+        profile_row.addWidget(new_btn)
+        profile_row.addWidget(load_btn)
+        profile_row.addWidget(save_btn)
+        profile_row.addWidget(defaults_btn)
+        profile_layout.addLayout(profile_row)
+
+        behavior_row = QHBoxLayout()
+        behavior_row.addWidget(QLabel("Interpret as:"))
+        self._udp_binding_mode_combo = QComboBox()
+        self._udp_binding_mode_combo.addItem("Torque", "torque")
+        self._udp_binding_mode_combo.addItem("Position / Gesture", "position")
+        self._udp_binding_mode_combo.currentIndexChanged.connect(
+            self._on_udp_binding_mode_changed
+        )
+        behavior_row.addWidget(self._udp_binding_mode_combo)
+        behavior_row.addWidget(QLabel("Target:"))
+        self._udp_binding_target_combo = QComboBox()
+        self._udp_binding_target_combo.addItems(
+            ["Both", "Left Only", "Right Only"]
+        )
+        self._udp_binding_target_combo.setToolTip(
+            "In Dual GUI mode, motor placeholders expand only to this side."
+        )
+        self._udp_binding_target_combo.currentTextChanged.connect(
+            lambda _text: self._stop_udp_binding_output(disable_motors=True)
+        )
+        behavior_row.addWidget(self._udp_binding_target_combo)
+        behavior_row.addWidget(QLabel("Hold repeat:"))
+        self._udp_binding_repeat_spin = QSpinBox()
+        self._udp_binding_repeat_spin.setRange(20, 5000)
+        self._udp_binding_repeat_spin.setValue(100)
+        self._udp_binding_repeat_spin.setSuffix(" ms")
+        self._udp_binding_repeat_spin.valueChanged.connect(
+            self._udp_binding_hold_timer.setInterval
+        )
+        behavior_row.addWidget(self._udp_binding_repeat_spin)
+        self._udp_binding_arm_cb = QCheckBox("Arm mapped torque output")
+        self._udp_binding_arm_cb.setToolTip(
+            "Required before an integer binding may enable a motor and apply current."
+        )
+        self._udp_binding_arm_cb.toggled.connect(
+            self._on_udp_binding_arm_toggled
+        )
+        behavior_row.addWidget(self._udp_binding_arm_cb)
+        behavior_row.addStretch()
+        profile_layout.addLayout(behavior_row)
+
+        port_protocol_note = QLabel(
+            "Connection registration: the first integer from 65 through 65535 "
+            f"(except reserved heartbeat value {UDP_HEARTBEAT_REQUEST_VALUE}) is "
+            "registered as the announced port N. The GUI acknowledges after "
+            "5 ms by sending N. Optional heartbeat supervision is off by "
+            f"default; when enabled, the GUI sends "
+            f"{UDP_HEARTBEAT_REQUEST_VALUE} "
+            "every 15 s and requires that connection's N to be echoed back "
+            "to this "
+            f"listener; the missing-response EMA threshold is "
+            f"{UDP_HEARTBEAT_RESPONSE_TIMEOUT_MS} ms. "
+            "An incoming -N closes remotely; the GUI sends -N when its live "
+            "receiver closes. "
+            "Binding values are limited to -64…64."
+        )
+        port_protocol_note.setWordWrap(True)
+        port_protocol_note.setStyleSheet("color: #888888; font-size: 10px;")
+        profile_layout.addWidget(port_protocol_note)
+
+        self._udp_binding_table = QTableWidget(0, 4)
+        self._udp_binding_table.setHorizontalHeaderLabels(
+            ["UDP Integer", "Serial command(s)", "Meaning", "Test"]
+        )
+        binding_header = self._udp_binding_table.horizontalHeader()
+        binding_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        binding_header.setSectionResizeMode(1, QHeaderView.Stretch)
+        binding_header.setSectionResizeMode(2, QHeaderView.Stretch)
+        binding_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self._udp_binding_table.verticalHeader().setVisible(False)
+        self._udp_binding_table.setAlternatingRowColors(True)
+        self._udp_binding_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self._udp_binding_table.setMinimumHeight(280)
+        self._udp_binding_table.itemChanged.connect(
+            self._on_udp_binding_table_item_changed
+        )
+        profile_layout.addWidget(self._udp_binding_table)
+
+        table_buttons = QHBoxLayout()
+        add_row_btn = QPushButton("Add Row")
+        add_row_btn.clicked.connect(self._add_udp_binding_row)
+        remove_row_btn = QPushButton("Remove Selected")
+        remove_row_btn.clicked.connect(self._remove_udp_binding_rows)
+        table_buttons.addWidget(add_row_btn)
+        table_buttons.addWidget(remove_row_btn)
+        table_buttons.addStretch()
+        profile_layout.addLayout(table_buttons)
+        layout.addWidget(profile_box)
+
+        help_label = QLabel(
+            "Send signed ASCII integers (or JSON such as {\"value\":2}). "
+            "Motor placeholders such as {thumbflex}, {index}, and {pinky} are "
+            "expanded to active integer Dynamixel IDs. Put multiple serial "
+            "commands on separate lines. Torque maps repeat nonzero current "
+            "commands until another mapped value, REST, or the registered "
+            "port's negative value is received. Each binding integer is "
+            "echoed to the callback endpoint after handling completes."
+        )
+        help_label.setWordWrap(True)
+        help_label.setStyleSheet("color: #888888; font-size: 10px;")
+        layout.addWidget(help_label)
+        self._set_udp_source_status(None)
+        return widget
+
     def _build_settings_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -1973,49 +2073,6 @@ class HandExoGUI(QWidget):
         udp_out_layout.addLayout(udp_out_row)
         layout.addWidget(udp_out_box)
 
-        udp_in_box = QGroupBox("UDP Command Input")
-        udp_in_layout = QVBoxLayout(udp_in_box)
-        udp_in_row = QHBoxLayout()
-        self._udp_cmd_cb = QCheckBox("Enable")
-        self._udp_cmd_host = QLineEdit("0.0.0.0")
-        self._udp_cmd_port = QSpinBox()
-        self._udp_cmd_port.setRange(1, 65535)
-        self._udp_cmd_port.setValue(10001)
-        self._udp_cmd_advanced_cb = QCheckBox(
-            "Allow advanced protocol commands"
-        )
-        self._udp_cmd_advanced_cb.setToolTip(
-            "Safety-sensitive motion and configuration commands remain blocked."
-        )
-        self._udp_cmd_status_lbl = QLabel("Disabled")
-        self._udp_cmd_status_lbl.setStyleSheet("color: #888888;")
-        udp_in_row.addWidget(self._udp_cmd_cb)
-        udp_in_row.addWidget(QLabel("Listen:"))
-        udp_in_row.addWidget(self._udp_cmd_host, 1)
-        udp_in_row.addWidget(QLabel("Port:"))
-        udp_in_row.addWidget(self._udp_cmd_port)
-        udp_in_row.addWidget(QLabel("Status:"))
-        udp_in_row.addWidget(self._udp_cmd_status_lbl, 1)
-        udp_in_layout.addLayout(udp_in_row)
-        udp_options_row = QHBoxLayout()
-        udp_options_row.addWidget(self._udp_cmd_advanced_cb)
-        self._udp_last_command_lbl = QLabel("Last received: none")
-        self._udp_last_command_lbl.setWordWrap(True)
-        self._udp_last_command_lbl.setStyleSheet("color: #888888;")
-        udp_options_row.addStretch()
-        udp_options_row.addWidget(self._udp_last_command_lbl, 1)
-        udp_in_layout.addLayout(udp_options_row)
-        layout.addWidget(udp_in_box)
-
-        note = QLabel(
-            "Command datagrams may be plain protocol text or JSON such as "
-            '{"command":"set_gesture:pinch_index:close"}. By default only '
-            "set_gesture commands are accepted."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet("color: #888888; font-size: 10px;")
-        layout.addWidget(note)
-
         apply_btn = QPushButton("Apply Streaming Settings")
         apply_btn.setProperty("accent", True)
         apply_btn.clicked.connect(self._apply_stream_settings)
@@ -2049,6 +2106,14 @@ class HandExoGUI(QWidget):
         self._udp_cmd_advanced_cb.setChecked(
             settings.value("udp_command/advanced", False, type=bool)
         )
+        self._udp_heartbeat_cb.setChecked(
+            settings.value("udp_command/heartbeat_enabled", False, type=bool)
+        )
+        self._refresh_udp_binding_profiles(
+            settings.value(
+                "udp_command/binding_profile", "index_middle_pinch_posture"
+            )
+        )
         self._on_lsl_enabled_toggled(self._lsl_enabled_cb.isChecked())
         self._apply_stream_settings()
 
@@ -2065,6 +2130,12 @@ class HandExoGUI(QWidget):
         settings.setValue("udp_command/host", self._udp_cmd_host.text().strip())
         settings.setValue("udp_command/port", self._udp_cmd_port.value())
         settings.setValue("udp_command/advanced", self._udp_cmd_advanced_cb.isChecked())
+        settings.setValue(
+            "udp_command/heartbeat_enabled", self._udp_heartbeat_cb.isChecked()
+        )
+        settings.setValue(
+            "udp_command/binding_profile", self._udp_binding_profile_name
+        )
 
         interval_ms = max(50, round(1000 / self._telemetry_rate_spin.value()))
         self._angle_timer.setInterval(interval_ms)
@@ -2089,8 +2160,14 @@ class HandExoGUI(QWidget):
         self._configure_lsl_outlets()
 
         if self._udp_command_worker.isRunning():
+            self._send_udp_local_close_notice("receiver restart")
             self._udp_command_worker.stop()
             self._udp_command_worker.wait(1000)
+        self._udp_command_worker.reset_gui_backlog_metrics()
+        self._udp_queue_length_current = 0
+        self._udp_queue_length_ema = 0.0
+        self._set_udp_source_status(None)
+        self._update_udp_metrics_display()
         if self._udp_cmd_cb.isChecked():
             self._udp_command_worker.configure(
                 self._udp_cmd_host.text(), self._udp_cmd_port.value()
@@ -2101,6 +2178,18 @@ class HandExoGUI(QWidget):
         else:
             self._udp_cmd_status_lbl.setText("Disabled")
             self._udp_cmd_status_lbl.setStyleSheet("color: #888888;")
+            self._stop_udp_binding_output(disable_motors=True)
+
+    def _cache_udp_command_endpoint(self, *_args):
+        """Persist receiver edits without restarting the active UDP socket."""
+        if not hasattr(self, "_udp_cmd_host") or not hasattr(self, "_udp_cmd_port"):
+            return
+        settings = QSettings("NML", "HandExoGUI")
+        settings.setValue(
+            "udp_command/host", self._udp_cmd_host.text().strip() or "0.0.0.0"
+        )
+        settings.setValue("udp_command/port", self._udp_cmd_port.value())
+        settings.sync()
 
     def _on_lsl_enabled_toggled(self, enabled: bool):
         for widget in (self._lsl_angles_cb, self._lsl_torque_cb):
@@ -2142,10 +2231,1353 @@ class HandExoGUI(QWidget):
             self._lsl_status_lbl.setText("Disabled")
             self._lsl_status_lbl.setStyleSheet("color: #888888;")
 
+    def _refresh_udp_binding_profiles(self, preferred: str = ""):
+        try:
+            os.makedirs(UDP_BINDINGS_DIR, exist_ok=True)
+        except OSError as exc:
+            self._log(f"[UDP bindings] Cannot create profile directory: {exc}")
+            return
+        seed_maps = (
+            ("default_finger_torque.json", make_default_binding_profile),
+            ("index_middle_pinch_posture.json", make_index_middle_pinch_profile),
+        )
+        for filename, factory in seed_maps:
+            seed_path = os.path.join(UDP_BINDINGS_DIR, filename)
+            if os.path.exists(seed_path):
+                continue
+            try:
+                with open(seed_path, "w") as profile_file:
+                    json.dump(factory(), profile_file, indent=2)
+            except OSError as exc:
+                self._log(f"[UDP bindings] Cannot create {filename}: {exc}")
+
+        entries = []
+        for filename in sorted(os.listdir(UDP_BINDINGS_DIR)):
+            if not filename.endswith(".json"):
+                continue
+            path = os.path.join(UDP_BINDINGS_DIR, filename)
+            stem = filename.removesuffix(".json")
+            try:
+                with open(path, "r") as profile_file:
+                    profile = normalize_binding_profile(
+                        json.load(profile_file), fallback_name=stem
+                    )
+                entries.append((profile["name"], stem))
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                self._log(f"[UDP bindings] Skipping {filename}: {exc}")
+
+        self._udp_binding_profile_combo.blockSignals(True)
+        self._udp_binding_profile_combo.clear()
+        for display_name, stem in entries:
+            self._udp_binding_profile_combo.addItem(display_name, stem)
+        selected = self._udp_binding_profile_combo.findData(preferred)
+        if selected < 0 and entries:
+            selected = 0
+        if selected >= 0:
+            self._udp_binding_profile_combo.setCurrentIndex(selected)
+        self._udp_binding_profile_combo.blockSignals(False)
+        if selected >= 0:
+            self._load_selected_udp_binding_profile()
+
+    def _load_selected_udp_binding_profile(self):
+        stem = self._udp_binding_profile_combo.currentData()
+        if not stem:
+            return
+        self._stop_udp_binding_output(disable_motors=True)
+        path = os.path.join(UDP_BINDINGS_DIR, f"{stem}.json")
+        try:
+            with open(path, "r") as profile_file:
+                profile = normalize_binding_profile(
+                    json.load(profile_file), fallback_name=str(stem)
+                )
+            self._udp_binding_profile_name = str(stem)
+            mode_index = self._udp_binding_mode_combo.findData(
+                profile["control_mode"]
+            )
+            self._udp_binding_mode_combo.setCurrentIndex(max(0, mode_index))
+            target_index = self._udp_binding_target_combo.findText(
+                profile["target"]
+            )
+            self._udp_binding_target_combo.setCurrentIndex(max(0, target_index))
+            self._udp_binding_repeat_spin.setValue(profile["repeat_ms"])
+            self._udp_binding_hold_timer.setInterval(profile["repeat_ms"])
+            self._apply_udp_pulse_settings(profile)
+            self._populate_udp_binding_table(profile["bindings"])
+            QSettings("NML", "HandExoGUI").setValue(
+                "udp_command/binding_profile", self._udp_binding_profile_name
+            )
+            self._log(f"[UDP bindings] Loaded map '{profile['name']}'.")
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            QMessageBox.critical(self, "Binding Map Error", str(exc))
+
+    def _save_udp_binding_profile(self):
+        if not self._udp_binding_profile_name:
+            self._new_udp_binding_profile()
+            return
+        try:
+            profile = self._udp_binding_profile_from_ui()
+            path = os.path.join(
+                UDP_BINDINGS_DIR, f"{self._udp_binding_profile_name}.json"
+            )
+            with open(path, "w") as profile_file:
+                json.dump(profile, profile_file, indent=2)
+            self._udp_binding_hold_timer.setInterval(profile["repeat_ms"])
+            self._log(f"[UDP bindings] Saved map '{profile['name']}'.")
+            self._refresh_udp_binding_profiles(self._udp_binding_profile_name)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Cannot Save Binding Map", str(exc))
+
+    def _new_udp_binding_profile(self):
+        name, accepted = QInputDialog.getText(
+            self, "New UDP Binding Map", "Map name:"
+        )
+        if not accepted or not name.strip():
+            return
+        stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", name.strip()).strip("._")
+        if not stem:
+            QMessageBox.warning(self, "Invalid Name", "Choose a different map name.")
+            return
+        try:
+            os.makedirs(UDP_BINDINGS_DIR, exist_ok=True)
+            path = os.path.join(UDP_BINDINGS_DIR, f"{stem}.json")
+            if os.path.exists(path):
+                QMessageBox.warning(
+                    self, "Map Exists", f"A binding map named '{stem}' already exists."
+                )
+                return
+            mode = self._udp_binding_mode_combo.currentData() or "torque"
+            profile = make_default_binding_profile(name.strip(), str(mode))
+            with open(path, "w") as profile_file:
+                json.dump(profile, profile_file, indent=2)
+        except OSError as exc:
+            QMessageBox.warning(self, "Cannot Create Binding Map", str(exc))
+            return
+        self._refresh_udp_binding_profiles(stem)
+
+    def _binding_map_display_name(self) -> str:
+        text = self._udp_binding_profile_combo.currentText().strip()
+        return text or self._udp_binding_profile_name or "Unnamed UDP Binding Map"
+
+    def _udp_binding_profile_from_ui(self) -> dict:
+        bindings = []
+        for row in range(self._udp_binding_table.rowCount()):
+            value_item = self._udp_binding_table.item(row, 0)
+            command_item = self._udp_binding_table.item(row, 1)
+            description_item = self._udp_binding_table.item(row, 2)
+            bindings.append(
+                {
+                    "value": "" if value_item is None else value_item.text(),
+                    "command": "" if command_item is None else command_item.text(),
+                    "description": (
+                        "" if description_item is None else description_item.text()
+                    ),
+                }
+            )
+        profile = {
+            "name": self._binding_map_display_name(),
+            "control_mode": self._udp_binding_mode_combo.currentData(),
+            "target": self._udp_binding_target_combo.currentText(),
+            "repeat_ms": self._udp_binding_repeat_spin.value(),
+            # Pulse/ease parameters are not exposed as widgets; carry the
+            # active in-memory values through so saving preserves them.
+            "pulse_shape": self._udp_pulse_shape,
+            "pulse_duration_ms": self._udp_pulse_duration_ms,
+            "pulse_step_ms": self._udp_pulse_step_ms,
+            "ease_duration_ms": self._udp_ease_duration_ms,
+            "bindings": bindings,
+        }
+        return normalize_binding_profile(profile, self._binding_map_display_name())
+
+    def _apply_udp_pulse_settings(self, profile: dict):
+        """Cache a loaded profile's pulse/ease parameters for playback."""
+        self._udp_pulse_shape = profile.get("pulse_shape", DEFAULT_PULSE_SHAPE)
+        self._udp_pulse_duration_ms = int(
+            profile.get("pulse_duration_ms", DEFAULT_PULSE_DURATION_MS)
+        )
+        self._udp_pulse_step_ms = int(
+            profile.get("pulse_step_ms", DEFAULT_PULSE_STEP_MS)
+        )
+        self._udp_ease_duration_ms = int(
+            profile.get("ease_duration_ms", DEFAULT_EASE_DURATION_MS)
+        )
+        self._udp_pulse_timer.setInterval(self._udp_pulse_step_ms)
+        self._udp_ease_timer.setInterval(self._udp_pulse_step_ms)
+
+    def _populate_udp_binding_table(self, bindings: list[dict]):
+        self._udp_binding_highlighted_row = None
+        self._udp_binding_table.setRowCount(0)
+        for binding in bindings:
+            self._add_udp_binding_row(
+                binding.get("value", 0),
+                binding.get("command", ""),
+                binding.get("description", ""),
+            )
+
+    def _on_udp_binding_table_item_changed(self, _item: QTableWidgetItem):
+        self._stop_udp_binding_output(disable_motors=True)
+        self._highlight_udp_binding_value(None)
+
+    def _add_udp_binding_row(
+        self, value: int | str = 0, command: str = "", description: str = ""
+    ):
+        # QPushButton.clicked supplies a bool when no explicit arguments are
+        # used; do not accidentally write that value into the table.
+        if isinstance(value, bool):
+            value = 0
+        row = self._udp_binding_table.rowCount()
+        self._udp_binding_table.insertRow(row)
+        self._udp_binding_table.setItem(row, 0, QTableWidgetItem(str(value)))
+        self._udp_binding_table.setItem(row, 1, QTableWidgetItem(command))
+        self._udp_binding_table.setItem(row, 2, QTableWidgetItem(description))
+        # Momentary "Send" button emulates receipt of this row's UDP integer so
+        # the mapped output can be exercised without a live UDP source.
+        test_btn = QPushButton("Send")
+        test_btn.setToolTip(
+            "Emulate receiving this row's UDP integer value (no UDP source needed)."
+        )
+        test_btn.setAutoDefault(False)
+        test_btn.clicked.connect(self._on_test_binding_clicked)
+        self._udp_binding_table.setCellWidget(row, 3, test_btn)
+
+    def _remove_udp_binding_rows(self):
+        rows = sorted(
+            {index.row() for index in self._udp_binding_table.selectedIndexes()},
+            reverse=True,
+        )
+        for row in rows:
+            self._udp_binding_table.removeRow(row)
+
+    def _on_test_binding_clicked(self):
+        """Locate the pressed row's Send button and emulate its UDP value."""
+        button = self.sender()
+        for row in range(self._udp_binding_table.rowCount()):
+            if self._udp_binding_table.cellWidget(row, 3) is button:
+                self._emulate_udp_binding_row(row)
+                return
+
+    def _emulate_udp_binding_row(self, row: int):
+        """Emulate receiving the integer value in ``row`` of the binding table."""
+        value_item = self._udp_binding_table.item(row, 0)
+        if value_item is None:
+            return
+        try:
+            value = int(value_item.text().strip())
+        except (TypeError, ValueError):
+            self._set_udp_command_feedback(
+                value_item.text(), "local test", "invalid integer value", "#c0392b"
+            )
+            return
+        # Mirror the real receive path's UI highlight, then dispatch as if the
+        # datagram arrived — bypassing only the live-source gate.
+        self._highlight_udp_binding_value(value)
+        self._process_udp_binding_integer(
+            value, str(value), "local test", emulated=True
+        )
+
+    def _load_udp_mode_defaults(self):
+        mode = self._udp_binding_mode_combo.currentData() or "torque"
+        self._populate_udp_binding_table(default_bindings(str(mode)))
+
+    def _on_udp_binding_mode_changed(self):
+        if not hasattr(self, "_udp_binding_arm_cb"):
+            return
+        torque_mode = self._udp_binding_mode_combo.currentData() == "torque"
+        self._udp_binding_arm_cb.setEnabled(torque_mode)
+        if not torque_mode and self._udp_binding_arm_cb.isChecked():
+            self._udp_binding_arm_cb.setChecked(False)
+
+    def _on_udp_binding_arm_toggled(self, checked: bool):
+        if checked and self.exo_connected:
+            answer = QMessageBox.warning(
+                self,
+                "Arm UDP Torque Bindings",
+                "Allow live UDP integer bindings to switch the active motors "
+                "to current mode and apply the configured signed current?\n\n"
+                "Keep the mechanism clear and keep STOP ALL accessible.",
+                QMessageBox.Yes | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if answer != QMessageBox.Yes:
+                self._udp_binding_arm_cb.blockSignals(True)
+                self._udp_binding_arm_cb.setChecked(False)
+                self._udp_binding_arm_cb.blockSignals(False)
+                checked = False
+        self._udp_binding_output_armed = checked
+        if not checked:
+            self._stop_udp_binding_output(disable_motors=True)
+
+    def _set_udp_source_status(
+        self,
+        live: bool | None,
+        sender: str = "",
+        connection_port: int | None = None,
+    ):
+        self._udp_source_live = live is True
+        if live is not True:
+            self._udp_command_worker.clear_heartbeat_expectation()
+        if live is True:
+            port = connection_port or self._udp_registered_connection_port
+            color, text = "#27ae60", f"LIVE — port {port} registered"
+        elif live is False:
+            port_text = (
+                f" — port {connection_port} closed"
+                if connection_port is not None
+                else ""
+            )
+            color, text = "#c0392b", f"DISCONNECTED{port_text}"
+        else:
+            self._udp_heartbeat_timer.stop()
+            self._udp_heartbeat_response_timer.stop()
+            self._udp_heartbeat_awaiting_response = False
+            self._udp_heartbeat_sent_monotonic = None
+            self._udp_registered_connection_port = None
+            self._udp_registered_connection_host = ""
+            self._udp_registered_sender = ""
+            color, text = "#666666", "Waiting for port announcement (>64)"
+        self._udp_live_lamp.setStyleSheet(
+            f"background-color: {color}; border: 1px solid #111111; "
+            "border-radius: 9px;"
+        )
+        suffix = f" — {sender}" if sender else ""
+        self._udp_live_status_lbl.setText(f"{text}{suffix}")
+        self._udp_live_status_lbl.setStyleSheet(f"color: {color}; font-weight: bold;")
+        self._update_udp_metrics_display()
+
+    def _udp_binding_motor_targets(self) -> dict[str, list[int]]:
+        target = self._udp_binding_target_combo.currentText()
+        dual_mode = self.mode_combo.currentText() == "Dual"
+        targets: dict[str, list[int]] = {}
+        for display_name, dxl_id in zip(self.motor_names, self._motor_dxl_id):
+            if dual_mode:
+                if target == "Left Only" and not display_name.startswith("L:"):
+                    continue
+                if target == "Right Only" and not display_name.startswith("R:"):
+                    continue
+            motor_widget = next(
+                (
+                    motor
+                    for motor in self.motor_widgets
+                    if motor.get("dxl_id") == dxl_id
+                ),
+                None,
+            )
+            if motor_widget is not None and motor_widget.get("user_disabled"):
+                continue
+            bare_name = display_name.split(":", 1)[-1].lower()
+            targets.setdefault(bare_name, []).append(dxl_id)
+        if "thumbflex" in targets:
+            targets["thumb"] = list(targets["thumbflex"])
+        return targets
+
+    def _highlight_udp_binding_value(self, value: int | None):
+        """Highlight a received binding row without requiring exo hardware."""
+        signals_were_blocked = self._udp_binding_table.blockSignals(True)
+        try:
+            previous_row = self._udp_binding_highlighted_row
+            if (
+                previous_row is not None
+                and previous_row < self._udp_binding_table.rowCount()
+            ):
+                for column in range(self._udp_binding_table.columnCount()):
+                    item = self._udp_binding_table.item(previous_row, column)
+                    if item is not None:
+                        item.setData(Qt.BackgroundRole, None)
+                        item.setData(Qt.ForegroundRole, None)
+
+            matched_row = None
+            if value is not None:
+                for row in range(self._udp_binding_table.rowCount()):
+                    item = self._udp_binding_table.item(row, 0)
+                    if item is None:
+                        continue
+                    try:
+                        row_value = int(item.text().strip())
+                    except ValueError:
+                        continue
+                    if row_value == value:
+                        matched_row = row
+                        break
+
+            self._udp_binding_highlighted_row = matched_row
+            self._udp_binding_table.clearSelection()
+            if matched_row is None:
+                return
+            for column in range(self._udp_binding_table.columnCount()):
+                item = self._udp_binding_table.item(matched_row, column)
+                if item is not None:
+                    item.setBackground(QColor("#1f6f43"))
+                    item.setForeground(QColor("#ffffff"))
+            first_item = self._udp_binding_table.item(matched_row, 0)
+            if first_item is not None:
+                self._udp_binding_table.scrollToItem(
+                    first_item, QTableWidget.PositionAtCenter
+                )
+        finally:
+            self._udp_binding_table.blockSignals(signals_were_blocked)
+
+    @staticmethod
+    def _updated_ema(current: float | None, sample: float) -> float:
+        if current is None:
+            return float(sample)
+        return (
+            UDP_METRIC_EMA_ALPHA * float(sample)
+            + (1.0 - UDP_METRIC_EMA_ALPHA) * current
+        )
+
+    def _refresh_udp_metrics(self):
+        current, average = self._udp_command_worker.gui_backlog_metrics()
+        self._udp_queue_length_current = current
+        self._udp_queue_length_ema = average
+        self._update_udp_metrics_display()
+
+    def _record_udp_queue_length(self):
+        self._refresh_udp_metrics()
+
+    def _record_udp_latency(self, latency_ms: float):
+        """Record only a successfully received heartbeat round-trip time."""
+        sample = max(0.0, float(latency_ms))
+        self._udp_latency_ema_ms = self._updated_ema(
+            self._udp_latency_ema_ms, sample
+        )
+        self._udp_heartbeat_wait_ema_ms = self._udp_latency_ema_ms
+        self._update_udp_metrics_display()
+
+    def _record_udp_heartbeat_wait(self, elapsed_ms: float):
+        """Smooth a missing response separately from successful RTT samples."""
+        sample = max(0.0, float(elapsed_ms))
+        if self._udp_heartbeat_wait_ema_ms is None:
+            self._udp_heartbeat_wait_ema_ms = UDP_METRIC_EMA_ALPHA * sample
+        else:
+            self._udp_heartbeat_wait_ema_ms = self._updated_ema(
+                self._udp_heartbeat_wait_ema_ms, sample
+            )
+        self._update_udp_metrics_display()
+
+    def _udp_heartbeat_supervision_enabled(self) -> bool:
+        return (
+            hasattr(self, "_udp_heartbeat_cb")
+            and self._udp_heartbeat_cb.isChecked()
+        )
+
+    def _on_udp_heartbeat_enabled_toggled(self, enabled: bool):
+        settings = QSettings("NML", "HandExoGUI")
+        settings.setValue("udp_command/heartbeat_enabled", bool(enabled))
+        if enabled and self._udp_source_live:
+            self._udp_heartbeat_timer.start(UDP_HEARTBEAT_INTERVAL_MS)
+        else:
+            self._udp_heartbeat_timer.stop()
+            self._udp_heartbeat_response_timer.stop()
+            self._udp_heartbeat_awaiting_response = False
+            self._udp_heartbeat_sent_monotonic = None
+            self._udp_latency_ema_ms = None
+            self._udp_heartbeat_wait_ema_ms = None
+            self._udp_command_worker.clear_heartbeat_expectation()
+        self._update_udp_metrics_display()
+        state = "enabled" if enabled else "disabled"
+        self._log(f"[UDP bindings] Heartbeat supervision {state}.")
+
+    def _update_udp_metrics_display(self):
+        if not hasattr(self, "_udp_metrics_lbl"):
+            return
+        heartbeat_enabled = self._udp_heartbeat_supervision_enabled()
+        latency_text = (
+            "—"
+            if self._udp_latency_ema_ms is None
+            else f"{self._udp_latency_ema_ms:.1f}"
+        )
+        wait_text = ""
+        if (
+            heartbeat_enabled
+            and self._udp_heartbeat_awaiting_response
+            and self._udp_heartbeat_sent_monotonic is not None
+        ):
+            elapsed_ms = (
+                time.monotonic() - self._udp_heartbeat_sent_monotonic
+            ) * 1000.0
+            wait_text = f" (awaiting {elapsed_ms:.0f} ms)"
+        queue_text = (
+            0.0
+            if self._udp_queue_length_ema is None
+            else self._udp_queue_length_ema
+        )
+        ack_text = (
+            "—"
+            if self._udp_last_ack_value is None
+            else f"{self._udp_last_ack_value} (#{self._udp_ack_count})"
+        )
+        color = "#888888"
+        if self._udp_source_live:
+            if not heartbeat_enabled:
+                color = "#27ae60"
+            else:
+                color = (
+                    "#27ae60"
+                    if self._udp_heartbeat_wait_ema_ms is None
+                    or self._udp_heartbeat_wait_ema_ms
+                    <= UDP_HEARTBEAT_RESPONSE_TIMEOUT_MS
+                    else "#c0392b"
+                )
+        heartbeat_text = "Heartbeat: off"
+        if heartbeat_enabled:
+            heartbeat_text = f"Heartbeat RTT EMA: {latency_text} ms{wait_text}"
+        self._udp_metrics_lbl.setText(
+            f"{heartbeat_text}    |    "
+            f"GUI backlog: {self._udp_queue_length_current} now / "
+            f"{queue_text:.2f} EMA    |    Last ACK: {ack_text}"
+        )
+        self._udp_metrics_lbl.setStyleSheet(
+            f"color: {color}; font-size: 10px;"
+        )
+
+    def _accept_udp_heartbeat_response(
+        self,
+        latency_ms: float,
+        sender: str,
+        value: int,
+        sent_monotonic: float,
+    ) -> bool:
+        """Apply a heartbeat receipt timestamped by the UDP worker thread."""
+        sender_ip = sender.rsplit(":", 1)[0]
+        registered_port = self._udp_registered_connection_port
+        if (
+            not self._udp_heartbeat_awaiting_response
+            or self._udp_heartbeat_sent_monotonic != sent_monotonic
+            or registered_port is None
+            or value != registered_port
+            or self._udp_registered_connection_host != sender_ip
+        ):
+            return False
+        self._udp_heartbeat_response_timer.stop()
+        self._udp_heartbeat_awaiting_response = False
+        self._udp_heartbeat_sent_monotonic = None
+        self._udp_command_worker.clear_heartbeat_expectation()
+        self._record_udp_latency(latency_ms)
+        if self._udp_heartbeat_supervision_enabled():
+            self._udp_heartbeat_timer.start(UDP_HEARTBEAT_INTERVAL_MS)
+        return True
+
+    def _on_udp_worker_heartbeat_received(
+        self,
+        latency_ms: float,
+        sender: str,
+        value: int,
+        sent_monotonic: float,
+    ):
+        if not self._accept_udp_heartbeat_response(
+            latency_ms, sender, value, sent_monotonic
+        ):
+            return
+        port = self._udp_registered_connection_port
+        self._set_udp_source_status(True, sender, port)
+        self._set_udp_command_feedback(
+            str(value),
+            sender,
+            f"heartbeat {UDP_HEARTBEAT_REQUEST_VALUE} response {value} "
+            f"received in {latency_ms:.1f} ms",
+            "#27ae60",
+        )
+
+    def _accept_pending_udp_worker_heartbeat(self) -> bool:
+        sent_at = self._udp_heartbeat_sent_monotonic
+        if sent_at is None:
+            return False
+        latency_ms = self._udp_command_worker.heartbeat_response_latency(sent_at)
+        if latency_ms is None:
+            return False
+        port = self._udp_registered_connection_port
+        host = self._udp_registered_connection_host
+        sender = f"{host}:{port}"
+        if port is None or not self._accept_udp_heartbeat_response(
+            latency_ms, sender, port, sent_at
+        ):
+            return False
+        self._set_udp_source_status(True, sender, port)
+        self._set_udp_command_feedback(
+            str(port),
+            sender,
+            f"heartbeat {UDP_HEARTBEAT_REQUEST_VALUE} response {port} "
+            f"received in {latency_ms:.1f} ms",
+            "#27ae60",
+        )
+        return True
+
+    def _handle_udp_integer(self, value: int, payload: str, sender: str):
+        sender_ip = sender.rsplit(":", 1)[0]
+        if value == UDP_HEARTBEAT_REQUEST_VALUE:
+            self._set_udp_command_feedback(
+                payload,
+                sender,
+                f"ignored: heartbeat request {UDP_HEARTBEAT_REQUEST_VALUE} "
+                "is outbound-only",
+                "#f39c12",
+            )
+            return
+        if value > UDP_CONNECTION_PORT_THRESHOLD:
+            if value > UDP_CONNECTION_PORT_MAX:
+                self._set_udp_command_feedback(
+                    payload,
+                    sender,
+                    f"rejected: port must be <= {UDP_CONNECTION_PORT_MAX}",
+                    "#c0392b",
+                )
+                return
+            if self._udp_registered_connection_port is None:
+                self._udp_registered_connection_port = value
+                self._udp_registered_connection_host = sender_ip
+                self._udp_registered_sender = sender
+                self._udp_heartbeat_awaiting_response = False
+                self._udp_heartbeat_sent_monotonic = None
+                self._udp_command_worker.clear_heartbeat_expectation()
+                self._udp_latency_ema_ms = None
+                self._udp_heartbeat_wait_ema_ms = None
+                self._udp_ack_count = 0
+                self._udp_last_ack_value = None
+                self._refresh_udp_metrics()
+                outcome = f"registered connection port {value}"
+                QTimer.singleShot(
+                    5,
+                    lambda ip=sender_ip, port=value: self._send_initial_udp_ack(
+                        ip, port
+                    ),
+                )
+                if self._udp_heartbeat_supervision_enabled():
+                    self._udp_heartbeat_timer.start(UDP_HEARTBEAT_INTERVAL_MS)
+            elif (
+                self._udp_registered_connection_port == value
+                and self._udp_registered_connection_host == sender_ip
+            ):
+                outcome = f"connection port {value} remains live"
+                if self._udp_heartbeat_awaiting_response:
+                    sent_at = self._udp_heartbeat_sent_monotonic
+                    latency_ms = (
+                        self._udp_command_worker.heartbeat_response_latency(sent_at)
+                        if sent_at is not None
+                        else None
+                    )
+                    if latency_ms is None and sent_at is not None:
+                        latency_ms = (time.monotonic() - sent_at) * 1000.0
+                    if (
+                        sent_at is not None
+                        and latency_ms is not None
+                        and self._accept_udp_heartbeat_response(
+                            latency_ms, sender, value, sent_at
+                        )
+                    ):
+                        outcome = (
+                            f"heartbeat {UDP_HEARTBEAT_REQUEST_VALUE} response "
+                            f"{value} received in {latency_ms:.1f} ms"
+                        )
+            else:
+                self._set_udp_command_feedback(
+                    payload,
+                    sender,
+                    "ignored: port "
+                    f"{self._udp_registered_connection_port} is already registered",
+                    "#f39c12",
+                )
+                return
+            self._set_udp_source_status(True, sender, value)
+            self._set_udp_command_feedback(
+                payload, sender, outcome, "#27ae60"
+            )
+            return
+        if value < -UDP_CONNECTION_PORT_THRESHOLD:
+            closing_port = -value
+            if closing_port > UDP_CONNECTION_PORT_MAX:
+                self._set_udp_command_feedback(
+                    payload,
+                    sender,
+                    f"rejected: port must be <= {UDP_CONNECTION_PORT_MAX}",
+                    "#c0392b",
+                )
+                return
+            if (
+                self._udp_registered_connection_port != closing_port
+                or self._udp_registered_connection_host != sender_ip
+            ):
+                expected = self._udp_registered_connection_port
+                outcome = (
+                    "ignored: no connection port is registered"
+                    if expected is None
+                    else f"ignored: expected closure value {-expected}"
+                )
+                self._set_udp_command_feedback(
+                    payload, sender, outcome, "#f39c12"
+                )
+                return
+            self._highlight_udp_binding_value(None)
+            self._udp_heartbeat_timer.stop()
+            self._udp_heartbeat_response_timer.stop()
+            self._udp_heartbeat_awaiting_response = False
+            self._udp_heartbeat_sent_monotonic = None
+            self._udp_registered_connection_port = None
+            self._udp_registered_connection_host = ""
+            self._udp_registered_sender = ""
+            self._set_udp_source_status(False, sender, closing_port)
+            self._stop_udp_binding_output(disable_motors=True)
+            self._set_udp_command_feedback(
+                payload,
+                sender,
+                f"connection port {closing_port} closed; output stopped",
+                "#c0392b",
+            )
+            return
+        # UI feedback is deliberately independent of registration and hardware
+        # state so binding maps can be tested with UDP packets alone.
+        self._highlight_udp_binding_value(value)
+        if (
+            self._udp_source_live
+            and self._udp_registered_connection_host
+            and sender_ip != self._udp_registered_connection_host
+        ):
+            self._set_udp_command_feedback(
+                payload, sender, "ignored: sender is not registered", "#c0392b"
+            )
+            return
+        try:
+            self._process_udp_binding_integer(value, payload, sender)
+        finally:
+            # Echo only decoder/binding values. Connection-registration and
+            # heartbeat packets are acknowledged by their dedicated protocol,
+            # avoiding an N -> N echo loop.
+            if (
+                self._udp_source_live
+                and self._udp_registered_connection_port is not None
+                and self._udp_registered_connection_host == sender_ip
+            ):
+                self._send_udp_command_ack(
+                    self._udp_registered_connection_host,
+                    self._udp_registered_connection_port,
+                    value,
+                )
+
+    def _process_udp_binding_integer(
+        self, value: int, payload: str, sender: str, emulated: bool = False
+    ):
+        # Emulated (local test button) receipts bypass the live-source gate and
+        # the repeat-stream debounce so each press reliably fires the mapping.
+        if not emulated and not self._udp_source_live:
+            self._set_udp_command_feedback(
+                payload, sender, "ignored: source is not live", "#c0392b"
+            )
+            return
+        if not self.exo_connected:
+            self._set_udp_command_feedback(
+                payload, sender, "ignored: exo disconnected", "#c0392b"
+            )
+            return
+        if not emulated and value != 0 and value == self._udp_binding_last_value:
+            self._set_udp_command_feedback(
+                payload, sender, "unchanged; existing action retained", "#27ae60"
+            )
+            return
+        self._udp_output_emulated = emulated
+        try:
+            profile = self._udp_binding_profile_from_ui()
+            binding = binding_lookup(profile).get(value)
+            if binding is None:
+                self._set_udp_command_feedback(
+                    payload, sender, "ignored: no binding", "#f39c12"
+                )
+                return
+            commands = expand_command_templates(
+                binding["command"], self._udp_binding_motor_targets()
+            )
+            self._dispatch_udp_binding(
+                profile["control_mode"], commands, payload, sender
+            )
+            self._udp_binding_last_value = value
+        except Exception as exc:
+            self._set_udp_command_feedback(
+                payload, sender, f"binding failed: {exc}", "#c0392b"
+            )
+            self._log(f"[UDP bindings] Value {value} failed: {exc}")
+
+    def _send_initial_udp_ack(self, host: str, port: int):
+        if (
+            self._udp_source_live
+            and self._udp_registered_connection_host == host
+            and self._udp_registered_connection_port == port
+        ):
+            self._send_udp_connection_message(host, port, "wake-up ACK")
+
+    def _send_udp_local_close_notice(self, reason: str) -> bool:
+        """Notify a live remote endpoint that this GUI is closing its receiver."""
+        port = self._udp_registered_connection_port
+        host = self._udp_registered_connection_host
+        if not self._udp_source_live or port is None or not host:
+            return False
+        return self._send_udp_connection_message(
+            host,
+            port,
+            f"local close ({reason})",
+            value=-port,
+        )
+
+    def _send_udp_connection_message(
+        self,
+        host: str,
+        port: int,
+        label: str,
+        value: int | None = None,
+        log_success: bool = True,
+    ) -> bool:
+        """Send an integer to the registered callback endpoint."""
+        message_value = port if value is None else int(value)
+        try:
+            self._udp_response_socket.sendto(
+                str(message_value).encode("ascii"), (host, port)
+            )
+            if log_success:
+                self._log(
+                    f"[UDP bindings] {label} {message_value} -> {host}:{port}"
+                )
+            return True
+        except OSError as exc:
+            self._log(
+                f"[UDP bindings] {label} to {host}:{port} failed: {exc}"
+            )
+            return False
+
+    def _send_udp_command_ack(self, host: str, port: int, value: int) -> bool:
+        """Echo an exact handled integer, including REST value zero."""
+        integer_value = int(value)
+        try:
+            self._udp_response_socket.sendto(
+                str(integer_value).encode("ascii"), (host, port)
+            )
+        except OSError as exc:
+            self._log(
+                f"[UDP bindings] command ACK {integer_value} to "
+                f"{host}:{port} failed: {exc}"
+            )
+            return False
+        self._udp_ack_count += 1
+        self._udp_last_ack_value = integer_value
+        self._update_udp_metrics_display()
+        return True
+
+    def _send_registered_udp_heartbeat(self):
+        if (
+            not self._udp_heartbeat_supervision_enabled()
+            or not self._udp_source_live
+            or self._udp_registered_connection_port is None
+            or not self._udp_registered_connection_host
+        ):
+            self._udp_heartbeat_timer.stop()
+            return
+        sent_at = time.monotonic()
+        self._udp_heartbeat_sent_monotonic = sent_at
+        self._udp_heartbeat_awaiting_response = True
+        self._udp_heartbeat_wait_ema_ms = self._udp_latency_ema_ms or 0.0
+        self._udp_command_worker.expect_heartbeat(
+            self._udp_registered_connection_port,
+            self._udp_registered_connection_host,
+            sent_at,
+        )
+        self._send_udp_connection_message(
+            self._udp_registered_connection_host,
+            self._udp_registered_connection_port,
+            "heartbeat",
+            value=UDP_HEARTBEAT_REQUEST_VALUE,
+        )
+        self._udp_heartbeat_response_timer.start(
+            UDP_HEARTBEAT_RESPONSE_TIMEOUT_MS
+        )
+
+    def _on_udp_heartbeat_response_timeout(self):
+        if not self._udp_heartbeat_supervision_enabled():
+            self._udp_heartbeat_response_timer.stop()
+            self._udp_heartbeat_awaiting_response = False
+            self._udp_heartbeat_sent_monotonic = None
+            self._udp_command_worker.clear_heartbeat_expectation()
+            return
+        if not self._udp_heartbeat_awaiting_response:
+            return
+        if self._udp_heartbeat_sent_monotonic is None:
+            self._udp_heartbeat_response_timer.start(UDP_HEARTBEAT_RECHECK_MS)
+            return
+        if self._accept_pending_udp_worker_heartbeat():
+            return
+        elapsed_ms = (
+            time.monotonic() - self._udp_heartbeat_sent_monotonic
+        ) * 1000.0
+        self._record_udp_heartbeat_wait(elapsed_ms)
+        if (
+            self._udp_heartbeat_wait_ema_ms is not None
+            and self._udp_heartbeat_wait_ema_ms
+            <= UDP_HEARTBEAT_RESPONSE_TIMEOUT_MS
+        ):
+            self._udp_heartbeat_response_timer.start(UDP_HEARTBEAT_RECHECK_MS)
+            return
+        # Close the tiny race where the reply reaches recvfrom() after the
+        # first check above but before the disconnect decision.
+        if self._accept_pending_udp_worker_heartbeat():
+            return
+
+        closed_port = self._udp_registered_connection_port
+        sender = self._udp_registered_sender
+        self._udp_heartbeat_awaiting_response = False
+        self._udp_heartbeat_sent_monotonic = None
+        self._udp_heartbeat_timer.stop()
+        self._udp_heartbeat_response_timer.stop()
+        self._udp_metrics_timer.stop()
+        self._udp_registered_connection_port = None
+        self._udp_registered_connection_host = ""
+        self._udp_registered_sender = ""
+        self._highlight_udp_binding_value(None)
+        self._stop_udp_binding_output(disable_motors=True)
+        self._set_udp_source_status(False, sender, closed_port)
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._udp_last_command_lbl.setText(
+            f"Heartbeat response-wait EMA exceeded threshold at {ts}: "
+            f"{self._udp_heartbeat_wait_ema_ms:.1f} ms > "
+            f"{UDP_HEARTBEAT_RESPONSE_TIMEOUT_MS} ms; connection closed"
+        )
+        self._udp_last_command_lbl.setStyleSheet(
+            "color: #c0392b; font-size: 10px;"
+        )
+        self._log(
+            f"[UDP bindings] Heartbeat response-wait EMA for port {closed_port} "
+            f"exceeded {UDP_HEARTBEAT_RESPONSE_TIMEOUT_MS} ms."
+        )
+
+    def _dispatch_udp_binding(
+        self, control_mode: str, commands: list[str], payload: str, sender: str
+    ):
+        if control_mode == "torque":
+            if not self._udp_binding_output_armed:
+                raise RuntimeError("mapped torque output is not armed")
+            parsed = self._validate_udp_torque_commands(commands)
+            peaks = {
+                target_id: current
+                for target_id, current in parsed
+                if target_id is not None and current != 0
+            }
+            if peaks:
+                # A discrete gesture value: play a bell-shaped torque pulse
+                # toward the target endpoint instead of holding a flat current.
+                outcome = self._start_udp_torque_pulse(peaks)
+            else:
+                # REST (value 0): revert the applied pulses, then ease to home.
+                outcome = self._begin_udp_revert_and_ease()
+        else:
+            self._validate_udp_position_commands(commands)
+            self._stop_udp_binding_output(disable_motors=True)
+            if not self._ensure_position_control():
+                raise RuntimeError("could not restore position control")
+            target = self._udp_binding_target_combo.currentText()
+            if self.mode_combo.currentText() == "Dual":
+                self._ensure_gesture_ready(target=target)
+                self._apply_gesture_target_motors(target)
+            else:
+                self._ensure_gesture_ready()
+            # Preempt the 4-read telemetry poll so the gesture command reaches
+            # the serial link immediately instead of queuing behind it; polling
+            # resumes shortly after the last command in a click burst.
+            self._defer_polling_for_udp_binding()
+            for command in commands:
+                self.exo.send_command(command)
+            outcome = "accepted; position gesture sent"
+        self._set_udp_command_feedback(payload, sender, outcome, "#27ae60")
+        self._log_udp_binding_command(sender, commands)
+
+    def _log_udp_binding_command(self, sender: str, commands: list[str]):
+        """Rate-limit QTextEdit work during rapidly flickering decoder output."""
+        now = time.monotonic()
+        if now - self._udp_binding_last_command_log < 0.5:
+            self._udp_binding_suppressed_logs += 1
+            return
+        suffix = ""
+        if self._udp_binding_suppressed_logs:
+            suffix = f" ({self._udp_binding_suppressed_logs} updates suppressed)"
+        self._udp_binding_suppressed_logs = 0
+        self._udp_binding_last_command_log = now
+        self._log(
+            f"[UDP bindings] {sender} -> {' | '.join(commands)}{suffix}"
+        )
+
+    def _defer_polling_for_udp_binding(self, idle_ms: int = 350):
+        """Pause automatic telemetry polling around binding output.
+
+        Each automatic poll holds the serial-port lock for four blocking reads
+        (angle, position, torque, current).  Without this, a gesture/pulse send
+        queues behind an in-flight poll and the hand responds with a visible
+        lag.  Polling resumes ``idle_ms`` after the most recent binding command
+        via ``_udp_direct_idle_timer`` -> ``_resume_normal_polling``.
+        """
+        if self._angle_timer.isActive():
+            self._angle_timer.stop()
+        self._udp_direct_idle_timer.start(idle_ms)
+
+    def _validate_udp_torque_commands(
+        self, commands: list[str]
+    ) -> list[tuple[int | None, float]]:
+        parsed: list[tuple[int | None, float]] = []
+        active_ids = set(self._motor_dxl_id)
+        for command in commands:
+            parts = command.split(":")
+            if parts[0] == "stop" and len(parts) == 2:
+                if parts[1] == "all":
+                    parsed.append((None, 0.0))
+                    continue
+                try:
+                    target_id = int(parts[1])
+                except ValueError as exc:
+                    raise ValueError("stop requires an active motor ID or all") from exc
+                if target_id not in active_ids:
+                    raise ValueError(f"Motor ID {target_id} is not active")
+                parsed.append((target_id, 0.0))
+                continue
+            if parts[0] != "set_current" or len(parts) != 3:
+                raise ValueError(
+                    "Torque maps may contain only set_current:<ID>:<mA> or stop:<ID|all>"
+                )
+            try:
+                target_id = int(parts[1])
+                current = float(parts[2])
+            except ValueError as exc:
+                raise ValueError("set_current requires a numeric ID and current") from exc
+            if target_id not in active_ids:
+                raise ValueError(f"Motor ID {target_id} is not active")
+            if not math.isfinite(current) or abs(current) > DIRECT_CURRENT_LIMIT_MA:
+                raise ValueError(
+                    f"Current must be within +/-{DIRECT_CURRENT_LIMIT_MA:g} mA"
+                )
+            parsed.append((target_id, current))
+        return parsed
+
+    @staticmethod
+    def _validate_udp_position_commands(commands: list[str]):
+        for command in commands:
+            parts = command.split(":")
+            if (
+                len(parts) != 3
+                or parts[0] != "set_gesture"
+                or not parts[1]
+                or parts[2] not in ("open", "close", "default", "active", "rest")
+            ):
+                raise ValueError(
+                    "Position maps currently accept set_gesture:<name>:<state> commands"
+                )
+
+    def _ensure_udp_torque_mode(self, target_ids: set[int]):
+        if self._direct_mode != "current":
+            self._stop_all_direct_control()
+            self._apply_udp_target_calibration()
+            for dxl_id in self._motor_dxl_id:
+                self.exo.disable_motor(dxl_id)
+            self.exo.set_direct_command_timeout(self._direct_timeout_spin.value())
+            self.exo.set_control_mode("current")
+            self._direct_mode = "current"
+            self._gesture_ready = False
+            self._direct_mode_combo.blockSignals(True)
+            self._direct_mode_combo.setCurrentText("Current / Torque")
+            self._direct_mode_combo.blockSignals(False)
+            self._direct_mode_status.setText("Current mode; UDP binding control")
+            self._direct_mode_status.setStyleSheet("color: #f39c12;")
+            self._angle_timer.stop()
+        for dxl_id in target_ids:
+            self.exo.stop_direct_control(dxl_id)
+            self.exo.enable_motor(dxl_id)
+            self._direct_armed_ids.add(dxl_id)
+            for motor in self.motor_widgets:
+                if motor.get("dxl_id") != dxl_id:
+                    continue
+                motor["enabled"] = True
+                motor["toggle_btn"].setText("Disable")
+                motor["status_lbl"].setText("UDP DIRECT")
+                motor["status_lbl"].setStyleSheet("color: #f39c12;")
+                break
+        self._update_direct_arm_status()
+
+    def _apply_udp_target_calibration(self):
+        """Apply side-correct limits and flip flags before direct current mode."""
+        mode = self.mode_combo.currentText()
+        target = self._udp_binding_target_combo.currentText()
+        if mode == "Dual":
+            sides = []
+            if target in ("Both", "Left Only"):
+                sides.append("left")
+            if target in ("Both", "Right Only"):
+                sides.append("right")
+        else:
+            sides = ["left" if mode == "Left Only" else "right"]
+
+        for side in sides:
+            profile_name = get_default_profile_name(side=side)
+            if not profile_name:
+                self._log(
+                    f"[UDP bindings] No default {side} calibration; "
+                    "using firmware limits and flip defaults."
+                )
+                continue
+            self.exo.apply_calibration(
+                profile_name, name_to_id=self._make_name_to_id(side)
+            )
+            profile = load_profile(profile_name)
+            if mode == "Dual":
+                if side == "left":
+                    self._active_cal_left = profile
+                else:
+                    self._active_cal_right = profile
+                self._update_vis_status_dual()
+            else:
+                self._set_active_profile(profile_name, profile)
+            self._log(
+                f"[UDP bindings] Applied {side} calibration '{profile_name}'."
+            )
+
+    def _repeat_udp_binding_commands(self):
+        # Retained as a safety fallback for any legacy constant-hold path; the
+        # torque map now streams bell-shaped pulses via _step_udp_torque_pulse.
+        if (
+            not self.exo_connected
+            or not (self._udp_source_live or self._udp_output_emulated)
+            or not self._udp_binding_output_armed
+        ):
+            self._stop_udp_binding_output(disable_motors=True)
+            return
+        try:
+            for command in self._udp_binding_active_commands:
+                self.exo.send_command(command)
+        except Exception as exc:
+            self._log(f"[UDP bindings] Torque hold failed: {exc}")
+            self._stop_udp_binding_output(disable_motors=True)
+
+    def _cancel_udp_pulse_timers(self):
+        """Stop pulse/ease playback without touching the applied-pulse ledger."""
+        if hasattr(self, "_udp_pulse_timer"):
+            self._udp_pulse_timer.stop()
+        if hasattr(self, "_udp_ease_timer"):
+            self._udp_ease_timer.stop()
+        self._udp_active_pulse = None
+        self._udp_pulse_is_revert = False
+        self._udp_ease_start_angles = {}
+
+    def _start_udp_torque_pulse(self, peaks: dict[int, float]) -> str:
+        """Begin a bell-shaped current pulse toward the given per-motor peaks."""
+        self._cancel_udp_pulse_timers()
+        target_ids = set(peaks)
+        # Zero any motor left driven by a prior pulse that this one drops.
+        stale = set(self._udp_binding_active_ids) - target_ids
+        for dxl_id in stale:
+            try:
+                self.exo.send_command(f"set_current:{dxl_id}:0")
+            except Exception as exc:
+                self._log(f"[UDP bindings] Could not zero motor {dxl_id}: {exc}")
+        self._ensure_udp_torque_mode(target_ids)
+        # Accumulate net applied peak per motor so REST can unwind it, clamped
+        # to the direct-current safety limit.
+        for motor_id, current in peaks.items():
+            net = self._udp_pulse_applied.get(motor_id, 0.0) + current
+            self._udp_pulse_applied[motor_id] = max(
+                -DIRECT_CURRENT_LIMIT_MA, min(DIRECT_CURRENT_LIMIT_MA, net)
+            )
+        self._udp_binding_active_ids = set(target_ids)
+        self._udp_pulse_is_revert = False
+        self._udp_active_pulse = TorquePulse(
+            peaks,
+            self._udp_pulse_duration_ms,
+            time.monotonic() * 1000.0,
+            self._udp_pulse_shape,
+        )
+        self._udp_pulse_timer.setInterval(self._udp_pulse_step_ms)
+        self._udp_pulse_timer.start()
+        self._step_udp_torque_pulse()
+        return "accepted; torque pulse active"
+
+    def _step_udp_torque_pulse(self):
+        pulse = self._udp_active_pulse
+        if pulse is None:
+            self._udp_pulse_timer.stop()
+            return
+        if (
+            not self.exo_connected
+            or not (self._udp_source_live or self._udp_output_emulated)
+            or not self._udp_binding_output_armed
+        ):
+            self._stop_udp_binding_output(disable_motors=True)
+            return
+        now_ms = time.monotonic() * 1000.0
+        currents, done = pulse.sample(now_ms)
+        try:
+            for motor_id, current in currents.items():
+                self.exo.send_command(f"set_current:{motor_id}:{current:.1f}")
+        except Exception as exc:
+            self._log(f"[UDP bindings] Torque pulse failed: {exc}")
+            self._stop_udp_binding_output(disable_motors=True)
+            return
+        if done:
+            self._udp_pulse_timer.stop()
+            was_revert = self._udp_pulse_is_revert
+            self._udp_active_pulse = None
+            self._udp_pulse_is_revert = False
+            if was_revert:
+                # The reverse pulse has unwound the applied torque; clear the
+                # ledger and ease each joint back to its homed angle.
+                self._udp_pulse_applied.clear()
+                self._start_udp_ease_to_home()
+
+    def _begin_udp_revert_and_ease(self) -> str:
+        """On REST: play an inverse pulse to unwind torque, then ease to home."""
+        # Ignore repeated REST packets while a revert/ease is already running.
+        if self._udp_pulse_is_revert or self._udp_ease_start_angles:
+            return "REST; revert/ease already in progress"
+        self._cancel_udp_pulse_timers()
+        inverse = {
+            motor_id: -current
+            for motor_id, current in self._udp_pulse_applied.items()
+            if abs(current) > 1e-6
+        }
+        if inverse:
+            target_ids = set(inverse)
+            self._ensure_udp_torque_mode(target_ids)
+            self._udp_binding_active_ids = set(target_ids)
+            self._udp_pulse_is_revert = True
+            self._udp_active_pulse = TorquePulse(
+                inverse,
+                self._udp_pulse_duration_ms,
+                time.monotonic() * 1000.0,
+                self._udp_pulse_shape,
+            )
+            self._udp_pulse_timer.setInterval(self._udp_pulse_step_ms)
+            self._udp_pulse_timer.start()
+            self._step_udp_torque_pulse()
+            return "REST; reverting torque pulse then easing home"
+        # Nothing applied — ease straight to home.
+        self._udp_pulse_applied.clear()
+        self._start_udp_ease_to_home()
+        return "REST; easing to home"
+
+    def _start_udp_ease_to_home(self):
+        """Interpolate active joints from their current angle back to home (0)."""
+        self._udp_pulse_timer.stop()
+        self._udp_active_pulse = None
+        if not self.exo_connected or not self.exo:
+            return
+        # Capture current relative angles (zeroed at home) before mode changes.
+        try:
+            angles = self.exo.get_motor_angle("all")
+        except Exception as exc:
+            self._log(f"[UDP bindings] Could not read joint angles for ease: {exc}")
+            angles = {}
+        if not isinstance(angles, dict):
+            angles = {}
+        active_ids = set(self._motor_dxl_id)
+        start_angles = {}
+        for mid, angle in angles.items():
+            try:
+                motor_id = int(mid)
+            except (TypeError, ValueError):
+                continue
+            # Motors that did not report an angle come back as None; skip them
+            # rather than easing from a bogus 0.
+            if motor_id in active_ids and angle is not None:
+                try:
+                    start_angles[motor_id] = float(angle)
+                except (TypeError, ValueError):
+                    continue
+        # Switch to position control and re-enable the motors we will drive home.
+        try:
+            if not self._ensure_position_control():
+                raise RuntimeError("could not restore position control")
+            for dxl_id in start_angles:
+                self.exo.enable_motor(dxl_id)
+                self._direct_armed_ids.discard(dxl_id)
+        except Exception as exc:
+            self._log(f"[UDP bindings] Ease-to-home setup failed: {exc}")
+            self._stop_udp_binding_output(disable_motors=True)
+            return
+        self._udp_binding_active_ids = set(start_angles)
+        # _ensure_position_control() just restarted telemetry polling; pause it
+        # again so the eased set_angle stream is not delayed by poll reads.
+        self._defer_polling_for_udp_binding()
+        if not start_angles or self._udp_ease_duration_ms <= 0:
+            # No angles to interpolate (or zero-duration ease): command home now.
+            for dxl_id in start_angles or {d: 0.0 for d in active_ids}:
+                try:
+                    self.exo.send_command(f"set_angle:{dxl_id}:0")
+                except Exception as exc:
+                    self._log(f"[UDP bindings] Home command failed: {exc}")
+            self._udp_ease_start_angles = {}
+            self._log("[UDP bindings] Commanded joints to home.")
+            return
+        self._udp_ease_start_angles = start_angles
+        self._udp_ease_start_ms = time.monotonic() * 1000.0
+        self._udp_ease_timer.setInterval(self._udp_pulse_step_ms)
+        self._udp_ease_timer.start()
+        self._step_udp_ease_to_home()
+
+    def _step_udp_ease_to_home(self):
+        if not self._udp_ease_start_angles:
+            self._udp_ease_timer.stop()
+            return
+        if not self.exo_connected or not self.exo:
+            self._udp_ease_timer.stop()
+            self._udp_ease_start_angles = {}
+            return
+        now_ms = time.monotonic() * 1000.0
+        frac = (now_ms - self._udp_ease_start_ms) / max(
+            1.0, float(self._udp_ease_duration_ms)
+        )
+        eased = smoothstep(frac)
+        done = frac >= 1.0
+        # Keep telemetry polling paused for the duration of the sweep.
+        self._defer_polling_for_udp_binding()
+        try:
+            for dxl_id, start_angle in self._udp_ease_start_angles.items():
+                # Ease from the captured start angle toward home (relative 0).
+                target = start_angle * (1.0 - eased)
+                self.exo.send_command(f"set_angle:{dxl_id}:{target:.2f}")
+        except Exception as exc:
+            self._log(f"[UDP bindings] Ease-to-home failed: {exc}")
+            self._udp_ease_timer.stop()
+            self._udp_ease_start_angles = {}
+            return
+        if done:
+            self._udp_ease_timer.stop()
+            self._udp_ease_start_angles = {}
+            self._log("[UDP bindings] Eased joints to home.")
+
+    def _stop_udp_binding_output(self, disable_motors: bool = False):
+        if hasattr(self, "_udp_binding_hold_timer"):
+            self._udp_binding_hold_timer.stop()
+        self._cancel_udp_pulse_timers()
+        self._udp_pulse_applied.clear()
+        self._udp_output_emulated = False
+        active_ids = set(self._udp_binding_active_ids)
+        self._udp_binding_active_commands = []
+        self._udp_binding_active_ids.clear()
+        self._udp_binding_last_value = None
+        if not self.exo_connected or not self.exo:
+            return
+        for dxl_id in active_ids:
+            try:
+                self.exo.stop_direct_control(dxl_id)
+                if disable_motors:
+                    self.exo.disable_motor(dxl_id)
+                    self._direct_armed_ids.discard(dxl_id)
+            except Exception as exc:
+                self._log(f"[UDP bindings] Could not stop motor ID {dxl_id}: {exc}")
+        if disable_motors:
+            for motor in self.motor_widgets:
+                if motor.get("dxl_id") not in active_ids:
+                    continue
+                motor["enabled"] = False
+                motor["toggle_btn"].setText("Enable")
+                motor["status_lbl"].setText("OFF")
+                motor["status_lbl"].setStyleSheet("color: #c0392b;")
+            self._update_direct_arm_status()
+
     def _on_udp_command_status(self, text: str, color: str):
         self._udp_cmd_status_lbl.setText(text)
         self._udp_cmd_status_lbl.setStyleSheet(f"color: {color};")
         self._log(f"[UDP command] {text}")
+        if color == "#c0392b" or text in ("Command receiver stopped", "Disabled"):
+            self._send_udp_local_close_notice(text)
+            self._stop_udp_binding_output(disable_motors=True)
+            self._set_udp_source_status(None)
 
     def _set_udp_command_feedback(
         self, payload: str, sender: str, outcome: str, color: str
@@ -2162,12 +3594,30 @@ class HandExoGUI(QWidget):
         )
 
     def _on_udp_command(self, payload: str, sender: str):
+        self._record_udp_queue_length()
+        try:
+            self._process_udp_command(payload, sender)
+        finally:
+            self._udp_command_worker.mark_gui_command_handled()
+            self._refresh_udp_metrics()
+
+    def _process_udp_command(self, payload: str, sender: str):
+        integer_value = parse_udp_integer(payload)
+        if integer_value is not None:
+            self._handle_udp_integer(integer_value, payload, sender)
+            return
+        if not self._udp_cmd_advanced_cb.isChecked():
+            self._set_udp_command_feedback(
+                payload, sender, "rejected: expected a mapped integer", "#c0392b"
+            )
+            return
         if not self.exo_connected:
             self._set_udp_command_feedback(
                 payload, sender, "ignored: device disconnected", "#c0392b"
             )
             self._log(f"[UDP command] Ignored from {sender}: device is not connected")
             return
+        self._stop_udp_binding_output(disable_motors=False)
         command = payload
         if payload.startswith("{"):
             try:
@@ -2185,12 +3635,6 @@ class HandExoGUI(QWidget):
             return
 
         if not command.startswith("set_gesture:"):
-            if not self._udp_cmd_advanced_cb.isChecked():
-                self._set_udp_command_feedback(
-                    payload, sender, "rejected: gesture commands only", "#c0392b"
-                )
-                self._log(f"[UDP command] Rejected non-gesture command from {sender}: {command}")
-                return
             allowed_prefixes = (
                 "get_", "info", "version", "set_exo_mode:", "enable:",
                 "disable:", "home:", "oled:", "set_velocity:", "set_current:",
@@ -2623,7 +4067,7 @@ class HandExoGUI(QWidget):
         self.port_combo.blockSignals(True)
         self.port_combo.clear()
         for p in ports:
-            self.port_combo.addItem(_format_port_label(p), p.device)
+            self.port_combo.addItem(format_port_label(p), p.device)
         if previous_port is not None:
             previous_index = self.port_combo.findData(previous_port)
             if previous_index >= 0:
@@ -2702,6 +4146,8 @@ class HandExoGUI(QWidget):
             self._cal_side_row.setVisible(is_dual)
         if hasattr(self, "_gesture_target_row"):
             self._gesture_target_row.setVisible(is_dual)
+        if hasattr(self, "_udp_binding_target_combo"):
+            self._udp_binding_target_combo.setEnabled(is_dual)
         self._refresh_profiles()
 
     # -- Motor Control -----------------------------------------------------
@@ -3054,7 +4500,8 @@ class HandExoGUI(QWidget):
                         self._log("Warning: no default right calibration profile found.")
                 self._update_vis_status_dual()
             else:
-                default_profile = get_default_profile_name()
+                single_side = "left" if mode == "Left Only" else "right"
+                default_profile = get_default_profile_name(side=single_side)
                 if default_profile:
                     try:
                         self.exo.apply_calibration(default_profile,
@@ -3462,6 +4909,12 @@ class HandExoGUI(QWidget):
             self._on_teleop_stop()
         if self._teleop_worker.isRunning():
             self._teleop_worker.stop()
+        self._stop_udp_binding_output(disable_motors=True)
+        if self._udp_binding_arm_cb.isChecked():
+            self._udp_binding_arm_cb.blockSignals(True)
+            self._udp_binding_arm_cb.setChecked(False)
+            self._udp_binding_arm_cb.blockSignals(False)
+        self._udp_binding_output_armed = False
         self._stop_all_direct_control()
         self._angle_timer.stop()
         self._wait_for_pending_poll(1200)
@@ -4244,6 +5697,7 @@ class HandExoGUI(QWidget):
 
     def _stop_all_direct_control(self):
         self._direct_command_active = False
+        self._stop_udp_binding_output(disable_motors=False)
         if hasattr(self, "_direct_command_timer"):
             self._direct_command_timer.stop()
         if self.exo_connected:
@@ -4433,9 +5887,16 @@ class HandExoGUI(QWidget):
         self._serial_worker.request_poll(include_telemetry=False)
 
     def closeEvent(self, event):
+        self._cache_udp_command_endpoint()
+        self._send_udp_local_close_notice("GUI shutdown")
+        self._set_udp_source_status(None)
         self._angle_timer.stop()
         self._teleop_timer.stop()
         self._direct_command_timer.stop()
+        self._udp_heartbeat_timer.stop()
+        self._udp_heartbeat_response_timer.stop()
+        self._udp_binding_hold_timer.stop()
+        self._stop_udp_binding_output(disable_motors=True)
         self._stop_all_direct_control()
         self._wait_for_pending_poll(1200)
         if self._serial_worker.isRunning():
@@ -4447,6 +5908,7 @@ class HandExoGUI(QWidget):
             self._udp_command_worker.stop()
             self._udp_command_worker.wait(1000)
         self._udp_telemetry.close()
+        self._udp_response_socket.close()
         self._lsl_angles.close()
         self._lsl_torque.close()
         try:
