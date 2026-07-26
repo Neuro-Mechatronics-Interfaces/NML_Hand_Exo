@@ -4,7 +4,6 @@
 .handexo*
 .idea
 .ipynb_checkpoints/
-.python-version
 
 # External packages (for now)
 external/

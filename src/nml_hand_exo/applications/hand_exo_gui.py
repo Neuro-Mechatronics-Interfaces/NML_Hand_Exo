@@ -628,7 +628,9 @@ class CalibrationDialog(QDialog):
         # shows QMessageBox.warning for non-blocking concerns.
         self._validate_profile(data)
 
-        save_profile(self.profile_name, data, side=self._side)
+        existing = load_profile(self.profile_name) or {"motors": {}}
+        existing.setdefault("motors", {}).update(data["motors"])
+        save_profile(self.profile_name, existing, side=self._side)
 
         # Always set the newly calibrated profile as the default so that
         # _ensure_gesture_ready() applies the correct profile on the next gesture.
@@ -1680,7 +1682,7 @@ class HandExoGUI(QWidget):
         self.main_layout = controls_layout
         self._build_motor_section()
         self._build_gesture_section()
-        self._build_calibration_section()
+        self._build_direct_control_section()
         self._build_rom_section()
         self.main_layout.addStretch()
         self.main_layout = _saved_layout
@@ -1688,7 +1690,6 @@ class HandExoGUI(QWidget):
         self.main_tabs.addTab(controls_container, "Controls")
         self.main_tabs.addTab(self._build_telemetry_tab(), "Telemetry")
         self.main_tabs.addTab(self._build_visualization_tab(), "Hand State")
-        self.main_tabs.addTab(self._build_direct_control_tab(), "Direct Control")
         self.main_tabs.addTab(self._build_teleop_tab(), "Teleop")
         self.main_tabs.addTab(self._build_settings_tab(), "Settings")
 
@@ -1767,9 +1768,9 @@ class HandExoGUI(QWidget):
         layout.addWidget(self._hand_vis, stretch=1)
         return widget
 
-    def _build_direct_control_tab(self) -> QWidget:
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
+    def _build_direct_control_section(self):
+        box = QGroupBox("Direct Control")
+        layout = QVBoxLayout(box)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
@@ -1872,12 +1873,11 @@ class HandExoGUI(QWidget):
         detail.setWordWrap(True)
         detail.setStyleSheet("color: #888888; font-size: 10px;")
         layout.addWidget(detail)
-        layout.addStretch()
 
         self._on_direct_mode_selection_changed(
             self._direct_mode_combo.currentText()
         )
-        return widget
+        self.main_layout.addWidget(box)
 
     def _build_teleop_tab(self) -> QWidget:
         widget = QWidget()
@@ -2000,6 +2000,11 @@ class HandExoGUI(QWidget):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
+
+        _saved_layout = self.main_layout
+        self.main_layout = layout
+        self._build_calibration_section()
+        self.main_layout = _saved_layout
 
         lsl_box = QGroupBox("Telemetry Sampling and LSL")
         lsl_layout = QVBoxLayout(lsl_box)
@@ -2846,7 +2851,7 @@ class HandExoGUI(QWidget):
     def _build_motor_rows_single(self):
         """Single-exo layout: column headers + motor rows in one column."""
         col_header = QHBoxLayout()
-        for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("", 1)]:
+        for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("Position", 3), ("", 1)]:
             lbl = QLabel(text)
             lbl.setStyleSheet("color: #9a9a9a; font-size: 13px; font-weight: 600;")
             col_header.addWidget(lbl, stretch)
@@ -2975,23 +2980,38 @@ class HandExoGUI(QWidget):
         dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
         toggle_btn.clicked.connect(self._make_motor_toggle(i, dxl_id))
 
+        pos_spin = QDoubleSpinBox()
+        pos_spin.setRange(0, 100)
+        pos_spin.setSuffix(" %")
+        pos_spin.setValue(0)
+
+        min_btn = QPushButton("Min")
+        go_btn  = QPushButton("Go")
+        max_btn = QPushButton("Max")
+
         row_layout.addWidget(name_lbl,   2)
         row_layout.addWidget(angle_lbl,  2)
         row_layout.addWidget(status_lbl, 1)
         row_layout.addWidget(toggle_btn, 1)
 
         widget_dict = {
-            "name":       name,      # full display name ("L:wrist" / "wrist")
-            "cmd_name":   cmd_name,  # bare serial name ("wrist")
-            "dxl_id":     dxl_id,   # integer Dynamixel ID; use for per-motor commands
+            "name":       name,
+            "cmd_name":   cmd_name,
+            "dxl_id":     dxl_id,
             "angle_lbl":  angle_lbl,
             "status_lbl": status_lbl,
             "toggle_btn": toggle_btn,
+            "pos_spin":   pos_spin,     # new
+            "limit_min":  0.0,          # new — overwritten by _cache_motor_limits()
+            "limit_max":  100.0,        # new — overwritten by _cache_motor_limits()
             # Cached GUI belief about device torque state.
             "enabled": False,
-            # Persistent user-intent lock.
             "user_disabled": False,
         }
+        go_btn.clicked.connect(self._make_motor_position_handler(i, dxl_id))
+        min_btn.clicked.connect(lambda _, s=pos_spin, h=go_btn: (s.setValue(0), h.click()))
+        max_btn.clicked.connect(lambda _, s=pos_spin, h=go_btn: (s.setValue(100), h.click()))
+
         return row, widget_dict
 
     def _make_motor_toggle(self, idx, dxl_id):
@@ -3037,6 +3057,24 @@ class HandExoGUI(QWidget):
             except Exception as e:
                 self._log(f"Error toggling motor {motor_ref}: {e}")
         return handler
+    def _make_motor_position_handler(self, idx, dxl_id):
+        def handler():
+            if not self.exo_connected:
+                return
+            w = self.motor_widgets[idx]
+            if not w["enabled"]:
+                self._log(f"Motor {dxl_id} is disabled — enable it before sending a position.")
+                return
+            pct = w["pos_spin"].value()
+            lo, hi = w["limit_min"], w["limit_max"]
+            angle = lo + (pct / 100.0) * (hi - lo)
+            try:
+                self.exo.set_absolute_motor_angle(dxl_id, angle)
+                self._log(f"Motor {dxl_id} -> {pct:.0f}% ({angle:.1f} deg)")
+            except Exception as e:
+                self._log(f"Error setting position for motor {dxl_id}: {e}")
+        return handler
+
 
     # -- Gesture Control ---------------------------------------------------
 
@@ -3286,6 +3324,10 @@ class HandExoGUI(QWidget):
         layout.addWidget(self._cal_side_row)
 
         row1 = QHBoxLayout()
+        row1.addWidget(QLabel("Motor:"))
+        self.cal_motor_combo = QComboBox()
+        self.cal_motor_combo.addItem("All Motors")
+        row1.addWidget(self.cal_motor_combo)
         row1.addWidget(QLabel("Profile Name:"))
         self.cal_name_input = QLineEdit()
         self.cal_name_input.setPlaceholderText("e.g. zach")
@@ -3532,6 +3574,9 @@ class HandExoGUI(QWidget):
             self._rebuild_telem_table()
             self._rebuild_teleop_table()
             self._rebuild_direct_motor_combo()
+            self.cal_motor_combo.clear()
+            self.cal_motor_combo.addItem("All Motors")
+            self.cal_motor_combo.addItems(self.motor_names)
             self._configure_lsl_outlets()
             self._last_telemetry_update_monotonic = None
             self._telemetry_rate_ema = None
@@ -3540,6 +3585,11 @@ class HandExoGUI(QWidget):
             self._refresh_profiles()
             self._angle_timer.start(self._angle_timer.interval() or 50)
             self._request_device_poll()
+
+            limits = self.exo.get_motor_limits('all')
+            for w in self.motor_widgets:
+                lim = limits.get(w["dxl_id"])
+                w["limit_min"], w["limit_max"] = (lim[0], lim[1]) if lim else (0.0, 0.0)
         except Exception as e:
             try:
                 if self.exo:
@@ -3935,12 +3985,26 @@ class HandExoGUI(QWidget):
                 return
             id_range = LEFT_IDS if cal_side == "left" else RIGHT_IDS
             side_dxl_ids = [i for i in self._motor_dxl_id if i in id_range]
+            selected_motor = self.cal_motor_combo.currentText()
+            if selected_motor != "All Motors":
+                idx = side_motor_names.index(selected_motor)
+                side_motor_names = [side_motor_names[idx]]
+                side_dxl_ids = [side_dxl_ids[idx]]
             dlg = CalibrationDialog(self.exo, side_motor_names, name, side=cal_side,
                                     dxl_ids=side_dxl_ids, parent=self)
         else:
             side = "left" if mode == "Left Only" else "right"
-            dlg = CalibrationDialog(self.exo, self.motor_names, name, side=side,
-                                    dxl_ids=list(self._motor_dxl_id), parent=self)
+            side_motor_names = list(self.motor_names)
+            side_dxl_ids = list(self._motor_dxl_id)
+
+            selected_motor = self.cal_motor_combo.currentText()
+            if selected_motor != "All Motors":
+                idx = side_motor_names.index(selected_motor)
+                side_motor_names = [side_motor_names[idx]]
+                side_dxl_ids = [side_dxl_ids[idx]]
+
+            dlg = CalibrationDialog(self.exo, side_motor_names, name, side=side,
+                                    dxl_ids=side_dxl_ids, parent=self)
 
         dlg.exec_()
         # CalibrationDialog disables motors. Reset the flag so the next gesture

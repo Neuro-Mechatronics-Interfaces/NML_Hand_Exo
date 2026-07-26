@@ -597,7 +597,7 @@ String NMLHandExo::getMotorLimits(uint8_t id) {
 
   float min = jointLimits_[index][0];
   float max = jointLimits_[index][1];
-  return "[" + String(min, 2) + ", " + String(max, 2) + "]";
+  return "[" + String(min, 2) + ";" + String(max, 2) + "]";
 }
 void NMLHandExo::setMotorLimits(uint8_t id, float lowerLimit, float upperLimit) {
   int index = getIndexById(id);
