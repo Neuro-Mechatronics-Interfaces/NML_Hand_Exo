@@ -2851,7 +2851,7 @@ class HandExoGUI(QWidget):
     def _build_motor_rows_single(self):
         """Single-exo layout: column headers + motor rows in one column."""
         col_header = QHBoxLayout()
-        for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("Position", 3), ("", 1)]:
+        for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("Position", 1), ("", 0), ("", 0), ("", 0), ("", 1)]:
             lbl = QLabel(text)
             lbl.setStyleSheet("color: #9a9a9a; font-size: 13px; font-weight: 600;")
             col_header.addWidget(lbl, stretch)
@@ -2940,7 +2940,7 @@ class HandExoGUI(QWidget):
 
         # Column headers
         col_hdr = QHBoxLayout()
-        for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("", 1)]:
+        for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("Position", 1), ("", 0), ("", 0), ("", 0), ("", 1)]:
             lbl = QLabel(text)
             lbl.setStyleSheet("color: #9a9a9a; font-size: 13px; font-weight: 600;")
             col_hdr.addWidget(lbl, stretch)
@@ -2992,6 +2992,10 @@ class HandExoGUI(QWidget):
         row_layout.addWidget(name_lbl,   2)
         row_layout.addWidget(angle_lbl,  2)
         row_layout.addWidget(status_lbl, 1)
+        row_layout.addWidget(pos_spin,   1)
+        row_layout.addWidget(min_btn)
+        row_layout.addWidget(go_btn)
+        row_layout.addWidget(max_btn)
         row_layout.addWidget(toggle_btn, 1)
 
         widget_dict = {
