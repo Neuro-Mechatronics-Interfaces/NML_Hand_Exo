@@ -246,9 +246,9 @@ String NMLHandExo::getDeviceInfo() {
       info += "Motor " + String(i) + ": {name: " + String(name) +
             ", id: " + String(id) +
             ", angle: " + String(angle, 2) + "(abs: " + String(abs) + ")"
-            ", limits: [" + String(minLimit, 2) + ";" + String(maxLimit, 2) + "]" +
+            ", limits: [" + String(minLimit, 2) + ", " + String(maxLimit, 2) + "]" +
             ", torque: " + String(torque, 2) +
-            ", enabled: " + (isEnabled ? "true" : "false") + "}\n";
+            ", enabled: " + (isEnabled ? "true" : "false") + "}\n\r";
       }
     info += ";";
     return info;
@@ -597,7 +597,7 @@ String NMLHandExo::getMotorLimits(uint8_t id) {
 
   float min = jointLimits_[index][0];
   float max = jointLimits_[index][1];
-  return String(min, 2) + ";" + String(max, 2);
+  return String(min, 2) + ":" + String(max, 2);
 }
 void NMLHandExo::setMotorLimits(uint8_t id, float lowerLimit, float upperLimit) {
   int index = getIndexById(id);

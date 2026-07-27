@@ -209,7 +209,7 @@ class HandExo(object):
                 elif key == "angle":
                     motor_info["angle"] = float(val)
                 elif key == "limits":
-                    motor_info["limits"] = [float(x) for x in val.split(";")]
+                    motor_info["limits"] = [float(x) for x in val.split(":")]
                 elif key == "torque":
                     motor_info["torque"] = float(val)
                 elif key == "enabled":
