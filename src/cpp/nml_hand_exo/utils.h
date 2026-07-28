@@ -12,6 +12,13 @@
 //#include <Adafruit_ISM330DHCX.h>
 #include <Adafruit_BNO055.h>
 
+/// @brief Emits a line to the telemetry/reply USB CDC(s) per gReplyRoute.
+/// In dual-CDC mode this honors the runtime reply route (BOTH/TELEM/CMD); in
+/// single-CDC builds it writes to the one port. Does NOT touch the Bluetooth
+/// COMMAND_SERIAL path. Used for replies, verbose logs, and status messages.
+/// @param msg The message to print
+void telemetryPrintln(const String& msg);
+
 /// @brief Prints a debug message to the debug serial port (VERBOSE specific)
 /// @param msg The message to print
 void debugPrint(const String& msg);

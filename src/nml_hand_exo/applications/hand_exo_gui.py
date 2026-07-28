@@ -41,8 +41,8 @@ from nml_hand_exo.calibration import (
     set_default_profile,
 )
 from nml_hand_exo.applications.styles import DARK_STYLE
-from nml_hand_exo.interface import HandExo, SerialComm
-from nml_hand_exo.interface._serial_ports import format_port_label
+from nml_hand_exo.interface import HandExo, SerialComm, DualSerialComm
+from nml_hand_exo.interface._serial_ports import format_port_label, find_cdc_sibling
 from nml_hand_exo.interface._udp_metrics import TimeWeightedBacklogEMA
 from nml_hand_exo.interface._udp_command_bindings import (
     DEFAULT_EASE_DURATION_MS,
@@ -3205,7 +3205,13 @@ class HandExoGUI(QWidget):
         queues behind an in-flight poll and the hand responds with a visible
         lag.  Polling resumes ``idle_ms`` after the most recent binding command
         via ``_udp_direct_idle_timer`` -> ``_resume_normal_polling``.
+
+        No-op on dual USB-CDC: command writes go out on the command port while
+        telemetry reads happen on the telemetry port, so there is no shared
+        channel to block and pausing polling would only lower the telemetry rate.
         """
+        if getattr(self, "_dual_cdc_active", False):
+            return
         if self._angle_timer.isActive():
             self._angle_timer.stop()
         self._udp_direct_idle_timer.start(idle_ms)
@@ -3990,6 +3996,16 @@ class HandExoGUI(QWidget):
         )
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
         row0.addWidget(self.mode_combo)
+        row0.addSpacing(12)
+        self.dual_cdc_cb = QCheckBox("Dual USB CDC")
+        self.dual_cdc_cb.setToolTip(
+            "Use the two USB-CDC COM ports exposed by the dual-CDC firmware:\n"
+            "commands go out on one port while telemetry streams in on the other,\n"
+            "removing head-of-line blocking. Pick either of the device's two COM\n"
+            "ports above — the sibling is found automatically. Leave unchecked for\n"
+            "single-port firmware or bench debugging on one COM port."
+        )
+        row0.addWidget(self.dual_cdc_cb)
         row0.addStretch()
         outer.addLayout(row0)
 
@@ -4086,6 +4102,8 @@ class HandExoGUI(QWidget):
             self.connect_btn.setEnabled((not self.exo_connected) and has_ports)
             self.port_combo.setEnabled((not self.exo_connected) and has_ports)
             self.probe_btn.setEnabled((not self.exo_connected) and has_ports)
+            if hasattr(self, "dual_cdc_cb"):
+                self.dual_cdc_cb.setEnabled(not self.exo_connected)
 
     def _probe_ports(self):
         ports = list_ports.comports()
@@ -4759,14 +4777,36 @@ class HandExoGUI(QWidget):
             # One controller, one serial connection for all modes.
             # Both hands share the same OpenRB-150 board and Dynamixel bus.
             side = "left" if mode == "Left Only" else ("right" if mode == "Right Only" else None)
-            comm = SerialComm(port=port, baudrate=baud, response_timeout=0.5)
+
+            if self.dual_cdc_cb.isChecked():
+                # Dual USB-CDC: split commands and telemetry across the device's
+                # two COM ports. Pair the selected port with its sibling; the
+                # comm layer probes to fix command/telemetry direction.
+                pair = find_cdc_sibling(port)
+                if pair is None:
+                    raise ConnectionError(
+                        f"Dual USB CDC is selected but no sibling COM port was found "
+                        f"for {port}. Ensure the dual-CDC firmware is flashed and that "
+                        "both of the device's COM ports are present, then pick either one."
+                    )
+                cmd_dev, telem_dev = pair
+                comm = DualSerialComm(
+                    cmd_port=cmd_dev, telem_port=telem_dev, baudrate=baud,
+                    response_timeout=0.5,
+                )
+                self._dual_cdc_active = True
+                conn_desc = f"cmd={cmd_dev} telem={telem_dev} @ {baud} [{mode}]"
+            else:
+                comm = SerialComm(port=port, baudrate=baud, response_timeout=0.5)
+                self._dual_cdc_active = False
+                conn_desc = f"{port} @ {baud} [{mode}]"
+
             self.exo = SynchronizedHandExo(
                 HandExo(comm, side=side, auto_connect=True,
                         verbose=False, command_delimiter='\r\n')
             )
-            conn_desc = f"{port} @ {baud} [{mode}]"
 
-            self._log(f"Connecting: mode={mode}, port={port}, baud={baud}, "
+            self._log(f"Connecting: mode={mode}, {conn_desc}, "
                       f"expected_side={side or 'all'}")
 
             info = self.exo.info(timeout=5.0)
@@ -4926,6 +4966,7 @@ class HandExoGUI(QWidget):
             pass
         self.exo = None
         self.exo_connected = False
+        self._dual_cdc_active = False
         self._gesture_ready = False
         self._motor_idx = {}
         self._motor_row = {}

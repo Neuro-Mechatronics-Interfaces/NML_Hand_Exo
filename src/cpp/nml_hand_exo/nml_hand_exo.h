@@ -15,6 +15,11 @@ using namespace ControlTableItem;
 /// @brief Verbose output toggle for debugging.
 extern bool VERBOSE;
 
+/// @brief Where command replies / telemetry are emitted (dual-CDC).
+/// One of REPLY_ROUTE_BOTH / REPLY_ROUTE_TELEM / REPLY_ROUTE_CMD (see config.h).
+/// Default REPLY_ROUTE_BOTH keeps legacy single-port hosts working.
+extern uint8_t gReplyRoute;
+
 /// @brief Bluetooth serial stream used for commands.
 //extern Stream& COMMAND_SERIAL;
 //extern Stream* debugStream;
@@ -22,6 +27,10 @@ extern bool VERBOSE;
 /// @brief Debugging print helper function.
 /// @param msg The message to print.
 void debugPrint(const String& msg);
+
+/// @brief Emits a line to the reply/telemetry CDC(s) per gReplyRoute.
+/// @param msg The message to print.
+void telemetryPrintln(const String& msg);
 
 /// @brief Mode press function
 void onModeButtonPress();

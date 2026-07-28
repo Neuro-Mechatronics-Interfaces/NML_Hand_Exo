@@ -24,15 +24,24 @@ sensors_event_t orientationData, linearAccelData;
 
 
 
+void telemetryPrintln(const String& msg) {
+  // Route a device->host line to the correct USB CDC(s).
+#if defined(DUAL_CDC) && DUAL_CDC
+  // Legacy-safe: default route BOTH mirrors to the command CDC so a single-port
+  // host still sees replies; a dual-port host can switch to TELEM to decouple.
+  if (gReplyRoute != REPLY_ROUTE_TELEM) CMD_SERIAL.println(msg);
+  if (gReplyRoute != REPLY_ROUTE_CMD)   TELEM_SERIAL.println(msg);
+#else
+  // Single-CDC: CMD_SERIAL == TELEM_SERIAL, so emit once to avoid duplicates.
+  TELEM_SERIAL.println(msg);
+#endif
+}
+
 void debugPrint(const String& msg) {
-  // Prints out message to debug serial port if VERBOSE is set to true
+  // Prints verbose diagnostics to the reply/telemetry CDC(s) if VERBOSE is set.
+  // Honors gReplyRoute so a legacy single-port host still sees debug output.
   if (VERBOSE) {
-    #if defined(DEBUG_SERIAL)
-      //DEBUG_SERIAL(msg);
-      DEBUG_SERIAL.println(msg);
-    #else
-      Serial.println(msg);  // fallback
-    #endif
+    telemetryPrintln(msg);
   }
 }
 
@@ -44,15 +53,15 @@ void commandPrint(const String& msg) {
     cmdMsg += cmdDelimiter;
   }
 
-  // Prints out message to DEBUG/CMD serial port regardless of VERBOSE mode 
+  // Emit command replies / sensor-request responses regardless of VERBOSE mode.
+  // The Bluetooth command path (COMMAND_SERIAL) always mirrors the reply; the
+  // USB CDC target(s) are chosen by telemetryPrintln() per the runtime route.
   #if defined(COMMAND_SERIAL)
-    // Need to print to all serial devices for data output
     COMMAND_SERIAL.println(cmdMsg);
-    DEBUG_SERIAL.println(cmdMsg);
   #else
     Serial2.println(cmdMsg);  // fallback
-    Serial.println(cmdMsg);  // fallback
   #endif
+  telemetryPrintln(cmdMsg);
 }
 
 // void initializeIMU(Adafruit_ISM330DHCX& imu) {
@@ -717,6 +726,31 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     VERBOSE = (stateStr == "on" || stateStr == "1");
     commandPrint(" Debug state: " + String(VERBOSE ? "true" : "false"));
 
+  } else if (cmd == "set_reply_route") {
+    // Choose which USB CDC(s) carry replies/telemetry (dual-CDC transport).
+    // both  = legacy-compatible mirror (default); telem = command port becomes
+    // input-only (decoupled); cmd = command port only. No-op on single-CDC builds.
+    String arg = getArg(token, 1);
+    arg.trim(); arg.toLowerCase();
+    if (arg == "telem" || arg == "telemetry") {
+      gReplyRoute = REPLY_ROUTE_TELEM;
+    } else if (arg == "cmd" || arg == "command") {
+      gReplyRoute = REPLY_ROUTE_CMD;
+    } else if (arg == "both") {
+      gReplyRoute = REPLY_ROUTE_BOTH;
+    } else {
+      commandPrint("ERROR: set_reply_route expects both|telem|cmd");
+      return;
+    }
+    const char* routeName = (gReplyRoute == REPLY_ROUTE_TELEM) ? "telem" :
+                            (gReplyRoute == REPLY_ROUTE_CMD)   ? "cmd"   : "both";
+    commandPrint("OK: reply_route " + String(routeName));
+
+  } else if (cmd == "get_reply_route") {
+    const char* routeName = (gReplyRoute == REPLY_ROUTE_TELEM) ? "telem" :
+                            (gReplyRoute == REPLY_ROUTE_CMD)   ? "cmd"   : "both";
+    commandPrint("Reply route: " + String(routeName));
+
   } else if (cmd == "reboot") {
     String arg = getArg(token, 1);
     arg.trim(); arg.toUpperCase();
@@ -913,6 +947,8 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" home                  |  ID/NAME/ALL         | // Set specific motor (or all) to home position"));
     commandPrint(F(" info                  |                      | // Gets information about exo device. Returns string of metadata with comma delimiters"));
     commandPrint(F(" debug                 |  ON/OFF              | // Set verbose output on/off"));
+    commandPrint(F(" set_reply_route       |  BOTH/TELEM/CMD      | // Route replies: both(legacy)/telem(decoupled)/cmd (dual-CDC)"));
+    commandPrint(F(" get_reply_route       |                      | // Get current reply/telemetry CDC route"));
     commandPrint(F(" reboot                |  ID/NAME/ALL         | // Reboot motor"));
     commandPrint(F(" version               |                      | // Get current software version"));
     commandPrint(F(" enable                |  ID/NAME             | // Enable torque for motor"));
