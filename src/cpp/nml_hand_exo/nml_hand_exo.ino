@@ -35,6 +35,13 @@ SOFTWARE.
 // Create IMU device (The Adafruit_BNO055 library can be downloaded from Arduino's Library Manager)
 Adafruit_BNO055 bno055;  //= Adafruit_BNO055(55, 0x28)
 
+#if defined(DUAL_CDC) && DUAL_CDC
+// Second native USB-CDC (ACM) interface: telemetry / command replies.
+// Plugs into the core's PluggableUSB list right after the primary Serial,
+// taking USB interface 2 and endpoints 4-6 automatically. See config.h.
+Serial_ SerialTelem(USBDevice);
+#endif
+
 // TO-DO: Move these to config.h or nml_hand_exo.h
 //#define DEBUG_SERIAL Serial
 //#define COMMAND_SERIAL Serial2
@@ -57,6 +64,9 @@ void setup() {
   // Serial connections
   DEBUG_SERIAL.begin(DEBUG_BAUD_RATE);
   COMMAND_SERIAL.begin(COMMAND_BAUD_RATE);     // (Optional) Establish port with TX/RX pins for incomming serial data/commands
+#if defined(DUAL_CDC) && DUAL_CDC
+  SerialTelem.begin(DEBUG_BAUD_RATE);     // Second USB-CDC for telemetry / replies (baud is nominal for CDC)
+#endif
 
   // Setup IMU
   //initializeIMU(ism330dhcx);
@@ -92,13 +102,27 @@ void setup() {
 }
 
 void loop() {
-  // Handle data from the debug connection
-  if (DEBUG_SERIAL.available() > 0) {
-    String input = DEBUG_SERIAL.readStringUntil('\n');
+  // Handle data from the host COMMAND connection (primary USB CDC).
+  // In dual-CDC mode CMD_SERIAL is the command port; in single-CDC fallback it
+  // resolves to DEBUG_SERIAL (legacy behavior).
+  if (CMD_SERIAL.available() > 0) {
+    String input = CMD_SERIAL.readStringUntil('\n');
     input.trim();
     debugPrint("Received: " + input);
     parseMessage(exo, gc, bno055, input);
   }
+
+#if defined(DUAL_CDC) && DUAL_CDC
+  // Also accept commands on the telemetry CDC. This keeps a LEGACY single-port
+  // host working no matter which of the two COM ports it opened: either CDC
+  // accepts commands, and replies mirror back per the default BOTH route.
+  if (TELEM_SERIAL.available() > 0) {
+    String input = TELEM_SERIAL.readStringUntil('\n');
+    input.trim();
+    debugPrint("Received: " + input);
+    parseMessage(exo, gc, bno055, input);
+  }
+#endif
 
   // Handle data from the BLE/command connection
   if (COMMAND_SERIAL.available() > 0) {

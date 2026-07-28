@@ -1,4 +1,4 @@
-from ._interfaces import BaseComm, SerialComm, TCPComm
+from ._interfaces import BaseComm, SerialComm, TCPComm, DualSerialComm
 from ._hand_exo import HandExo
 from ._dual_hand_exo import DualHandExo
 from ._fake_hand_exo import FakeHandExo

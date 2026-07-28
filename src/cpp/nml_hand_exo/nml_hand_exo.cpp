@@ -15,13 +15,16 @@
 /// @brief Verbose output toggle for debugging.
 bool VERBOSE = DEFAULT_VERBOSE; // default to true
 
+/// @brief Reply/telemetry routing for dual-CDC. Legacy-safe default (BOTH).
+uint8_t gReplyRoute = REPLY_ROUTE_BOTH;
+
 /// @brief Flag for mode switching
 static volatile bool modeSwitchFlag = false;
 
 /// @brief Checking last interrupt time to check for unwanted presses, control debounce
 static unsigned long lastInterruptTime = 0;
 
-Stream* debugStream = &DEBUG_SERIAL;
+Stream* debugStream = &TELEM_SERIAL;
 
 /// @brief Mode press function
 void onModeButtonPress() {
@@ -385,9 +388,9 @@ void NMLHandExo::beginCalibration(bool enableTimedCalibration=false, int duratio
   // Initialize calibration state and ask user to move their fingers to extremes. The calibration process will last as long as the calibration duration in seconds
   // This is done only if timedCalibration is true. If off, step through the calibration process starting with asking the user to close their fingers, followed by opening their fingers
   if (calibrationTimedMode) {
-      DEBUG_SERIAL.println("[Gesture] Timed calibration mode. You have " + String(duration) + " seconds to complete.");
+      telemetryPrintln("[Gesture] Timed calibration mode. You have " + String(duration) + " seconds to complete.");
   } else {
-      DEBUG_SERIAL.println(F("[Gesture] Step-through calibration mode. Follow prompts to set limits."));
+      telemetryPrintln(F("[Gesture] Step-through calibration mode. Follow prompts to set limits."));
   }
   for (uint8_t i = 0; i < numMotors_; ++i) {
     jointLimits_[i][0] = 1e6; // Initialize to a very large value
@@ -413,10 +416,10 @@ void NMLHandExo::updateCalibration() {
   if ((calibrationTimedMode && elapsedMs >= calibrationDuration) ||
       (!calibrationTimedMode && this->checkModeSwitchButtonPressed())) {
     isCalibrating = false;
-    DEBUG_SERIAL.println("[Gesture] Calibration complete.");
+    telemetryPrintln("[Gesture] Calibration complete.");
     for (uint8_t i = 0; i < this->getMotorCount(); ++i) {
-      DEBUG_SERIAL.println("Motor " + String(i) + ": Min = " + String(jointLimits_[i][0]) +
-                           ", Max = " + String(jointLimits_[i][1]));
+      telemetryPrintln("Motor " + String(i) + ": Min = " + String(jointLimits_[i][0]) +
+                       ", Max = " + String(jointLimits_[i][1]));
     }
   }
 }

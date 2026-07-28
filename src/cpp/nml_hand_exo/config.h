@@ -57,6 +57,59 @@
   //const int DXL_DIR_PIN = 2; // DYNAMIXEL Shield DIR PIN
 #endif
 
+// ================= Dual USB-CDC transport (OpenRB-150) =================
+// Splits the single native USB CDC into TWO ACM interfaces on one cable so
+// host commands and telemetry no longer share one channel (head-of-line
+// blocking fix at the device side):
+//   CMD_SERIAL   -> host COMMAND input   (primary CDC, USB interface 0 / MI_00)
+//   TELEM_SERIAL -> replies + telemetry  (second  CDC, USB interface 2 / MI_02)
+//
+// The second CDC is a plain second instance of the core's PluggableUSB
+// `Serial_` class (defined in the .ino). The core already advertises the
+// IAD composite device class (0xEF/0x02/0x01) and each CDC emits its own IAD,
+// so Windows binds BOTH interfaces to usbser.sys as two COM ports with no
+// custom .inf. Endpoint budget: EP0 (control) + 3 (CDC1) + 3 (CDC2) = 7 =
+// the core's USB_ENDPOINTS cap, so exactly two CDCs fit (no room for a 3rd
+// USB function).
+//
+// Enabled by default on OpenRB-150. Define SINGLE_CDC before building to
+// force legacy one-port behavior (bench debugging over a single COM port).
+// The Bluetooth COMMAND_SERIAL (Serial3 / HC-05) path is unchanged either way.
+#if defined(ARDUINO_OpenRB) && !defined(SINGLE_CDC)
+  #define DUAL_CDC 1
+#endif
+
+#if defined(DUAL_CDC) && DUAL_CDC
+  // Second CDC instance lives in the .ino; declare it for every translation unit.
+  extern Serial_ SerialTelem;
+  #ifdef DUAL_CDC_SWAP
+    // Fallback: if USB enumeration ever assigns SerialTelem to interface 0
+    // (static-init order surprise), define DUAL_CDC_SWAP to swap the roles so
+    // the lower COM port (MI_00) still carries commands. One-line mitigation,
+    // no protocol change.
+    #define CMD_SERIAL   SerialTelem
+    #define TELEM_SERIAL Serial
+  #else
+    #define CMD_SERIAL   Serial
+    #define TELEM_SERIAL SerialTelem
+  #endif
+#else
+  // Single-CDC fallback: commands and replies share DEBUG_SERIAL (legacy behavior).
+  #define CMD_SERIAL   DEBUG_SERIAL
+  #define TELEM_SERIAL DEBUG_SERIAL
+#endif
+
+// ---- Reply routing (dual-CDC, runtime-switchable) ---------------------------
+// Controls which USB CDC(s) command replies / telemetry are emitted on. The
+// default is BOTH so a LEGACY single-port host still gets request->response on
+// whichever CDC it opened (backward compatible). A dual-port host can send
+// `set_reply_route:telem` to make the command CDC input-only and fully decouple
+// command writes from telemetry reads. In single-CDC builds this is a no-op
+// (both routes resolve to the one port). See gReplyRoute in nml_hand_exo.cpp.
+#define REPLY_ROUTE_BOTH   0   // command CDC + telemetry CDC (legacy-safe default)
+#define REPLY_ROUTE_TELEM  1   // telemetry CDC only (command CDC becomes input-only)
+#define REPLY_ROUTE_CMD    2   // command CDC only
+
 // ======================= Define IMU Usage ==========================
 #define IMU_ENABLED_DEFAULT true     // change to false if you usually run without IMU
 
