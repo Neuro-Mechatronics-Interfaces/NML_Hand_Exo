@@ -228,10 +228,10 @@ const char* NMLHandExo::getSide() const {
 String NMLHandExo::getDeviceInfo() {
 
     // Need to return a single string with all the information
-    String info = "Name: NMLHandExo\n";
-    info += "Version: " + String(VERSION) + "\n";
-    info += "Side: " + String(HAND_SIDE) + "\n";
-    info += "Number of Motors: " + String(numMotors_) + "\n";
+    String info = "Name: NMLHandExo\n\r";
+    info += "Version: " + String(VERSION) + "\n\r";
+    info += "Side: " + String(HAND_SIDE) + "\n\r";
+    info += "Number of Motors: " + String(numMotors_) + "\n\r";
     for (int i = 0; i < numMotors_; ++i) {
 
       uint8_t id = getMotorIDByIndex(i);
