@@ -34,6 +34,23 @@ enum ExoOperatingMode {
   GESTURE_CALIBRATION
 };
 
+struct __attribute__((packed)) FastTelemetryRecord {
+  uint8_t id;
+  uint8_t error;
+  int16_t current_mA;
+  int32_t velocity_raw;
+  int32_t position_ticks;
+  int32_t absolute_cdeg;
+  int32_t relative_cdeg;
+};
+
+enum FastTelemetryMethod : uint8_t {
+  FAST_TELEM_METHOD_FAILED = 0,
+  FAST_TELEM_METHOD_FALLBACK_READ = 1,
+  FAST_TELEM_METHOD_FAST_SYNC_READ = 2,
+  FAST_TELEM_METHOD_SYNC_READ = 3
+};
+
 /// @brief Class to manage the NML Hand Exoskeleton, providing initialization, motor control, and telemetry.
 class NMLHandExo {
   public:
@@ -121,12 +138,33 @@ class NMLHandExo {
     /// @return Zero offset in degrees.
     float getZeroOffset(uint8_t id);
 
+    /// @brief Fill one compact telemetry record for host streaming.
+    /// @param id Motor ID.
+    /// @param record Destination record.
+    /// @return True if the ID belongs to this exo firmware build.
+    bool getFastTelemetryRecord(uint8_t id, FastTelemetryRecord& record);
+
+    /// @brief Read compact telemetry records for multiple motor IDs.
+    /// @param ids Array of requested Dynamixel IDs.
+    /// @param count Number of requested IDs.
+    /// @param records Destination record array with at least count entries.
+    /// @param methodOut Method used to read telemetry.
+    /// @param timeoutMs Per-status-packet timeout for DXL sync/fallback reads.
+    /// @return Number of records filled.
+    uint8_t getFastTelemetryRecords(
+      const uint8_t* ids,
+      uint8_t count,
+      FastTelemetryRecord* records,
+      uint8_t& methodOut,
+      uint32_t timeoutMs = 10
+    );
+
     /// @brief Reset zero offsets for all motors using their current positions.
     void resetAllZeros();
 
     /// @brief Get a string summarizing the device information.
     // @return Information string.
-    String getDeviceInfo();
+    String getDeviceInfo(bool includeLiveTelemetry = false);
 
     /// @brief Get the hand side this board is compiled for ("right" or "left").
     /// @return HAND_SIDE constant as a C-string.
@@ -418,7 +456,7 @@ class NMLHandExo {
     String getMotorMode();
 
     /// @brief Current software version.
-    static constexpr const char* VERSION = "0.2.14";
+    static constexpr const char* VERSION = "0.2.17";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.

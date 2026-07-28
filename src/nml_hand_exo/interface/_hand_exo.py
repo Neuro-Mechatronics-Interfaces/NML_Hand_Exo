@@ -1,4 +1,5 @@
 import re
+import struct
 import time
 import numpy as np
 
@@ -136,6 +137,87 @@ class HandExo(object):
         return self.device.receive(
             wait_until_return=wait_until_return, timeout=timeout
         )
+
+    def get_fast_telemetry(
+        self,
+        timeout: float = 0.5,
+        motor_ids: list[int] | tuple[int, ...] | None = None,
+    ) -> dict[int, dict[str, float | int | bool]]:
+        """Read the firmware's compact binary telemetry frame.
+
+        The firmware emits an ``NX`` frame with one fixed-size record per motor.
+        Records are keyed by Dynamixel ID and include relative/absolute angles,
+        present current, raw velocity, and raw position ticks.
+        """
+        serial_dev = getattr(self.device, "device", None)
+        if serial_dev is None:
+            raise RuntimeError("get_fast_telemetry requires a SerialComm device")
+
+        ids = "all" if not motor_ids else ":".join(str(int(mid)) for mid in motor_ids)
+        try:
+            serial_dev.reset_input_buffer()
+        except Exception:
+            pass
+        self.send_command(f"get_telemetry_fast:{ids}")
+
+        header_fmt = "<2sBBBHIH"
+        record_fmt = "<BBhiiii"
+        header_len = struct.calcsize(header_fmt)
+        record_len = struct.calcsize(record_fmt)
+
+        deadline = time.monotonic() + timeout
+        prefix = bytearray()
+        while time.monotonic() < deadline:
+            byte = serial_dev.read(1)
+            if not byte:
+                time.sleep(0.001)
+                continue
+            prefix.extend(byte)
+            if len(prefix) > 2:
+                prefix = prefix[-2:]
+            if bytes(prefix) == b"NX":
+                break
+        else:
+            raise TimeoutError("Timed out waiting for fast telemetry frame")
+
+        remaining_header = serial_dev.read(header_len - 2)
+        if len(remaining_header) != header_len - 2:
+            raise TimeoutError("Timed out reading fast telemetry header")
+        header = b"NX" + remaining_header
+        magic, version, flags, count, payload_len, timestamp_ms, checksum = struct.unpack(
+            header_fmt, header
+        )
+        if magic != b"NX" or version != 1:
+            raise ValueError("Unsupported fast telemetry frame")
+
+        payload = serial_dev.read(payload_len)
+        if len(payload) != payload_len:
+            raise TimeoutError("Timed out reading fast telemetry payload")
+        calc = (sum(header[: header_len - 2]) + sum(payload)) & 0xFFFF
+        if calc != checksum:
+            raise ValueError("Fast telemetry checksum mismatch")
+
+        records: dict[int, dict[str, float | int | bool]] = {}
+        offset = 0
+        for _ in range(count):
+            if offset + record_len > len(payload):
+                break
+            mid, error, current_mA, velocity_raw, position_ticks, absolute_cdeg, relative_cdeg = (
+                struct.unpack_from(record_fmt, payload, offset)
+            )
+            records[mid] = {
+                "id": mid,
+                "error": bool(error),
+                "current": current_mA,
+                "velocity_raw": velocity_raw,
+                "position_ticks": position_ticks,
+                "absolute_angle": absolute_cdeg / 100.0,
+                "angle": relative_cdeg / 100.0,
+                "timestamp_ms": timestamp_ms,
+                "flags": flags,
+            }
+            offset += record_len
+        return records
 
     def _get_motor_attribute(
         self,

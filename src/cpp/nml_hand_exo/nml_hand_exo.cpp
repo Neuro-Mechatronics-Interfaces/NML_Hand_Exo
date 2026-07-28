@@ -87,10 +87,10 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
 // ================================ Utility functions =================================
 // ====================================================================================
 void NMLHandExo::initializeSerial(int baud) {
+  // Match ROBOTIS examples: set protocol before opening the DXL port.
+  dxl_.setPortProtocolVersion(DXL_PROTOCOL_VERSION);
   // Initialize serial communication with DYNAMIXEL hardware using the specified baudrate. Has to match hardware
   dxl_.begin(baud);
-  // Set Port Protocol Version. This has to match with DYNAMIXEL protocol version.
-  dxl_.setPortProtocolVersion(DXL_PROTOCOL_VERSION);
 }
 void NMLHandExo::initializeMotors() {
   // Configure motor operating modes and torque, but DON'T move them yet
@@ -213,6 +213,114 @@ float NMLHandExo::getZeroOffset(uint8_t id) {
   int index = getIndexById(id);
   return (index != -1) ? zeroOffsets_[index] : 0.0f;
 }
+bool NMLHandExo::getFastTelemetryRecord(uint8_t id, FastTelemetryRecord& record) {
+  int index = getIndexById(id);
+  record.id = id;
+  record.error = 0;
+  record.current_mA = 0;
+  record.velocity_raw = 0;
+  record.position_ticks = 0;
+  record.absolute_cdeg = 0;
+  record.relative_cdeg = 0;
+  if (index == -1) {
+    record.error = 1;
+    return false;
+  }
+
+  int16_t current_mA = (int16_t)dxl_.readControlTableItem(PRESENT_CURRENT, id);
+  int32_t velocity_raw = (int32_t)dxl_.readControlTableItem(PRESENT_VELOCITY, id);
+  float absolute_deg = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  float relative_deg = absolute_deg - zeroOffsets_[index];
+  if (flipMotor_[index]) {
+    relative_deg *= -1.0f;
+  }
+
+  record.current_mA = current_mA;
+  record.velocity_raw = velocity_raw;
+  record.position_ticks = (int32_t)round(absolute_deg * (float)PULSE_RESOLUTION / 360.0f);
+  record.absolute_cdeg = (int32_t)round(absolute_deg * 100.0f);
+  record.relative_cdeg = (int32_t)round(relative_deg * 100.0f);
+  return true;
+}
+uint8_t NMLHandExo::getFastTelemetryRecords(
+  const uint8_t* ids,
+  uint8_t count,
+  FastTelemetryRecord* records,
+  uint8_t& methodOut,
+  uint32_t timeoutMs
+) {
+  static constexpr uint8_t MAX_FAST_TELEM_IDS = 32;
+
+  if (count > MAX_FAST_TELEM_IDS) {
+    count = MAX_FAST_TELEM_IDS;
+  }
+
+  auto clearRecords = [&]() {
+    for (uint8_t i = 0; i < count; ++i) {
+      records[i].id = ids[i];
+      records[i].error = 0;
+      records[i].current_mA = 0;
+      records[i].velocity_raw = 0;
+      records[i].position_ticks = 0;
+      records[i].absolute_cdeg = 0;
+      records[i].relative_cdeg = 0;
+    }
+  };
+
+  auto clearDxlRx = [&]() {
+    while (DXL_SERIAL.available() > 0) {
+      DXL_SERIAL.read();
+    }
+  };
+
+  auto readItem = [&](uint8_t item, uint8_t id, bool& ok) -> int32_t {
+    clearDxlRx();
+    int32_t value = dxl_.readControlTableItem(item, id, timeoutMs);
+    if (dxl_.getLastLibErrCode() != DXL_LIB_OK) {
+      ok = false;
+    }
+    return value;
+  };
+
+  clearRecords();
+  methodOut = FAST_TELEM_METHOD_FAILED;
+  if (count == 0) {
+    return 0;
+  }
+
+  // Keep this path conservative: diagnostics showed multi-register and repeated
+  // per-motor telemetry reads can corrupt or wedge the current bus. For the GUI
+  // fast path, read position only and leave current/velocity at zero until the
+  // bus is stable enough for those additional registers.
+  methodOut = FAST_TELEM_METHOD_FALLBACK_READ;
+  for (uint8_t i = 0; i < count; ++i) {
+    uint8_t id = ids[i];
+    records[i].id = id;
+    records[i].error = 0;
+    int index = getIndexById(id);
+    if (index == -1) {
+      records[i].error = 1;
+      continue;
+    }
+
+    bool ok = true;
+    int32_t position_ticks = readItem(PRESENT_POSITION, id, ok);
+    if (!ok) {
+      records[i].error = 1;
+    }
+    records[i].current_mA = 0;
+    records[i].velocity_raw = 0;
+    records[i].position_ticks = position_ticks;
+    float absolute_deg = records[i].position_ticks * 360.0f / (float)PULSE_RESOLUTION;
+    float relative_deg = absolute_deg - zeroOffsets_[index];
+    if (flipMotor_[index]) {
+      relative_deg *= -1.0f;
+    }
+    records[i].absolute_cdeg = (int32_t)round(absolute_deg * 100.0f);
+    records[i].relative_cdeg = (int32_t)round(relative_deg * 100.0f);
+  }
+  return count;
+}
 void NMLHandExo::resetAllZeros() {
   for (int i = 0; i < numMotors_; ++i) {
     uint8_t id = motorIds_[i];
@@ -225,7 +333,7 @@ const char* NMLHandExo::getSide() const {
   return HAND_SIDE;
 }
 
-String NMLHandExo::getDeviceInfo() {
+String NMLHandExo::getDeviceInfo(bool includeLiveTelemetry) {
 
     // Need to return a single string with all the information
     String info = "Name: NMLHandExo\n";
@@ -236,19 +344,23 @@ String NMLHandExo::getDeviceInfo() {
 
       uint8_t id = getMotorIDByIndex(i);
       String name = getMotorNameByID(id);
-      float angle = getRelativeAngle(id);
-      float abs = getAbsoluteAngle(id);
       float minLimit = jointLimits_[i][0];
       float maxLimit = jointLimits_[i][1];
-      float torque = getTorque(id);
-      bool isEnabled = getTorqueEnabledStatus(id);
 
       info += "Motor " + String(i) + ": {name: " + String(name) +
             ", id: " + String(id) +
-            ", angle: " + String(angle, 2) + "(abs: " + String(abs) + ")"
-            ", limits: [" + String(minLimit, 2) + ", " + String(maxLimit, 2) + "]" +
-            ", torque: " + String(torque, 2) +
-            ", enabled: " + (isEnabled ? "true" : "false") + "}\n";
+            ", limits: [" + String(minLimit, 2) + ", " + String(maxLimit, 2) + "]";
+      if (includeLiveTelemetry) {
+        float angle = getRelativeAngle(id);
+        float abs = getAbsoluteAngle(id);
+        float torque = getTorque(id);
+        bool isEnabled = getTorqueEnabledStatus(id);
+        info += ", angle: " + String(angle, 2) +
+              ", absolute_angle: " + String(abs, 2) +
+              ", torque: " + String(torque, 2) +
+              ", enabled: " + (isEnabled ? "true" : "false");
+      }
+      info += "}\n";
       }
     info += ";";
     return info;

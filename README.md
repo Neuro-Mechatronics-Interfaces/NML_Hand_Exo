@@ -226,6 +226,7 @@ Set `BUILD_LEFT_HAND` in `config.h` before flashing:
 
 ```bash
 handexo gui
+handexo emg-centroid
 ```
 
 Run this after activating the virtual environment and installing the repository
@@ -242,6 +243,9 @@ The GUI provides:
   - **ROM Assessment** button — opens `ROMDialog`
 - **Telemetry tab** — live table: position, torque, and current for active motors; manual Refresh
 - **Log panel** — timestamped command/response log
+- **EMG centroid decoder** — `handexo emg-centroid` launches a class-centroid decoder
+  GUI that visualizes rest/flex/extend feature clouds, centroids, separability, and
+  live signed 1D output
 
 The **Settings tab** configures optional telemetry and command integrations:
 

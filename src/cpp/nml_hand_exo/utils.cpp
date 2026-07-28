@@ -230,6 +230,136 @@ int applyTorqueToMotorIDList(NMLHandExo& exo, const String& token, bool enable) 
   return updated;
 }
 
+struct __attribute__((packed)) FastTelemetryHeader {
+  char magic[2];
+  uint8_t version;
+  uint8_t flags;
+  uint8_t count;
+  uint16_t payload_len;
+  uint32_t timestamp_ms;
+  uint16_t checksum;
+};
+
+uint16_t checksumBytes(const uint8_t* data, size_t len) {
+  uint16_t sum = 0;
+  for (size_t i = 0; i < len; ++i) {
+    sum = (uint16_t)(sum + data[i]);
+  }
+  return sum;
+}
+
+void writeFastTelemetryFrame(Stream& stream, FastTelemetryRecord* records, uint8_t count, uint8_t flags) {
+  FastTelemetryHeader header;
+  header.magic[0] = 'N';
+  header.magic[1] = 'X';
+  header.version = 1;
+  header.flags = flags;
+  header.count = count;
+  header.payload_len = count * sizeof(FastTelemetryRecord);
+  header.timestamp_ms = millis();
+  header.checksum = 0;
+
+  uint16_t checksum = checksumBytes((const uint8_t*)&header, sizeof(header) - sizeof(header.checksum));
+  checksum = (uint16_t)(checksum + checksumBytes((const uint8_t*)records, header.payload_len));
+  header.checksum = checksum;
+
+  stream.write((const uint8_t*)&header, sizeof(header));
+  if (header.payload_len > 0) {
+    stream.write((const uint8_t*)records, header.payload_len);
+  }
+  stream.flush();
+}
+
+uint8_t collectFastTelemetryIDs(NMLHandExo& exo, const String& token, uint8_t* ids, uint8_t maxIds) {
+  String firstArg = getArg(token, 1);
+  firstArg.trim();
+  if (firstArg.length() == 0 || firstArg.equalsIgnoreCase("ALL")) {
+    uint8_t count = min((uint8_t)exo.getMotorCount(), maxIds);
+    for (uint8_t i = 0; i < count; ++i) {
+      ids[i] = exo.getMotorIDByIndex(i);
+    }
+    return count;
+  }
+
+  uint8_t count = 0;
+  for (int argIndex = 1; count < maxIds; ++argIndex) {
+    String arg = getArg(token, argIndex);
+    arg.trim();
+    if (arg.length() == 0) {
+      break;
+    }
+    int resolvedID = exo.getMotorID(arg);
+    if (resolvedID != -1) {
+      ids[count++] = (uint8_t)resolvedID;
+    }
+  }
+  return count;
+}
+
+const char* fastTelemetryMethodName(uint8_t method) {
+  switch (method) {
+    case FAST_TELEM_METHOD_FAST_SYNC_READ:
+      return "fastSyncRead";
+    case FAST_TELEM_METHOD_SYNC_READ:
+      return "syncRead";
+    case FAST_TELEM_METHOD_FALLBACK_READ:
+      return "fallbackRead";
+    default:
+      return "failed";
+  }
+}
+
+void sendFastTelemetry(NMLHandExo& exo, const String& token) {
+  uint8_t ids[32];
+  FastTelemetryRecord records[32];
+  uint8_t idCount = collectFastTelemetryIDs(exo, token, ids, 32);
+  if (idCount == 0) {
+    commandPrint("ERROR: get_telemetry_fast requires valid motor IDs or all");
+    return;
+  }
+
+  uint8_t method = FAST_TELEM_METHOD_FAILED;
+  uint32_t startMicros = micros();
+  uint8_t recordCount = exo.getFastTelemetryRecords(ids, idCount, records, method, 10);
+  (void)startMicros;
+
+  writeFastTelemetryFrame(DEBUG_SERIAL, records, recordCount, method);
+#if defined(COMMAND_SERIAL)
+  writeFastTelemetryFrame(COMMAND_SERIAL, records, recordCount, method);
+#endif
+}
+
+void sendFastTelemetryDiag(NMLHandExo& exo, const String& token) {
+  uint8_t ids[32];
+  FastTelemetryRecord records[32];
+  uint8_t idCount = collectFastTelemetryIDs(exo, token, ids, 32);
+  if (idCount == 0) {
+    commandPrint("ERROR: telemetry_diag requires valid motor IDs or all");
+    return;
+  }
+
+  uint8_t method = FAST_TELEM_METHOD_FAILED;
+  uint32_t startMicros = micros();
+  uint8_t recordCount = exo.getFastTelemetryRecords(ids, idCount, records, method, 10);
+  uint32_t elapsedMicros = micros() - startMicros;
+
+  String info = "Telemetry diag: {requested: " + String(idCount) +
+                ", records: " + String(recordCount) +
+                ", method: " + String(fastTelemetryMethodName(method)) +
+                ", elapsed_us: " + String(elapsedMicros) + "}\n";
+  for (uint8_t i = 0; i < recordCount; ++i) {
+    info += "Motor " + String(i) + ": {id: " + String(records[i].id) +
+            ", error: " + String(records[i].error) +
+            ", current_mA: " + String(records[i].current_mA) +
+            ", velocity_raw: " + String(records[i].velocity_raw) +
+            ", position_ticks: " + String(records[i].position_ticks) +
+            ", absolute_angle: " + String(records[i].absolute_cdeg / 100.0f, 2) +
+            ", angle: " + String(records[i].relative_cdeg / 100.0f, 2) +
+            "}\n";
+  }
+  commandPrint(info);
+}
+
 void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token) {
 
   token.trim();        // Remove any trailing white space
@@ -240,7 +370,13 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   int val = 0; // Default value for commands that require a value
 
   // ========== Supported high-level commands ==========
-  if (cmd == "enable") {
+  if (cmd == "get_telemetry_fast") {
+    sendFastTelemetry(exo, token);
+
+  } else if (cmd == "telemetry_diag") {
+    sendFastTelemetryDiag(exo, token);
+
+  } else if (cmd == "enable") {
     String arg = getArg(token, 1);  // local copy
     arg.trim();
     if (arg.equalsIgnoreCase("ALL")) {
@@ -889,7 +1025,11 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
 
   } else if (cmd == "info") {
     debugPrint(F("Device Info: "));
-    commandPrint(exo.getDeviceInfo());
+    commandPrint(exo.getDeviceInfo(false));
+
+  } else if (cmd == "info_verbose") {
+    debugPrint(F("Verbose Device Info: "));
+    commandPrint(exo.getDeviceInfo(true));
 
   } else if (cmd == "get_imu") {
     getIMUData(imu);
@@ -912,6 +1052,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" help                  |                      | // Display available commands"));
     commandPrint(F(" home                  |  ID/NAME/ALL         | // Set specific motor (or all) to home position"));
     commandPrint(F(" info                  |                      | // Gets information about exo device. Returns string of metadata with comma delimiters"));
+    commandPrint(F(" info_verbose          |                      | // Gets info plus live motor telemetry (slow if motors are offline)"));
     commandPrint(F(" debug                 |  ON/OFF              | // Set verbose output on/off"));
     commandPrint(F(" reboot                |  ID/NAME/ALL         | // Reboot motor"));
     commandPrint(F(" version               |                      | // Get current software version"));
@@ -941,6 +1082,8 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_current           |  ID:SIGNED_MA        | // Direct current command (current mode)"));
     commandPrint(F(" stop                  |  ID/ALL              | // Zero direct velocity/current goals"));
     commandPrint(F(" set_command_timeout   |  MILLISECONDS        | // Set direct-control watchdog (50-5000 ms)"));
+    commandPrint(F(" get_telemetry_fast    |  ID:ID:ID.../ALL     | // Binary current/velocity/position telemetry frame"));
+    commandPrint(F(" telemetry_diag        |  ID:ID:ID.../ALL     | // Text diagnostics for fast telemetry reads"));
     commandPrint(F(" get_motor_limits      |  ID/NAME             | // Get motor limits (upper and lower bounds)"));
     commandPrint(F(" set_motor_limits      |  ID/NAME:VAL:VAL     | // Set motor limits (upper and lower bounds)"));
     commandPrint(F(" set_upper_limit       |  ID/NAME:ANGLE       | // Set the absolute upper bound position limit for the motor"));
