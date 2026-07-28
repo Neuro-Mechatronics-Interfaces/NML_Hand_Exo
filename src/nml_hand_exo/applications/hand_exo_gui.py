@@ -27,7 +27,7 @@ from PyQt5.QtWidgets import (
     QSpinBox, QDoubleSpinBox,
 )
 from PyQt5.QtCore import Qt, QEvent, QSettings, QThread, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QFont, QFontMetrics
+from PyQt5.QtGui import QColor, QColor, QFont, QFontMetrics
 
 from serial.tools import list_ports
 from nml_hand_exo._paths import ROM_OUTPUT_DIR as OUTPUT_DIR, UDP_BINDINGS_DIR
@@ -1390,6 +1390,7 @@ class HandExoGUI(QWidget):
         self._udp_telemetry = UDPTelemetryPublisher()
         self._udp_telem_sent_count = 0
         self._udp_telem_last_status = 0.0
+        self._udp_response_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._udp_response_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._lsl_angles = NumericLSLTelemetryOutlet(
             "NMLHandExoJointAngles", "JointAngles", "degrees"
