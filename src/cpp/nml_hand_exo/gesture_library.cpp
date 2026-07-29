@@ -16,10 +16,15 @@ int jointIndexByName(const char* jointName) {
 // Build a dense angle array from a state, applying relative math if requested
 void resolveStateAngles(const GestureState& state,
                         const float* homeAngles,
-                        float* outAngles) {
+                        float* outAngles,
+                        bool* outTouched) {
     // Start with either zeros (absolute) or the home baseline (relative)
     for (int i = 0; i < N_MOTORS; ++i) {
         outAngles[i] = state.isRelative ? (homeAngles ? homeAngles[i] : 0.0f) : 0.0f;
+        // A dense state specifies every joint; a sparse state only claims the
+        // joints it actually names.  Callers use this to leave unnamed joints
+        // alone instead of driving them back to home.
+        if (outTouched) outTouched[i] = !state.isSparse;
     }
 
     if (state.isSparse) {
@@ -42,6 +47,7 @@ void resolveStateAngles(const GestureState& state,
                 } else {
                     outAngles[i] = state.namedPairs[k].value;
                 }
+                if (outTouched) outTouched[i] = true;
             }
         }
     } else {
@@ -244,6 +250,92 @@ GestureMap gestureLibrary[N_GESTURES] = {
             {"ring",       1.0},
             {"pinky",      1.0}
           }, 9 }
+      }, 2
+    },
+
+    // --- PER-DIGIT FLEXION / EXTENSION -------------------------------------
+    // One gesture per digit so a host can drive a single finger without
+    // composing a whole posture.  Travel per joint comes from the FLEX_*/
+    // EXTEND_* constants in config.h -- tune magnitude and direction there.
+    //
+    // Each state names ONLY its own joints.  executeGesture() commands just the
+    // named joints, so selecting a digit leaves the rest of the hand exactly
+    // where it was.  Returning to rest is an explicit gesture (grasp:open), not
+    // an implicit side effect of every other gesture.
+    //
+    // The thumb lists its three joints separately because they do not share a
+    // flip direction; one shared value would drive them opposite ways.
+    {
+      "thumb",
+      {
+        { "extend", true, true, {0},
+          {
+            {"thumbadd", EXTEND_THUMBADD},
+            {"thumbrot", EXTEND_THUMBROT},
+            {"thumbflex", EXTEND_THUMBFLEX}
+          }, 3 },
+        { "flex", true, true, {0},
+          {
+            {"thumbadd", FLEX_THUMBADD},
+            {"thumbrot", FLEX_THUMBROT},
+            {"thumbflex", FLEX_THUMBFLEX}
+          }, 3 }
+      }, 2
+    },
+
+    {
+      "index",
+      {
+        { "extend", true, true, {0},
+          {
+            {"index", EXTEND_INDEX}
+          }, 1 },
+        { "flex", true, true, {0},
+          {
+            {"index", FLEX_INDEX}
+          }, 1 }
+      }, 2
+    },
+
+    {
+      "middle",
+      {
+        { "extend", true, true, {0},
+          {
+            {"middle", EXTEND_MIDDLE}
+          }, 1 },
+        { "flex", true, true, {0},
+          {
+            {"middle", FLEX_MIDDLE}
+          }, 1 }
+      }, 2
+    },
+
+    {
+      "ring",
+      {
+        { "extend", true, true, {0},
+          {
+            {"ring", EXTEND_RING}
+          }, 1 },
+        { "flex", true, true, {0},
+          {
+            {"ring", FLEX_RING}
+          }, 1 }
+      }, 2
+    },
+
+    {
+      "pinky",
+      {
+        { "extend", true, true, {0},
+          {
+            {"pinky", EXTEND_PINKY}
+          }, 1 },
+        { "flex", true, true, {0},
+          {
+            {"pinky", FLEX_PINKY}
+          }, 1 }
       }, 2
     },
 };

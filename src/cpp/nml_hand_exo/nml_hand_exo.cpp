@@ -102,8 +102,13 @@ void NMLHandExo::initializeMotors() {
     dxl_.torqueOff(id);
     dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION);
     dxl_.torqueOn(id);
+    // Ceiling stays at the part maximum so set_current can raise effort at
+    // runtime, but the COMMANDED effort starts low. Writing GOAL_CURRENT at
+    // the ceiling makes every motor push at max whenever it is resisted, and
+    // several digits held flexed at once will brown out the supply.
     setCurrentLimit(id, MOTOR_CURRENT_LIMIT);
-    dxl_.writeControlTableItem(GOAL_CURRENT, id, currentLimits_[i]);
+    dxl_.writeControlTableItem(GOAL_CURRENT, id, DEFAULT_GOAL_CURRENT_MA);
+    currentLimits_[i] = DEFAULT_GOAL_CURRENT_MA;
   }
   delay(500);
 

@@ -24,6 +24,38 @@ sensors_event_t orientationData, linearAccelData;
 
 
 
+// ---- Loop-period instrumentation -------------------------------------------
+static uint32_t sLoopLastUs = 0;
+static uint32_t sLoopCount  = 0;
+static uint32_t sLoopMaxUs  = 0;
+static uint64_t sLoopTotalUs = 0;
+
+void loopStatsTick() {
+  uint32_t now = micros();
+  if (sLoopLastUs != 0) {
+    uint32_t delta = now - sLoopLastUs;   // unsigned math survives rollover
+    sLoopCount++;
+    sLoopTotalUs += delta;
+    if (delta > sLoopMaxUs) sLoopMaxUs = delta;
+  }
+  sLoopLastUs = now;
+}
+
+void loopStatsReset() {
+  sLoopCount = 0;
+  sLoopMaxUs = 0;
+  sLoopTotalUs = 0;
+  sLoopLastUs = 0;
+}
+
+uint32_t loopStatsCount() { return sLoopCount; }
+uint32_t loopStatsMaxUs() { return sLoopMaxUs; }
+
+uint32_t loopStatsMeanUs() {
+  if (sLoopCount == 0) return 0;
+  return (uint32_t)(sLoopTotalUs / sLoopCount);
+}
+
 void telemetryPrintln(const String& msg) {
   // Route a device->host line to the correct USB CDC(s).
 #if defined(DUAL_CDC) && DUAL_CDC
@@ -727,9 +759,26 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     }
 
   } else if (cmd == "set_current_lim") {
-    id = getArgMotorID(exo, token, 1);
+    // This is the knob that governs gesture effort: in current-based position
+    // mode setCurrentLimit() also writes GOAL_CURRENT. (set_current below is
+    // direct-control only and errors out in gesture mode.)
+    String arg = getArg(token, 1);  // local copy
+    arg.trim(); arg.toUpperCase();
     val = getArg(token, 2).toInt();
-    if (id != -1) exo.setCurrentLimit(id, val);
+    if (arg == "ALL") {
+      for (int i = 0; i < exo.getMotorCount(); i++) {
+        exo.setCurrentLimit(exo.getMotorIDByIndex(i), val);
+      }
+      commandPrint("OK: set_current_lim all " + String(val));
+    } else {
+      id = getArgMotorID(exo, token, 1);
+      if (id != -1) {
+        exo.setCurrentLimit(id, val);
+        commandPrint("OK: set_current_lim " + String(id) + " " + String(val));
+      } else {
+        commandPrint("ERROR: set_current_lim needs a valid motor ID or ALL");
+      }
+    }
 
   } else if (cmd == "set_current") {
     id = getArgMotorID(exo, token, 1);
@@ -882,6 +931,44 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
                             (gReplyRoute == REPLY_ROUTE_CMD)   ? "cmd"   : "both";
     commandPrint("OK: reply_route " + String(routeName));
 
+  } else if (cmd == "check_limits") {
+    // Report, per motor, whether a gesture can actually move it.
+    //
+    // setAbsoluteAngle() clamps every target to [min, max]. If home sits
+    // outside that window, or the window is inverted, every target clamps to
+    // the same boundary and the joint has ZERO travel: the command is accepted
+    // and acked, but nothing moves. Reads live values, so this reflects
+    // whatever apply_calibration and the multi-turn epoch snap have done.
+    String out = "Limit check:\n";
+    for (int i = 0; i < exo.getMotorCount(); ++i) {
+      uint8_t id = exo.getMotorIDByIndex(i);
+      float home = exo.getZeroAngle(id);
+      float lo = exo.getMotorLimitMin(id);
+      float hi = exo.getMotorLimitMax(id);
+      String status;
+      if (lo > hi) status += "LIMITS_INVERTED ";
+      if (home < min(lo, hi) || home > max(lo, hi)) status += "HOME_OUTSIDE ";
+      if (status.length() == 0) status = "ok";
+      out += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) +
+             ", id: " + String(id) +
+             ", home: " + String(home, 2) +
+             ", min: " + String(lo, 2) +
+             ", max: " + String(hi, 2) +
+             ", status: " + status + "}\n";
+    }
+    commandPrint(out);
+
+  } else if (cmd == "loop_stats") {
+    // Loop period is the floor on command latency: a byte sitting in the USB
+    // buffer is not seen until the loop comes back around to poll it.
+    commandPrint("Loop: n=" + String(loopStatsCount()) +
+                 " mean=" + String(loopStatsMeanUs()) + "us" +
+                 " max=" + String(loopStatsMaxUs()) + "us");
+
+  } else if (cmd == "reset_loop_stats") {
+    loopStatsReset();
+    commandPrint("OK: loop stats reset");
+
   } else if (cmd == "get_reply_route") {
     const char* routeName = (gReplyRoute == REPLY_ROUTE_TELEM) ? "telem" :
                             (gReplyRoute == REPLY_ROUTE_CMD)   ? "cmd"   : "both";
@@ -901,12 +988,23 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     }
 
   } else if (cmd == "home") {
+    // Case-insensitive ALL, matching every other multi-motor command. The old
+    // lowercase-only compare made "home:ALL" fall through to a name lookup,
+    // which silently did nothing.
     String target = getArg(token, 1);
-    if (target == "all") {
+    target.trim();
+    String upper = target; upper.toUpperCase();
+    if (upper == "ALL") {
       exo.homeAllMotors();
+      commandPrint(F("OK: home all"));
     } else {
       id = exo.getMotorID(target);
-      if (id != -1) exo.setHome(id);
+      if (id != -1) {
+        exo.setHome(id);
+        commandPrint("OK: home " + String(id));
+      } else {
+        commandPrint("ERROR: home needs a valid motor ID/name or ALL");
+      }
     }
 
   } else if (cmd == "stop") {
@@ -971,10 +1069,13 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       }
       commandPrint(out);
 
-  } else if (cmd == "set_gesture") { 
+  } else if (cmd == "set_gesture") {
     String gestureStr = getArg(token, 1);
     String stateStr = getArg(token, 2);
     gc.executeGesture(gestureStr, stateStr);
+    // Acknowledge so the host has a delimited reply to wait on; without this a
+    // request/response transaction on this command can only ever time out.
+    commandPrint("OK: gesture " + gestureStr + ":" + stateStr);
 
   } else if (cmd == "cycle_gesture") {
     debugPrint(F("[GestureController] cycle gesture button pressed"));
@@ -998,9 +1099,10 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       debugPrint(F("Current mode FREE. Change mode to cycle gesture states"));
     }
 
-  } else if (cmd == "set_gesture_state") { 
+  } else if (cmd == "set_gesture_state") {
     String stateStr = getArg(token, 1);
     gc.executeCurrentGestureNewState(stateStr);
+    commandPrint("OK: gesture_state " + stateStr);
 
   } else if (cmd == "set_zero_offset") {
     String arg = getArg(token, 1);
@@ -1090,6 +1192,9 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" debug                 |  ON/OFF              | // Set verbose output on/off"));
     commandPrint(F(" set_reply_route       |  BOTH/TELEM/CMD      | // Route replies: both(legacy)/telem(decoupled)/cmd (dual-CDC)"));
     commandPrint(F(" get_reply_route       |                      | // Get current reply/telemetry CDC route"));
+    commandPrint(F(" check_limits          |                      | // Flag joints whose home is outside their limits (zero travel)"));
+    commandPrint(F(" loop_stats            |                      | // Loop period: n / mean / max microseconds"));
+    commandPrint(F(" reset_loop_stats      |                      | // Clear loop statistics"));
     commandPrint(F(" reboot                |  ID/NAME/ALL         | // Reboot motor"));
     commandPrint(F(" version               |                      | // Get current software version"));
     commandPrint(F(" enable                |  ID/NAME             | // Enable torque for motor"));

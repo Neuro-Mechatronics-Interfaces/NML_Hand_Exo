@@ -5,6 +5,7 @@
  */
 #pragma once
 #include <Arduino.h>
+#define BT_SKIP
 
 // ========= Board specific configuration ===================
 /// @brief Serial port for Dynamixel communication.
@@ -227,6 +228,7 @@ constexpr const char* MOTOR_NAMES[] = {
   "wrist", "wrist2", "thumbadd", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky"
 };
 
+// ---- OLD -----
 /// @brief Home states [left placeholders, right calibrated].
 /// Left values are placeholders overwritten at runtime by apply_calibration.
 constexpr float HOME_STATES[] = {
@@ -245,6 +247,33 @@ constexpr float jointLimits[][2] = {
   {320, 166}, {42.0, 190.0}, {140.0, 260.0}, {160.26, 260.86}, {88.53, 174.27},
   {166.8, 239.93}, {50.5, 104.83}, {66.99, 125.06}, {400.1, 460.37}
 };
+// --- END OLD ---
+
+// // ---- HOME_STATES (paste into config.h, MOTOR_IDS order) ----
+// constexpr float HOME_STATES[] = {
+//   206.62, 152.24, 218.59, 229.50, 129.45, 189.82, 80.0, 80.00, 65.0, 206.62, 152.24, 218.59, 229.50, 129.45, 189.82, 80.0, 80.00, 65.0
+// };
+
+// constexpr float jointLimits[][2] = {
+//   {198.79, 209.62},
+//   {145.0, 164.56},
+//   {160.25, 260.0},
+//   {200.0, 350.0},
+//   {97.24, 182.34},
+//   {100.0, 220.0},
+//   {70.0, 92.5},
+//   {70.0, 92.5},
+//   {12.5, 72.5},
+//   {198.79, 209.62},
+//   {145.0, 164.56},
+//   {160.25, 260.0},
+//   {200.0, 350.0},
+//   {97.24, 182.34},
+//   {100.0, 220.0},
+//   {70.0, 92.5},
+//   {70.0, 92.5},
+//   {12.5, 72.5}
+// };
 
 /// @brief Default flip direction per motor.
 constexpr bool DEFAULT_FLIPS[] = {
@@ -428,7 +457,49 @@ constexpr long COMMAND_BAUD_RATE = 115200;
 constexpr long DYNAMIXEL_BAUD_RATE = 1000000;
 
 /// @brief Total number of gesture contained in the library
-constexpr int N_GESTURES = 6;
+/// 6 postures (grasp, keygrip, pinch_index, pinch_middle, pinch_ring, peace)
+/// plus one per-digit flex/extend gesture for each of the 5 digits.
+constexpr int N_GESTURES = 11;
+
+// ---- Per-digit gesture travel ----------------------------------------------
+// Each value is a fraction of that MOTOR's calibrated range (max - min), added
+// to its home position:
+//
+//     target = home +/- fraction * (limit_max - limit_min)
+//
+// The sign is then flipped for any motor whose DEFAULT_FLIPS entry is true, so
+// "positive = curls inward" only holds if that motor's flip flag is correct.
+//
+//   0.0      -> sit exactly at home
+//   positive -> travel one way, negative -> travel the other
+//
+// If a digit moves the WRONG WAY, negate its constant here (or fix that
+// motor's DEFAULT_FLIPS entry, which affects every gesture). If a digit moves
+// TOO FAR, shrink the magnitude.
+//
+// The thumb gets three independent knobs because its joints do NOT share a
+// flip direction (DEFAULT_FLIPS has thumbrot true, thumbadd/thumbflex false),
+// so a single shared value drives them physically opposite ways.
+//
+// NOTE: a joint whose home lies outside its calibrated limits has ZERO travel
+// no matter what is set here -- setAbsoluteAngle() clamps it. Run `check_limits`
+// to find those before tuning.
+
+constexpr float FLEX_THUMBADD    =  0.15f;
+constexpr float EXTEND_THUMBADD  =  0.15f;
+constexpr float FLEX_THUMBROT    =  0.15f;
+constexpr float EXTEND_THUMBROT  =  0.15f;
+constexpr float FLEX_THUMBFLEX   =  0.15f;
+constexpr float EXTEND_THUMBFLEX =  0.15f;
+
+constexpr float FLEX_INDEX       =  0.35f;
+constexpr float EXTEND_INDEX     =  -0.15f;
+constexpr float FLEX_MIDDLE      =  0.40f;
+constexpr float EXTEND_MIDDLE    =  -0.15f;
+constexpr float FLEX_RING        =  0.50f;
+constexpr float EXTEND_RING      =  -0.15f;
+constexpr float FLEX_PINKY       =  0.25f;
+constexpr float EXTEND_PINKY     =  -0.15f;
 
 /// @brief Maximum number of gesture buttons that can be configured
 constexpr int MAX_GESTURE_BUTTONS = 6; // Maximum number of gesture buttons that can be configured
@@ -442,6 +513,19 @@ constexpr long MAX_STATES_PER_GESTURE = 5;
 /// about 1 mA per unit. This project uses the full documented range because
 /// participant finger spasticity can require higher assistive torque.
 constexpr int MOTOR_CURRENT_LIMIT = 910;
+
+/// @brief Working effort commanded in current-based position mode, in mA.
+///
+/// This is GOAL_CURRENT -- the current a motor actually applies while holding
+/// or chasing its goal -- as distinct from MOTOR_CURRENT_LIMIT above, which is
+/// only the ceiling. They are NOT the same knob: initializing GOAL_CURRENT to
+/// the ceiling makes every motor push at the part maximum, so several digits
+/// held against resistance at once can pull amps and brown out the supply.
+///
+/// Keep this at the lowest value that still moves the digit. The ceiling stays
+/// high so `set_current:<motor>:<mA>` can raise effort at runtime for
+/// participants whose spasticity needs it.
+constexpr int DEFAULT_GOAL_CURRENT_MA = 150;
 
 /// @brief Direct-control limits used by serial velocity/current commands.
 constexpr float DIRECT_VELOCITY_LIMIT_RPM = 10.0f;

@@ -55,8 +55,18 @@ const __FlashStringHelper* oledGetStateText(ExoState s) {
     case EXO_RING_PINCH:    return F("RING PINCH");
     case EXO_KEYGRIP_OPEN:  return F("KEYGRIP OPEN");
     case EXO_KEYGRIP_CLOSE: return F("KEYGRIP CLOSE");
-    case EXO_GRASP_OPEN:    return F("GRASP OPEN");
+    case EXO_GRASP_OPEN:    return F("-- REST --");
     case EXO_GRASP_CLOSE:   return F("GRASP CLOSE");
+    case EXO_THUMB_FLEX:    return F("THUMB FLEX");
+    case EXO_THUMB_EXTEND:  return F("THUMB EXT");
+    case EXO_INDEX_FLEX:    return F("INDEX FLEX");
+    case EXO_INDEX_EXTEND:  return F("INDEX EXT");
+    case EXO_MIDDLE_FLEX:   return F("MID FLEX");
+    case EXO_MIDDLE_EXTEND: return F("MID EXT");
+    case EXO_RING_FLEX:     return F("RING FLEX");
+    case EXO_RING_EXTEND:   return F("RING EXT");
+    case EXO_PINKY_FLEX:    return F("PINKY FLEX");
+    case EXO_PINKY_EXTEND:  return F("PINKY EXT");
     default:                return F("UNKNOWN");
   }
 }

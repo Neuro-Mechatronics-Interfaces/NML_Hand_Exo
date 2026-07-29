@@ -12,6 +12,27 @@
 //#include <Adafruit_ISM330DHCX.h>
 #include <Adafruit_BNO055.h>
 
+// ---- Loop-period instrumentation -------------------------------------------
+// A command can only be picked up once per loop() iteration, so the loop period
+// is the floor on command latency. These counters make that period measurable
+// instead of guessable: call loopStatsTick() once at the top of loop(), then
+// query with the `loop_stats` command.
+
+/// @brief Record one loop iteration. Call once at the very top of loop().
+void loopStatsTick();
+
+/// @brief Clear accumulated loop statistics.
+void loopStatsReset();
+
+/// @brief Iterations recorded since the last reset.
+uint32_t loopStatsCount();
+
+/// @brief Longest single loop iteration since the last reset, microseconds.
+uint32_t loopStatsMaxUs();
+
+/// @brief Mean loop iteration time since the last reset, microseconds.
+uint32_t loopStatsMeanUs();
+
 /// @brief Emits a line to the telemetry/reply USB CDC(s) per gReplyRoute.
 /// In dual-CDC mode this honors the runtime reply route (BOTH/TELEM/CMD); in
 /// single-CDC builds it writes to the one port. Does NOT touch the Bluetooth

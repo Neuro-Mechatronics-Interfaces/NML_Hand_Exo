@@ -120,3 +120,5 @@ exo_logs
 
 # Claude Code
 .claude/
+
+pose_captures.json

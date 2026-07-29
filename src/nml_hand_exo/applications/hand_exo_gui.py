@@ -1314,24 +1314,15 @@ class SerialWorker(QThread):
             delimiter = raw_exo.command_delimiter
             full = command if command.endswith(delimiter) else command + delimiter
             comm = raw_exo.device
-            serial_dev = getattr(comm, "device", None)
-            if serial_dev is not None:
-                try:
-                    serial_dev.reset_input_buffer()
-                except Exception:
-                    pass
-            comm.send(full)
-
-            if serial_dev is None or not hasattr(serial_dev, "read_until"):
-                return comm.receive(wait_until_return=True, timeout=timeout)
-
-            original_timeout = serial_dev.timeout
+            # Flush through the comm layer, not a pyserial handle: DualSerialComm
+            # exposes no `.device`, so probing for one silently skipped both the
+            # flush and the fast read in dual-CDC mode.
             try:
-                serial_dev.timeout = timeout
-                data = serial_dev.read_until(b";")
-            finally:
-                serial_dev.timeout = original_timeout
-            return data.decode(errors="ignore").replace(";", "\n").strip()
+                comm.flush_input()
+            except Exception:
+                pass
+            comm.send(full)
+            return comm.receive(wait_until_return=True, timeout=timeout)
 
         return self._with_raw_exo(do_transact)
 
@@ -4903,6 +4894,23 @@ class HandExoGUI(QWidget):
             self._log(f"Connecting: mode={mode}, {conn_desc}, "
                       f"expected_side={side or 'all'}")
 
+            if not self._dual_cdc_active:
+                # gReplyRoute lives in firmware RAM and survives host reconnects,
+                # so a previous dual-CDC session can leave replies bound to the
+                # telemetry port. Single-port mode must claim the route back or
+                # every read times out until the board is power-cycled.
+                self.exo.send_command("set_reply_route:both")
+                time.sleep(0.1)
+                comm.flush_input()
+
+            # Firmware VERBOSE emits a blocking USB-CDC write per debug line —
+            # including one per motor on every gesture — which dominates command
+            # round-trip latency. The GUI does not consume those lines, so turn
+            # them off rather than pay for them on every transaction.
+            self.exo.send_command("debug:off")
+            time.sleep(0.1)
+            comm.flush_input()
+
             info = self.exo.info(timeout=5.0)
             motors_dict = info.get("motors", {})  # keyed by Dynamixel ID
 
@@ -5053,6 +5061,14 @@ class HandExoGUI(QWidget):
         self._angle_timer.stop()
         self._wait_for_pending_poll(1200)
         self._serial_worker.set_exo(None)
+        try:
+            if self.exo and self._dual_cdc_active:
+                # Hand the board back in its default routing so the next host
+                # (single-port GUI, terminal, another tool) still gets replies.
+                self.exo.send_command("set_reply_route:both")
+                time.sleep(0.05)
+        except Exception:
+            pass
         try:
             if self.exo:
                 self.exo.close()

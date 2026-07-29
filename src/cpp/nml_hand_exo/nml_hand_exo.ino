@@ -50,6 +50,57 @@ Serial_ SerialTelem(USBDevice);
 NMLHandExo exo(MOTOR_IDS, N_MOTORS, jointLimits, HOME_STATES);
 GestureController gc(exo);  // pass exo reference
 
+/// @brief Longest accepted command line; longer input is discarded.
+static constexpr uint16_t MAX_COMMAND_LEN = 192;
+
+/// @brief Non-blocking line assembler for one input stream.
+///
+/// Replaces Stream::readStringUntil('\n'), which BLOCKS until the terminator
+/// arrives or Stream::_timeout expires -- 1000 ms by default, and setTimeout()
+/// was never called anywhere in this firmware.  available()>0 only promises a
+/// single byte, so any command split across USB packets (routine on CDC) parked
+/// the entire control loop in that blocking read.  Worse, an unconnected UART
+/// with a floating RX line reports bytes available but never delivers a '\n',
+/// stalling a full second every iteration.
+///
+/// poll() consumes only bytes that are already buffered and returns
+/// immediately, so the loop can service every interface every pass.
+struct LineReader {
+  String buf;
+  bool overflowed = false;
+
+  /// @brief Drain buffered bytes; returns true and fills `out` on a full line.
+  bool poll(Stream& stream, String& out) {
+    while (stream.available() > 0) {
+      char c = (char)stream.read();
+      if (c == '\n') {
+        if (overflowed) {
+          // Discard the whole over-length line rather than emitting its tail
+          // as if it were a command.
+          buf = "";
+          overflowed = false;
+          continue;
+        }
+        out = buf;
+        buf = "";
+        out.trim();
+        if (out.length() > 0) return true;
+        continue;  // blank line: skip it and keep draining this pass
+      }
+      if (c != '\r') buf += c;
+      if (buf.length() > MAX_COMMAND_LEN) {  // runaway-input guard
+        buf = "";
+        overflowed = true;
+      }
+    }
+    return false;
+  }
+};
+
+static LineReader gCmdLines;    // primary USB CDC
+static LineReader gTelemLines;  // second USB CDC (also accepts commands)
+static LineReader gBtLines;     // HC-05 / UART command path
+
 
 // OLED display instance
 //volatile bool gOledEnabled = OLED_ENABLED_DEFAULT;
@@ -66,6 +117,15 @@ void setup() {
   COMMAND_SERIAL.begin(COMMAND_BAUD_RATE);     // (Optional) Establish port with TX/RX pins for incomming serial data/commands
 #if defined(DUAL_CDC) && DUAL_CDC
   SerialTelem.begin(DEBUG_BAUD_RATE);     // Second USB-CDC for telemetry / replies (baud is nominal for CDC)
+#endif
+
+  // Command input is assembled non-blocking by LineReader, so nothing here
+  // should ever sit in a Stream read. This caps the damage if some future path
+  // does call a blocking Stream helper: Arduino's default is 1000 ms.
+  DEBUG_SERIAL.setTimeout(5);
+  COMMAND_SERIAL.setTimeout(5);
+#if defined(DUAL_CDC) && DUAL_CDC
+  SerialTelem.setTimeout(5);
 #endif
 
   // Setup IMU
@@ -102,12 +162,19 @@ void setup() {
 }
 
 void loop() {
+  // Record iteration timing first: the loop period bounds how fast any command
+  // can possibly be picked up. Query with `loop_stats`.
+  loopStatsTick();
+
   // Handle data from the host COMMAND connection (primary USB CDC).
   // In dual-CDC mode CMD_SERIAL is the command port; in single-CDC fallback it
   // resolves to DEBUG_SERIAL (legacy behavior).
-  if (CMD_SERIAL.available() > 0) {
-    String input = CMD_SERIAL.readStringUntil('\n');
-    input.trim();
+  // Each while-loop drains every complete line already buffered on that
+  // interface, so a burst is handled in one pass instead of one line per
+  // iteration. None of these calls block.
+  String input;
+
+  while (gCmdLines.poll(CMD_SERIAL, input)) {
     debugPrint("Received: " + input);
     parseMessage(exo, gc, bno055, input);
   }
@@ -116,21 +183,21 @@ void loop() {
   // Also accept commands on the telemetry CDC. This keeps a LEGACY single-port
   // host working no matter which of the two COM ports it opened: either CDC
   // accepts commands, and replies mirror back per the default BOTH route.
-  if (TELEM_SERIAL.available() > 0) {
-    String input = TELEM_SERIAL.readStringUntil('\n');
-    input.trim();
+  while (gTelemLines.poll(TELEM_SERIAL, input)) {
     debugPrint("Received: " + input);
     parseMessage(exo, gc, bno055, input);
   }
 #endif
 
   // Handle data from the BLE/command connection
-  if (COMMAND_SERIAL.available() > 0) {
-    String input = COMMAND_SERIAL.readStringUntil('\n');
-    input.trim();
+#if defined(BT_SKIP)
+  // then we skip polling BT lines
+#else
+  while (gBtLines.poll(COMMAND_SERIAL, input)) {
     debugPrint("Received: " + input);
     parseMessage(exo, gc, bno055, input);
   }
+#endif
 
   //updateIMU(bno055); //constantly updating the IMU values. Keeps position consistent
 

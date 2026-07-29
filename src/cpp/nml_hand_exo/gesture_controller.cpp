@@ -18,6 +18,27 @@ static ExoState mapGestureStateToExoState(const String& gesture, const String& s
   if (g.indexOf("grasp") >= 0 || g.indexOf("power") >= 0) {
     return (s.indexOf("open") >= 0) ? EXO_GRASP_OPEN : EXO_GRASP_CLOSE;
   }
+
+  // Per-digit flex/extend gestures. Matched on the EXACT gesture name, not a
+  // substring: "index" as a substring also appears in "pinch_index", which is
+  // handled above and must keep its own state.
+  struct DigitEntry { const char* name; ExoState flex; };
+  static const DigitEntry kDigits[] = {
+    { "thumb",  EXO_THUMB_FLEX  },
+    { "index",  EXO_INDEX_FLEX  },
+    { "middle", EXO_MIDDLE_FLEX },
+    { "ring",   EXO_RING_FLEX   },
+    { "pinky",  EXO_PINKY_FLEX  },
+  };
+  for (uint8_t i = 0; i < sizeof(kDigits) / sizeof(kDigits[0]); ++i) {
+    if (g == kDigits[i].name) {
+      // The enum pairs each digit's FLEX with EXTEND at the next value.
+      return (s.indexOf("extend") >= 0)
+               ? (ExoState)(kDigits[i].flex + 1)
+               : kDigits[i].flex;
+    }
+  }
+
   return EXO_READY; // fallback for unknowns/idle
 }
 
@@ -63,12 +84,14 @@ void GestureController::executeGesture(const String& gesture, const String& stat
   // Resolve this state into absolute angles.
   // Gesture values are normalized 0.0–1.0 (fraction of motor range).
   float absAngles[N_MOTORS];
-  resolveStateAngles(gestureLibrary[gIdx].states[sIdx], home, absAngles);
+  bool touched[N_MOTORS];
+  resolveStateAngles(gestureLibrary[gIdx].states[sIdx], home, absAngles, touched);
 
   if (st.isRelative) {
     // Scale normalized offsets by each motor's calibrated range,
     // then apply flip direction.
     for (int i = 0; i < exo_.getMotorCount(); ++i) {
+      if (!touched[i]) continue;
       uint8_t id = exo_.getMotorIDByIndex(i);
       float fraction = absAngles[i] - home[i];  // 0.0–1.0 from resolveStateAngles
       float range = exo_.getMotorLimitMax(id) - exo_.getMotorLimitMin(id);
@@ -80,12 +103,28 @@ void GestureController::executeGesture(const String& gesture, const String& stat
     }
   }
 
-  // Command absolute targets
+  // Command absolute targets.
+  //
+  // The per-motor trace is accumulated and emitted as ONE line rather than one
+  // println per motor.  Each telemetryPrintln is a blocking USB-CDC write, so
+  // the old per-motor form cost N blocking writes per gesture (N = 18 in
+  // dual-exo builds) and dominated command round-trip latency.  Same
+  // information, one write.
+  // Only joints this state actually names are commanded. A sparse state that
+  // lists one digit leaves every other joint untouched, so switching gestures
+  // no longer implies an invisible "open everything else" -- REST is an
+  // explicit gesture, not a side effect of every other one.
+  String trace;
   for (int i = 0; i < exo_.getMotorCount(); ++i) {
+    if (!touched[i]) continue;
     uint8_t id = exo_.getMotorIDByIndex(i);
-    debugPrint("[GestureController] motor " + String(id) + " -> abs " + String(absAngles[i], 2));
+    if (VERBOSE) {
+      if (trace.length()) trace += ", ";
+      trace += String(id) + "->" + String(absAngles[i], 2);
+    }
     exo_.setAbsoluteAngle(id, absAngles[i]);
   }
+  debugPrint("[GestureController] targets: " + trace);
 
   // float* angles = gestureLibrary[gIdx].states[sIdx].jointAngles;
   // const GestureState& st = gestureLibrary[gIdx].states[sIdx];

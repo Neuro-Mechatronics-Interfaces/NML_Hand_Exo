@@ -77,23 +77,17 @@ def default_bindings(control_mode: str = "torque") -> list[dict]:
             "description": "REST / no torque",
         }
     ]
-    position_gestures = {
-        "thumb": "pinch_index",
-        "index": "pinch_index",
-        "middle": "pinch_middle",
-        "ring": "pinch_ring",
-        # Firmware has no isolated-pinky gesture; grasp is the safe fallback.
-        "pinky": "grasp",
-    }
     current_text = f"{DEFAULT_TORQUE_MA:g}"
     for value, digit, motor_name in _DIGITS:
         if mode == "torque":
             positive = f"set_current:{{{motor_name}}}:{current_text}"
             negative = f"set_current:{{{motor_name}}}:-{current_text}"
         else:
-            gesture = position_gestures[digit]
-            positive = f"set_gesture:{gesture}:close"
-            negative = f"set_gesture:{gesture}:open"
+            # Firmware exposes one flex/extend gesture per digit, named for the
+            # digit itself, so +N/-N map straight through without the pinch
+            # approximations this used to need.
+            positive = f"set_gesture:{digit}:flex"
+            negative = f"set_gesture:{digit}:extend"
         bindings.extend(
             (
                 {

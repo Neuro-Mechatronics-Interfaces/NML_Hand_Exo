@@ -44,11 +44,19 @@ class UDPCommandBindingsTests(unittest.TestCase):
         self.assertEqual(lookup[5]["command"], "set_current:{pinky}:100")
         self.assertEqual(lookup[-5]["command"], "set_current:{pinky}:-100")
 
-    def test_position_defaults_use_gesture_fallback(self):
+    def test_position_defaults_map_each_digit_to_its_own_gesture(self):
         lookup = {row["value"]: row for row in default_bindings("position")}
+        self.assertEqual(set(lookup), set(range(-5, 6)))
         self.assertEqual(lookup[0]["command"], "set_gesture:grasp:open")
-        self.assertEqual(lookup[3]["command"], "set_gesture:pinch_middle:close")
-        self.assertEqual(lookup[-3]["command"], "set_gesture:pinch_middle:open")
+        for value, digit, _motor in (
+            (1, "thumb", None),
+            (2, "index", None),
+            (3, "middle", None),
+            (4, "ring", None),
+            (5, "pinky", None),
+        ):
+            self.assertEqual(lookup[value]["command"], f"set_gesture:{digit}:flex")
+            self.assertEqual(lookup[-value]["command"], f"set_gesture:{digit}:extend")
 
     def test_profile_rejects_duplicate_and_connection_port_values(self):
         profile = make_default_binding_profile()

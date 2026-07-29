@@ -30,7 +30,21 @@ enum ExoState : uint8_t {
   EXO_KEYGRIP_OPEN,
   EXO_KEYGRIP_CLOSE,
   EXO_GRASP_OPEN,
-  EXO_GRASP_CLOSE
+  EXO_GRASP_CLOSE,
+
+  // Per-digit flex/extend gestures. Keep each digit's FLEX immediately
+  // followed by its EXTEND: mapGestureStateToExoState() derives the extend
+  // variant as FLEX + 1.
+  EXO_THUMB_FLEX,
+  EXO_THUMB_EXTEND,
+  EXO_INDEX_FLEX,
+  EXO_INDEX_EXTEND,
+  EXO_MIDDLE_FLEX,
+  EXO_MIDDLE_EXTEND,
+  EXO_RING_FLEX,
+  EXO_RING_EXTEND,
+  EXO_PINKY_FLEX,
+  EXO_PINKY_EXTEND
 };
 
 /** Initialize the OLED safely (fast-fail). Returns true if enabled & ready. */
