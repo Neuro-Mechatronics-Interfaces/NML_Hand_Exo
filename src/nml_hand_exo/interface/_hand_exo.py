@@ -10,6 +10,7 @@ from ._interfaces import BaseComm
 ANGLE_ADDRESSABLE_GESTURES = frozenset(
     {"thumb", "thumbadd", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky", "wrist"}
 )
+MIN_GESTURE_ANGLE_FIRMWARE = (0, 2, 16)
 
 
 class HandExo(object):
@@ -48,6 +49,7 @@ class HandExo(object):
         self.device.verbose = verbose
         # Side is set explicitly or detected via detect_side() / info().
         self.side: str | None = side
+        self._firmware_version: tuple[int, ...] | None = None
 
         if auto_connect:
             self.device.connect()
@@ -463,11 +465,27 @@ class HandExo(object):
         Gets the version of the exo
         """
         self.send_command("version")
-        response = self._receive()
-
-        if response:
-            return response.strip().split(':')[1]
+        response = self._receive(wait_until_return=True, timeout=1.0)
+        match = re.search(r"Exo Device Version:\s*([0-9]+(?:\.[0-9]+)*)", response)
+        if match:
+            return match.group(1)
         return ""
+
+    def firmware_version(self) -> tuple[int, ...]:
+        if self._firmware_version is None:
+            text = self.version()
+            if not re.fullmatch(r"\d+(?:\.\d+)*", text):
+                raise RuntimeError("could not determine firmware version")
+            self._firmware_version = tuple(int(part) for part in text.split("."))
+        return self._firmware_version
+
+    def require_gesture_angle_support(self):
+        version = self.firmware_version()
+        if version < MIN_GESTURE_ANGLE_FIRMWARE:
+            raise RuntimeError(
+                "set_gesture_angle requires firmware 0.2.16 or newer; device has "
+                + ".".join(map(str, version))
+            )
 
     def home(self, motor_id: (int or str) = 'all'):
         """
@@ -1034,6 +1052,7 @@ class HandExo(object):
             raise ValueError(f"percent must be numeric, got {percent!r}") from exc
         if not math.isfinite(value):
             raise ValueError(f"percent must be finite, got {percent!r}")
+        self.require_gesture_angle_support()
         self.send_command(f"set_gesture_angle:{name}:{value:g}")
 
     def set_gesture_state(self, state: str):

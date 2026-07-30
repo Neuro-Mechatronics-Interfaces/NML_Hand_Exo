@@ -2413,6 +2413,11 @@ class HandExoGUI(QWidget):
             return
         if gesture_angle is not None:
             command, gesture = gesture_angle
+            try:
+                self.exo.require_gesture_angle_support()
+            except Exception as exc:
+                self._set_udp_command_feedback(payload, sender, f"rejected: {exc}", "#c0392b")
+                return
             # Decoder and slider sources may send faster than the serial link.
             # Keep only the newest target for each joint gesture.
             self._udp_stream_pending[("set_gesture_angle", gesture)] = (
@@ -2536,9 +2541,11 @@ class HandExoGUI(QWidget):
                         payload, sender, "rejected: invalid control mode", "#c0392b"
                     )
                     return
+        if command.startswith("set_gesture:"):
+            self._prepare_udp_gesture_target()
         self._set_udp_command_feedback(payload, sender, "received", "#f39c12")
         try:
-            self.exo.send_command(command)
+            self._serial_worker.enqueue(command)
             if command.startswith("set_control_mode:all:"):
                 selected_mode = command.rsplit(":", 1)[-1]
                 if selected_mode in ("velocity", "current"):
@@ -2562,7 +2569,9 @@ class HandExoGUI(QWidget):
         self._udp_stream_pending.clear()
         for command, payload, sender in pending_items:
             try:
-                self.exo.send_command(command)
+                if command.startswith(("set_gesture:", "set_gesture_angle:")):
+                    self._prepare_udp_gesture_target()
+                self._serial_worker.enqueue(command)
                 self._udp_stream_sent_since_status += 1
             except Exception as exc:
                 self._set_udp_command_feedback(
@@ -3380,6 +3389,15 @@ class HandExoGUI(QWidget):
             except Exception as e:
                 self._log(f"Gesture error: {e}")
         return handler
+
+    def _prepare_udp_gesture_target(self):
+        """Apply local gesture readiness and dual-side containment to UDP input."""
+        if self.mode_combo.currentText() == "Dual":
+            target = self._gesture_target_combo.currentText()
+            self._ensure_gesture_ready(target=target)
+            self._apply_gesture_target_motors(target)
+        else:
+            self._ensure_gesture_ready()
 
     def _apply_gesture_target_motors(self, target: str):
         """Enable/disable motors to match the current gesture target.

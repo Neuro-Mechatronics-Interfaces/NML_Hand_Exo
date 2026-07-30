@@ -7,6 +7,7 @@ class GestureAngleApiTests(unittest.TestCase):
     def make_exo(self):
         exo = HandExo.__new__(HandExo)
         exo.commands = []
+        exo._firmware_version = (0, 2, 16)
         exo.send_command = exo.commands.append
         return exo
 
@@ -42,6 +43,13 @@ class GestureAngleApiTests(unittest.TestCase):
             exo.set_gesture_angle("grasp", 50)
         with self.assertRaises(ValueError):
             exo.set_gesture_angle("index", float("nan"))
+        self.assertEqual(exo.commands, [])
+
+    def test_rejects_older_firmware(self):
+        exo = self.make_exo()
+        exo._firmware_version = (0, 2, 15)
+        with self.assertRaises(RuntimeError):
+            exo.set_gesture_angle("index", 50)
         self.assertEqual(exo.commands, [])
 
 

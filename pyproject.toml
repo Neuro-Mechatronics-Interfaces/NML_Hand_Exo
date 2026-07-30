@@ -1,6 +1,6 @@
 [project]
 name = "nml_hand_exo"
-version = "0.0.8"
+version = "0.2.16"
 description = "Python API for controlling the NML Hand Exoskeleton"
 authors = [
     { name="Jonathan Shulgach", email="jshulgac@andrew.cmu.edu" },
