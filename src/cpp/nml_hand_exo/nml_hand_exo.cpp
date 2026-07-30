@@ -887,6 +887,10 @@ void NMLHandExo::setMotorControlMode(uint8_t id, const String& mode){
     debugPrint("Set motor " + String(id) + " to POSITION mode");
   } else if (m == "CURRENT_POSITION") {
     dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION);
+    int index = getIndexById(id);
+    if (index != -1) {
+      dxl_.writeControlTableItem(GOAL_CURRENT, id, currentLimits_[index]);
+    }
     debugPrint("Set motor " + String(id) + " to CURRENT_POSITION mode");
   } else if (m == "VELOCITY") {
     dxl_.setOperatingMode(id, OP_VELOCITY);

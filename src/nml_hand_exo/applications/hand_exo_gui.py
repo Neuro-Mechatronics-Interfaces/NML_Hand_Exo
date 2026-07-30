@@ -2514,7 +2514,6 @@ class HandExoGUI(QWidget):
         if relative is not None:
             self._apply_motor_angles(relative, positions)
 
-        positions = result.get("positions")
         torques = result.get("torques")
         currents = result.get("currents")
         if not result.get("telemetry_requested", True):
