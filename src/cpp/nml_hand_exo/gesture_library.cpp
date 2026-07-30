@@ -366,47 +366,29 @@ GestureMap gestureLibrary[N_GESTURES] = {
       }, 3
     },
 
-    // Wrist flexion/extension. Names only the `wrist` joint: `wrist2` is a
-    // separate DOF, addressed by the "rad" gesture below. Coupling both into one
-    // gesture would move an axis the caller never asked for.
+    // Wrist flexion/extension, driving BOTH dorsal motors together. `wrist` and
+    // `wrist2` are mounted on the back of the arm and connect to the dorsal
+    // aspect of the wrist, so they act on the same structure: commanding one
+    // alone leaves the other holding position against it, which is why the
+    // separate single-motor "rad" gesture was removed rather than retuned.
     {
       "wrist",
       {
         { "extend", true, true, {0},
           {
-            {"wrist", EXTEND_WRIST}
-          }, 1 },
+            {"wrist", EXTEND_WRIST},
+            {"wrist2", EXTEND_WRIST}
+          }, 2 },
         { "rest", true, true, {0},
           {
-            {"wrist", REST_WRIST}
-          }, 1 },
+            {"wrist", REST_WRIST},
+            {"wrist2", REST_WRIST}
+          }, 2 },
         { "flex", true, true, {0},
           {
-            {"wrist", FLEX_WRIST}
-          }, 1 }
-      }, 3
-    },
-
-    // Second wrist axis (the `wrist2` motor). Named for radial/ulnar deviation
-    // -- see the EXTEND_RAD/REST_RAD/FLEX_RAD note in config.h, the anatomy is
-    // unverified. "flex"/"extend" mean whichever direction calibration recorded
-    // for wrist2, and the names stay uniform so set_gesture_angle (which keys
-    // off the "flex" state) works here too.
-    {
-      "rad",
-      {
-        { "extend", true, true, {0},
-          {
-            {"wrist2", EXTEND_RAD}
-          }, 1 },
-        { "rest", true, true, {0},
-          {
-            {"wrist2", REST_RAD}
-          }, 1 },
-        { "flex", true, true, {0},
-          {
-            {"wrist2", FLEX_RAD}
-          }, 1 }
+            {"wrist", FLEX_WRIST},
+            {"wrist2", FLEX_WRIST}
+          }, 2 }
       }, 3
     },
 };

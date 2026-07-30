@@ -29,8 +29,9 @@ static ExoState mapGestureStateToExoState(const String& gesture, const String& s
     { "middle", EXO_MIDDLE_FLEX },
     { "ring",   EXO_RING_FLEX   },
     { "pinky",  EXO_PINKY_FLEX  },
+    // No "rad" row: wrist2 moves with `wrist` now, so nothing can reach the
+    // EXO_RAD_* screens. The enum keeps them so oled.cpp stays exhaustive.
     { "wrist",  EXO_WRIST_FLEX  },
-    { "rad",    EXO_RAD_FLEX    },
   };
   for (uint8_t i = 0; i < sizeof(kDigits) / sizeof(kDigits[0]); ++i) {
     if (g == kDigits[i].name) {
@@ -90,18 +91,16 @@ void GestureController::executeGesture(const String& gesture, const String& stat
   resolveStateAngles(gestureLibrary[gIdx].states[sIdx], home, absAngles, touched);
 
   if (st.isRelative) {
-    // Scale normalized offsets by each motor's calibrated range,
-    // then apply flip direction.
+    // Place each normalized offset on that motor's gesture axis: 0 = home,
+    // 1 = the flexion endstop. Sharing gestureFractionToAngle() with
+    // setGestureAngle() is what keeps `set_gesture:index:flex` and
+    // `set_gesture_angle:index:<FLEX_INDEX*100>` on the same target -- and what
+    // lets get_gesture_angle report either of them back as the same number.
     for (int i = 0; i < exo_.getMotorCount(); ++i) {
       if (!touched[i]) continue;
       uint8_t id = exo_.getMotorIDByIndex(i);
       float fraction = absAngles[i] - home[i];  // 0.0–1.0 from resolveStateAngles
-      float range = exo_.getMotorLimitMax(id) - exo_.getMotorLimitMin(id);
-      if (exo_.isMotorFlipped(id)) {
-        absAngles[i] = home[i] - fraction * range;
-      } else {
-        absAngles[i] = home[i] + fraction * range;
-      }
+      absAngles[i] = exo_.gestureFractionToAngle(id, fraction);
     }
   }
 
@@ -175,57 +174,63 @@ void GestureController::executeCurrentGestureNewState(const String& state) {
   // Execute the gesture with the specified state
   executeGesture(gesture, state);
 }
-bool GestureController::setGestureAngle(const String& gesture, float percent) {
+bool GestureController::setGestureAngle(const String& gesture, float percent,
+                                        uint8_t* movedOut, uint8_t* stuckOut) {
+  if (movedOut) *movedOut = 0;
+  if (stuckOut) *stuckOut = 0;
+
   int gIdx = findGestureIndex(gesture);
   if (gIdx == -1) {
     debugPrint("[GestureController] Unknown gesture: " + gesture);
     return false;
   }
 
-  // The "flex" state defines which joints this gesture owns. Multi-joint
-  // postures (grasp, keygrip, pinch_*) have no such state and are deliberately
-  // not addressable here: one percentage cannot describe a whole posture.
-  int sIdx = findStateIndex(gestureLibrary[gIdx], "flex");
-  if (sIdx == -1) {
+  // Multi-joint postures (grasp, keygrip, pinch_*) have no flex state and are
+  // deliberately not addressable here: one percentage cannot describe a posture.
+  GestureAxisPoint axis[N_MOTORS];
+  uint8_t nAxis = resolveGestureAxis(gIdx, axis, N_MOTORS);
+  if (nAxis == 0) {
     debugPrint("[GestureController] Gesture '" + gesture +
                "' has no flex state; not angle-addressable");
     return false;
   }
 
   percent = constrain(percent, 0.0f, 100.0f);
-  const float fraction = percent / 100.0f;
+  const float t = percent / 100.0f;
 
-  // Same scaling as executeGesture(): fraction of the calibrated range measured
-  // from home, negated for flipped motors so higher percent always means more
-  // flexion. Targets are interior to the limit window by construction, so the
-  // clamp in setAbsoluteAngle() stays a safety net rather than the thing
-  // defining behavior.
-  const GestureState& st = gestureLibrary[gIdx].states[sIdx];
+  // Interpolate the gesture's OWN endpoints: 0% is its extend posture, 100% is
+  // its flex posture, and each motor moves its own share. Where a gesture drives
+  // several motors the ratio between them therefore holds at every percentage,
+  // which a shared per-motor fraction could not do -- and 100 lands exactly on
+  // `set_gesture:<g>:flex` instead of somewhere past it.
   String trace;
-  for (uint8_t k = 0; k < st.nPairs; ++k) {
-    if (!st.namedPairs[k].joint) continue;
-    String pairName = String(st.namedPairs[k].joint);
-    pairName.toLowerCase();
-
-    // Match EVERY motor carrying this name: dual builds list each name twice
-    // (left IDs 1-9, right IDs 11-19), same as resolveStateAngles().
-    for (int i = 0; i < exo_.getMotorCount(); ++i) {
-      uint8_t id = exo_.getMotorIDByIndex(i);
-      String mName = exo_.getMotorNameByID(id);
-      mName.toLowerCase();
-      if (!mName.equals(pairName)) continue;
-
-      float home = exo_.getZeroAngle(id);
-      float range = exo_.getMotorLimitMax(id) - exo_.getMotorLimitMin(id);
-      float target = exo_.isMotorFlipped(id) ? home - fraction * range
-                                             : home + fraction * range;
-      if (VERBOSE) {
-        if (trace.length()) trace += ", ";
-        trace += String(id) + "->" + String(target, 2);
-      }
-      exo_.setAbsoluteAngle(id, target);
+  uint8_t moved = 0;
+  uint8_t stuck = 0;
+  for (uint8_t k = 0; k < nAxis; ++k) {
+    // A motor with no calibrated travel cannot be positioned. Commanding it
+    // anyway would be a goal it is already sitting on, counted as a move and
+    // acked as success -- the exact failure this whole path exists to make
+    // visible. Report it instead.
+    if (fabsf(exo_.getGestureSpan(axis[k].id)) < GESTURE_MIN_TRAVEL_DEG) {
+      ++stuck;
+      debugPrint("[GestureController] motor " + String(axis[k].id) + " (" +
+                 exo_.getMotorNameByID(axis[k].id) +
+                 ") has no calibrated travel; skipped");
+      continue;
     }
+
+    const float fraction = axis[k].extendFraction +
+                           t * (axis[k].flexFraction - axis[k].extendFraction);
+    const float target = exo_.gestureFractionToAngle(axis[k].id, fraction);
+    if (VERBOSE) {
+      if (trace.length()) trace += ", ";
+      trace += String(axis[k].id) + "->" + String(target, 2);
+    }
+    exo_.setAbsoluteAngle(axis[k].id, target);
+    ++moved;
   }
+  if (movedOut) *movedOut = moved;
+  if (stuckOut) *stuckOut = stuck;
 
   // Deliberately does NOT touch currentGesture_/currentGestureState_: this is a
   // direct positioning command, not a state-machine transition. Writing a
@@ -234,6 +239,151 @@ bool GestureController::setGestureAngle(const String& gesture, float percent) {
   debugPrint("[GestureController] " + gesture + " @ " + String(percent, 1) +
              "% targets: " + trace);
   return true;
+}
+uint8_t GestureController::resolveGestureAxis(int gestureIndex,
+                                             GestureAxisPoint* out,
+                                             uint8_t maxPoints) {
+  if (!out || maxPoints == 0) return 0;
+  if (gestureIndex < 0 || gestureIndex >= N_GESTURES) return 0;
+
+  // The "flex" state defines both membership and the 100% end. A gesture
+  // without one is not angle-addressable, which is what keeps multi-joint
+  // postures out without hard-coding a list of them.
+  const int fIdx = findStateIndex(gestureLibrary[gestureIndex], "flex");
+  if (fIdx == -1) return 0;
+  const int eIdx = findStateIndex(gestureLibrary[gestureIndex], "extend");
+  const GestureState& flex = gestureLibrary[gestureIndex].states[fIdx];
+
+  uint8_t n = 0;
+  for (uint8_t k = 0; k < flex.nPairs && n < maxPoints; ++k) {
+    if (!flex.namedPairs[k].joint) continue;
+    String pairName = String(flex.namedPairs[k].joint);
+    pairName.toLowerCase();
+
+    // 0% is the extend state's value for this joint. A gesture with no extend
+    // state anchors at home instead, which is where extend sat before it became
+    // an independently tunable posture.
+    float extendFraction = 0.0f;
+    if (eIdx != -1) {
+      const GestureState& ext = gestureLibrary[gestureIndex].states[eIdx];
+      for (uint8_t e = 0; e < ext.nPairs; ++e) {
+        if (!ext.namedPairs[e].joint) continue;
+        String extName = String(ext.namedPairs[e].joint);
+        extName.toLowerCase();
+        if (extName.equals(pairName)) {
+          extendFraction = ext.namedPairs[e].value;
+          break;
+        }
+      }
+    }
+
+    // Match EVERY motor carrying this name: dual builds list each name twice
+    // (left IDs 1-9, right IDs 11-19), same as resolveStateAngles().
+    for (int i = 0; i < exo_.getMotorCount() && n < maxPoints; ++i) {
+      uint8_t id = exo_.getMotorIDByIndex(i);
+      String mName = exo_.getMotorNameByID(id);
+      mName.toLowerCase();
+      if (!mName.equals(pairName)) continue;
+      out[n].id = id;
+      out[n].extendFraction = extendFraction;
+      out[n].flexFraction = flex.namedPairs[k].value;
+      ++n;
+    }
+  }
+  return n;
+}
+uint8_t GestureController::readGestureAngles(GestureAngleRecord* out,
+                                            uint8_t maxRecords,
+                                            const String& only) {
+  if (!out || maxRecords == 0) return 0;
+
+  String wanted = only;
+  wanted.trim();
+  wanted.toLowerCase();
+
+  // -- 1. Which gestures are being reported, and which motors do they name? --
+  GestureAxisPoint axis[N_MOTORS];
+  uint8_t ids[N_MOTORS];
+  uint8_t idCount = 0;
+  int8_t gestureIdx[N_GESTURES];
+  uint8_t gestureCount = 0;
+
+  for (int g = 0; g < N_GESTURES && gestureCount < maxRecords; ++g) {
+    if (wanted.length() && !wanted.equalsIgnoreCase(gestureLibrary[g].name)) continue;
+    uint8_t nAxis = resolveGestureAxis(g, axis, N_MOTORS);
+    if (nAxis == 0) continue;
+    gestureIdx[gestureCount++] = (int8_t)g;
+    for (uint8_t k = 0; k < nAxis; ++k) {
+      bool seen = false;
+      for (uint8_t n = 0; n < idCount; ++n) {
+        if (ids[n] == axis[k].id) { seen = true; break; }
+      }
+      if (!seen && idCount < N_MOTORS) ids[idCount++] = axis[k].id;
+    }
+  }
+  if (gestureCount == 0) return 0;
+
+  // -- 2. One batched position read for the whole set --------------------
+  //
+  // Per-motor reads would be up to N_MOTORS round trips on the Dynamixel bus
+  // for a query a host may poll after every command; this path is the one the
+  // fast-telemetry frame already uses.
+  FastTelemetryRecord telem[N_MOTORS];
+  uint8_t method = FAST_TELEM_METHOD_FAILED;
+  uint8_t telemCount = exo_.getFastTelemetryRecords(ids, idCount, telem, method, 10);
+
+  // -- 3. Project each motor back onto its own extend -> flex segment -----
+  //
+  // Exact inverse of setGestureAngle(): each motor is placed on the segment its
+  // own two endpoints define, then the gesture's percentage is the mean of the
+  // joints that carry information. Averaging PERCENTAGES rather than raw
+  // fractions is what makes a multi-motor gesture read back the number that was
+  // commanded, even though its joints travel different distances.
+  uint8_t written = 0;
+  for (uint8_t n = 0; n < gestureCount; ++n) {
+    const int g = gestureIdx[n];
+    const uint8_t nAxis = resolveGestureAxis(g, axis, N_MOTORS);
+
+    float sum = 0.0f;
+    uint8_t valid = 0;
+    for (uint8_t k = 0; k < nAxis; ++k) {
+      // A joint whose two endpoints coincide holds still across the whole
+      // axis, so its position says nothing about the percentage -- and
+      // dividing by that separation would blow up. Same for a motor with no
+      // calibrated travel, which setGestureAngle() also refuses to command.
+      const float separation = axis[k].flexFraction - axis[k].extendFraction;
+      if (fabsf(separation) < GESTURE_AXIS_MIN_SEPARATION) continue;
+      if (fabsf(exo_.getGestureSpan(axis[k].id)) < GESTURE_MIN_TRAVEL_DEG) continue;
+
+      for (uint8_t r = 0; r < telemCount; ++r) {
+        if (telem[r].id != axis[k].id || telem[r].error) continue;
+        const float measured =
+          exo_.gestureAngleToFraction(axis[k].id, telem[r].absolute_cdeg / 100.0f);
+        sum += (measured - axis[k].extendFraction) / separation;
+        ++valid;
+        break;
+      }
+    }
+
+    out[written].gesture = (uint8_t)g;
+    if (valid == 0) {
+      out[written].code = GESTURE_ANGLE_UNAVAILABLE;
+    } else {
+      const float mean = sum / (float)valid;
+      if (mean < -GESTURE_FRACTION_TOLERANCE) {
+        out[written].code = GESTURE_ANGLE_BELOW_RANGE;
+      } else if (mean > 1.0f + GESTURE_FRACTION_TOLERANCE) {
+        out[written].code = GESTURE_ANGLE_ABOVE_RANGE;
+      } else {
+        // Inside tolerance but past an end: report the endpoint, not a code.
+        // Backlash routinely leaves a settled joint a hair beyond 0 or 100.
+        out[written].code =
+          (uint8_t)lroundf(constrain(mean, 0.0f, 1.0f) * 100.0f);
+      }
+    }
+    ++written;
+  }
+  return written;
 }
 void GestureController::setCycleGestureButton(const int pin) {
   cycleGesturePin = pin;

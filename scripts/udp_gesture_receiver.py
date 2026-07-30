@@ -14,14 +14,23 @@ thread, so they never gate the command path.
 
 Edit build_command_map() below to change the integer -> command associations.
 
-Requires firmware >= 0.3.0: per-joint moves use set_gesture_angle, and the
-wrist gesture only exists from that version (rad needs >= 0.3.1). Use
-scripts/udp_gesture_gui.py to drive this receiver by hand.
+Each acked command is followed by a packed binary frame carrying where all
+seven joints now sit, as percentages of their calibrated travel -- so a
+consumer learns the resulting pose without polling for it. The ASCII integer
+ack is unchanged and still goes out first; the pose is an additional datagram
+that only readers who know its magic need to look at. See pack_pose_ack().
+
+Requires firmware >= 0.6.0: per-joint moves use set_gesture_angle, whose
+percentages interpolate each gesture's extend and flex postures from that
+version on, and `wrist` drives both dorsal wrist motors together. Pose acks
+switch themselves off against anything older. Use scripts/udp_gesture_gui.py
+to drive this receiver by hand.
 
 Usage:
     python scripts/udp_gesture_receiver.py
     python scripts/udp_gesture_receiver.py --port 10003 --cmd-port COM10
     python scripts/udp_gesture_receiver.py --no-arm         # do not enable motors
+    python scripts/udp_gesture_receiver.py --no-pose-ack    # skip pose queries
     python scripts/udp_gesture_receiver.py --ignore-replies # hide device replies
     python scripts/udp_gesture_receiver.py --mock           # no exo attached
 
@@ -36,10 +45,15 @@ import argparse
 import collections
 import signal
 import socket
+import struct
 import sys
 import time
 
 from nml_hand_exo import DualSerialComm
+from nml_hand_exo.interface._hand_exo import (
+    GESTURE_ANGLE_PREFIX,
+    parse_gesture_angles,
+)
 from nml_hand_exo.interface._udp_command_bindings import (
     UDP_CONNECTION_PORT_MAX,
     UDP_CONNECTION_PORT_THRESHOLD,
@@ -59,10 +73,14 @@ CMD_PORT = "COM10"      # commands out
 TELEM_PORT = "COM11"    # replies in
 BAUD = 1000000
 
-# Per-joint UDP value assignments.  Order fixes the integer for each joint.
-# "rad" is the second wrist axis (the wrist2 motor); see the EXTEND_RAD note in
-# src/cpp/nml_hand_exo/config.h -- its anatomy is unverified.
-JOINTS = ("thumb", "index", "middle", "ring", "pinky", "wrist", "rad")
+# Per-joint UDP value assignments.  Order fixes the integer for each joint, and
+# the layout of the pose frame sent back with each ack.
+#
+# "wrist" drives BOTH dorsal wrist motors (wrist and wrist2) together: they are
+# mounted on the back of the arm and pull on the same structure, so commanding
+# one alone leaves the other holding position against it.  The separate "rad"
+# joint that used to address wrist2 by itself was removed in firmware 0.6.0.
+JOINTS = ("thumb", "index", "middle", "ring", "pinky", "wrist")
 
 # Offset added to a joint's value to address its REST position, e.g. index is
 # +2 flex / -2 extend / +12 rest.  Must keep every value below
@@ -70,20 +88,22 @@ JOINTS = ("thumb", "index", "middle", "ring", "pinky", "wrist", "rad")
 # return-port announcement rather than a command.
 REST_VALUE_OFFSET = 10
 
-# Position of each state as a percentage of the joint's calibrated range,
-# measured from home in the flexion direction.  These mirror the FLEX_*/REST_*
-# constants in src/cpp/nml_hand_exo/config.h, so +N reproduces exactly what
-# `set_gesture:<joint>:flex` commands -- change them here to retune the UDP
-# path alone, or in config.h to retune the firmware's own gesture states.
+# Position of each state as a percentage between the joint's two end postures:
+# 0 is exactly `set_gesture:<joint>:extend` and 100 is exactly
+# `set_gesture:<joint>:flex`, as defined by the EXTEND_*/FLEX_* constants in
+# src/cpp/nml_hand_exo/config.h.  So the percentages below are relative to those
+# postures, not to raw motor travel -- retuning the constants moves both ends
+# and these keep meaning the same thing.  Change them here to retune the UDP
+# path alone, or in config.h to retune the postures themselves.
 FLEX_PERCENT = {
-    "thumb": 15, "index": 35, "middle": 40, "ring": 50, "pinky": 25,
-    "wrist": 30, "rad": 25,
+    "thumb": 85, "index": 85, "middle": 85, "ring": 85, "pinky": 85,
+    "wrist": 75,
 }
 REST_PERCENT = {
-    "thumb": 6, "index": 14, "middle": 16, "ring": 20, "pinky": 10,
-    "wrist": 12, "rad": 10,
+    "thumb": 15, "index": 15, "middle": 15, "ring": 15, "pinky": 15,
+    "wrist": 25,
 }
-EXTEND_PERCENT = 0   # 0% == home == the extension endstop
+EXTEND_PERCENT = 0   # 0% == the extend posture (NOT home, unless EXTEND_* is 0)
 
 
 def build_command_map():
@@ -92,49 +112,183 @@ def build_command_map():
     Value scheme (a value may map to one command or a list sent in order):
 
         0         whole-hand release
-        +1..+7    flex   joint N        -1..-7    extend joint N
-        +11..+17  rest   joint N
+        +1..+6    flex   joint N        -1..-6    extend joint N
+        +11..+16  rest   joint N
 
     Per-joint moves go through `set_gesture_angle:<joint>:<percent>` rather than
     `set_gesture:<joint>:<state>` so the position is set here in the host map
-    instead of being fixed by the firmware constants.  0 stays a `set_gesture`
-    posture on purpose: grasp is multi-joint and the firmware rejects postures
-    for set_gesture_angle, since one percentage cannot describe a whole posture.
+    instead of being fixed by the firmware constants -- the percentages still
+    interpolate the firmware's own extend and flex postures, so 0 and 100
+    reproduce those states exactly.  0 stays a `set_gesture` posture on purpose:
+    grasp is multi-joint and the firmware rejects postures for
+    set_gesture_angle, since one percentage cannot describe a whole posture.
 
-    Requires firmware >= 0.3.0 for set_gesture_angle and the wrist gesture,
-    and >= 0.3.1 for the rad gesture.
+    Requires firmware >= 0.6.0.
     """
     command_map = {0: "set_gesture:grasp:open"}
     for index, joint in enumerate(JOINTS, start=1):
-        command_map[index] = f"set_gesture_angle:{joint}:{FLEX_PERCENT[joint]}"
-        command_map[-index] = f"set_gesture_angle:{joint}:{EXTEND_PERCENT}"
+        # command_map[index] = f"set_gesture_angle:{joint}:{FLEX_PERCENT[joint]}"
+        # command_map[-index] = f"set_gesture_angle:{joint}:{EXTEND_PERCENT}"
+        # command_map[index + REST_VALUE_OFFSET] = (
+        #     f"set_gesture_angle:{joint}:{REST_PERCENT[joint]}"
+        # )
+        command_map[index] = f"set_gesture:{joint}:flex"
+        command_map[-index] = f"set_gesture:{joint}:extend"
         command_map[index + REST_VALUE_OFFSET] = (
-            f"set_gesture_angle:{joint}:{REST_PERCENT[joint]}"
+            f"set_gesture:{joint}:rest"
         )
     return command_map
 
 
 COMMAND_MAP = build_command_map()
 
-# Working effort per motor, in mA (--current-ma). This is GOAL_CURRENT, not the
-# safety ceiling: it is how hard each motor pushes while holding or chasing a
-# position. Several digits held flexed at once at the part maximum (910 mA) can
-# pull amps and brown out the board, so keep this at the lowest value that still
-# moves the digit reliably.
-DEFAULT_CURRENT_MA = 200
+# Echoed upstream to ack a passthrough command. The integer protocol acks by
+# echoing the value that was sent, and a passthrough has no value to echo, so it
+# gets its own sentinel. Kept below UDP_HEARTBEAT_REQUEST_VALUE (1023) and out
+# of the command range so it cannot be confused with either.
+COMMAND_PASSTHROUGH_ACK = 1000
+
+# Prefix of the firmware's asynchronous move-outcome report. It arrives AFTER
+# the command reply, once the motors have finished (or failed to finish), so it
+# cannot ride on the command ack -- it is forwarded upstream as its own
+# datagram. Needs firmware >= 0.5.0; older builds simply never emit it.
+GESTURE_RESULT_PREFIX = "GESTURE_RESULT:"
+
+# ---- Pose acks --------------------------------------------------------------
+# Every dispatched command is followed by this query, so the ack can carry where
+# the hand actually IS rather than only which integer was accepted. One batched
+# Dynamixel read on the device side (firmware >= 0.6.0), issued after the move
+# command so it never delays it.
+POSE_QUERY = "get_gesture_angle:all"
+
+# The pose travels as its own datagram in a packed binary frame:
+#
+#     magic[4] | int16 value | uint8 count | uint8 code * count
+#
+# struct rather than text on both ends: the values are already integers in the
+# firmware, and a fixed-width frame costs one memcpy per hop instead of a
+# format-then-reparse. It is a SECOND datagram rather than a new encoding for
+# the ack itself, so every existing consumer of the ASCII integer protocol keeps
+# working untouched and only readers that know the magic pay attention.
+#
+# `value` is the same integer the ASCII ack carries, so a consumer that reads
+# only these frames still knows which command each pose belongs to. Codes are
+# the firmware's: 0-100 percent, 101/102 out of range low/high, 255 unavailable.
+POSE_ACK_MAGIC = b"NGA1"
+POSE_ACK_HEADER = "<4shB"
+
+#: Firmware code for "no position available for this joint" -- it has no
+#: calibrated travel, or the position read failed. Also used locally for a
+#: joint the device did not mention at all.
+POSE_UNAVAILABLE = 255
+
+
+def pack_pose_ack(value, joints, pose):
+    """Build the binary pose datagram for one acked command.
+
+    Args:
+        value (int): The command integer being acked.
+        joints (tuple[str, ...]): Joint order for the payload.
+        pose (dict): Gesture name -> code, as parsed from the device.
+
+    Returns:
+        bytes: Packed frame, joints missing from ``pose`` reported as 255.
+    """
+    codes = [int(pose.get(joint, POSE_UNAVAILABLE)) & 0xFF for joint in joints]
+    return struct.pack(
+        POSE_ACK_HEADER + "B" * len(codes), POSE_ACK_MAGIC, int(value), len(codes),
+        *codes,
+    )
+
+
+def unpack_pose_ack(data):
+    """Parse a pose datagram. Returns ``(value, {joint: code})`` or None.
+
+    Mirrors :func:`pack_pose_ack` for consumers on the other end of the socket
+    (scripts/udp_gesture_gui.py, tests).  Joint names come from :data:`JOINTS`
+    positionally, so both ends must agree on that order -- which is why the
+    frame carries the count, letting a mismatch be detected instead of
+    silently shifting every value by one.
+    """
+    header_len = struct.calcsize(POSE_ACK_HEADER)
+    if not data or len(data) < header_len or not data.startswith(POSE_ACK_MAGIC):
+        return None
+    _, value, count = struct.unpack_from(POSE_ACK_HEADER, data)
+    if len(data) < header_len + count or count != len(JOINTS):
+        return None
+    codes = struct.unpack_from("B" * count, data, header_len)
+    return value, dict(zip(JOINTS, codes))
+
+
+def parse_passthrough_command(payload):
+    """Validate a `set_gesture_angle:<joint>:<percent>` datagram.
+
+    The integer protocol can only address positions the map was built with,
+    which is fine for a decoder driving fixed postures but not for tuning a
+    joint by hand -- there is no integer that carries an arbitrary percentage.
+    This accepts the command form directly for that case.
+
+    Deliberately NOT a general command passthrough. The receiver binds
+    0.0.0.0 by default, so anything it forwards is reachable from the network;
+    only this one command shape, with a known joint and an in-range percentage,
+    is allowed through. Everything else stays unreachable over UDP.
+
+    Args:
+        payload (str): Raw datagram text.
+
+    Returns:
+        str or None: The command to forward, or None if it does not qualify.
+    """
+    if not payload:
+        return None
+    parts = payload.strip().split(":")
+    if len(parts) != 3:
+        return None
+    head, joint, percent = (part.strip() for part in parts)
+    if head.lower() != "set_gesture_angle":
+        return None
+    if joint.lower() not in JOINTS:
+        return None
+    try:
+        value = float(percent)
+    except ValueError:
+        return None
+    if not 0.0 <= value <= 100.0:
+        return None
+    return f"set_gesture_angle:{joint.lower()}:{value:g}"
+
+# Working effort per motor, in mA (--current-ma). This is the NOMINAL effort:
+# how hard ONE motor may push while holding or chasing a position.
+#
+# Before firmware 0.4.0 this had to be detuned down to whatever the supply could
+# survive with every joint pushing at once, which is why it kept drifting lower.
+# From 0.4.0 the combined budget below bounds the fleet, so this can be set to
+# what a single joint actually needs to move reliably.
+DEFAULT_CURRENT_MA = 150
+
+# Combined budget across ALL motors, in mA (--total-current-ma). This is the
+# number the power supply cares about: per-motor limits do not bound what the
+# motors draw together, which is what browns out the board when a posture such
+# as `grasp:open` commands every joint at once. Sized for the supply, not the
+# motors. 0 leaves whatever the firmware booted with alone. Requires >= 0.4.0.
+DEFAULT_TOTAL_CURRENT_MA = 800
 
 # Commands sent once at startup when arming, and the release sent on exit.
-ARM_COMMANDS = ("set_exo_mode:gesture_fixed", "enable:all")
+# ARM_COMMANDS = ("reboot:all", "set_exo_mode:gesture_fixed", "enable:all")
+ARM_COMMANDS = ("reboot:all", "enable:all", "home:all")
 DISARM_COMMANDS = ("disable:all",)
 
 # Sent after arming (--no-home to skip). Homing drives every motor to its zero
 # offset, so gestures start from a known pose instead of wherever the hand was
 # left. THE HAND MOVES when this runs.
-HOME_COMMANDS = ("home:all",)
+# HOME_COMMANDS = ("home:1","home:2","home:3","home:4","home:5","home:6","home:7","home:8","home:9", 
+#                  "home:11","home:12","home:13","home:14","home:15","home:16", "home:17", "home:18", "home:19")
+# HOME_COMMANDS = ("home:all")
+HOME_COMMANDS = ("home:11", "home:12")
 
 # Homing is a physical move, not just a register write, so give it time to
 # finish before commands start arriving.
-HOME_SETTLE_S = 1.5
+HOME_SETTLE_S = 5
 
 # Firmware VERBOSE emits a blocking USB-CDC write per debug line, which
 # directly delays every command. Turned off at startup unless --debug-on.
@@ -239,6 +393,11 @@ class MockComm:
         reply = self._reply_for(command)
         if reply is not None:
             self._pending.append((time.monotonic() + self.latency_s, reply))
+        outcome = self._outcome_for(command)
+        if outcome is not None:
+            # Well after the command reply: a real move concludes over hundreds
+            # of ms, and the ordering is what the receiver has to cope with.
+            self._pending.append((time.monotonic() + self.latency_s + 0.25, outcome))
 
     def receive(self, wait_until_return=False, timeout=None):
         deadline = time.monotonic() + (timeout or 0.0)
@@ -248,6 +407,18 @@ class MockComm:
             if not wait_until_return or time.monotonic() >= deadline:
                 return ""
             time.sleep(0.002)
+
+    #: Outcome the mock reports for a move. Override in tests to simulate a
+    #: hand that accepts commands but does not actually move.
+    mock_outcome = ("GESTURE_RESULT: reached=1 stalled=0 short=0 starved=0 "
+                    "budget_scale=1.00")
+
+    def _outcome_for(self, command):
+        """The asynchronous verdict this command would eventually produce."""
+        head = command.partition(":")[0]
+        if head in ("set_gesture", "set_gesture_angle", "home"):
+            return self.mock_outcome
+        return None
 
     # -- firmware-shaped replies --------------------------------------
 
@@ -269,6 +440,24 @@ class MockComm:
         if head == "set_current_lim":
             target, _, value = rest.partition(":")
             return f"OK: set_current_lim {target} {value}"
+        if head == "set_total_current_lim":
+            return f"OK: total_current_lim {rest}"
+        if head == "get_total_current_lim":
+            return "Total current limit: 800 mA"
+        if head == "set_hold_current":
+            return f"OK: hold_current {rest}"
+        if head == "get_hold_current":
+            return "Hold current: 25 mA"
+        if head == "set_current_governor":
+            return f"OK: current_governor {rest}"
+        if head == "get_gesture_angle":
+            # Fixed pose: the mock has no motors, so there is nothing to move
+            # and nothing to read. The point is that the query ANSWERS, which
+            # is what the ack correlation and the pose frame depend on.
+            codes = (0, 25, 50, 75, 100, 101, 102, 255)
+            return GESTURE_ANGLE_PREFIX + " " + " ".join(
+                f"{joint}={code}" for joint, code in zip(JOINTS, codes)
+            )
         if head == "home":
             return f"OK: home {rest}"
         if head == "debug":
@@ -294,20 +483,29 @@ class Receiver:
       * On shutdown the negated port is sent as a close notice.
     """
 
-    def __init__(self, comm, command_map, echo_replies=True, verbose=True):
+    def __init__(self, comm, command_map, echo_replies=True, verbose=True,
+                 pose_ack=True):
         self.comm = comm
         self.command_map = command_map
         self.echo_replies = echo_replies
         self.verbose = verbose
+        #: Whether each command is followed by a pose query. Cleared by
+        #: probe_pose_support() against firmware that does not answer it -- an
+        #: unknown command is SILENT in firmware, so leaving it on would mean
+        #: waiting forever for a reply that never comes and stalling every ack.
+        self.pose_ack = pose_ack
         self.sock = None
         self.return_addr = None          # (ip, port) once registered
         self._pending = collections.deque()   # [value, replies_still_expected]
+        self.pose = {}                   # last reported {gesture: code}
         self.received = 0
         self.dispatched = 0
         self.unmapped = 0
         self.malformed = 0
         self.acked = 0
+        self.pose_acks = 0
         self.dropped_acks = 0
+        self.outcomes = 0
         self.link_down = False
         self.reconnects = 0
         self.send_failures = 0
@@ -365,6 +563,44 @@ class Receiver:
         print("  [reconnect] giving up", file=sys.stderr)
         return False
 
+    def probe_pose_support(self, timeout=0.6):
+        """Check the device answers the pose query, and disable it if not.
+
+        Firmware ignores an unknown command SILENTLY, so an unsupported query
+        would leave one reply outstanding on every command and stall the acks
+        behind it forever. Testing the feature beats testing the version: it is
+        the same round trip either way, and it also catches a device that is on
+        a new enough build but has the query routed to a port we do not read.
+        """
+        if not self.pose_ack:
+            return False
+        try:
+            self.comm.flush_input()
+        except Exception:
+            pass
+        if not self.send(POSE_QUERY):
+            return False
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            reply = self.comm.receive(wait_until_return=True, timeout=timeout)
+            if not reply:
+                break
+            pose = parse_gesture_angles(reply)
+            if pose:
+                self.pose = pose
+                print(f"  pose acks enabled: {self._format_pose(pose)}")
+                return True
+        self.pose_ack = False
+        print("  [warn] device did not answer "
+              f"{POSE_QUERY!r}; pose acks disabled "
+              "(needs firmware >= 0.6.0)", file=sys.stderr)
+        return False
+
+    @staticmethod
+    def _format_pose(pose):
+        return " ".join(f"{joint}={pose.get(joint, POSE_UNAVAILABLE)}"
+                        for joint in JOINTS)
+
     # -- upstream (UDP) ------------------------------------------------
 
     def send_upstream(self, value):
@@ -376,6 +612,43 @@ class Receiver:
             return True
         except OSError as exc:
             print(f"  [ack] send to {self.return_addr} failed: {exc}",
+                  file=sys.stderr)
+            return False
+
+    def send_pose_upstream(self, value):
+        """Send the packed pose frame that accompanies an ack.
+
+        Skipped when no pose has been reported yet, so a consumer never sees a
+        frame of 255s that it cannot tell apart from a hand with no
+        calibration.
+        """
+        if self.sock is None or self.return_addr is None or not self.pose:
+            return False
+        try:
+            self.sock.sendto(pack_pose_ack(value, JOINTS, self.pose),
+                             self.return_addr)
+            self.pose_acks += 1
+            return True
+        except OSError as exc:
+            print(f"  [pose] send to {self.return_addr} failed: {exc}",
+                  file=sys.stderr)
+            return False
+
+    def send_text_upstream(self, text):
+        """Forward a device line to the registered sender verbatim.
+
+        Move outcomes carry more than an integer can, and the sender is a
+        debugging GUI, so they travel as text. Consumers that only parse
+        integers ignore them, which is why this is additive rather than a
+        change to the ack encoding.
+        """
+        if self.sock is None or self.return_addr is None:
+            return False
+        try:
+            self.sock.sendto(text.encode("utf-8", errors="ignore"), self.return_addr)
+            return True
+        except OSError as exc:
+            print(f"  [outcome] send to {self.return_addr} failed: {exc}",
                   file=sys.stderr)
             return False
 
@@ -404,9 +677,19 @@ class Receiver:
         sender_ip = sender.rsplit(":", 1)[0]
         value = parse_udp_integer(payload)
         if value is None:
-            self.malformed += 1
+            # Not an integer: it may still be the one command form accepted
+            # directly, `set_gesture_angle:<joint>:<percent>`, which exists so a
+            # joint can be positioned at an arbitrary percentage that no mapped
+            # integer covers.
+            command = parse_passthrough_command(payload)
+            if command is None:
+                self.malformed += 1
+                if self.verbose:
+                    print(f"  [{sender}] ignored non-integer payload: {payload!r}")
+                return
+            self._dispatch([command], COMMAND_PASSTHROUGH_ACK)
             if self.verbose:
-                print(f"  [{sender}] ignored non-integer payload: {payload!r}")
+                print(f"  [{sender}] passthrough -> {command}")
             return
 
         # Heartbeat is outbound-only; ignore it if it arrives inbound.
@@ -433,6 +716,21 @@ class Receiver:
 
         if isinstance(commands, str):
             commands = [commands]
+        self._dispatch(commands, value)
+
+        if self.verbose:
+            print(f"  [{sender}] {value:+d} -> {' | '.join(commands)}")
+
+    def _dispatch(self, commands, ack_value):
+        """Write a command batch and queue the ack it will retire.
+
+        The pose query rides at the END of the batch on purpose: it must not
+        delay the move, and its reply is then the last one in, so the pose is
+        current by the time the ack goes out.
+        """
+        commands = list(commands)
+        if self.pose_ack:
+            commands.append(POSE_QUERY)
         for command in commands:
             self.send(command)
         self.dispatched += 1
@@ -443,10 +741,7 @@ class Receiver:
             if len(self._pending) >= MAX_PENDING_ACKS:
                 self._pending.popleft()
                 self.dropped_acks += 1
-            self._pending.append([value, len(commands)])
-
-        if self.verbose:
-            print(f"  [{sender}] {value:+d} -> {' | '.join(commands)}")
+            self._pending.append([ack_value, len(commands)])
 
     # -- upstream (serial -> UDP) --------------------------------------
 
@@ -458,9 +753,30 @@ class Receiver:
             reply = self.comm.receive()          # non-blocking
             if not reply:
                 return
-            if self.echo_replies:
-                for line in reply.splitlines():
+            outcome_lines = []
+            for line in reply.splitlines():
+                if self.echo_replies:
                     print(f"      <- {line}")
+                if line.strip().startswith(GESTURE_RESULT_PREFIX):
+                    outcome_lines.append(line.strip())
+
+            # A pose reply is SOLICITED -- it answers the query appended to the
+            # batch -- so it is recorded and then falls through to retire its
+            # slot like any other reply. Only the unsolicited outcome report
+            # below skips retirement.
+            if GESTURE_ANGLE_PREFIX in reply:
+                pose = parse_gesture_angles(reply)
+                if pose:
+                    self.pose = pose
+
+            if outcome_lines:
+                # Unsolicited: it answers no outstanding command, so retiring a
+                # pending ack against it would ack the WRONG command -- and the
+                # next real reply would then have nothing left to retire.
+                for line in outcome_lines:
+                    self.outcomes += 1
+                    self.send_text_upstream(line)
+                continue
             self._retire_pending()
 
     def _retire_pending(self):
@@ -474,14 +790,21 @@ class Receiver:
         self._pending.popleft()
         if self.send_upstream(entry[0]):
             self.acked += 1
+            # The pose follows the integer, so a consumer that only parses
+            # integers sees exactly the traffic it always did.
+            sent_pose = self.send_pose_upstream(entry[0])
             if self.verbose:
+                detail = f" [{self._format_pose(self.pose)}]" if sent_pose else ""
                 print(f"      -> ack {entry[0]:+d} to "
-                      f"{self.return_addr[0]}:{self.return_addr[1]}")
+                      f"{self.return_addr[0]}:{self.return_addr[1]}{detail}")
 
     def print_summary(self):
         print(f"\n  datagrams received : {self.received}")
         print(f"  commands dispatched: {self.dispatched}")
         print(f"  acks sent upstream : {self.acked}")
+        print(f"  pose frames sent   : {self.pose_acks}"
+              + ("" if self.pose_ack else "  (disabled: firmware < 0.6.0)"))
+        print(f"  move outcomes      : {self.outcomes}")
         print(f"  unmapped values    : {self.unmapped}")
         print(f"  malformed payloads : {self.malformed}")
         if self.dropped_acks:
@@ -521,15 +844,28 @@ def main(argv=None):
     parser.add_argument("--current-ma", type=int, default=DEFAULT_CURRENT_MA,
                         metavar="MA",
                         help=f"Per-motor working current in mA "
-                             f"(default {DEFAULT_CURRENT_MA}). Higher moves "
-                             f"stiffer digits but draws more; too high browns "
-                             f"out the board. 0 leaves firmware defaults alone.")
+                             f"(default {DEFAULT_CURRENT_MA}). What ONE joint "
+                             f"may push with; the combined budget bounds the "
+                             f"fleet. 0 leaves firmware defaults alone.")
+    parser.add_argument("--total-current-ma", type=int,
+                        default=DEFAULT_TOTAL_CURRENT_MA, metavar="MA",
+                        help=f"Combined current budget across all motors in mA "
+                             f"(default {DEFAULT_TOTAL_CURRENT_MA}). Size this "
+                             f"for the SUPPLY -- it is what stops a whole-hand "
+                             f"posture browning out the board. Needs firmware "
+                             f">= 0.4.0. 0 leaves the firmware default alone.")
     parser.add_argument("--debug-on", action="store_true",
                         help="Leave firmware VERBOSE enabled (slower commands).")
     parser.add_argument("--ignore-replies", dest="echo_replies",
                         action="store_false",
                         help="Do not print replies coming back on the telemetry "
                              "port. They are still drained from the queue.")
+    parser.add_argument("--no-pose-ack", dest="pose_ack", action="store_false",
+                        help="Do not query the joint positions after each "
+                             "command. By default every ack is followed by a "
+                             "packed frame carrying all 7 joint percentages, "
+                             "which costs one extra device round trip per "
+                             "command and needs firmware >= 0.6.0.")
     parser.add_argument("--quiet", action="store_true",
                         help="Do not log each datagram.")
     parser.add_argument("--mock", action="store_true",
@@ -540,7 +876,7 @@ def main(argv=None):
                         default=MOCK_LATENCY_MS, metavar="MS",
                         help=f"Simulated device turnaround for --mock "
                              f"(default {MOCK_LATENCY_MS:g}).")
-    parser.set_defaults(arm=True, home=True)
+    parser.set_defaults(arm=True, home=True, pose_ack=True)
     args = parser.parse_args(argv)
 
     if args.mock:
@@ -564,7 +900,8 @@ def main(argv=None):
         return 1
     print(f"        connected as cmd={comm.cmd_port} telem={comm.telem_port}")
 
-    receiver = Receiver(comm, COMMAND_MAP, args.echo_replies, not args.quiet)
+    receiver = Receiver(comm, COMMAND_MAP, args.echo_replies, not args.quiet,
+                        pose_ack=args.pose_ack)
 
     # SIGINT flips a flag rather than raising, so the socket timeout lets the
     # loop unwind through its normal cleanup path.
@@ -594,23 +931,34 @@ def main(argv=None):
         if not args.debug_on:
             for command in QUIET_COMMANDS:
                 receiver.send(command)
-                time.sleep(0.1)
+                time.sleep(0.5)
+            comm.flush_input()
+        # Before anything is armed: a reset restores firmware defaults, so
+        # re-probe rather than assume the capability survived the reconnect.
+        receiver.pose_ack = args.pose_ack
+        receiver.probe_pose_support()
+        # Both current settings go out BEFORE enabling torque, so the motors
+        # never energize at whatever the firmware happened to boot with. The
+        # combined budget goes first: it constrains the per-motor value, so
+        # setting it second would leave a window at the wider allocation.
+        if args.total_current_ma > 0:
+            receiver.send(f"set_total_current_lim:{args.total_current_ma}")
+            time.sleep(0.5)
             comm.flush_input()
         if args.current_ma > 0:
-            # Set effort BEFORE enabling torque, so the motors never energize
-            # at whatever GOAL_CURRENT the firmware happened to boot with.
             receiver.send(f"set_current_lim:all:{args.current_ma}")
-            time.sleep(0.15)
+            time.sleep(0.5)
             comm.flush_input()
         if args.arm:
             for command in ARM_COMMANDS:
                 receiver.send(command)
-                time.sleep(0.15)
+                time.sleep(0.5)
             comm.flush_input()
             # Home only makes sense with torque on, so it follows the enable.
             if args.home:
                 for command in HOME_COMMANDS:
                     receiver.send(command)
+                    time.sleep(0.5)
                 # The settle exists to let real motors finish travelling; with
                 # no hardware there is nothing to wait for.
                 time.sleep(0.05 if args.mock else HOME_SETTLE_S)
@@ -621,6 +969,9 @@ def main(argv=None):
     try:
         if args.current_ma > 0:
             print(f"Current: {args.current_ma} mA per motor")
+        if args.total_current_ma > 0:
+            print(f"         {args.total_current_ma} mA combined budget "
+                  f"(needs firmware >= 0.4.0)")
         if args.arm:
             steps = list(ARM_COMMANDS) + (list(HOME_COMMANDS) if args.home else [])
             tail = " -- simulated." if args.mock else " -- hand will move."

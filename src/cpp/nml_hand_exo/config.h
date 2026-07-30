@@ -233,20 +233,21 @@ constexpr const char* MOTOR_NAMES[] = {
 /// Left values are placeholders overwritten at runtime by apply_calibration.
 constexpr float HOME_STATES[] = {
   // left (IDs 1-9) — placeholders, calibrate before use
-  180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0,
+  228.45, 132.70, 220.79, 232.23, 122.76, 193.34, 80.26, 98.21, 63.80,
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  149.1, 180.0, 180.0, 251.86, 374.53, 162.8, 106.83, 68.99, 115.37
+  228.45, 132.70, 220.79, 232.23, 122.76, 193.34, 80.26, 98.21, 63.80
 };
 
 /// @brief Physical joint limits [min, max] for each motor.
 constexpr float jointLimits[][2] = {
   // left (IDs 1-9) — placeholders
-  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},
-  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},
+  {201.17, 269.46}, {90.02, 163.42}, {198.09, 227.13}, {160.26, 260.86}, {106.74, 147.31},
+  {162.27, 231.35}, {49.54, 102.52}, {74.71, 127.78}, {14.96, 109.65},
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  {320, 166}, {42.0, 190.0}, {140.0, 260.0}, {160.26, 260.86}, {88.53, 174.27},
-  {166.8, 239.93}, {50.5, 104.83}, {66.99, 125.06}, {400.1, 460.37}
+  {201.17, 269.46}, {90.02, 163.42}, {198.09, 227.13}, {160.26, 260.86}, {106.74, 147.31},
+  {162.27, 231.35}, {49.54, 102.52}, {74.71, 127.78}, {14.96, 109.65}
 };
+
 // --- END OLD ---
 
 // // ---- HOME_STATES (paste into config.h, MOTOR_IDS order) ----
@@ -278,9 +279,9 @@ constexpr float jointLimits[][2] = {
 /// @brief Default flip direction per motor.
 constexpr bool DEFAULT_FLIPS[] = {
   // left (IDs 1-9) — placeholders
-  false, false, false, false, false, false, false, false, false,
+  false, true, true, true, false, false, true, false, true,
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  false, false, false, true, false, false, true, false, true
+  false, true, true, true, false, false, true, false, true
 };
 
 #else  // ===== SINGLE-EXO MODE (BUILD_LEFT_HAND == 0 or 1) =====
@@ -458,94 +459,139 @@ constexpr long DYNAMIXEL_BAUD_RATE = 1000000;
 
 /// @brief Total number of gesture contained in the library
 /// 6 postures (grasp, keygrip, pinch_index, pinch_middle, pinch_ring, peace)
-/// plus one extend/rest/flex gesture for each of the 5 digits and the two
-/// wrist axes (wrist, rad).
-constexpr int N_GESTURES = 13;
+/// plus one extend/rest/flex gesture for each of the 5 digits and the 
+/// wrist flexion/extension axis (wrist).
+constexpr int N_GESTURES = 12;
 
 // ---- Per-joint gesture travel ----------------------------------------------
-// Each value is a fraction of that MOTOR's calibrated range (max - min), added
-// to its home position:
+// Each value is a fraction of that joint's TRAVEL -- the signed distance from
+// home to the flexion end of its calibrated window:
 //
-//     target = home +/- fraction * (limit_max - limit_min)
+//     target = home + fraction * gesture_span(motor)
 //
-// The sign is then flipped for any motor whose DEFAULT_FLIPS entry is true, so
-// "positive = curls inward" only holds if that motor's flip flag is correct.
+// gesture_span() is resolved per motor by NMLHandExo::getGestureSpan() from
+// home and [limit_min, limit_max], so 0.0 sits exactly at home and 1.0 sits
+// exactly ON the flexion endstop. Nothing in between ever clamps, and the
+// mapping is invertible -- which is what makes `get_gesture_angle` able to
+// report the same 0-100 number back.
 //
-// Every joint gets THREE knobs, one per gesture state:
-//
-//   EXTEND_* = 0.0  -> sit exactly at home
-//   REST_*        -> intermediate posture (roughly 40% of FLEX_* by default)
-//   FLEX_*        -> full commanded travel
-//
-// EXTEND_* is 0.0 by design, not by oversight. Calibration defines home as the
-// median of the EXTENSION samples and the limit window as the span from there
-// to the flexion end (see CalibrationDialog._save_profile), so home already IS
-// the extension endstop. A negative EXTEND_* asks to travel outside the window
-// and setAbsoluteAngle() clamps it straight back to the boundary, which is why
-// "extend" used to be indistinguishable from home. Anchoring extend at 0.0
-// makes that explicit and frees REST_* to be the meaningful middle state.
-//
-// If a joint moves the WRONG WAY, negate its constants here (or fix that
-// motor's DEFAULT_FLIPS entry, which affects every gesture). If a joint moves
-// TOO FAR, shrink the magnitude. Keep 0 <= REST_* < FLEX_* or rest and flex
-// collapse onto each other.
+// This is NOT a fraction of the window WIDTH (limit_max - limit_min), which is
+// what these constants used to mean. The old form silently assumed home sat at
+// one edge of the window; when it did not, every state clamped to the same
+// boundary and the joint had zero visible travel while still acking OK. The
+// wrist and wrist2 axes are exactly where that assumption broke.
 //
 // The thumb gets three independent knobs per state because its joints do NOT
 // share a flip direction (DEFAULT_FLIPS has thumbrot true, thumbadd/thumbflex
 // false), so a single shared value drives them physically opposite ways.
 //
-// NOTE: a joint whose home lies outside its calibrated limits has ZERO travel
-// no matter what is set here -- setAbsoluteAngle() clamps it. Run `check_limits`
-// to find those before tuning.
+// Every joint gets THREE knobs, one per gesture state:
+//
+//   EXTEND_*  -> the extension posture, and the 0% end of the percent axis
+//   REST_*    -> intermediate posture
+//   FLEX_*    -> the flexion posture, and the 100% end of the percent axis
+//
+// EXTEND_* and FLEX_* do double duty: they are the two states, AND they are the
+// endpoints `set_gesture_angle` interpolates between. So
+//
+//   set_gesture_angle:<g>:0    == set_gesture:<g>:extend
+//   set_gesture_angle:<g>:100  == set_gesture:<g>:flex
+//   set_gesture_angle:<g>:50   == halfway between the two postures
+//
+// and `get_gesture_angle` inverts it. Retuning EXTEND_*/FLEX_* therefore moves
+// the percent axis with them -- which is the point: a host's percentages stay
+// meaningful across a retune instead of pointing at raw travel that no longer
+// corresponds to a posture. REST_* is NOT an endpoint; it just lands wherever
+// its value falls on that axis (`get_gesture_angle` will report where).
+//
+// EXTEND_* need not be 0.0. It was pinned there while the axis ran from home,
+// because home IS the extension endstop as calibration defines it (the median
+// of the EXTENSION samples, see CalibrationDialog._save_profile) and anything
+// below clamped. Now that 0% follows EXTEND_* rather than home, a non-zero
+// value is a first-class extension posture that sits slightly off the endstop.
+// A hand at home then reads BELOW 0% -- `get_gesture_angle` reports 101 for it,
+// which is correct, not a fault.
+//
+// If a joint moves the WRONG WAY, negate its constants here (or fix that
+// motor's DEFAULT_FLIPS entry, which affects every gesture). If a joint moves
+// TOO FAR, shrink the magnitude. Keep EXTEND_* != FLEX_*, or that joint has no
+// axis to interpolate along and stops reporting a position.
+//
+// NOTE: a joint whose calibrated window has (almost) no room on either side of
+// home has ZERO travel no matter what is set here. Run `check_limits`, which
+// prints the resolved span per motor, to find those before tuning.
 
-constexpr float EXTEND_THUMBADD  =  0.0f;
-constexpr float REST_THUMBADD    =  0.06f;
-constexpr float FLEX_THUMBADD    =  0.15f;
-constexpr float EXTEND_THUMBROT  =  0.0f;
-constexpr float REST_THUMBROT    =  0.06f;
-constexpr float FLEX_THUMBROT    =  0.15f;
-constexpr float EXTEND_THUMBFLEX =  0.0f;
-constexpr float REST_THUMBFLEX   =  0.06f;
-constexpr float FLEX_THUMBFLEX   =  0.15f;
+constexpr float EXTEND_THUMBADD  =  0.10f;
+constexpr float REST_THUMBADD    =  0.50f;
+constexpr float FLEX_THUMBADD    =  0.90f;
+constexpr float EXTEND_THUMBROT  =  0.10f;
+constexpr float REST_THUMBROT    =  0.50f;
+constexpr float FLEX_THUMBROT    =  0.90f;
+constexpr float EXTEND_THUMBFLEX =  0.10f;
+constexpr float REST_THUMBFLEX   =  0.50f;
+constexpr float FLEX_THUMBFLEX   =  0.90f;
 
-constexpr float EXTEND_INDEX     =  0.0f;
-constexpr float REST_INDEX       =  0.14f;
-constexpr float FLEX_INDEX       =  0.35f;
-constexpr float EXTEND_MIDDLE    =  0.0f;
-constexpr float REST_MIDDLE      =  0.16f;
-constexpr float FLEX_MIDDLE      =  0.40f;
-constexpr float EXTEND_RING      =  0.0f;
-constexpr float REST_RING        =  0.20f;
+constexpr float EXTEND_INDEX     =  0.10f;
+constexpr float REST_INDEX       =  0.25f;
+constexpr float FLEX_INDEX       =  0.50f;
+constexpr float EXTEND_MIDDLE    =  0.10f;
+constexpr float REST_MIDDLE      =  0.25f;
+constexpr float FLEX_MIDDLE      =  0.50f;
+constexpr float EXTEND_RING      =  0.10f;
+constexpr float REST_RING        =  0.25f;
 constexpr float FLEX_RING        =  0.50f;
-constexpr float EXTEND_PINKY     =  0.0f;
-constexpr float REST_PINKY       =  0.10f;
-constexpr float FLEX_PINKY       =  0.25f;
+constexpr float EXTEND_PINKY     =  0.10f;
+constexpr float REST_PINKY       =  0.25f;
+constexpr float FLEX_PINKY       =  0.50f;
 
-// Wrist flexion/extension, driven by the `wrist` motor alone. Wrist ROM windows
-// are much larger in absolute degrees than a digit's, so the same fraction buys
-// far more travel -- these start conservative and are the first thing to tune.
-constexpr float EXTEND_WRIST     =  0.0f;
-constexpr float REST_WRIST       =  0.12f;
-constexpr float FLEX_WRIST       =  0.30f;
+// Wrist flexion/extension. Both `wrist` and `wrist2` are mounted on the back of
+// the arm and pull on the dorsal aspect of the wrist, so they act in concert and
+// share these constants -- commanding one alone leaves the other holding
+// position against it. Wrist ROM windows are much larger in absolute degrees
+// than a digit's, so the same fraction buys far more travel.
+constexpr float EXTEND_WRIST     =  0.05f;
+constexpr float REST_WRIST       =  0.25f;
+constexpr float FLEX_WRIST       =  0.95f;
 
-// Second wrist axis, driven by the `wrist2` motor alone.
-//
-// ANATOMY IS UNVERIFIED: this gesture is named for radial/ulnar deviation, but
-// the only description of wrist2 elsewhere in this repo calls it
-// pronation/supination (see HandSkeletonWidget in hand_exo_gui.py). Confirm on
-// hardware which axis wrist2 actually drives before relying on the name.
-//
-// "flex" and "extend" here mean whichever direction calibration recorded as
-// flexion/extension for wrist2, not anatomical wrist flexion. The state names
-// are kept uniform across every per-joint gesture so one code path -- and
-// set_gesture_angle, which requires a "flex" state -- serves them all.
-//
-// Deliberately below the wrist values: a deviation/rotation axis has less
-// usable travel than wrist flexion, and the calibrated window may span the
-// joint's whole sweep.
-constexpr float EXTEND_RAD       =  0.0f;
-constexpr float REST_RAD         =  0.10f;
-constexpr float FLEX_RAD         =  0.25f;
+// ---- Gesture fractional axis ------------------------------------------------
+// Knobs for the home -> flexion-endstop axis every gesture percentage rides on
+// (NMLHandExo::getGestureSpan / gestureFractionToAngle / gestureAngleToFraction).
+
+/// @brief Least travel, in degrees, that counts as a usable gesture range.
+///
+/// Below this a joint is reported as having no travel rather than being driven
+/// a fraction of nothing: `get_gesture_angle` returns 255 for it and
+/// `check_limits` flags it NO_TRAVEL. Sized just above position-read noise.
+constexpr float GESTURE_MIN_TRAVEL_DEG = 2.0f;
+
+/// @brief How much more travel the non-flip side must offer to be chosen.
+///
+/// The flip flag is the calibrated flexion DIRECTION, and normally home sits on
+/// the extension endstop so all the travel is on the flip-indicated side. When
+/// home instead lands mid-window -- which is how the stock wrist (home 310 in a
+/// [166, 320] window) and wrist2 configurations are shaped -- the flip side is a
+/// stub a few degrees wide and every gesture state clamps onto the same
+/// boundary. Past this ratio the opposite side is taken as the real flexion
+/// direction, since a window that lopsided cannot mean anything else. Kept
+/// deliberately high so a joint whose two sides are comparable (a home that is
+/// genuinely mid-range) keeps the direction calibration recorded for it.
+constexpr float GESTURE_SPAN_OVERRIDE_RATIO = 2.0f;
+
+/// @brief Slack, as a fraction of the axis, before a joint reads out of range.
+///
+/// Gearing backlash and position quantization put a settled joint a hair past
+/// its endpoint routinely; without this, a hand parked at 100% would report the
+/// out-of-range code about half the time.
+constexpr float GESTURE_FRACTION_TOLERANCE = 0.02f;
+
+/// @brief Least EXTEND_* to FLEX_* separation for a joint to carry a position.
+///
+/// A joint whose two endpoints coincide holds still across the whole percent
+/// axis, so where it sits says nothing about the percentage. Such joints are
+/// still commanded -- they hold their posture -- but are left out of the mean
+/// `get_gesture_angle` reports, and out of the division that would otherwise
+/// blow up on their zero-width segment.
+constexpr float GESTURE_AXIS_MIN_SEPARATION = 0.02f;
 
 /// @brief Maximum number of gesture buttons that can be configured
 constexpr int MAX_GESTURE_BUTTONS = 6; // Maximum number of gesture buttons that can be configured
@@ -572,6 +618,117 @@ constexpr int MOTOR_CURRENT_LIMIT = 910;
 /// high so `set_current:<motor>:<mA>` can raise effort at runtime for
 /// participants whose spasticity needs it.
 constexpr int DEFAULT_GOAL_CURRENT_MA = 150;
+
+// ---- Combined-motor current budget -----------------------------------------
+// MOTOR_CURRENT_LIMIT and DEFAULT_GOAL_CURRENT_MA above are PER-MOTOR knobs.
+// Neither bounds what the fleet draws together, which is the quantity the power
+// supply actually cares about: a posture that commands every joint at once --
+// `grasp:open` drives all of them to home, which calibration places AT the
+// extension endstop -- can leave many motors stalled and each drawing its full
+// goal current, browning out the board.
+//
+// The budget below caps the COMBINED draw. Enforcement (see
+// serviceCurrentGovernor in nml_hand_exo.cpp) is two-sided:
+//
+//   feed-forward  Issuing a goal immediately clamps the fleet to the static
+//                 worst case, budget / sum(nominal of moving motors), so the
+//                 very first transient is bounded before anything is measured.
+//   feedback      Measured aggregate PRESENT_CURRENT then relaxes that clamp
+//                 back toward full per-motor effort whenever the real draw
+//                 leaves headroom -- so one working motor keeps full torque and
+//                 the clamp only bites when the fleet genuinely nears the cap.
+//
+// Sized for the supply, NOT for the motors. Default assumes roughly 1 A usable,
+// leaving headroom for the board, OLED and IMU. Raise it with
+// `set_total_current_lim:<mA>` once you know what your supply sustains; watch
+// `current_status` for the measured aggregate while you do.
+constexpr int TOTAL_CURRENT_BUDGET_MA = 800;
+
+/// @brief Current a motor is allowed once it is judged to have settled, in mA.
+///
+/// A motor that reached its target draws near zero regardless of this value;
+/// the point is to cap what a STALLED motor can keep pulling. The worst case
+/// must fit the budget on its own, so keep N_MOTORS * HOLD_CURRENT_MA below
+/// TOTAL_CURRENT_BUDGET_MA (18 * 25 = 450 mA against a 800 mA default).
+constexpr int HOLD_CURRENT_MA = 25;
+
+/// @brief Minimum gap between the governor's individual motor reads, in ms.
+///
+/// The governor reads ONE motor per update() call, not the whole fleet at once.
+/// Reading all 18 in a burst would block the control loop for milliseconds and
+/// put that jitter straight onto command latency, which the dual-CDC work
+/// exists to avoid. One read is roughly 350 us, so a full sweep of 18 motors
+/// completes in about 18 * this value and no single loop pass pays for more
+/// than one read. Sampling only runs while motors are active, so an idle exo
+/// adds no Dynamixel bus traffic at all.
+constexpr unsigned long CURRENT_GOVERNOR_SAMPLE_INTERVAL_MS = 2;
+
+/// @brief How long after the last goal the governor keeps sampling, in ms.
+constexpr unsigned long CURRENT_GOVERNOR_ACTIVE_MS = 2000;
+
+/// @brief Consecutive read failures before the governor stops trusting
+/// measurements and falls back to the static worst-case clamp.
+constexpr uint8_t CURRENT_GOVERNOR_MAX_READ_FAILS = 3;
+
+/// @brief Fraction of the budget below which the governor relaxes its clamp.
+/// The gap between this and 1.0 is deadband; without it the clamp oscillates.
+constexpr float CURRENT_GOVERNOR_RELEASE_FRACTION = 0.80f;
+
+/// @brief How fast the clamp relaxes per completed sweep once there is headroom.
+/// Recovery is deliberately slower than the clamp-down, which is immediate.
+constexpr float CURRENT_GOVERNOR_RECOVERY_STEP = 0.08f;
+
+/// @brief Minimum change in the allocation scale worth re-writing GOAL_CURRENT for.
+///
+/// Each refresh is up to N_MOTORS register writes, so pushing every marginal
+/// change would cost more bus time than the sampling does. The deadband keeps
+/// the writes proportionate to the change that prompted them.
+constexpr float CURRENT_GOVERNOR_APPLY_DEADBAND = 0.03f;
+
+/// @brief A motor drawing at least this fraction of its allowance is pushing
+/// against something rather than travelling.
+constexpr float STALL_CURRENT_FRACTION = 0.80f;
+
+/// @brief Least current at which a joint can actually break friction and move.
+///
+/// The budget must never allocate a motor LESS than this while expecting it to
+/// travel. Spreading the budget evenly over every commanded motor does exactly
+/// that: 18 motors sharing 800 mA get 44 mA each, too little to move, so they
+/// all strain at their full allowance and the fleet parks just under the cap --
+/// no overshoot to clamp, no headroom to relax, nothing moving, every command
+/// still acking. Admission (see refreshCurrentAllocation) exists to prevent it:
+/// fewer motors move at a usable current instead of all of them uselessly.
+constexpr uint16_t MIN_MOVE_CURRENT_MA = 75;
+
+/// @brief Give up on a move this long after it was funded, in ms.
+///
+/// Bounds how long a motor may hold an admission slot, so one joint jammed
+/// against an obstruction cannot stop the rest of a gesture from ever being
+/// dispatched. Also what turns "no movement" into a reported verdict.
+constexpr unsigned long MOVE_TIMEOUT_MS = 2500;
+
+/// @brief Position error within which a move counts as having reached its goal.
+constexpr float GESTURE_REACH_TOLERANCE_DEG = 4.0f;
+
+/// @brief Draw below which a motor counts as having arrived, in mA.
+///
+/// This is how "arrived" is told apart from "stalled" without position reads: a
+/// motor that reached its target coasts at nearly nothing, while one pushing on
+/// an endstop or a spastic finger keeps pulling. The distinction matters --
+/// arrived motors are released from the budget, but a motor doing real work is
+/// left at full effort unless the fleet is genuinely over budget.
+constexpr uint16_t CURRENT_SETTLED_MA = 25;
+
+/// @brief How long a motor is presumed to still be travelling, in ms.
+///
+/// Only after this has elapsed is a low draw read as "arrived" rather than
+/// "has not started pulling yet". Long enough for a full-range digit move.
+constexpr unsigned long MOVE_WINDOW_MS = 500;
+
+/// @brief How long a motor must draw stall-level current before it is demoted
+/// to HOLD_CURRENT_MA, in ms. This is what stops a fleet of motors parked on
+/// their endstops from holding at full effort indefinitely.
+constexpr unsigned long STALL_HOLD_MS = 250;
 
 /// @brief Direct-control limits used by serial velocity/current commands.
 constexpr float DIRECT_VELOCITY_LIMIT_RPM = 10.0f;

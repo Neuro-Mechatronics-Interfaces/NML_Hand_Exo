@@ -144,6 +144,60 @@ These are different. `SerialComm.receive()` reads until `;`. The sent delimiter 
 Wrist (ID 1): `jointLimits = {-189, 2840}` in `config.h`. Multi-turn mechanism — intentional.
 Any code that normalizes to 0–360 will produce wrong wrist angles.
 
+The shortest-path guard in the firmware's goal-setting path is the same trap in
+another form: it subtracts a turn from any goal more than 180° from the present
+position, which is right for a wrap-around duplicate and wrong for real travel
+on a joint whose window is wider than half a turn. Since 0.6.0 the correction is
+only applied when the result stays inside the calibrated window
+(`NMLHandExo::applyShortestPath`), so a legitimately distant wrist goal survives
+it. Do not reinstate an unconditional ±360 snap.
+
+---
+
+## A joint that acks every command and never moves (fixed in 0.6.0)
+
+Before 0.6.0, gesture percentages were a fraction of the **window width**
+(`limit_max - limit_min`) added to home, with the direction taken from the flip
+flag. That silently assumed home sat on the extension endstop. Where it did not,
+the flip side of home was a few degrees wide, every state's target landed past
+the boundary, `setAbsoluteAngle()` clamped them all to the same angle, and the
+joint held still while every command replied `OK:`.
+
+The stock `config.h` wrist (home 310 in a `[166, 320]` window) and wrist2 (home
+180 in `[42, 190]`) are shaped exactly that way: extend, rest and flex all
+resolved to the same boundary, 10° from home. The five digits were unaffected
+because calibration had put their homes on a window edge.
+
+Travel is now measured on a per-motor axis from home to the flexion endstop
+(`NMLHandExo::getGestureSpan`), so a fraction of `1.0` **is** the endstop and
+nothing clamps. Three consequences worth knowing:
+
+- `check_limits` prints the resolved `span` per motor and flags `NO_TRAVEL` /
+  `SPAN_REVERSED`. That is the first thing to run when a joint will not move.
+- A `FLEX_*` constant whose target used to clamp now stops where the fraction
+  says, so a joint that used to slam into its endstop may travel visibly less.
+  Raise the constant toward `1.0` to restore the old endpoint.
+- `set_gesture_angle` percentages now interpolate a gesture's `extend` and
+  `flex` postures rather than raw travel, so `0` and `100` ARE those states.
+  Since `EXTEND_*` is non-zero, a hand parked at **home** sits below 0% and
+  `get_gesture_angle` reports `101` for every joint. That is correct, not a
+  fault — home is below the extension posture, not equal to it.
+
+---
+
+## Two motors on one structure: commanding one alone does nothing
+
+`wrist` and `wrist2` are both mounted on the back of the arm and connect to the
+dorsal aspect of the wrist, so they act on the same structure. Driving one while
+the other holds position means the two fight, and the wrist does not move — with
+every command still ACKing. The `wrist` gesture therefore names **both** motors,
+and the old `rad` gesture (which drove `wrist2` by itself) was removed in 0.6.0
+rather than retuned.
+
+The same coupling exists around the thumb: `thumbadd` sits on the side of the
+arm and links to the `thumbflex` motor body, which is itself linked to
+`thumbrot`. Treat any of those as single independent axes with care.
+
 ---
 
 ## Calibration does not update config.h (GUI)

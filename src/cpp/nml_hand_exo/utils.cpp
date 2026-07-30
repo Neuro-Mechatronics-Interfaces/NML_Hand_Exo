@@ -780,6 +780,57 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       }
     }
 
+  } else if (cmd == "set_total_current_lim") {
+    // Fleet-wide companion to set_current_lim: caps what ALL motors may draw
+    // together, which is the quantity the power supply cares about.
+    String arg = getArg(token, 1);
+    arg.trim();
+    if (arg.length() == 0) {
+      commandPrint(F("ERROR: usage set_total_current_lim:<mA>"));
+      return;
+    }
+    long requested = arg.toInt();
+    if (requested <= 0) {
+      commandPrint("ERROR: set_total_current_lim needs a positive mA value, got " + arg);
+      return;
+    }
+    exo.setTotalCurrentBudget((uint16_t)min(requested, 65535L));
+    commandPrint("OK: total_current_lim " + String(exo.getTotalCurrentBudget()));
+
+  } else if (cmd == "get_total_current_lim") {
+    commandPrint("Total current limit: " + String(exo.getTotalCurrentBudget()) + " mA");
+
+  } else if (cmd == "set_hold_current") {
+    String arg = getArg(token, 1);
+    arg.trim();
+    if (arg.length() == 0) {
+      commandPrint(F("ERROR: usage set_hold_current:<mA>"));
+      return;
+    }
+    long requested = arg.toInt();
+    if (requested < 0) {
+      commandPrint("ERROR: set_hold_current needs a non-negative mA value, got " + arg);
+      return;
+    }
+    exo.setHoldCurrent((uint16_t)min(requested, 65535L));
+    commandPrint("OK: hold_current " + String(exo.getHoldCurrent()));
+
+  } else if (cmd == "get_hold_current") {
+    commandPrint("Hold current: " + String(exo.getHoldCurrent()) + " mA");
+
+  } else if (cmd == "set_current_governor") {
+    String arg = getArg(token, 1);
+    arg.trim(); arg.toLowerCase();
+    if (arg == "on" || arg == "off") {
+      exo.setCurrentGovernorEnabled(arg == "on");
+      commandPrint("OK: current_governor " + arg);
+    } else {
+      commandPrint(F("ERROR: set_current_governor takes on or off"));
+    }
+
+  } else if (cmd == "current_status") {
+    commandPrint(exo.getCurrentBudgetStatus());
+
   } else if (cmd == "set_current") {
     id = getArgMotorID(exo, token, 1);
     float current_mA = getArg(token, 2).toFloat();
@@ -934,26 +985,37 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   } else if (cmd == "check_limits") {
     // Report, per motor, whether a gesture can actually move it.
     //
-    // setAbsoluteAngle() clamps every target to [min, max]. If home sits
-    // outside that window, or the window is inverted, every target clamps to
-    // the same boundary and the joint has ZERO travel: the command is accepted
-    // and acked, but nothing moves. Reads live values, so this reflects
-    // whatever apply_calibration and the multi-turn epoch snap have done.
+    // setAbsoluteAngle() clamps every target to [min, max], so a joint with no
+    // room to travel accepts and acks every command while holding perfectly
+    // still. `span` is the signed distance from home to the flexion endstop --
+    // the entire range any gesture percentage can address -- so it is the
+    // number that says whether this joint can move at all, and how far.
+    //
+    // Reads live values, so this reflects whatever apply_calibration and the
+    // multi-turn epoch snap have done.
     String out = "Limit check:\n";
     for (int i = 0; i < exo.getMotorCount(); ++i) {
       uint8_t id = exo.getMotorIDByIndex(i);
       float home = exo.getZeroAngle(id);
       float lo = exo.getMotorLimitMin(id);
       float hi = exo.getMotorLimitMax(id);
+      float span = exo.getGestureSpan(id);
       String status;
       if (lo > hi) status += "LIMITS_INVERTED ";
       if (home < min(lo, hi) || home > max(lo, hi)) status += "HOME_OUTSIDE ";
+      if (fabsf(span) < GESTURE_MIN_TRAVEL_DEG) status += "NO_TRAVEL ";
+      // The resolved direction disagreeing with the flip flag means home is
+      // not where calibration assumed: the flag's side is a stub. Gestures
+      // still work (the long side is used), but the calibration is worth a
+      // second look, and this is the only place that says so.
+      else if ((span < 0.0f) != exo.isMotorFlipped(id)) status += "SPAN_REVERSED ";
       if (status.length() == 0) status = "ok";
       out += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) +
              ", id: " + String(id) +
              ", home: " + String(home, 2) +
              ", min: " + String(lo, 2) +
              ", max: " + String(hi, 2) +
+             ", span: " + String(span, 2) +
              ", status: " + status + "}\n";
     }
     commandPrint(out);
@@ -1128,12 +1190,57 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       return;
     }
     float pct = pctStr.toFloat();
-    if (gc.setGestureAngle(gestureStr, pct)) {
-      commandPrint("OK: gesture_angle " + gestureStr + ":" +
-                   String(constrain(pct, 0.0f, 100.0f), 1));
+    uint8_t moved = 0;
+    uint8_t stuck = 0;
+    if (gc.setGestureAngle(gestureStr, pct, &moved, &stuck)) {
+      // The bare "OK" only ever meant the command parsed. Joints with no
+      // calibrated travel are the failure mode this command actually has, and
+      // they are invisible from the reply unless it says so -- the suffix is
+      // appended only when there is something to report, so the leading
+      // "OK: gesture_angle <name>:<pct>" form older hosts match on is intact.
+      String reply = "OK: gesture_angle " + gestureStr + ":" +
+                     String(constrain(pct, 0.0f, 100.0f), 1);
+      if (stuck) {
+        reply += " moved=" + String(moved) + " zero_travel=" + String(stuck);
+      }
+      commandPrint(reply);
     } else {
       commandPrint("ERROR: set_gesture_angle unknown or non-addressable gesture: " + gestureStr);
     }
+
+  } else if (cmd == "get_gesture_angle") {
+    // Read-back half of set_gesture_angle, on the same axis: 0 is the gesture's
+    // extend posture and 100 is its flex posture, so a gesture commanded to 40
+    // reports 40 once it arrives.
+    //
+    // 101 and 102 mean it sits below or above those two postures -- reachable
+    // by hand, by a set_angle off the axis, or simply by sitting at home, which
+    // is BELOW extend whenever EXTEND_* is non-zero. 255 means no position is
+    // available (no calibrated travel, or the read failed); `check_limits` says
+    // which.
+    //
+    // Emitted with commandPrint, so on a dual-CDC build it follows the active
+    // reply route: with `set_reply_route:telem` it lands on the telemetry CDC
+    // only and never shares the command port.
+    String target = getArg(token, 1);
+    target.trim();
+    if (target.equalsIgnoreCase("all")) target = "";
+
+    GestureAngleRecord records[N_GESTURES];
+    uint8_t count = gc.readGestureAngles(records, N_GESTURES, target);
+    if (count == 0) {
+      String named = target.length() ? target : String("all");
+      commandPrint("ERROR: get_gesture_angle unknown or non-addressable gesture: " + named);
+      return;
+    }
+    String out = "GESTURE_ANGLE:";
+    for (uint8_t i = 0; i < count; ++i) {
+      out += " ";
+      out += gestureLibrary[records[i].gesture].name;
+      out += "=";
+      out += String(records[i].code);
+    }
+    commandPrint(out);
 
   } else if (cmd == "set_zero_offset") {
     String arg = getArg(token, 1);
@@ -1223,7 +1330,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" debug                 |  ON/OFF              | // Set verbose output on/off"));
     commandPrint(F(" set_reply_route       |  BOTH/TELEM/CMD      | // Route replies: both(legacy)/telem(decoupled)/cmd (dual-CDC)"));
     commandPrint(F(" get_reply_route       |                      | // Get current reply/telemetry CDC route"));
-    commandPrint(F(" check_limits          |                      | // Flag joints whose home is outside their limits (zero travel)"));
+    commandPrint(F(" check_limits          |                      | // Per-motor gesture span; flags NO_TRAVEL / HOME_OUTSIDE joints"));
     commandPrint(F(" loop_stats            |                      | // Loop period: n / mean / max microseconds"));
     commandPrint(F(" reset_loop_stats      |                      | // Clear loop statistics"));
     commandPrint(F(" reboot                |  ID/NAME/ALL         | // Reboot motor"));
@@ -1249,7 +1356,13 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_absolute_angle    |  ID/NAME:ANGLE       | // Set absolute motor angle"));
     commandPrint(F(" get_torque            |  ID/NAME             | // Get torque output reading from motor"));
     commandPrint(F(" get_current           |  ID/NAME             | // Get current draw from motor"));
-    commandPrint(F(" set_current_lim       |  ID/NAME:VAL         | // Set current draw limit for motor"));
+    commandPrint(F(" set_current_lim       |  ID/NAME:VAL         | // Set per-motor current draw limit"));
+    commandPrint(F(" set_total_current_lim |  MA                  | // Set COMBINED current budget across all motors"));
+    commandPrint(F(" get_total_current_lim |                      | // Get combined current budget"));
+    commandPrint(F(" set_hold_current      |  MA                  | // Current allowed to a settled/shed motor"));
+    commandPrint(F(" get_hold_current      |                      | // Get hold current"));
+    commandPrint(F(" set_current_governor  |  ON/OFF              | // Closed-loop budget enforcement (off = static clamp)"));
+    commandPrint(F(" current_status        |                      | // Budget, measured aggregate draw, per-motor allocation"));
     commandPrint(F(" get_goal_current      |  ID/NAME/ALL         | // Get direct current goal in mA"));
     commandPrint(F(" set_current           |  ID:SIGNED_MA        | // Direct current command (current mode)"));
     commandPrint(F(" stop                  |  ID/ALL              | // Zero direct velocity/current goals"));
@@ -1269,7 +1382,8 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_gesture           |  NAME:VALUE          | // Set exo gesture"));
     commandPrint(F(" get_gesture           |                      | // Get exo gesture"));
     commandPrint(F(" set_gesture_state     |  NAME:VALUE          | // Set exo gesture state"));
-    commandPrint(F(" set_gesture_angle     |  NAME:0-100          | // Position a per-joint gesture: 0=extend/home, 100=full flexion"));
+    commandPrint(F(" set_gesture_angle     |  NAME:0-100          | // Interpolate a gesture: 0=its extend state, 100=its flex state"));
+    commandPrint(F(" get_gesture_angle     |  NAME/ALL            | // Read positions as 0-100 (101/102 out of range, 255 no travel)"));
     commandPrint(F(" get_gesture_state     |                      | // Get exo gesture state"));
     commandPrint(F(" cycle_gesture         |                      | // Executes the next gesture in the library"));
     commandPrint(F(" cycle_gesture_state   |                      | // Cycles the next gesture state"));

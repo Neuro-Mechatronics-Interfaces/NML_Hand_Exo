@@ -68,6 +68,65 @@ intended for GUI polling because it avoids multiple text round trips per motor.
 `telemetry_diag:<id>:<id>...` returns a text diagnostic using the same firmware
 read path, including method, elapsed microseconds, and per-motor raw values.
 
+### Gesture positioning `[VERIFIED]`
+
+```text
+set_gesture_angle:<gesture>:<0-100>
+get_gesture_angle:<gesture|all>
+```
+
+The percentage interpolates a gesture between its OWN two end postures:
+
+```text
+set_gesture_angle:<g>:0    == set_gesture:<g>:extend
+set_gesture_angle:<g>:100  == set_gesture:<g>:flex
+set_gesture_angle:<g>:50   == halfway between the two
+```
+
+Endpoints come from the `EXTEND_*`/`FLEX_*` constants in `config.h`, so retuning
+those moves the axis with them and a host's percentages keep meaning the same
+postures. Each named motor travels its own share, so a gesture driving several
+motors keeps the ratio between them at every percentage. Each motor's share is
+then placed on its calibrated travel — the signed distance from home to its
+flexion endstop, resolved from home and `[limit_min, limit_max]` by
+`NMLHandExo::getGestureSpan` — so no percentage in range ever clamps, and the
+two commands are exact inverses.
+
+Note `0` is the **extend posture, not home**. With a non-zero `EXTEND_*` a hand
+parked at home sits below 0% and reads back as `101`.
+
+Addressable gestures are exactly those with a `flex` state: `thumb`, `index`,
+`middle`, `ring`, `pinky`, `wrist`. Multi-joint postures (`grasp`, `keygrip`,
+`pinch_*`) are rejected — one percentage cannot describe a posture. `wrist`
+drives both dorsal wrist motors (`wrist` and `wrist2`) together; the `rad`
+gesture that addressed `wrist2` alone existed only in 0.3.1 – 0.5.x.
+
+`get_gesture_angle` replies with a single line of `name=code` pairs:
+
+```text
+GESTURE_ANGLE: thumb=12 index=0 middle=45 ring=101 pinky=100 wrist=255;
+```
+
+| Code | Meaning |
+|---|---|
+| `0`–`100` | Position between the extend and flex postures |
+| `101` | Below the extend end |
+| `102` | Above the flex end |
+| `255` | No position available: no calibrated travel, or the read failed |
+
+A gesture covering several motors (the thumb, the wrist pair, or any joint on a
+dual build) reports the mean of the per-motor percentages, skipping joints that
+cannot carry one. Positions come from ONE batched Dynamixel read, so polling
+this per command costs a single bus transaction.
+Emitted through `commandPrint`, so on a dual-CDC build it follows the active
+reply route — under `set_reply_route:telem` it lands on the telemetry CDC only.
+
+Needs firmware **>= 0.6.0**; earlier builds ignore the command *silently*, so a
+host must gate on the version (or on whether a probe answers) rather than wait
+for an error reply. Run `check_limits` when a joint reports `255` or refuses to
+move: it prints the resolved `span` per motor and flags `NO_TRAVEL`,
+`HOME_OUTSIDE`, `LIMITS_INVERTED` and `SPAN_REVERSED`.
+
 ### Direct velocity/current control
 
 Direct control is global-mode, per-motor-commanded, and uses explicit Dynamixel IDs:
@@ -140,6 +199,8 @@ breaks the corresponding Python code.
 |------------------------|-----------|----------|
 | `name: <word>` | `calibrate_exo.py`, `rom_assessment.py` | Motor name discovery via `info` command |
 | `absolute_angle:<value>` | `calibrate_exo.py`, `rom_assessment.py` | Angle reads |
+| `GESTURE_ANGLE: <name>=<code> ...` | `_hand_exo.py:parse_gesture_angles`, `udp_gesture_receiver.py` | Joint positions / pose acks |
+| `GESTURE_RESULT: reached=N ...` | `udp_gesture_receiver.py`, `udp_gesture_gui.py` | Asynchronous move verdicts |
 
 Regex used: `re.search(r"name:\s*(\w+)", line)` and `line.split("absolute_angle:")`.
 
@@ -237,7 +298,10 @@ when the GUI passes a `name_to_id` mapping. See [docs/dual_exo_architecture.md](
 | `DXL_PROTOCOL_VERSION`  | 2.0      | Dynamixel protocol version           |
 | `PULSE_RESOLUTION`      | 4096     | Encoder ticks per revolution         |
 | `XC330_T288_TORQUE_CONSTANT` | 0.00115  | Estimated N*m per mA at 11.1 V       |
-| `N_GESTURES`            | 6        | Gestures in the library              |
+| `N_GESTURES`            | 12       | Gestures in the library              |
+| `GESTURE_MIN_TRAVEL_DEG` | 2.0     | Least travel a joint needs to be positionable |
+| `GESTURE_FRACTION_TOLERANCE` | 0.02 | Slack before a joint reads as out of range |
+| `GESTURE_AXIS_MIN_SEPARATION` | 0.02 | Least EXTEND_* to FLEX_* gap that carries a position |
 | `STATUS_LED_PIN`        | 0        | Onboard LED pin                      |
 | `COMMAND_DELIMITER`     | `;`      | End-of-message character             |
 

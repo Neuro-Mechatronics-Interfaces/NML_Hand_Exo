@@ -18,6 +18,10 @@ Protocol (see Receiver in udp_gesture_receiver.py):
   * Command integers are then acked by echoing them back, but only once the
     DEVICE has actually replied -- an ack here means the exo executed it, not
     merely that the datagram arrived.
+  * A packed binary pose frame follows each ack, carrying where all seven
+    joints now sit as percentages of their calibrated travel. A joint whose
+    percentage never changes -- or that reports no position at all -- is one
+    the firmware accepted a command for and could not actually move.
   * The negated port arriving means the receiver is shutting down.
 
 The command values come from the receiver module itself, so the two cannot
@@ -45,9 +49,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from udp_gesture_receiver import (  # noqa: E402
     COMMAND_MAP,
+    COMMAND_PASSTHROUGH_ACK,
+    GESTURE_RESULT_PREFIX,
+    FLEX_PERCENT,
     JOINTS,
+    POSE_ACK_MAGIC,
+    POSE_UNAVAILABLE,
     REST_VALUE_OFFSET,
     UDP_PORT as RECEIVER_DEFAULT_PORT,
+    unpack_pose_ack,
 )
 from nml_hand_exo.interface._udp_command_bindings import (  # noqa: E402
     UDP_CONNECTION_PORT_MAX,
@@ -124,6 +134,12 @@ class UdpGestureGui:
         for col, heading in enumerate(("Joint", "Extend", "Rest", "Flex")):
             ttk.Label(joints, text=heading, font=("", 9, "bold")).grid(
                 row=0, column=col, padx=4, pady=(0, 4), sticky="w")
+        # Spans the entry and its button.
+        ttk.Label(joints, text="Manual %", font=("", 9, "bold")).grid(
+            row=0, column=4, columnspan=2, padx=4, pady=(0, 4), sticky="w")
+
+        #: Per-joint percent entry backing the manual set_gesture_angle column.
+        self.angle_vars = {}
 
         for row, joint in enumerate(JOINTS, start=1):
             value = row  # JOINTS order defines the integer, same as the receiver
@@ -137,7 +153,23 @@ class UdpGestureGui:
                     width=8,
                     command=lambda v=val: self.send_value(v),
                 ).grid(row=row, column=col, padx=4, pady=1)
-            joints.grid_columnconfigure(0, minsize=70)
+
+            # Manual percentage: 0 = extend/home, 100 = the flexion endstop.
+            # Prefilled with this joint's flex percent so the field starts on a
+            # value that is known to be safe for it rather than empty or at 100.
+            var = tk.StringVar(value=str(FLEX_PERCENT[joint]))
+            self.angle_vars[joint] = var
+            entry = ttk.Entry(joints, textvariable=var, width=6, justify="right")
+            entry.grid(row=row, column=4, padx=(12, 2), pady=1)
+            entry.bind("<Return>", lambda _e, j=joint: self.send_joint_angle(j))
+            ttk.Button(
+                joints,
+                text="Send",
+                width=6,
+                command=lambda j=joint: self.send_joint_angle(j),
+            ).grid(row=row, column=5, padx=(2, 4), pady=1)
+
+        joints.grid_columnconfigure(0, minsize=70)
 
         manual = ttk.LabelFrame(outer, text="Manual", padding=8)
         manual.pack(fill="x", pady=(10, 0))
@@ -255,30 +287,61 @@ class UdpGestureGui:
 
     # -- sending -------------------------------------------------------
 
-    def send_value(self, value, announce=False):
+    def _sendto(self, payload, description):
+        """Send one datagram. Returns True if it went out."""
         if self.sock is None:
             self.log("[error] Not connected -- press Connect first")
-            return
+            return False
         try:
             dest_port = self._validated_port(self.dest_port_var.get(), "Receiver port")
         except ValueError as exc:
             self.log(f"[error] {exc}")
-            return
+            return False
         host = self.dest_host_var.get().strip() or DEFAULT_DEST_HOST
 
         try:
-            self.sock.sendto(str(int(value)).encode("ascii"), (host, dest_port))
+            self.sock.sendto(str(payload).encode("ascii"), (host, dest_port))
         except OSError as exc:
-            self.log(f"[error] send {value:+d} failed: {exc}")
-            return
+            self.log(f"[error] send {payload!r} failed: {exc}")
+            return False
 
         self.sent_count += 1
+        self.log(f"-> {description}")
+        return True
+
+    def send_value(self, value, announce=False):
+        value = int(value)
         if announce:
-            self.log(f"-> {value} (return-port announcement)")
+            description = f"{value} (return-port announcement)"
         else:
             mapped = COMMAND_MAP.get(value)
             detail = mapped if mapped else "(unmapped by the receiver)"
-            self.log(f"-> {value:+d}  {detail}")
+            description = f"{value:+d}  {detail}"
+        self._sendto(value, description)
+
+    def send_joint_angle(self, joint):
+        """Send `set_gesture_angle:<joint>:<percent>` for one joint.
+
+        The integer protocol can only reach the positions the receiver's map was
+        built with, so an arbitrary percentage travels as the command form,
+        which the receiver validates and forwards.
+        """
+        text = self.angle_vars[joint].get().strip()
+        if not text:
+            self.log(f"[error] Enter a percent for {joint} first")
+            return
+        try:
+            percent = float(text)
+        except ValueError:
+            self.log(f"[error] {joint}: percent must be a number, got {text!r}")
+            return
+        if not 0.0 <= percent <= 100.0:
+            # Checked here as well as in the receiver: rejecting it locally says
+            # so in this window, where the operator is looking.
+            self.log(f"[error] {joint}: percent must be 0-100, got {percent:g}")
+            return
+        command = f"set_gesture_angle:{joint}:{percent:g}"
+        self._sendto(command, command)
 
     def send_manual(self):
         text = self.manual_var.get().strip()
@@ -308,6 +371,11 @@ class UdpGestureGui:
                 continue
             except OSError:
                 break     # socket closed by disconnect()
+            # Pose frames are binary, so they are dispatched on the raw bytes:
+            # decoding them as text first would mangle the payload.
+            if data.startswith(POSE_ACK_MAGIC):
+                self.inbox.put(("pose", data))
+                continue
             payload = data.decode("utf-8", errors="ignore").strip()
             if payload:
                 self.inbox.put(("rx", (payload, f"{addr[0]}:{addr[1]}")))
@@ -320,6 +388,9 @@ class UdpGestureGui:
                 if kind == "error":
                     self.log(f"[error] {item}")
                     continue
+                if kind == "pose":
+                    self._handle_pose(item)
+                    continue
                 payload, sender = item
                 self._handle_reply(payload, sender)
         except queue.Empty:
@@ -327,6 +398,11 @@ class UdpGestureGui:
         self.root.after(QUEUE_POLL_MS, self._drain_inbox)
 
     def _handle_reply(self, payload, sender):
+        if payload.startswith(GESTURE_RESULT_PREFIX):
+            # The move verdict, not a command ack. This is what distinguishes
+            # "the firmware accepted it" from "the joint actually got there".
+            self._handle_outcome(payload)
+            return
         try:
             value = int(payload)
         except ValueError:
@@ -348,7 +424,58 @@ class UdpGestureGui:
             return
 
         self.ack_count += 1
+        if value == COMMAND_PASSTHROUGH_ACK:
+            # A passthrough has no integer of its own to echo, so the receiver
+            # acks it with this sentinel.
+            self.log("<- ack set_gesture_angle (device executed it)")
+            return
         self.log(f"<- ack {value:+d} (device executed it)")
+
+    def _handle_pose(self, data):
+        """Render the packed pose frame that follows a command ack.
+
+        This is the panel's answer to "did anything move?": a joint whose
+        percentage does not change between commands, or that reports 255, is
+        one the exo accepted a goal for and could not travel.
+        """
+        parsed = unpack_pose_ack(data)
+        if parsed is None:
+            self.log(f"<- unparseable pose frame ({len(data)} bytes)")
+            return
+        _, pose = parsed
+        stuck = [joint for joint, code in pose.items() if code == POSE_UNAVAILABLE]
+        rendered = " ".join(
+            f"{joint}={'--' if pose[joint] == POSE_UNAVAILABLE else pose[joint]}"
+            for joint in JOINTS
+        )
+        self.log(f"   pose: {rendered}")
+        if stuck:
+            self.log(f"   !! no calibrated travel: {', '.join(stuck)}")
+
+    def _handle_outcome(self, payload):
+        """Render a GESTURE_RESULT line and flag anything that did not move."""
+        body = payload[len(GESTURE_RESULT_PREFIX):].strip()
+        fields = {}
+        for token in body.split():
+            key, sep, value = token.partition("=")
+            if sep:
+                fields[key] = value
+
+        def count(name):
+            try:
+                return int(fields.get(name, 0))
+            except ValueError:
+                return 0
+
+        failed = count("stalled") + count("short") + count("starved")
+        self.log(f"<= outcome: {body}")
+        if failed:
+            detail = fields.get("detail", "")
+            self.log(f"   !! {failed} joint(s) did not reach target"
+                     + (f" -- {detail}" if detail else ""))
+            self._set_status(f"Last gesture: {failed} joint(s) did not reach target")
+        else:
+            self._set_status(f"Last gesture: {count('reached')} joint(s) reached target")
 
     # -- lifecycle -----------------------------------------------------
 
