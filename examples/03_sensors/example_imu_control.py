@@ -8,8 +8,7 @@ import time
 
 # Configuration
 port = "COM6"
-baudrate = 57600
-wrist_motor_id = 5  # Adjust to your wrist motor ID
+baudrate = 1000000
 
 # Connect to device
 comm = SerialComm(port=port, baudrate=baudrate)
@@ -17,6 +16,16 @@ exo = HandExo(comm, verbose=True)
 exo.connect()
 
 try:
+    motors = exo.info().get('motors', {})
+    if not motors:
+        raise RuntimeError("Firmware reported no motors; cannot run IMU control.")
+    wrist_motor_id = next(
+        (motor_id for motor_id, motor in motors.items()
+         if motor.get('name', '').lower() == 'wrist'),
+        sorted(motors)[0],
+    )
+    print(f"Using configured motor ID {wrist_motor_id} for wrist control")
+
     print("=" * 60)
     print("IMU-Based Wrist Control Example")
     print("=" * 60)

@@ -10,7 +10,7 @@ def main():
     ap.add_argument("--name", default=None, help="Stream name to resolve")
     ap.add_argument("--type", default="Markers", help="Stream type to resolve")
     ap.add_argument("--port", default="COM6")
-    ap.add_argument("--baudrate", type=int, default=115200)
+    ap.add_argument("--baudrate", type=int, default=1000000)
     ap.add_argument("--timeout", type=float, default=5.0)
     ap.add_argument("--drive_exo", action="store_true", help="If set, send markers to the exo")
     ap.add_argument("--verbose", action="store_true")

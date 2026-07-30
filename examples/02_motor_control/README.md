@@ -15,24 +15,7 @@ python motor_test.py
 
 ---
 
-### 2. `joint_range_test.py`
-**Full range-of-motion sweep**
-
-Systematically tests each motor through its complete range.
-
-```bash
-python joint_range_test.py
-```
-
-**What it demonstrates:**
-- Reading motor limits
-- Sweeping to upper/lower bounds
-- Returning to home position
-- Sequential motor testing
-
----
-
-### 3. `example_motor_config.py`
+### 2. `example_motor_config.py`
 **Velocity, acceleration, and limit configuration**
 
 Configure motor motion profiles and safety limits.
@@ -50,7 +33,7 @@ python example_motor_config.py
 
 ---
 
-### 4. `example_batch_operations.py`
+### 3. `example_batch_operations.py`
 **Batch operations using 'all' keyword**
 
 Control all motors simultaneously.
@@ -71,7 +54,8 @@ python example_batch_operations.py
 ## Key Concepts
 
 **Motor IDs vs Names:**
-- Motors can be addressed by numeric ID (0-5) or name ("THUMB", "INDEX", etc.)
+- Query `exo.info()["motors"]` and use the reported numeric Dynamixel IDs.
+- In dual firmware, always use those integer IDs rather than a bare motor name.
 - Use 'all' to command all motors simultaneously
 
 **Motion Profiles:**

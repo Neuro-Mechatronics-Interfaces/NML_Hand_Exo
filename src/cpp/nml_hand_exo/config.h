@@ -361,13 +361,13 @@ constexpr bool DEFAULT_FLIPS[] = {
 #endif  // BUILD_LEFT_HAND == 2 vs single-exo
 
 /// @brief Default baud rate for the debug serial connection.
-constexpr long DEBUG_BAUD_RATE = 2000000;
+constexpr long DEBUG_BAUD_RATE = 1000000;
 
 /// @brief Default baud rates for BLE communication.
 constexpr long COMMAND_BAUD_RATE = 115200;
 
 /// @brief Default baud rate for Dynamixel communication.
-constexpr long DYNAMIXEL_BAUD_RATE = 2000000;
+constexpr long DYNAMIXEL_BAUD_RATE = 1000000;
 
 /// @brief Total number of gesture contained in the library
 constexpr int N_GESTURES = 6;

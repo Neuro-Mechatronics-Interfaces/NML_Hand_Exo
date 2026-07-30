@@ -38,36 +38,6 @@ python example_tcp_exo.py
 
 ---
 
-### 3. `hand_exo_cli.py`
-**Command-line interface tool**
-
-Full-featured CLI for device control and monitoring.
-
-```bash
-# List available ports
-python hand_exo_cli.py --list-ports
-
-# Connect and get info
-python hand_exo_cli.py --connect COM5 --info
-
-# Home all motors
-python hand_exo_cli.py --connect COM5 --home
-
-# Send commands
-python hand_exo_cli.py --connect COM5 --send "led:1:on"
-
-# Monitor output
-python hand_exo_cli.py --connect COM5 --monitor
-```
-
-**What it demonstrates:**
-- Port detection
-- Command sending
-- Serial monitoring
-- Error handling
-
----
-
 ## Next Steps
 
 After mastering these basics, move on to:

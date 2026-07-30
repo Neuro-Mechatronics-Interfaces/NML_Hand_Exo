@@ -8,7 +8,7 @@ import time
 
 # Configuration
 port = "COM6"
-baudrate = 57600
+baudrate = 1000000
 
 # Connect to device
 comm = SerialComm(port=port, baudrate=baudrate)
@@ -96,14 +96,17 @@ try:
     
     # 5. Baudrate Information (read-only in this example)
     print("\n5. Motor Baudrate Information")
-    motor_id = 0
+    motors = exo.info().get('motors', {})
+    if not motors:
+        raise RuntimeError("Firmware reported no motors; cannot query motor baudrate.")
+    motor_id = sorted(motors)[0]
     baudrate_info = exo.get_baudrate(motor_id)
     print(f"  Motor {motor_id} baudrate: {baudrate_info}")
     
     # Note: Changing baudrate requires careful handling and reconnection
     # Uncomment with caution:
     # print("\n  ⚠️  Changing baudrate (requires reconnection)...")
-    # exo.set_baudrate(motor_id, 115200)
+    # exo.set_baudrate(motor_id, 1000000)
     # time.sleep(1)
     
     # 6. Device Information Summary

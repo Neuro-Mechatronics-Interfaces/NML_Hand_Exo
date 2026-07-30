@@ -8,15 +8,21 @@ import time
 
 # Configuration
 port = "COM6"
-baudrate = 57600
-motor_id = 0  # Thumb motor
+baudrate = 1000000
 
 # Connect to device
 comm = SerialComm(port=port, baudrate=baudrate)
 exo = HandExo(comm, verbose=True)
 exo.connect()
+motor_id = None
 
 try:
+    motors = exo.info().get('motors', {})
+    if not motors:
+        raise RuntimeError("Firmware reported no motors; cannot configure a motor.")
+    motor_id = sorted(motors)[0]
+    print(f"Using configured motor ID {motor_id} ({motors[motor_id].get('name', 'unnamed')})")
+
     print("=" * 60)
     print("Motor Configuration Example")
     print("=" * 60)
@@ -83,6 +89,7 @@ except Exception as e:
     print(f"❌ Error: {e}")
     
 finally:
-    exo.disable_motor(motor_id)
+    if motor_id is not None:
+        exo.disable_motor(motor_id)
     exo.close()
     print("\n🔌 Connection closed")

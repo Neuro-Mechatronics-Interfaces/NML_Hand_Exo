@@ -10,7 +10,7 @@ feature_row:
   - image_path: /assets/images/examples/connect.png
     alt: "Connect to the Exo"
     title: "Connect to the Exo"
-    excerpt: "Find your COM port and verify the serial link at 57600 baud."
+    excerpt: "Find your COM port and verify the USB serial link at 1 Mbps."
     url: "/examples/#modal-connect"
     btn_label: "Open"
     btn_class: "btn--primary"
@@ -247,7 +247,7 @@ feature_row2:
         <pre><code class="language-powershell">pip install pyserial</code></pre>
       </li>
       <li><code>tools\hand_exo_cli.py</code> present (from this repo).</li>
-      <li>Default baud: <strong>57600</strong> (change if your firmware differs).</li>
+      <li>Default USB baud: <strong>1000000</strong> (HC-05 uses 115200).</li>
     </ul>
 
     <h4>1) Find the serial port</h4>
@@ -260,7 +260,7 @@ ls /dev/tty.usbmodem* /dev/tty.usbserial* 2>/dev/null
 ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null</code></pre>
 
     <h4>2) Connect and query device info</h4>
-    <pre><code class="language-powershell">python tools\hand_exo_cli.py --connect COM5 --baud 57600 --info --read-for 2</code></pre>
+    <pre><code class="language-powershell">python tools\hand_exo_cli.py --connect COM5 --baud 1000000 --info --read-for 2</code></pre>
     <p><em>Expected:</em> a brief info block (firmware, board, etc.) without errors.</p>
 
     <h4>3) Home axes</h4>
@@ -385,7 +385,7 @@ python tools\hand_exo_cli.py --connect COM5 --send "mot:all:off" --read-for 1</c
        Replace names/values with those documented by your firmware.</p>
 <pre><code class="language-powershell"># Examples (adjust to your command set)
 python tools\hand_exo_cli.py --connect COM5 --send "get:baud"           --read-for 1
-python tools\hand_exo_cli.py --connect COM5 --send "set:baud:57600"     --read-for 1
+python tools\hand_exo_cli.py --connect COM5 --send "set:baud:1000000"   --read-for 1
 python tools\hand_exo_cli.py --connect COM5 --send "get:lim:curr"       --read-for 1
 python tools\hand_exo_cli.py --connect COM5 --send "set:lim:curr:0.8"   --read-for 1
 python tools\hand_exo_cli.py --connect COM5 --send "get:lim:vel"        --read-for 1

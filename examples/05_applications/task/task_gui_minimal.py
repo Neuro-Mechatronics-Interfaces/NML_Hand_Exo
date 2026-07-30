@@ -30,7 +30,7 @@ class TaskPrompt(QWidget):
         self.serial_thread = None
         self.running_serial = False
         self.port = "COM6"
-        self.baud = 57600
+        self.baud = 1000000
 
         self.task_log = []  # For storing effort trial summaries
         self.countdown_timer = QTimer()

@@ -95,7 +95,7 @@ const float JOINT_LIMITS[][2] = {
 // Serial communication
 #define COMMAND_SERIAL Serial  // USB serial
 #define DXL_SERIAL Serial1     // Dynamixel serial
-#define BAUD_RATE 57600
+#define BAUD_RATE 1000000
 ```
 
 4. Click **Upload** (Ctrl+U)
@@ -142,7 +142,7 @@ NMLHandExo exo(MOTOR_IDS, 5, JOINT_LIMITS);
 Initialize the Dynamixel serial port.
 
 ```cpp
-exo.initializeSerial(57600);
+exo.initializeSerial(1000000);
 ```
 
 ### `initializeMotors()`
@@ -407,8 +407,8 @@ NMLHandExo exo(MOTOR_IDS, NUM_MOTORS, JOINT_LIMITS);
 GestureController gestureCtrl(&exo);
 
 void setup() {
-  Serial.begin(57600);
-  exo.initializeSerial(57600);
+  Serial.begin(1000000);
+  exo.initializeSerial(1000000);
   exo.initializeMotors();
   
   Serial.println("NML Hand Exo Ready!");
@@ -512,13 +512,13 @@ void loop() {
 
 **Motor not responding:**
 - Check Dynamixel ID matches firmware configuration
-- Verify baud rate (57600 default)
+- Verify baud rate (1000000 default for USB/Dynamixel; 115200 for HC-05)
 - Check power supply (12V, adequate current)
 - Test motor individually with Dynamixel Wizard
 
 **Serial communication issues:**
 - Ensure correct COM port selected
-- Try different baud rates (57600, 115200, 1000000)
+- Verify 1000000 for USB/Dynamixel or 115200 for HC-05
 - Check USB cable quality
 - Use `help;` command to verify connection
 

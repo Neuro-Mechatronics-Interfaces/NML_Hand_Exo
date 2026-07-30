@@ -5,7 +5,7 @@ if __name__ == "__main__":
 
     # Serial port config
     port = "COM6"
-    baudrate = 115200
+    baudrate = 1000000
 
     comm = SerialComm(port=port, baudrate=baudrate)
     #exo = FakeHandExo(comm, verbose=True)

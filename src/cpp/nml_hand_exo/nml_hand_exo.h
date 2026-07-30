@@ -34,6 +34,23 @@ enum ExoOperatingMode {
   GESTURE_CALIBRATION
 };
 
+struct __attribute__((packed)) FastTelemetryRecord {
+  uint8_t id;
+  uint8_t error;
+  int16_t current_mA;
+  int32_t velocity_raw;
+  int32_t position_ticks;
+  int32_t absolute_cdeg;
+  int32_t relative_cdeg;
+};
+
+enum FastTelemetryMethod : uint8_t {
+  FAST_TELEM_METHOD_FAILED = 0,
+  FAST_TELEM_METHOD_FALLBACK_READ = 1,
+  FAST_TELEM_METHOD_FAST_SYNC_READ = 2,
+  FAST_TELEM_METHOD_SYNC_READ = 3
+};
+
 /// @brief Class to manage the NML Hand Exoskeleton, providing initialization, motor control, and telemetry.
 class NMLHandExo {
   public:
@@ -120,6 +137,17 @@ class NMLHandExo {
     /// @param id Motor ID.
     /// @return Zero offset in degrees.
     float getZeroOffset(uint8_t id);
+
+    /// @brief Read compact telemetry records for specific motor IDs.
+    /// The fallback method is position-only; its current and velocity fields
+    /// must be treated as unavailable by the host.
+    uint8_t getFastTelemetryRecords(
+      const uint8_t* ids,
+      uint8_t count,
+      FastTelemetryRecord* records,
+      uint8_t& methodOut,
+      uint32_t timeoutMs = 10
+    );
 
     /// @brief Reset zero offsets for all motors using their current positions.
     void resetAllZeros();
@@ -418,7 +446,7 @@ class NMLHandExo {
     String getMotorMode();
 
     /// @brief Current software version.
-    static constexpr const char* VERSION = "0.2.14";
+    static constexpr const char* VERSION = "0.2.15";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.

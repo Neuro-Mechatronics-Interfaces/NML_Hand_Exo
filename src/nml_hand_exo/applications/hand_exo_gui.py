@@ -1281,6 +1281,71 @@ class UDPCommandWorker(QThread):
                 self.status_changed.emit("Command receiver stopped", "#888888")
 
 
+class EmgIntentWorker(QThread):
+    """Receive only the newest sample from a versioned LSL intent outlet."""
+
+    sample_received = pyqtSignal(object)
+    status_changed = pyqtSignal(str, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._source_id = "nml-emg-centroid-intent-v1"
+        self._stop_event = threading.Event()
+
+    def configure(self, source_id: str):
+        self._source_id = source_id.strip()
+
+    def stop(self):
+        self._stop_event.set()
+
+    def run(self):
+        try:
+            from pylsl import StreamInlet, resolve_streams
+        except Exception as exc:
+            self.status_changed.emit(f"LSL unavailable: {exc}", "#c0392b")
+            return
+
+        self._stop_event.clear()
+        self.status_changed.emit("Looking for intent stream…", "#f39c12")
+        inlet = None
+        while not self._stop_event.is_set():
+            if inlet is None:
+                try:
+                    matches = [
+                        stream for stream in resolve_streams(wait_time=1.0)
+                        if stream.source_id() == self._source_id
+                    ]
+                    if not matches:
+                        continue
+                    inlet = StreamInlet(matches[0], max_buflen=1, max_chunklen=32)
+                    self.status_changed.emit(
+                        f"Connected: {matches[0].name()} ({matches[0].channel_count()} ch)",
+                        "#27ae60",
+                    )
+                except Exception as exc:
+                    self.status_changed.emit(f"LSL connect error: {exc}", "#c0392b")
+                    inlet = None
+                    self.msleep(250)
+                    continue
+            try:
+                samples, timestamps = inlet.pull_chunk(timeout=0.1, max_samples=32)
+                if samples:
+                    self.sample_received.emit({
+                        "values": [float(v) for v in samples[-1]],
+                        "lsl_timestamp": float(timestamps[-1]) if timestamps else None,
+                        "received_monotonic": time.monotonic(),
+                    })
+            except Exception as exc:
+                self.status_changed.emit(f"LSL receive error: {exc}", "#c0392b")
+                inlet = None
+        if inlet is not None:
+            try:
+                inlet.close_stream()
+            except Exception:
+                pass
+        self.status_changed.emit("Intent receiver stopped", "#888888")
+
+
 class SynchronizedHandExo:
     """Serialize complete HandExo method calls across GUI and worker threads."""
 
@@ -1323,10 +1388,15 @@ class SerialWorker(QThread):
         self._run = True
         self._poll_pending = False
         self._last_poll_error_log = 0.0
+        self._motor_ids: list[int] = []
         self._state_lock = threading.Lock()
 
     def set_exo(self, exo):
         self._exo = exo
+
+    def set_motor_ids(self, motor_ids: list[int]):
+        with self._state_lock:
+            self._motor_ids = list(motor_ids)
 
     def request_poll(self, include_telemetry: bool = True):
         with self._state_lock:
@@ -1383,6 +1453,33 @@ class SerialWorker(QThread):
         if exo is None:
             self.completed.emit(result)
             return
+        if include_telemetry and self._motor_ids:
+            try:
+                fast = self._get_fast_telemetry(0.5)
+                result["relative"] = {
+                    motor_id: record["angle"] if not record["error"] else None
+                    for motor_id, record in fast.items()
+                }
+                result["positions"] = {
+                    motor_id: record["absolute_angle"] if not record["error"] else None
+                    for motor_id, record in fast.items()
+                }
+                result["currents"] = {
+                    motor_id: record["current"] if not record["error"] else None
+                    for motor_id, record in fast.items()
+                }
+                result["torques"] = {
+                    motor_id: (
+                        record["current"] * 0.00115
+                        if not record["error"] and record["current"] is not None
+                        else None
+                    )
+                    for motor_id, record in fast.items()
+                }
+                self.completed.emit(result)
+                return
+            except Exception as exc:
+                self._log_poll_error(f"[poll] fast telemetry unavailable; using text reads: {exc}")
         try:
             result["relative"] = self._get_motor_attribute("get_angle:all", "angle", 0.5)
         except Exception as exc:
@@ -1430,6 +1527,14 @@ class SerialWorker(QThread):
             }
 
         return self._with_raw_exo(parse)
+
+    def _get_fast_telemetry(self, timeout: float) -> dict:
+        motor_ids = list(self._motor_ids)
+        return self._with_raw_exo(
+            lambda raw_exo: raw_exo.get_fast_telemetry(
+                timeout=timeout, motor_ids=motor_ids
+            )
+        )
 
     def _transact(self, command: str, timeout: float) -> str:
         def do_transact(raw_exo):
@@ -1509,6 +1614,15 @@ class HandExoGUI(QWidget):
         self._direct_command_active = False
         self._suspend_device_poll_requests = False
 
+        self._emg_intent_worker = EmgIntentWorker(self)
+        self._emg_intent_worker.sample_received.connect(self._on_emg_intent_sample)
+        self._emg_intent_worker.status_changed.connect(self._on_emg_intent_status)
+        self._emg_latest: dict | None = None
+        self._emg_live = False
+        self._emg_deadman_active = False
+        self._emg_last_command_id: int | None = None
+        self._emg_commanded_ids: set[int] = set()
+
         self._udp_telemetry = UDPTelemetryPublisher()
         self._lsl_angles = NumericLSLTelemetryOutlet(
             "NMLHandExoJointAngles", "JointAngles", "degrees"
@@ -1542,6 +1656,9 @@ class HandExoGUI(QWidget):
         self._udp_direct_idle_timer = QTimer(self)
         self._udp_direct_idle_timer.setSingleShot(True)
         self._udp_direct_idle_timer.timeout.connect(self._resume_normal_polling)
+        self._emg_control_timer = QTimer(self)
+        self._emg_control_timer.setInterval(50)
+        self._emg_control_timer.timeout.connect(self._emg_control_tick)
 
         # ------------------------------------------------------------------
         # Teleop state
@@ -1612,6 +1729,7 @@ class HandExoGUI(QWidget):
         self.main_tabs.addTab(self._build_telemetry_tab(), "Telemetry")
         self.main_tabs.addTab(self._build_visualization_tab(), "Hand State")
         self.main_tabs.addTab(self._build_direct_control_tab(), "Direct Control")
+        self.main_tabs.addTab(self._build_emg_teleop_tab(), "EMG Teleop")
         self.main_tabs.addTab(self._build_teleop_tab(), "Teleop")
         self.main_tabs.addTab(self._build_settings_tab(), "Settings")
 
@@ -1800,6 +1918,81 @@ class HandExoGUI(QWidget):
         self._on_direct_mode_selection_changed(
             self._direct_mode_combo.currentText()
         )
+        return widget
+
+    def _build_emg_teleop_tab(self) -> QWidget:
+        """Guarded one-motor NMLIntentV1-to-velocity adapter."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        warning = QLabel(
+            "Disabled by default. Commands one explicitly armed active DXL ID only while "
+            "a fresh, confident NMLIntentV1 sample and the held deadman are present."
+        )
+        warning.setWordWrap(True)
+        warning.setStyleSheet("color: #f39c12; font-weight: bold;")
+        layout.addWidget(warning)
+
+        input_box = QGroupBox("Intent Input")
+        input_layout = QGridLayout(input_box)
+        self._emg_source_edit = QLineEdit("nml-emg-centroid-intent-v1")
+        self._emg_connect_btn = QPushButton("Connect LSL")
+        self._emg_disconnect_btn = QPushButton("Disconnect")
+        self._emg_disconnect_btn.setEnabled(False)
+        self._emg_status_lbl = QLabel("Not connected")
+        self._emg_sample_lbl = QLabel("No intent sample")
+        self._emg_connect_btn.clicked.connect(self._on_emg_connect)
+        self._emg_disconnect_btn.clicked.connect(self._on_emg_disconnect)
+        input_layout.addWidget(QLabel("LSL source ID:"), 0, 0)
+        input_layout.addWidget(self._emg_source_edit, 0, 1)
+        input_layout.addWidget(self._emg_connect_btn, 0, 2)
+        input_layout.addWidget(self._emg_disconnect_btn, 0, 3)
+        input_layout.addWidget(self._emg_status_lbl, 1, 0, 1, 4)
+        input_layout.addWidget(self._emg_sample_lbl, 2, 0, 1, 4)
+        layout.addWidget(input_box)
+
+        map_box = QGroupBox("Explicit-ID Mapping")
+        map_layout = QGridLayout(map_box)
+        self._emg_motor_combo = QComboBox()
+        self._emg_direction_combo = QComboBox()
+        self._emg_direction_combo.addItem("+ intent = positive velocity", 1.0)
+        self._emg_direction_combo.addItem("+ intent = negative velocity", -1.0)
+        self._emg_max_rpm_spin = QDoubleSpinBox()
+        self._emg_max_rpm_spin.setRange(0.1, DIRECT_VELOCITY_LIMIT_RPM)
+        self._emg_max_rpm_spin.setValue(2.0)
+        self._emg_deadband_spin = QDoubleSpinBox()
+        self._emg_deadband_spin.setRange(0.0, 0.95)
+        self._emg_deadband_spin.setValue(0.15)
+        self._emg_stale_ms_spin = QSpinBox()
+        self._emg_stale_ms_spin.setRange(50, 1000)
+        self._emg_stale_ms_spin.setValue(200)
+        self._emg_confidence_spin = QDoubleSpinBox()
+        self._emg_confidence_spin.setRange(0.0, 1.0)
+        self._emg_confidence_spin.setValue(0.70)
+        map_layout.addWidget(QLabel("Target active motor:"), 0, 0)
+        map_layout.addWidget(self._emg_motor_combo, 0, 1)
+        map_layout.addWidget(QLabel("Direction:"), 0, 2)
+        map_layout.addWidget(self._emg_direction_combo, 0, 3)
+        map_layout.addWidget(QLabel("Max rpm:"), 1, 0)
+        map_layout.addWidget(self._emg_max_rpm_spin, 1, 1)
+        map_layout.addWidget(QLabel("Deadband:"), 1, 2)
+        map_layout.addWidget(self._emg_deadband_spin, 1, 3)
+        map_layout.addWidget(QLabel("Freshness (ms):"), 2, 0)
+        map_layout.addWidget(self._emg_stale_ms_spin, 2, 1)
+        map_layout.addWidget(QLabel("Min confidence:"), 2, 2)
+        map_layout.addWidget(self._emg_confidence_spin, 2, 3)
+        layout.addWidget(map_box)
+
+        self._emg_live_cb = QCheckBox("Enable EMG Teleop")
+        self._emg_deadman_btn = QPushButton("Hold Deadman to Command")
+        self._emg_deadman_btn.setProperty("accent", True)
+        self._emg_live_status_lbl = QLabel("Disabled — monitor-only")
+        self._emg_live_cb.toggled.connect(self._on_emg_live_toggled)
+        self._emg_deadman_btn.pressed.connect(self._on_emg_deadman_pressed)
+        self._emg_deadman_btn.released.connect(self._on_emg_deadman_released)
+        layout.addWidget(self._emg_live_cb)
+        layout.addWidget(self._emg_deadman_btn)
+        layout.addWidget(self._emg_live_status_lbl)
+        layout.addStretch()
         return widget
 
     def _build_teleop_tab(self) -> QWidget:
@@ -2413,6 +2606,7 @@ class HandExoGUI(QWidget):
         # Telemetry now always follows the configured broadcast rate.
         include_telemetry = True
         self._serial_worker.set_exo(self.exo)
+        self._serial_worker.set_motor_ids(self._motor_dxl_id)
         self._serial_worker.request_poll(include_telemetry)
 
     def _on_device_poll_completed(self, result: dict):
@@ -2580,7 +2774,7 @@ class HandExoGUI(QWidget):
         self.baud_combo = QComboBox()
         for b in ["9600", "57600", "115200", "230400", "1000000", "2000000"]:
             self.baud_combo.addItem(b)
-        self.baud_combo.setCurrentText("2000000")
+        self.baud_combo.setCurrentText("1000000")
         self.baud_combo.setMinimumContentsLength(7)
 
         self.connect_btn = QPushButton("Connect")
@@ -3382,7 +3576,7 @@ class HandExoGUI(QWidget):
                 raise ConnectionError(
                     f"No complete motor records were received from {port} at {baud} baud."
                     f"{detail}{preview} The firmware in this repository defaults the "
-                    "OpenRB USB serial port to 2000000 baud; use the exact baud that shows "
+                    "OpenRB USB serial port to 1000000 baud; use the exact baud that shows "
                     "readable output in Arduino Serial Monitor."
                 )
 
@@ -3462,6 +3656,7 @@ class HandExoGUI(QWidget):
             self._on_teleop_stop()
         if self._teleop_worker.isRunning():
             self._teleop_worker.stop()
+        self._stop_emg_control("HandExo disconnected", stop_timer=True, release_deadman=True)
         self._stop_all_direct_control()
         self._angle_timer.stop()
         self._wait_for_pending_poll(1200)
@@ -3481,6 +3676,7 @@ class HandExoGUI(QWidget):
         self._motor_dxl_id      = []
         self.motor_names        = []
         self._direct_motor_combo.clear()
+        self._emg_motor_combo.clear()
         self._direct_mode = None
         self._direct_mode_status.setText("Not configured")
         self._direct_mode_status.setStyleSheet("color: #888888;")
@@ -4001,6 +4197,158 @@ class HandExoGUI(QWidget):
         ):
             widget.setEnabled(on)
 
+    # -- EMG intent teleop -------------------------------------------------
+
+    def _on_emg_connect(self):
+        if self._emg_intent_worker.isRunning():
+            return
+        source_id = self._emg_source_edit.text().strip()
+        if not source_id:
+            QMessageBox.warning(self, "Intent Source", "Enter an LSL source ID.")
+            return
+        self._emg_intent_worker.configure(source_id)
+        self._emg_latest = None
+        self._emg_connect_btn.setEnabled(False)
+        self._emg_disconnect_btn.setEnabled(True)
+        self._emg_intent_worker.start()
+
+    def _on_emg_disconnect(self):
+        self._stop_emg_control("LSL input disconnected", stop_timer=True, release_deadman=True)
+        if self._emg_intent_worker.isRunning():
+            self._emg_intent_worker.stop()
+            self._emg_intent_worker.wait(1200)
+        self._emg_connect_btn.setEnabled(True)
+        self._emg_disconnect_btn.setEnabled(False)
+
+    def _on_emg_intent_status(self, text: str, color: str):
+        self._emg_status_lbl.setText(text)
+        self._emg_status_lbl.setStyleSheet(f"color: {color};")
+
+    def _on_emg_intent_sample(self, sample: dict):
+        self._emg_latest = sample
+        values = sample.get("values", [])
+        if len(values) >= 4:
+            signed, effort, confidence, state = values[:4]
+            self._emg_sample_lbl.setText(
+                f"intent={signed:+.3f} effort={effort:.3f} confidence={confidence:.3f} state={int(state)}"
+            )
+        else:
+            self._emg_sample_lbl.setText("Invalid NMLIntentV1 sample (need 4 channels)")
+
+    def _selected_emg_motor_id(self) -> int | None:
+        value = self._emg_motor_combo.currentData()
+        return int(value) if value is not None else None
+
+    def _has_calibration_for_emg_motor(self, dxl_id: int) -> bool:
+        for motor in self.motor_widgets:
+            if motor.get("dxl_id") != dxl_id:
+                continue
+            name = motor.get("name", "")
+            bare = motor.get("cmd_name", name).removeprefix("L:").removeprefix("R:")
+            profile = self._active_cal_left if name.startswith("L:") else (
+                self._active_cal_right if name.startswith("R:") else self._active_cal_profile
+            )
+            return bool(profile and profile.get("motors", {}).get(bare))
+        return False
+
+    def _emg_ready_reason(self) -> str | None:
+        dxl_id = self._selected_emg_motor_id()
+        if not self.exo_connected:
+            return "HandExo is disconnected"
+        if not self._emg_intent_worker.isRunning():
+            return "LSL input is not connected"
+        if self._direct_mode != "velocity":
+            return "apply direct Velocity mode first"
+        if dxl_id is None or dxl_id not in self._motor_dxl_id:
+            return "select an active motor ID"
+        if dxl_id not in self._direct_armed_ids:
+            return f"motor ID {dxl_id} is not armed"
+        if not self._has_calibration_for_emg_motor(dxl_id):
+            return f"motor ID {dxl_id} has no active calibration"
+        return None
+
+    def _on_emg_live_toggled(self, enabled: bool):
+        self._emg_live = enabled
+        if not enabled:
+            self._stop_emg_control("EMG teleop disabled", stop_timer=True, release_deadman=True)
+            return
+        reason = self._emg_ready_reason()
+        if reason:
+            self._emg_live_cb.blockSignals(True)
+            self._emg_live_cb.setChecked(False)
+            self._emg_live_cb.blockSignals(False)
+            self._emg_live = False
+            QMessageBox.warning(self, "EMG Teleop Not Ready", reason)
+            return
+        self._emg_control_timer.start()
+
+    def _on_emg_deadman_pressed(self):
+        if self._emg_live and self._emg_ready_reason() is None:
+            self._emg_deadman_active = True
+
+    def _on_emg_deadman_released(self):
+        self._stop_emg_control("deadman released", stop_timer=True, release_deadman=True)
+
+    def _stop_emg_control(self, reason: str, *, stop_timer: bool = False, release_deadman: bool = False):
+        if release_deadman:
+            self._emg_deadman_active = False
+        if stop_timer:
+            self._emg_control_timer.stop()
+        ids_to_stop = set(self._emg_commanded_ids)
+        if self._emg_last_command_id is not None:
+            ids_to_stop.add(self._emg_last_command_id)
+        self._emg_commanded_ids.clear()
+        self._emg_last_command_id = None
+        if self.exo_connected:
+            for dxl_id in ids_to_stop:
+                try:
+                    self.exo.stop_direct_control(dxl_id)
+                except Exception as exc:
+                    self._log(f"[EMG] stop failed for ID {dxl_id}: {exc}")
+        self._emg_live_status_lbl.setText(f"Stopped: {reason}")
+
+    def _emg_control_tick(self):
+        if not self._emg_live or not self._emg_deadman_active:
+            return
+        reason = self._emg_ready_reason()
+        sample = self._emg_latest
+        if reason:
+            self._stop_emg_control(reason)
+            return
+        if not sample or time.monotonic() - sample.get("received_monotonic", 0.0) > self._emg_stale_ms_spin.value() / 1000.0:
+            self._stop_emg_control("intent sample is stale")
+            return
+        values = sample.get("values", [])
+        if len(values) < 4:
+            self._stop_emg_control("invalid intent schema")
+            return
+        signed, _effort, confidence, state = (float(value) for value in values[:4])
+        if not all(math.isfinite(value) for value in (signed, confidence, state)):
+            self._stop_emg_control("non-finite intent value")
+            return
+        if state != 1.0 or confidence < self._emg_confidence_spin.value():
+            self._stop_emg_control("intent is inactive or low confidence")
+            return
+        if abs(signed) < self._emg_deadband_spin.value():
+            self._stop_emg_control("intent inside deadband")
+            return
+        dxl_id = self._selected_emg_motor_id()
+        if self._emg_last_command_id not in (None, dxl_id):
+            try:
+                self.exo.stop_direct_control(self._emg_last_command_id)
+            except Exception as exc:
+                self._stop_emg_control(f"failed to stop previous motor: {exc}")
+                return
+        velocity = signed * float(self._emg_direction_combo.currentData()) * self._emg_max_rpm_spin.value()
+        velocity = max(-DIRECT_VELOCITY_LIMIT_RPM, min(DIRECT_VELOCITY_LIMIT_RPM, velocity))
+        try:
+            self.exo.set_direct_velocity(dxl_id, velocity)
+            self._emg_last_command_id = dxl_id
+            self._emg_commanded_ids.add(dxl_id)
+            self._emg_live_status_lbl.setText(f"Commanding ID {dxl_id}: {velocity:+.2f} rpm")
+        except Exception as exc:
+            self._stop_emg_control(f"command failed: {exc}")
+
     # -- Direct control tab handlers --------------------------------------
 
     def _on_direct_mode_selection_changed(self, text: str):
@@ -4018,8 +4366,10 @@ class HandExoGUI(QWidget):
 
     def _rebuild_direct_motor_combo(self):
         self._direct_motor_combo.clear()
+        self._emg_motor_combo.clear()
         for name, dxl_id in zip(self.motor_names, self._motor_dxl_id):
             self._direct_motor_combo.addItem(f"{name} (ID {dxl_id})", dxl_id)
+            self._emg_motor_combo.addItem(f"{name} (ID {dxl_id})", dxl_id)
         self._update_direct_arm_status()
 
     def _selected_direct_motor_id(self) -> int | None:
@@ -4436,6 +4786,7 @@ class HandExoGUI(QWidget):
         self._angle_timer.stop()
         self._teleop_timer.stop()
         self._direct_command_timer.stop()
+        self._stop_emg_control("application closing", stop_timer=True, release_deadman=True)
         self._stop_all_direct_control()
         self._wait_for_pending_poll(1200)
         if self._serial_worker.isRunning():
@@ -4443,6 +4794,9 @@ class HandExoGUI(QWidget):
         if self._teleop_worker.isRunning():
             self._teleop_worker.stop()
             self._teleop_worker.wait(1000)
+        if self._emg_intent_worker.isRunning():
+            self._emg_intent_worker.stop()
+            self._emg_intent_worker.wait(1200)
         if self._udp_command_worker.isRunning():
             self._udp_command_worker.stop()
             self._udp_command_worker.wait(1000)

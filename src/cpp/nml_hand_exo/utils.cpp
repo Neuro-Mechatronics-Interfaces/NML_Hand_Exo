@@ -230,6 +230,80 @@ int applyTorqueToMotorIDList(NMLHandExo& exo, const String& token, bool enable) 
   return updated;
 }
 
+struct __attribute__((packed)) FastTelemetryHeader {
+  char magic[2];
+  uint8_t version;
+  uint8_t flags;
+  uint8_t count;
+  uint16_t payload_len;
+  uint32_t timestamp_ms;
+  uint16_t checksum;
+};
+
+static_assert(sizeof(FastTelemetryHeader) == 13, "Fast telemetry header ABI changed");
+static_assert(sizeof(FastTelemetryRecord) == 20, "Fast telemetry record ABI changed");
+
+uint16_t fastTelemetryChecksum(const uint8_t* data, size_t length) {
+  uint16_t sum = 0;
+  for (size_t i = 0; i < length; ++i) sum = (uint16_t)(sum + data[i]);
+  return sum;
+}
+
+void writeFastTelemetryFrame(Stream& stream, const FastTelemetryRecord* records,
+                             uint8_t count, uint8_t flags) {
+  FastTelemetryHeader header = {{'N', 'X'}, 1, flags, count,
+                                (uint16_t)(count * sizeof(FastTelemetryRecord)),
+                                millis(), 0};
+  uint16_t checksum = fastTelemetryChecksum(
+      reinterpret_cast<const uint8_t*>(&header), sizeof(header) - sizeof(header.checksum));
+  checksum = (uint16_t)(checksum + fastTelemetryChecksum(
+      reinterpret_cast<const uint8_t*>(records), header.payload_len));
+  header.checksum = checksum;
+  stream.write(reinterpret_cast<const uint8_t*>(&header), sizeof(header));
+  if (header.payload_len) {
+    stream.write(reinterpret_cast<const uint8_t*>(records), header.payload_len);
+  }
+  stream.flush();
+}
+
+uint8_t collectFastTelemetryIDs(NMLHandExo& exo, const String& token,
+                                uint8_t* ids, uint8_t maxIds) {
+  String firstArg = getArg(token, 1);
+  firstArg.trim();
+  if (firstArg.length() == 0 || firstArg.equalsIgnoreCase("ALL")) {
+    uint8_t count = min((uint8_t)exo.getMotorCount(), maxIds);
+    for (uint8_t i = 0; i < count; ++i) ids[i] = exo.getMotorIDByIndex(i);
+    return count;
+  }
+
+  uint8_t count = 0;
+  for (int argIndex = 1; count < maxIds; ++argIndex) {
+    String arg = getArg(token, argIndex);
+    arg.trim();
+    if (arg.length() == 0) break;
+    int id = exo.getMotorID(arg);
+    if (id != -1) ids[count++] = (uint8_t)id;
+  }
+  return count;
+}
+
+void sendFastTelemetry(NMLHandExo& exo, const String& token) {
+  uint8_t ids[32];
+  FastTelemetryRecord records[32];
+  const uint8_t requested = collectFastTelemetryIDs(exo, token, ids, 32);
+  if (requested == 0) {
+    commandPrint("ERROR: get_telemetry_fast requires valid motor IDs or all");
+    return;
+  }
+
+  uint8_t method = FAST_TELEM_METHOD_FAILED;
+  const uint8_t recordsRead = exo.getFastTelemetryRecords(ids, requested, records, method);
+  writeFastTelemetryFrame(DEBUG_SERIAL, records, recordsRead, method);
+#if defined(COMMAND_SERIAL)
+  writeFastTelemetryFrame(COMMAND_SERIAL, records, recordsRead, method);
+#endif
+}
+
 void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token) {
 
   token.trim();        // Remove any trailing white space
@@ -240,7 +314,10 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   int val = 0; // Default value for commands that require a value
 
   // ========== Supported high-level commands ==========
-  if (cmd == "enable") {
+  if (cmd == "get_telemetry_fast") {
+    sendFastTelemetry(exo, token);
+
+  } else if (cmd == "enable") {
     String arg = getArg(token, 1);  // local copy
     arg.trim();
     if (arg.equalsIgnoreCase("ALL")) {

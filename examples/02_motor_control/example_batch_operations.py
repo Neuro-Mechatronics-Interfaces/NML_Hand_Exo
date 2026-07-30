@@ -8,7 +8,7 @@ import time
 
 # Configuration
 port = "COM6"
-baudrate = 57600
+baudrate = 1000000
 
 # Connect to device
 comm = SerialComm(port=port, baudrate=baudrate)
