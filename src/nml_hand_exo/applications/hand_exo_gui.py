@@ -31,6 +31,7 @@ from PyQt5.QtGui import QFont, QFontMetrics
 
 from serial.tools import list_ports
 from nml_hand_exo.interface import HandExo, SerialComm
+from nml_hand_exo.interface._hand_exo import ANGLE_ADDRESSABLE_GESTURES
 from nml_hand_exo.interface._telemetry_streaming import (
     NumericLSLTelemetryOutlet,
     UDPTelemetryPublisher,
@@ -59,6 +60,29 @@ DIRECT_CURRENT_LIMIT_MA = 910.0
 
 
 # -- Helpers ---------------------------------------------------------------
+
+def normalize_udp_gesture_angle_command(command: str) -> tuple[str, str] | None:
+    """Validate and canonicalize an angle-addressable gesture UDP command.
+
+    Returns ``(command, gesture)`` for ``set_gesture_angle`` commands, ``None``
+    for other commands, and raises ``ValueError`` for malformed or unsafe values.
+    UDP input deliberately rejects, rather than clamps, out-of-range targets.
+    """
+    if not command.startswith("set_gesture_angle:"):
+        return None
+    parts = command.split(":")
+    if len(parts) != 3:
+        raise ValueError("expected set_gesture_angle:<gesture>:<0-100>")
+    gesture = parts[1].strip().lower()
+    if gesture not in ANGLE_ADDRESSABLE_GESTURES:
+        raise ValueError("gesture is not angle-addressable")
+    try:
+        percent = float(parts[2])
+    except ValueError as exc:
+        raise ValueError("percent must be a finite number") from exc
+    if not math.isfinite(percent) or not 0.0 <= percent <= 100.0:
+        raise ValueError("percent must be in the range 0-100")
+    return f"set_gesture_angle:{gesture}:{percent:g}", gesture
 
 def list_profiles() -> list[str]:
     os.makedirs(PROFILES_DIR, exist_ok=True)
@@ -1633,7 +1657,9 @@ class HandExoGUI(QWidget):
         self._udp_command_worker = UDPCommandWorker(self)
         self._udp_command_worker.command_received.connect(self._on_udp_command)
         self._udp_command_worker.status_changed.connect(self._on_udp_command_status)
-        self._udp_stream_pending: dict[tuple[str, int], tuple[str, str, str]] = {}
+        self._udp_stream_pending: dict[
+            tuple[str, str | int], tuple[str, str, str]
+        ] = {}
         self._udp_stream_last_status = 0.0
         self._udp_stream_sent_since_status = 0
         self._udp_stream_timer = QTimer(self)
@@ -2202,8 +2228,8 @@ class HandExoGUI(QWidget):
 
         note = QLabel(
             "Command datagrams may be plain protocol text or JSON such as "
-            '{"command":"set_gesture:pinch_index:close"}. By default only '
-            "set_gesture commands are accepted."
+            '{"command":"set_gesture_angle:index:50"}. By default only '
+            "gesture and normalized joint-angle commands are accepted."
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: #888888; font-size: 10px;")
@@ -2375,6 +2401,32 @@ class HandExoGUI(QWidget):
             self._set_udp_command_feedback(
                 payload, sender, "rejected: empty command", "#c0392b"
             )
+            return
+
+        try:
+            gesture_angle = normalize_udp_gesture_angle_command(command)
+        except ValueError as exc:
+            self._set_udp_command_feedback(
+                payload, sender, f"rejected: {exc}", "#c0392b"
+            )
+            self._log(f"[UDP command] Rejected from {sender}: {command} ({exc})")
+            return
+        if gesture_angle is not None:
+            command, gesture = gesture_angle
+            # Decoder and slider sources may send faster than the serial link.
+            # Keep only the newest target for each joint gesture.
+            self._udp_stream_pending[("set_gesture_angle", gesture)] = (
+                command, payload, sender
+            )
+            now = time.monotonic()
+            if now - self._udp_stream_last_status >= 0.25:
+                self._set_udp_command_feedback(
+                    payload,
+                    sender,
+                    f"streaming ({len(self._udp_stream_pending)} latest target(s) queued)",
+                    "#27ae60",
+                )
+                self._udp_stream_last_status = now
             return
 
         if not command.startswith("set_gesture:"):

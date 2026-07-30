@@ -113,6 +113,17 @@ clamped). It interpolates between each gesture's conservative `extend` and
 firmware both matching left/right motor IDs are targeted; inactive-side torque
 containment remains the GUI's responsibility.
 
+### UDP command input
+
+The HandExo GUI can receive UDP command datagrams on its configured command
+port. With the default (non-advanced) setting, it accepts `set_gesture` and the
+normalized `set_gesture_angle` command above. UDP angle commands must use a
+supported gesture and a finite 0-100 target; malformed or out-of-range input is
+rejected rather than clamped. The receiver retains only the newest target per
+joint gesture and forwards at most one batch every 20 ms through the GUI's
+existing serialized device connection. Do not run a second UDP-to-serial bridge
+against the same exoskeleton while the GUI is connected.
+
 ---
 
 ## Baud rate map `[VERIFIED]`
