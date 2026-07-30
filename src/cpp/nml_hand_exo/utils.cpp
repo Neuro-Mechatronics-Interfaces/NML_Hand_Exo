@@ -909,6 +909,36 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     String stateStr = getArg(token, 1);
     gc.executeCurrentGestureNewState(stateStr);
 
+  } else if (cmd == "set_gesture_angle") {
+    String gesture = getArg(token, 1);
+    String percentText = getArg(token, 2);
+    gesture.trim(); percentText.trim();
+    bool numeric = percentText.length() > 0;
+    bool seenDigit = false;
+    bool seenDot = false;
+    for (uint16_t i = 0; numeric && i < percentText.length(); ++i) {
+      const char c = percentText[i];
+      if (isDigit(c)) {
+        seenDigit = true;
+      } else if (c == '.' && !seenDot) {
+        seenDot = true;
+      } else if ((c == '+' || c == '-') && i == 0) {
+        // Leading sign is allowed; the digit requirement below still applies.
+      } else {
+        numeric = false;
+      }
+    }
+    numeric = numeric && seenDigit;
+    if (gesture.length() == 0 || percentText.length() == 0) {
+      commandPrint(F("ERROR: usage set_gesture_angle:<gesture>:<0-100>"));
+    } else if (!numeric) {
+      commandPrint(F("ERROR: gesture angle percent must be numeric"));
+    } else if (gc.setGestureAngle(gesture, percentText.toFloat())) {
+      commandPrint("OK: gesture_angle " + gesture);
+    } else {
+      commandPrint("ERROR: gesture is not angle-addressable: " + gesture);
+    }
+
   } else if (cmd == "set_zero_offset") {
     String arg = getArg(token, 1);
     arg.trim(); arg.toUpperCase();
@@ -1031,6 +1061,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_gesture           |  NAME:VALUE          | // Set exo gesture"));
     commandPrint(F(" get_gesture           |                      | // Get exo gesture"));
     commandPrint(F(" set_gesture_state     |  NAME:VALUE          | // Set exo gesture state"));
+    commandPrint(F(" set_gesture_angle     |  NAME:0-100          | // Set per-joint gesture position"));
     commandPrint(F(" get_gesture_state     |                      | // Get exo gesture state"));
     commandPrint(F(" cycle_gesture         |                      | // Executes the next gesture in the library"));
     commandPrint(F(" cycle_gesture_state   |                      | // Cycles the next gesture state"));

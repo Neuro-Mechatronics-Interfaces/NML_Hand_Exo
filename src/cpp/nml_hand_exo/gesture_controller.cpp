@@ -62,14 +62,18 @@ void GestureController::executeGesture(const String& gesture, const String& stat
 
   // Resolve this state into absolute angles
   float absAngles[N_MOTORS];
-  resolveStateAngles(gestureLibrary[gIdx].states[sIdx], home, absAngles);
+  bool touched[N_MOTORS];
+  resolveStateAngles(gestureLibrary[gIdx].states[sIdx], home, absAngles, touched);
 
   /// If this state's angles were defined RELATIVE to home,
   // apply per-motor flip by mirroring around the home baseline.
   if (st.isRelative) {
     for (int i = 0; i < exo_.getMotorCount(); ++i) {
+      if (!touched[i]) continue;
       uint8_t id = exo_.getMotorIDByIndex(i);
-      if (exo_.isMotorFlipped(id)) {
+      if (st.valuesAreFractions) {
+        absAngles[i] = exo_.gestureFractionToAngle(id, absAngles[i] - home[i]);
+      } else if (exo_.isMotorFlipped(id)) {
         absAngles[i] = 2.0f * home[i] - absAngles[i];
       }
     }
@@ -77,6 +81,7 @@ void GestureController::executeGesture(const String& gesture, const String& stat
 
   // Command absolute targets
   for (int i = 0; i < exo_.getMotorCount(); ++i) {
+    if (!touched[i]) continue;
     uint8_t id = exo_.getMotorIDByIndex(i);
     debugPrint("[GestureController] motor " + String(id) + " -> abs " + String(absAngles[i], 2));
     exo_.setAbsoluteAngle(id, absAngles[i]);
@@ -128,6 +133,36 @@ void GestureController::executeCurrentGestureNewState(const String& state) {
 
   // Execute the gesture with the specified state
   executeGesture(gesture, state);
+}
+
+bool GestureController::setGestureAngle(const String& gesture, float percent) {
+  const int gestureIndex = findGestureIndex(gesture);
+  if (gestureIndex < 0) return false;
+  const GestureMap& map = gestureLibrary[gestureIndex];
+  const int extendIndex = findStateIndex(map, "extend");
+  const int flexIndex = findStateIndex(map, "flex");
+  if (extendIndex < 0 || flexIndex < 0) return false;
+
+  const GestureState& extend = map.states[extendIndex];
+  const GestureState& flex = map.states[flexIndex];
+  if (!extend.valuesAreFractions || !flex.valuesAreFractions) return false;
+
+  float home[N_MOTORS], start[N_MOTORS], end[N_MOTORS];
+  bool startTouched[N_MOTORS], endTouched[N_MOTORS];
+  for (int i = 0; i < exo_.getMotorCount(); ++i) {
+    home[i] = exo_.getZeroAngle(exo_.getMotorIDByIndex(i));
+  }
+  resolveStateAngles(extend, home, start, startTouched);
+  resolveStateAngles(flex, home, end, endTouched);
+  const float alpha = constrain(percent, 0.0f, 100.0f) / 100.0f;
+  for (int i = 0; i < exo_.getMotorCount(); ++i) {
+    if (!startTouched[i] || !endTouched[i]) continue;
+    const uint8_t id = exo_.getMotorIDByIndex(i);
+    const float from = start[i] - home[i];
+    const float to = end[i] - home[i];
+    exo_.setAbsoluteAngle(id, exo_.gestureFractionToAngle(id, from + alpha * (to - from)));
+  }
+  return true;
 }
 void GestureController::setCycleGestureButton(const int pin) {
   cycleGesturePin = pin;

@@ -370,7 +370,21 @@ constexpr long COMMAND_BAUD_RATE = 115200;
 constexpr long DYNAMIXEL_BAUD_RATE = 1000000;
 
 /// @brief Total number of gesture contained in the library
-constexpr int N_GESTURES = 6;
+// Five existing whole-hand postures, one peace posture, six coordinated
+// per-joint maps, and three research-facing thumb-axis maps.
+constexpr int N_GESTURES = 15;
+
+// Normalized per-joint posture fractions.  These are deliberately conservative
+// starting values: they are fractions of the calibrated flexion span, not raw
+// degrees and not commands to the physical endstop. Tune only after bench and
+// participant-specific validation.
+constexpr float EXTEND_FRACTION = 0.10f;
+constexpr float REST_FRACTION   = 0.25f;
+constexpr float FLEX_FRACTION   = 0.50f;
+constexpr float WRIST_EXTEND_FRACTION = 0.05f;
+constexpr float WRIST_REST_FRACTION   = 0.20f;
+constexpr float WRIST_FLEX_FRACTION   = 0.40f;
+constexpr float GESTURE_MIN_TRAVEL_DEG = 2.0f;
 
 /// @brief Maximum number of gesture buttons that can be configured
 constexpr int MAX_GESTURE_BUTTONS = 6; // Maximum number of gesture buttons that can be configured

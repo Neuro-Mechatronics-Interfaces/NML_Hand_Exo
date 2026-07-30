@@ -35,6 +35,10 @@ public:
     /// @param state State of the gesture (e.g., "a")
     void executeCurrentGestureNewState(const String& state);
 
+    /// Drive an angle-addressable joint gesture between its extend and flex
+    /// postures. Percent is clamped to the closed interval [0, 100].
+    bool setGestureAngle(const String& gesture, float percent);
+
     /// @brief Assign pin for gesture state switch interrupt.
     /// @param pin Interrupt pin.
     void setGestureStateSwitchButton(const int pin);

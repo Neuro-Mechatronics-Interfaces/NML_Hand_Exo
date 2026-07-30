@@ -26,6 +26,10 @@ struct GestureState {
     // Sparse representation (named pairs)
     KeyAngle namedPairs[MAX_SPARSE_PER_STATE];
     uint8_t nPairs;
+
+    // False retains legacy relative-degree behavior. True interprets sparse
+    // relative values as fractions of each motor's calibrated flexion span.
+    bool valuesAreFractions;
 };
 
 /// @brief Struct to represent a gesture with its name and states.
@@ -41,7 +45,8 @@ extern GestureMap gestureLibrary[N_GESTURES];
 int jointIndexByName(const char* jointName);
 void resolveStateAngles(const GestureState& state,
                         const float* homeAngles,   // length N_MOTORS
-                        float* outAngles);         // length N_MOTORS
+                        float* outAngles,          // length N_MOTORS
+                        bool* outTouched = nullptr); // optional, length N_MOTORS
                         
 /// @brief Helper function to find the index of a gesture by name.
 inline int findGestureIndex(const String& gestureName) {

@@ -675,6 +675,31 @@ float NMLHandExo::getMotorLimitMax(uint8_t id) {
   return jointLimits_[index][1];
 }
 
+float NMLHandExo::getGestureSpan(uint8_t id) {
+  int index = getIndexById(id);
+  if (index < 0) return 0.0f;
+  const float lo = min(jointLimits_[index][0], jointLimits_[index][1]);
+  const float hi = max(jointLimits_[index][0], jointLimits_[index][1]);
+  const float home = constrain(zeroOffsets_[index], lo, hi);
+  float span = isMotorFlipped(id) ? (lo - home) : (hi - home);
+  // A stale flip flag or a home near the wrong boundary must not collapse a
+  // gesture into a zero-travel command. Prefer the side with real travel.
+  if (fabsf(span) < GESTURE_MIN_TRAVEL_DEG) {
+    const float alternate = isMotorFlipped(id) ? (hi - home) : (lo - home);
+    if (fabsf(alternate) > fabsf(span)) span = alternate;
+  }
+  return span;
+}
+
+float NMLHandExo::gestureFractionToAngle(uint8_t id, float fraction) {
+  int index = getIndexById(id);
+  if (index < 0) return 0.0f;
+  const float lo = min(jointLimits_[index][0], jointLimits_[index][1]);
+  const float hi = max(jointLimits_[index][0], jointLimits_[index][1]);
+  const float home = constrain(zeroOffsets_[index], lo, hi);
+  return constrain(home + constrain(fraction, 0.0f, 1.0f) * getGestureSpan(id), lo, hi);
+}
+
 
 // ====================================================================================
 // ============================ Torque commands =======================================

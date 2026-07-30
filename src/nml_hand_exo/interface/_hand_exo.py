@@ -1,9 +1,15 @@
 import re
 import struct
 import time
+import math
 import numpy as np
 
 from ._interfaces import BaseComm
+
+
+ANGLE_ADDRESSABLE_GESTURES = frozenset(
+    {"thumb", "thumbadd", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky", "wrist"}
+)
 
 
 class HandExo(object):
@@ -1013,6 +1019,22 @@ class HandExo(object):
 
         """
         self.send_command(f"set_gesture:{gesture}:{state}")
+
+    def set_gesture_angle(self, gesture: str, percent: float):
+        """Set an angle-addressable joint gesture between extend (0) and flex (100)."""
+        name = str(gesture).strip().lower()
+        if name not in ANGLE_ADDRESSABLE_GESTURES:
+            supported = ", ".join(sorted(ANGLE_ADDRESSABLE_GESTURES))
+            raise ValueError(
+                f"gesture must be one of {supported}, got {gesture!r}"
+            )
+        try:
+            value = float(percent)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"percent must be numeric, got {percent!r}") from exc
+        if not math.isfinite(value):
+            raise ValueError(f"percent must be finite, got {percent!r}")
+        self.send_command(f"set_gesture_angle:{name}:{value:g}")
 
     def set_gesture_state(self, state: str):
         """

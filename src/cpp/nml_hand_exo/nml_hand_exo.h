@@ -283,6 +283,11 @@ class NMLHandExo {
     /// @return Upper limit in degrees, or -1 if invalid ID.
     float getMotorLimitMax(uint8_t id);
 
+    /// Calibrated, flip-aware flexion span from home for normalized gestures.
+    float getGestureSpan(uint8_t id);
+    /// Convert a normalized gesture fraction to an in-limit absolute target.
+    float gestureFractionToAngle(uint8_t id, float fraction);
+
     /// @brief Set the joint angle limits for a motor.
     /// @param id Motor ID.
     /// @param lowerLimit New lower limit in degrees.
@@ -446,7 +451,7 @@ class NMLHandExo {
     String getMotorMode();
 
     /// @brief Current software version.
-    static constexpr const char* VERSION = "0.2.15";
+    static constexpr const char* VERSION = "0.2.16";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.

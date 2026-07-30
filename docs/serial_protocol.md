@@ -94,6 +94,25 @@ set_command_timeout:250
 - `set_goal_velocity` remains the position-mode profile-velocity setting; it is
   not a direct velocity command.
 
+### Conservative normalized joint gestures
+
+Firmware `0.2.16` adds a calibration-aware command for the angle-addressable
+joint gestures:
+
+```text
+set_gesture_angle:<gesture>:<percent>
+```
+
+`gesture` must be one of `thumb`, `thumbadd`, `thumbrot`, `thumbflex`, `index`,
+`middle`, `ring`, `pinky`, or `wrist`; whole-hand postures such as `grasp` and
+`pinch_index` are rejected. `thumb` is the coordinated three-axis thumb posture;
+the three named thumb axes are research-facing independent controls.
+`percent` is a finite decimal in the range 0–100 (values outside that range are
+clamped). It interpolates between each gesture's conservative `extend` and
+`flex` postures using the motor's calibrated, flip-aware travel span. In dual
+firmware both matching left/right motor IDs are targeted; inactive-side torque
+containment remains the GUI's responsibility.
+
 ---
 
 ## Baud rate map `[VERIFIED]`
