@@ -458,10 +458,11 @@ constexpr long DYNAMIXEL_BAUD_RATE = 1000000;
 
 /// @brief Total number of gesture contained in the library
 /// 6 postures (grasp, keygrip, pinch_index, pinch_middle, pinch_ring, peace)
-/// plus one per-digit flex/extend gesture for each of the 5 digits.
-constexpr int N_GESTURES = 11;
+/// plus one extend/rest/flex gesture for each of the 5 digits and the two
+/// wrist axes (wrist, rad).
+constexpr int N_GESTURES = 13;
 
-// ---- Per-digit gesture travel ----------------------------------------------
+// ---- Per-joint gesture travel ----------------------------------------------
 // Each value is a fraction of that MOTOR's calibrated range (max - min), added
 // to its home position:
 //
@@ -470,36 +471,81 @@ constexpr int N_GESTURES = 11;
 // The sign is then flipped for any motor whose DEFAULT_FLIPS entry is true, so
 // "positive = curls inward" only holds if that motor's flip flag is correct.
 //
-//   0.0      -> sit exactly at home
-//   positive -> travel one way, negative -> travel the other
+// Every joint gets THREE knobs, one per gesture state:
 //
-// If a digit moves the WRONG WAY, negate its constant here (or fix that
-// motor's DEFAULT_FLIPS entry, which affects every gesture). If a digit moves
-// TOO FAR, shrink the magnitude.
+//   EXTEND_* = 0.0  -> sit exactly at home
+//   REST_*        -> intermediate posture (roughly 40% of FLEX_* by default)
+//   FLEX_*        -> full commanded travel
 //
-// The thumb gets three independent knobs because its joints do NOT share a
-// flip direction (DEFAULT_FLIPS has thumbrot true, thumbadd/thumbflex false),
-// so a single shared value drives them physically opposite ways.
+// EXTEND_* is 0.0 by design, not by oversight. Calibration defines home as the
+// median of the EXTENSION samples and the limit window as the span from there
+// to the flexion end (see CalibrationDialog._save_profile), so home already IS
+// the extension endstop. A negative EXTEND_* asks to travel outside the window
+// and setAbsoluteAngle() clamps it straight back to the boundary, which is why
+// "extend" used to be indistinguishable from home. Anchoring extend at 0.0
+// makes that explicit and frees REST_* to be the meaningful middle state.
+//
+// If a joint moves the WRONG WAY, negate its constants here (or fix that
+// motor's DEFAULT_FLIPS entry, which affects every gesture). If a joint moves
+// TOO FAR, shrink the magnitude. Keep 0 <= REST_* < FLEX_* or rest and flex
+// collapse onto each other.
+//
+// The thumb gets three independent knobs per state because its joints do NOT
+// share a flip direction (DEFAULT_FLIPS has thumbrot true, thumbadd/thumbflex
+// false), so a single shared value drives them physically opposite ways.
 //
 // NOTE: a joint whose home lies outside its calibrated limits has ZERO travel
 // no matter what is set here -- setAbsoluteAngle() clamps it. Run `check_limits`
 // to find those before tuning.
 
+constexpr float EXTEND_THUMBADD  =  0.0f;
+constexpr float REST_THUMBADD    =  0.06f;
 constexpr float FLEX_THUMBADD    =  0.15f;
-constexpr float EXTEND_THUMBADD  =  0.15f;
+constexpr float EXTEND_THUMBROT  =  0.0f;
+constexpr float REST_THUMBROT    =  0.06f;
 constexpr float FLEX_THUMBROT    =  0.15f;
-constexpr float EXTEND_THUMBROT  =  0.15f;
+constexpr float EXTEND_THUMBFLEX =  0.0f;
+constexpr float REST_THUMBFLEX   =  0.06f;
 constexpr float FLEX_THUMBFLEX   =  0.15f;
-constexpr float EXTEND_THUMBFLEX =  0.15f;
 
+constexpr float EXTEND_INDEX     =  0.0f;
+constexpr float REST_INDEX       =  0.14f;
 constexpr float FLEX_INDEX       =  0.35f;
-constexpr float EXTEND_INDEX     =  -0.15f;
+constexpr float EXTEND_MIDDLE    =  0.0f;
+constexpr float REST_MIDDLE      =  0.16f;
 constexpr float FLEX_MIDDLE      =  0.40f;
-constexpr float EXTEND_MIDDLE    =  -0.15f;
+constexpr float EXTEND_RING      =  0.0f;
+constexpr float REST_RING        =  0.20f;
 constexpr float FLEX_RING        =  0.50f;
-constexpr float EXTEND_RING      =  -0.15f;
+constexpr float EXTEND_PINKY     =  0.0f;
+constexpr float REST_PINKY       =  0.10f;
 constexpr float FLEX_PINKY       =  0.25f;
-constexpr float EXTEND_PINKY     =  -0.15f;
+
+// Wrist flexion/extension, driven by the `wrist` motor alone. Wrist ROM windows
+// are much larger in absolute degrees than a digit's, so the same fraction buys
+// far more travel -- these start conservative and are the first thing to tune.
+constexpr float EXTEND_WRIST     =  0.0f;
+constexpr float REST_WRIST       =  0.12f;
+constexpr float FLEX_WRIST       =  0.30f;
+
+// Second wrist axis, driven by the `wrist2` motor alone.
+//
+// ANATOMY IS UNVERIFIED: this gesture is named for radial/ulnar deviation, but
+// the only description of wrist2 elsewhere in this repo calls it
+// pronation/supination (see HandSkeletonWidget in hand_exo_gui.py). Confirm on
+// hardware which axis wrist2 actually drives before relying on the name.
+//
+// "flex" and "extend" here mean whichever direction calibration recorded as
+// flexion/extension for wrist2, not anatomical wrist flexion. The state names
+// are kept uniform across every per-joint gesture so one code path -- and
+// set_gesture_angle, which requires a "flex" state -- serves them all.
+//
+// Deliberately below the wrist values: a deviation/rotation axis has less
+// usable travel than wrist flexion, and the calibrated window may span the
+// joint's whole sweep.
+constexpr float EXTEND_RAD       =  0.0f;
+constexpr float REST_RAD         =  0.10f;
+constexpr float FLEX_RAD         =  0.25f;
 
 /// @brief Maximum number of gesture buttons that can be configured
 constexpr int MAX_GESTURE_BUTTONS = 6; // Maximum number of gesture buttons that can be configured

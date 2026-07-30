@@ -6,6 +6,54 @@ import numpy as np
 from ._interfaces import BaseComm
 
 
+#: Firmware version that introduced the per-joint "rest" state, anchored
+#: ``extend`` (EXTEND_* = 0.0 == home), the ``wrist`` gesture, and the
+#: ``set_gesture_angle`` command.  Older firmware silently ACKs an unknown
+#: gesture state -- ``set_gesture`` replies ``OK:`` whether or not the state
+#: resolved -- so the host cannot detect the failure from the reply and must
+#: gate on the version instead.
+FW_PER_JOINT_REST = (0, 3, 0)
+
+#: Firmware version that added the ``rad`` gesture on the wrist2 motor.
+FW_RAD_GESTURE = (0, 3, 1)
+
+#: Per-joint gesture name -> minimum firmware that defines it.  Gestures absent
+#: from this map (the five digits) exist on every firmware, though they only
+#: gained their ``rest`` state at :data:`FW_PER_JOINT_REST`.
+GESTURE_MIN_FIRMWARE = {
+    "wrist": FW_PER_JOINT_REST,
+    "rad": FW_RAD_GESTURE,
+}
+
+#: Gestures that expose extend/rest/flex states and accept ``set_gesture_angle``.
+ANGLE_ADDRESSABLE_GESTURES = (
+    "thumb", "index", "middle", "ring", "pinky", "wrist", "rad",
+)
+
+
+def parse_firmware_version(text: str) -> tuple[int, ...]:
+    """Parse a firmware version string into a comparable tuple.
+
+    Accepts the bare ``"0.3.0"`` form returned by :meth:`HandExo.version` as
+    well as decorated forms such as ``"Version: 0.3.0;"``.  Returns ``()`` when
+    no version-looking token is present, which compares less than every real
+    version so unknown firmware is treated as "too old" by feature gates.
+
+    Args:
+        text (str): Raw version text from the device.
+
+    Returns:
+        tuple[int, ...]: e.g. ``(0, 3, 0)``, or ``()`` if unparseable.
+
+    """
+    if not text:
+        return ()
+    m = re.search(r"(\d+(?:\.\d+)*)", str(text))
+    if not m:
+        return ()
+    return tuple(int(part) for part in m.group(1).split("."))
+
+
 class HandExo(object):
     """
     Class to control the NML Hand Exoskeleton via serial communication.
@@ -42,6 +90,8 @@ class HandExo(object):
         self.device.verbose = verbose
         # Side is set explicitly or detected via detect_side() / info().
         self.side: str | None = side
+        # Populated lazily by firmware_version(); None means "not yet queried".
+        self._firmware_version: tuple[int, ...] | None = None
 
         if auto_connect:
             self.device.connect()
@@ -453,6 +503,65 @@ class HandExo(object):
         if response:
             return response.strip().split(':')[1]
         return ""
+
+    def firmware_version(self, refresh: bool = False) -> tuple[int, ...]:
+        """
+        Return the device firmware version as a comparable tuple, e.g. (0, 3, 0).
+
+        The result is cached because feature gates call this on every guarded
+        command and a serial round-trip per call would dominate their cost.
+        Returns ``()`` if the device did not answer or the reply was unparseable;
+        that value compares less than any real version, so gates fail closed.
+
+        Args:
+            refresh (bool): Re-query the device instead of using the cache.
+
+        Returns:
+            tuple[int, ...]: Parsed version, or ``()`` if unknown.
+
+        """
+        if refresh or self._firmware_version is None:
+            self._firmware_version = parse_firmware_version(self.version())
+        return self._firmware_version
+
+    def firmware_at_least(self, minimum: tuple[int, ...]) -> bool:
+        """
+        Check whether the connected firmware is at least ``minimum``.
+
+        Args:
+            minimum (tuple[int, ...]): Version to compare against, e.g. ``(0, 3, 0)``.
+
+        Returns:
+            bool: True if the device reports a version >= ``minimum``.
+
+        """
+        return self.firmware_version() >= minimum
+
+    def _require_firmware(self, minimum: tuple[int, ...], feature: str) -> None:
+        """
+        Raise if the connected firmware predates ``feature``.
+
+        Guards commands whose absence the firmware does not report: ``set_gesture``
+        ACKs with ``OK:`` even for a state it could not resolve, so an ungated
+        call to old firmware looks successful while the hand never moves.
+
+        Args:
+            minimum (tuple[int, ...]): Required firmware version.
+            feature (str): Human-readable feature name for the error message.
+
+        Raises:
+            RuntimeError: If the device firmware is older than ``minimum``.
+
+        """
+        actual = self.firmware_version()
+        if actual >= minimum:
+            return
+        want = ".".join(str(p) for p in minimum)
+        have = ".".join(str(p) for p in actual) if actual else "unknown"
+        raise RuntimeError(
+            f"{feature} requires firmware >= {want}, but the device reports {have}. "
+            "Reflash src/cpp/nml_hand_exo, or use the flex/extend states only."
+        )
 
     def home(self, motor_id: (int or str) = 'all'):
         """
@@ -996,14 +1105,90 @@ class HandExo(object):
         """
         Sets the gesture for the exoskeleton.
 
+        Per-joint gestures (thumb/index/middle/ring/pinky/wrist/rad) accept
+        ``extend``, ``rest`` and ``flex``.  ``rest`` needs firmware >= 0.3.0 and
+        ``rad`` needs >= 0.3.1; on older firmware the device ACKs the command
+        but never resolves the state, so this raises instead of letting the
+        caller believe a move happened.
+
         Args:
-            gesture (str): Desired gesture (e.g., "open", "close", "pinch").
+            gesture (str): Desired gesture (e.g., "grasp", "index", "wrist", "rad").
+            state (str): Desired state (e.g., "open", "close", "extend", "rest", "flex").
 
         Returns:
             None
 
+        Raises:
+            RuntimeError: If the gesture/state pair needs newer firmware.
+
         """
+        if str(state).strip().lower() == "rest":
+            self._require_firmware(FW_PER_JOINT_REST, "The per-joint 'rest' state")
+        self._require_gesture_firmware(gesture)
         self.send_command(f"set_gesture:{gesture}:{state}")
+
+    def _require_gesture_firmware(self, gesture: str) -> None:
+        """
+        Raise if this gesture postdates the connected firmware.
+
+        Args:
+            gesture (str): Gesture name to check against :data:`GESTURE_MIN_FIRMWARE`.
+
+        Raises:
+            RuntimeError: If the device firmware predates the gesture.
+
+        """
+        name = str(gesture).strip().lower()
+        minimum = GESTURE_MIN_FIRMWARE.get(name)
+        if minimum is not None:
+            self._require_firmware(minimum, f"The {name!r} gesture")
+
+    def set_gesture_angle(self, gesture: str, percent: float):
+        """
+        Position a per-joint gesture anywhere in its calibrated range.
+
+        Continuous generalization of the extend/rest/flex states: ``percent`` is
+        a fraction of each named motor's calibrated range measured from home, in
+        the flexion direction.  The mapping is flip-aware, so higher always means
+        more flexion regardless of which numerical limit the joint homes to:
+
+        - ``0``   -> home / the extension endstop (same target as ``extend``)
+        - ``50``  -> halfway across the calibrated range
+        - ``100`` -> the flexion endstop
+
+        Because ``FLEX_*`` in ``config.h`` is the same kind of fraction,
+        ``set_gesture_angle('index', 35)`` and ``set_gesture('index', 'flex')``
+        command the same position while ``FLEX_INDEX`` is 0.35.
+
+        Args:
+            gesture (str): A per-joint gesture name; see
+                :data:`ANGLE_ADDRESSABLE_GESTURES`.  Multi-joint postures
+                (grasp, keygrip, pinch_*) are not addressable this way.
+            percent (float): Position in [0, 100].  The firmware clamps values
+                outside that range.
+
+        Returns:
+            None
+
+        Raises:
+            RuntimeError: If the device firmware is older than 0.3.0, or older
+                than the gesture itself (``rad`` needs 0.3.1).
+            ValueError: If ``percent`` is not a number.
+
+        """
+        self._require_firmware(FW_PER_JOINT_REST, "set_gesture_angle")
+        self._require_gesture_firmware(gesture)
+        try:
+            pct = float(percent)
+        except (TypeError, ValueError):
+            raise ValueError(f"percent must be numeric, got {percent!r}")
+        if not 0.0 <= pct <= 100.0:
+            self.logger(
+                f"[set_gesture_angle] {pct:g}% is outside [0, 100]; "
+                "firmware will clamp it.",
+                warning=True,
+            )
+        self.send_command(f"set_gesture_angle:{gesture}:{pct:g}")
 
     def set_gesture_state(self, state: str):
         """

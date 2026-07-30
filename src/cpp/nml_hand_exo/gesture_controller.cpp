@@ -19,8 +19,8 @@ static ExoState mapGestureStateToExoState(const String& gesture, const String& s
     return (s.indexOf("open") >= 0) ? EXO_GRASP_OPEN : EXO_GRASP_CLOSE;
   }
 
-  // Per-digit flex/extend gestures. Matched on the EXACT gesture name, not a
-  // substring: "index" as a substring also appears in "pinch_index", which is
+  // Per-joint extend/rest/flex gestures. Matched on the EXACT gesture name, not
+  // a substring: "index" as a substring also appears in "pinch_index", which is
   // handled above and must keep its own state.
   struct DigitEntry { const char* name; ExoState flex; };
   static const DigitEntry kDigits[] = {
@@ -29,13 +29,15 @@ static ExoState mapGestureStateToExoState(const String& gesture, const String& s
     { "middle", EXO_MIDDLE_FLEX },
     { "ring",   EXO_RING_FLEX   },
     { "pinky",  EXO_PINKY_FLEX  },
+    { "wrist",  EXO_WRIST_FLEX  },
+    { "rad",    EXO_RAD_FLEX    },
   };
   for (uint8_t i = 0; i < sizeof(kDigits) / sizeof(kDigits[0]); ++i) {
     if (g == kDigits[i].name) {
-      // The enum pairs each digit's FLEX with EXTEND at the next value.
-      return (s.indexOf("extend") >= 0)
-               ? (ExoState)(kDigits[i].flex + 1)
-               : kDigits[i].flex;
+      // The enum lays each joint out as FLEX, EXTEND, REST in consecutive slots.
+      if (s.indexOf("extend") >= 0) return (ExoState)(kDigits[i].flex + 1);
+      if (s.indexOf("rest")   >= 0) return (ExoState)(kDigits[i].flex + 2);
+      return kDigits[i].flex;
     }
   }
 
@@ -172,6 +174,66 @@ void GestureController::executeCurrentGestureNewState(const String& state) {
 
   // Execute the gesture with the specified state
   executeGesture(gesture, state);
+}
+bool GestureController::setGestureAngle(const String& gesture, float percent) {
+  int gIdx = findGestureIndex(gesture);
+  if (gIdx == -1) {
+    debugPrint("[GestureController] Unknown gesture: " + gesture);
+    return false;
+  }
+
+  // The "flex" state defines which joints this gesture owns. Multi-joint
+  // postures (grasp, keygrip, pinch_*) have no such state and are deliberately
+  // not addressable here: one percentage cannot describe a whole posture.
+  int sIdx = findStateIndex(gestureLibrary[gIdx], "flex");
+  if (sIdx == -1) {
+    debugPrint("[GestureController] Gesture '" + gesture +
+               "' has no flex state; not angle-addressable");
+    return false;
+  }
+
+  percent = constrain(percent, 0.0f, 100.0f);
+  const float fraction = percent / 100.0f;
+
+  // Same scaling as executeGesture(): fraction of the calibrated range measured
+  // from home, negated for flipped motors so higher percent always means more
+  // flexion. Targets are interior to the limit window by construction, so the
+  // clamp in setAbsoluteAngle() stays a safety net rather than the thing
+  // defining behavior.
+  const GestureState& st = gestureLibrary[gIdx].states[sIdx];
+  String trace;
+  for (uint8_t k = 0; k < st.nPairs; ++k) {
+    if (!st.namedPairs[k].joint) continue;
+    String pairName = String(st.namedPairs[k].joint);
+    pairName.toLowerCase();
+
+    // Match EVERY motor carrying this name: dual builds list each name twice
+    // (left IDs 1-9, right IDs 11-19), same as resolveStateAngles().
+    for (int i = 0; i < exo_.getMotorCount(); ++i) {
+      uint8_t id = exo_.getMotorIDByIndex(i);
+      String mName = exo_.getMotorNameByID(id);
+      mName.toLowerCase();
+      if (!mName.equals(pairName)) continue;
+
+      float home = exo_.getZeroAngle(id);
+      float range = exo_.getMotorLimitMax(id) - exo_.getMotorLimitMin(id);
+      float target = exo_.isMotorFlipped(id) ? home - fraction * range
+                                             : home + fraction * range;
+      if (VERBOSE) {
+        if (trace.length()) trace += ", ";
+        trace += String(id) + "->" + String(target, 2);
+      }
+      exo_.setAbsoluteAngle(id, target);
+    }
+  }
+
+  // Deliberately does NOT touch currentGesture_/currentGestureState_: this is a
+  // direct positioning command, not a state-machine transition. Writing a
+  // synthetic state name here would make the next cycle_gesture_state fail its
+  // findStateIndex() lookup and silently do nothing.
+  debugPrint("[GestureController] " + gesture + " @ " + String(percent, 1) +
+             "% targets: " + trace);
+  return true;
 }
 void GestureController::setCycleGestureButton(const int pin) {
   cycleGesturePin = pin;

@@ -35,6 +35,18 @@ public:
     /// @param state State of the gesture (e.g., "a")
     void executeCurrentGestureNewState(const String& state);
 
+    /// @brief Drive a per-joint gesture to an arbitrary point in its range.
+    ///
+    /// Continuous generalization of the extend/rest/flex states: the percentage
+    /// is a fraction of each named motor's calibrated range measured from home,
+    /// in the flexion direction (flip-aware). 0 = home / extension endstop,
+    /// 100 = the flexion endstop. Only gestures that define a "flex" state are
+    /// addressable this way; multi-joint postures are not.
+    /// @param gesture Name of a per-joint gesture (e.g. "index", "wrist")
+    /// @param percent Position in [0, 100]; out-of-range values are clamped
+    /// @return True if the gesture was found and commanded
+    bool setGestureAngle(const String& gesture, float percent);
+
     /// @brief Assign pin for gesture state switch interrupt.
     /// @param pin Interrupt pin.
     void setGestureStateSwitchButton(const int pin);

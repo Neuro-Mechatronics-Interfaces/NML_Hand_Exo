@@ -253,15 +253,20 @@ GestureMap gestureLibrary[N_GESTURES] = {
       }, 2
     },
 
-    // --- PER-DIGIT FLEXION / EXTENSION -------------------------------------
-    // One gesture per digit so a host can drive a single finger without
-    // composing a whole posture.  Travel per joint comes from the FLEX_*/
-    // EXTEND_* constants in config.h -- tune magnitude and direction there.
+    // --- PER-JOINT EXTENSION / REST / FLEXION -------------------------------
+    // One gesture per digit (plus the wrist) so a host can drive a single joint
+    // without composing a whole posture.  Travel comes from the EXTEND_*/REST_*/
+    // FLEX_* constants in config.h -- tune magnitude and direction there.
+    //
+    // States are ordered extend -> rest -> flex so travel is monotonic: a
+    // cycle_gesture_state sweep walks the joint through its range in order
+    // instead of jumping across it, and states[0] (the state cycleGesture() and
+    // the button callbacks land on) stays "extend", which is exactly home.
     //
     // Each state names ONLY its own joints.  executeGesture() commands just the
-    // named joints, so selecting a digit leaves the rest of the hand exactly
-    // where it was.  Returning to rest is an explicit gesture (grasp:open), not
-    // an implicit side effect of every other gesture.
+    // named joints, so selecting a joint leaves the rest of the hand exactly
+    // where it was.  Returning to a whole-hand rest is still an explicit
+    // gesture (grasp:open), not an implicit side effect of every other gesture.
     //
     // The thumb lists its three joints separately because they do not share a
     // flip direction; one shared value would drive them opposite ways.
@@ -274,13 +279,19 @@ GestureMap gestureLibrary[N_GESTURES] = {
             {"thumbrot", EXTEND_THUMBROT},
             {"thumbflex", EXTEND_THUMBFLEX}
           }, 3 },
+        { "rest", true, true, {0},
+          {
+            {"thumbadd", REST_THUMBADD},
+            {"thumbrot", REST_THUMBROT},
+            {"thumbflex", REST_THUMBFLEX}
+          }, 3 },
         { "flex", true, true, {0},
           {
             {"thumbadd", FLEX_THUMBADD},
             {"thumbrot", FLEX_THUMBROT},
             {"thumbflex", FLEX_THUMBFLEX}
           }, 3 }
-      }, 2
+      }, 3
     },
 
     {
@@ -290,11 +301,15 @@ GestureMap gestureLibrary[N_GESTURES] = {
           {
             {"index", EXTEND_INDEX}
           }, 1 },
+        { "rest", true, true, {0},
+          {
+            {"index", REST_INDEX}
+          }, 1 },
         { "flex", true, true, {0},
           {
             {"index", FLEX_INDEX}
           }, 1 }
-      }, 2
+      }, 3
     },
 
     {
@@ -304,11 +319,15 @@ GestureMap gestureLibrary[N_GESTURES] = {
           {
             {"middle", EXTEND_MIDDLE}
           }, 1 },
+        { "rest", true, true, {0},
+          {
+            {"middle", REST_MIDDLE}
+          }, 1 },
         { "flex", true, true, {0},
           {
             {"middle", FLEX_MIDDLE}
           }, 1 }
-      }, 2
+      }, 3
     },
 
     {
@@ -318,11 +337,15 @@ GestureMap gestureLibrary[N_GESTURES] = {
           {
             {"ring", EXTEND_RING}
           }, 1 },
+        { "rest", true, true, {0},
+          {
+            {"ring", REST_RING}
+          }, 1 },
         { "flex", true, true, {0},
           {
             {"ring", FLEX_RING}
           }, 1 }
-      }, 2
+      }, 3
     },
 
     {
@@ -332,10 +355,58 @@ GestureMap gestureLibrary[N_GESTURES] = {
           {
             {"pinky", EXTEND_PINKY}
           }, 1 },
+        { "rest", true, true, {0},
+          {
+            {"pinky", REST_PINKY}
+          }, 1 },
         { "flex", true, true, {0},
           {
             {"pinky", FLEX_PINKY}
           }, 1 }
-      }, 2
+      }, 3
+    },
+
+    // Wrist flexion/extension. Names only the `wrist` joint: `wrist2` is a
+    // separate DOF, addressed by the "rad" gesture below. Coupling both into one
+    // gesture would move an axis the caller never asked for.
+    {
+      "wrist",
+      {
+        { "extend", true, true, {0},
+          {
+            {"wrist", EXTEND_WRIST}
+          }, 1 },
+        { "rest", true, true, {0},
+          {
+            {"wrist", REST_WRIST}
+          }, 1 },
+        { "flex", true, true, {0},
+          {
+            {"wrist", FLEX_WRIST}
+          }, 1 }
+      }, 3
+    },
+
+    // Second wrist axis (the `wrist2` motor). Named for radial/ulnar deviation
+    // -- see the EXTEND_RAD/REST_RAD/FLEX_RAD note in config.h, the anatomy is
+    // unverified. "flex"/"extend" mean whichever direction calibration recorded
+    // for wrist2, and the names stay uniform so set_gesture_angle (which keys
+    // off the "flex" state) works here too.
+    {
+      "rad",
+      {
+        { "extend", true, true, {0},
+          {
+            {"wrist2", EXTEND_RAD}
+          }, 1 },
+        { "rest", true, true, {0},
+          {
+            {"wrist2", REST_RAD}
+          }, 1 },
+        { "flex", true, true, {0},
+          {
+            {"wrist2", FLEX_RAD}
+          }, 1 }
+      }, 3
     },
 };

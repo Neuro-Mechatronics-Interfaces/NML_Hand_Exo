@@ -12,7 +12,11 @@ nothing in between, which is the lowest-latency path available to the host.
 Replies land on the telemetry CDC and are drained by DualSerialComm's reader
 thread, so they never gate the command path.
 
-Edit COMMAND_MAP below to change the integer -> command associations.
+Edit build_command_map() below to change the integer -> command associations.
+
+Requires firmware >= 0.3.0: per-joint moves use set_gesture_angle, and the
+wrist gesture only exists from that version (rad needs >= 0.3.1). Use
+scripts/udp_gesture_gui.py to drive this receiver by hand.
 
 Usage:
     python scripts/udp_gesture_receiver.py
@@ -55,39 +59,62 @@ CMD_PORT = "COM10"      # commands out
 TELEM_PORT = "COM11"    # replies in
 BAUD = 1000000
 
-# Integer payload -> serial command(s).  A value may map to a single command
-# string or to a list of commands sent in order.  Signed pairs follow the
-# project's per-digit convention: +N flexes digit N, -N extends it.
-#
-#   0 = REST        1 = thumb      2 = index
-#   3 = middle      4 = ring       5 = pinky
-#
-# The per-digit gestures below require the firmware build that defines them;
-# swap in the pinch_* postures if running older firmware.
-COMMAND_MAP = {
-    0:  "set_gesture:grasp:open",
+# Per-joint UDP value assignments.  Order fixes the integer for each joint.
+# "rad" is the second wrist axis (the wrist2 motor); see the EXTEND_RAD note in
+# src/cpp/nml_hand_exo/config.h -- its anatomy is unverified.
+JOINTS = ("thumb", "index", "middle", "ring", "pinky", "wrist", "rad")
 
-    1:  "set_gesture:thumb:flex",
-    -1: "set_gesture:thumb:extend",
+# Offset added to a joint's value to address its REST position, e.g. index is
+# +2 flex / -2 extend / +12 rest.  Must keep every value below
+# UDP_CONNECTION_PORT_THRESHOLD (64), above which an integer is read as a
+# return-port announcement rather than a command.
+REST_VALUE_OFFSET = 10
 
-    2:  "set_gesture:index:flex",
-    -2: "set_gesture:index:extend",
-
-    3:  "set_gesture:middle:flex",
-    -3: "set_gesture:middle:extend",
-
-    4:  "set_gesture:ring:flex",
-    -4: "set_gesture:ring:extend",
-
-    5:  "set_gesture:pinky:flex",
-    -5: "set_gesture:pinky:extend",
-
-    # # Posture bindings kept alongside the per-digit ones.
-    # 6:  "set_gesture:thumb:flex",
-    # -6: "set_gesture:thumb:flex",
-    # 7:  "set_gesture:thumb:flex",
-    # -7: "set_gesture:thumb:flex",
+# Position of each state as a percentage of the joint's calibrated range,
+# measured from home in the flexion direction.  These mirror the FLEX_*/REST_*
+# constants in src/cpp/nml_hand_exo/config.h, so +N reproduces exactly what
+# `set_gesture:<joint>:flex` commands -- change them here to retune the UDP
+# path alone, or in config.h to retune the firmware's own gesture states.
+FLEX_PERCENT = {
+    "thumb": 15, "index": 35, "middle": 40, "ring": 50, "pinky": 25,
+    "wrist": 30, "rad": 25,
 }
+REST_PERCENT = {
+    "thumb": 6, "index": 14, "middle": 16, "ring": 20, "pinky": 10,
+    "wrist": 12, "rad": 10,
+}
+EXTEND_PERCENT = 0   # 0% == home == the extension endstop
+
+
+def build_command_map():
+    """Integer payload -> serial command(s).
+
+    Value scheme (a value may map to one command or a list sent in order):
+
+        0         whole-hand release
+        +1..+7    flex   joint N        -1..-7    extend joint N
+        +11..+17  rest   joint N
+
+    Per-joint moves go through `set_gesture_angle:<joint>:<percent>` rather than
+    `set_gesture:<joint>:<state>` so the position is set here in the host map
+    instead of being fixed by the firmware constants.  0 stays a `set_gesture`
+    posture on purpose: grasp is multi-joint and the firmware rejects postures
+    for set_gesture_angle, since one percentage cannot describe a whole posture.
+
+    Requires firmware >= 0.3.0 for set_gesture_angle and the wrist gesture,
+    and >= 0.3.1 for the rad gesture.
+    """
+    command_map = {0: "set_gesture:grasp:open"}
+    for index, joint in enumerate(JOINTS, start=1):
+        command_map[index] = f"set_gesture_angle:{joint}:{FLEX_PERCENT[joint]}"
+        command_map[-index] = f"set_gesture_angle:{joint}:{EXTEND_PERCENT}"
+        command_map[index + REST_VALUE_OFFSET] = (
+            f"set_gesture_angle:{joint}:{REST_PERCENT[joint]}"
+        )
+    return command_map
+
+
+COMMAND_MAP = build_command_map()
 
 # Working effort per motor, in mA (--current-ma). This is GOAL_CURRENT, not the
 # safety ceiling: it is how hard each motor pushes while holding or chasing a
@@ -232,6 +259,13 @@ class MockComm:
             return f"OK: gesture {rest}"
         if head == "set_gesture_state":
             return f"OK: gesture_state {rest}"
+        if head == "set_gesture_angle":
+            target, _, percent = rest.partition(":")
+            try:
+                percent = f"{min(100.0, max(0.0, float(percent))):.1f}"
+            except ValueError:
+                return f"ERROR: set_gesture_angle percent not numeric: {percent}"
+            return f"OK: gesture_angle {target}:{percent}"
         if head == "set_current_lim":
             target, _, value = rest.partition(":")
             return f"OK: set_current_lim {target} {value}"

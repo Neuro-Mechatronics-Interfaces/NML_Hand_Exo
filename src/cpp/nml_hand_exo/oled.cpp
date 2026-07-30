@@ -59,14 +59,25 @@ const __FlashStringHelper* oledGetStateText(ExoState s) {
     case EXO_GRASP_CLOSE:   return F("GRASP CLOSE");
     case EXO_THUMB_FLEX:    return F("THUMB FLEX");
     case EXO_THUMB_EXTEND:  return F("THUMB EXT");
+    case EXO_THUMB_REST:    return F("THUMB REST");
     case EXO_INDEX_FLEX:    return F("INDEX FLEX");
     case EXO_INDEX_EXTEND:  return F("INDEX EXT");
+    case EXO_INDEX_REST:    return F("INDEX REST");
     case EXO_MIDDLE_FLEX:   return F("MID FLEX");
     case EXO_MIDDLE_EXTEND: return F("MID EXT");
+    case EXO_MIDDLE_REST:   return F("MID REST");
     case EXO_RING_FLEX:     return F("RING FLEX");
     case EXO_RING_EXTEND:   return F("RING EXT");
+    case EXO_RING_REST:     return F("RING REST");
     case EXO_PINKY_FLEX:    return F("PINKY FLEX");
     case EXO_PINKY_EXTEND:  return F("PINKY EXT");
+    case EXO_PINKY_REST:    return F("PINKY REST");
+    case EXO_WRIST_FLEX:    return F("WRIST FLEX");
+    case EXO_WRIST_EXTEND:  return F("WRIST EXT");
+    case EXO_WRIST_REST:    return F("WRIST REST");
+    case EXO_RAD_FLEX:      return F("RAD FLEX");
+    case EXO_RAD_EXTEND:    return F("RAD EXT");
+    case EXO_RAD_REST:      return F("RAD REST");
     default:                return F("UNKNOWN");
   }
 }

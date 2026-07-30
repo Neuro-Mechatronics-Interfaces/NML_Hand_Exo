@@ -465,7 +465,14 @@ class NMLHandExo {
     String getMotorMode();
 
     /// @brief Current software version.
-    static constexpr const char* VERSION = "0.2.17";
+    ///
+    /// 0.3.0 -- per-joint gestures gained a third "rest" state, "extend" is now
+    /// anchored at home (EXTEND_* = 0.0), a "wrist" gesture was added, and
+    /// set_gesture_angle:<gesture>:<0-100> was introduced. Hosts that need to
+    /// know whether those exist should gate on >= 0.3.0.
+    ///
+    /// 0.3.1 -- added the "rad" gesture on the wrist2 motor. Gate on >= 0.3.1.
+    static constexpr const char* VERSION = "0.3.1";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.

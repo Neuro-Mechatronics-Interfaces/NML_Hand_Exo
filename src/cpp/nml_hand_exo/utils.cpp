@@ -1104,6 +1104,37 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     gc.executeCurrentGestureNewState(stateStr);
     commandPrint("OK: gesture_state " + stateStr);
 
+  } else if (cmd == "set_gesture_angle") {
+    String gestureStr = getArg(token, 1);
+    String pctStr = getArg(token, 2);
+    gestureStr.trim();
+    pctStr.trim();
+    if (gestureStr.length() == 0 || pctStr.length() == 0) {
+      commandPrint(F("ERROR: usage set_gesture_angle:<gesture>:<0-100>"));
+      return;
+    }
+    // String::toFloat() returns 0.0 for non-numeric input, and 0.0 is a
+    // meaningful percentage here (full extension), so a typo would silently
+    // command a real move. Validate the token before trusting it.
+    bool numeric = true;
+    for (uint16_t i = 0; i < pctStr.length(); ++i) {
+      char c = pctStr[i];
+      if (isDigit(c) || c == '.' || ((c == '-' || c == '+') && i == 0)) continue;
+      numeric = false;
+      break;
+    }
+    if (!numeric) {
+      commandPrint("ERROR: set_gesture_angle percent not numeric: " + pctStr);
+      return;
+    }
+    float pct = pctStr.toFloat();
+    if (gc.setGestureAngle(gestureStr, pct)) {
+      commandPrint("OK: gesture_angle " + gestureStr + ":" +
+                   String(constrain(pct, 0.0f, 100.0f), 1));
+    } else {
+      commandPrint("ERROR: set_gesture_angle unknown or non-addressable gesture: " + gestureStr);
+    }
+
   } else if (cmd == "set_zero_offset") {
     String arg = getArg(token, 1);
     arg.trim(); arg.toUpperCase();
@@ -1238,6 +1269,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_gesture           |  NAME:VALUE          | // Set exo gesture"));
     commandPrint(F(" get_gesture           |                      | // Get exo gesture"));
     commandPrint(F(" set_gesture_state     |  NAME:VALUE          | // Set exo gesture state"));
+    commandPrint(F(" set_gesture_angle     |  NAME:0-100          | // Position a per-joint gesture: 0=extend/home, 100=full flexion"));
     commandPrint(F(" get_gesture_state     |                      | // Get exo gesture state"));
     commandPrint(F(" cycle_gesture         |                      | // Executes the next gesture in the library"));
     commandPrint(F(" cycle_gesture_state   |                      | // Cycles the next gesture state"));
