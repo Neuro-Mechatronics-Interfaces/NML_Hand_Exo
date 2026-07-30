@@ -248,9 +248,11 @@ class PoseAckFlowTests(unittest.TestCase):
         self.assertEqual(receiver._pending[0], [2, 2])
 
     def test_no_query_is_sent_when_pose_acks_are_off(self):
+        # Asserts against COMMAND_MAP rather than a literal, so retuning the
+        # map (set_gesture vs set_gesture_angle, percentages) does not fail it.
         receiver = _receiver([], pose_ack=False)
         receiver.handle("2", "127.0.0.1:1")
-        self.assertEqual(receiver.comm.sent, ["set_gesture_angle:index:85"])
+        self.assertEqual(receiver.comm.sent, [COMMAND_MAP[2]])
         self.assertEqual(receiver._pending[0], [2, 1])
 
     def test_ack_carries_the_pose_and_the_integer_ack_is_unchanged(self):

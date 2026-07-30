@@ -26,10 +26,10 @@ movement: the firmware still parses and acknowledges each command with torque
 off, so the round trip is unaffected.
 
 Usage:
-    python scripts/diagnostics/dual_cdc_gesture_latency.py
-    python scripts/diagnostics/dual_cdc_gesture_latency.py --no-arm
-    python scripts/diagnostics/dual_cdc_gesture_latency.py --raw
-    python scripts/diagnostics/dual_cdc_gesture_latency.py --cmd-port COM12 --telem-port COM13
+    python examples/scripts/diagnostics/dual_cdc_gesture_latency.py
+    python examples/scripts/diagnostics/dual_cdc_gesture_latency.py --no-arm
+    python examples/scripts/diagnostics/dual_cdc_gesture_latency.py --raw
+    python examples/scripts/diagnostics/dual_cdc_gesture_latency.py --cmd-port COM12 --telem-port COM13
 """
 
 import argparse

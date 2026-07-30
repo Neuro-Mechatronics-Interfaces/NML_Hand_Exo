@@ -33,17 +33,31 @@ examples/
 |     |- training_task.py              # Training task with GUI
 |     |- task_gui_minimal.py           # Minimal task GUI
 |     `- task_config.json              # Task configuration
-`- lsl_streaming/                      # Lab Streaming Layer
-   `- LSL/
-      |- lsl_classifier_trigger.py     # EMG classifier control
-      |- lsl_gesture_controller.py     # LSL marker control
-      |- lsl_state_trigger.py          # State-based EMG control
-      |- lsl_broadcast_test.py         # LSL broadcasting
-      |- lsl_subscribe_test.py         # LSL subscription
-      |- lsl_stacked_plot.py           # Stacked EMG plotting
-      |- lsl_grid_plot.py              # Grid EMG visualization
-      `- lsl_rms_barplot.py            # RMS bar plot
+|- lsl_streaming/                      # Lab Streaming Layer
+|  `- LSL/
+|     |- lsl_classifier_trigger.py     # EMG classifier control
+|     |- lsl_gesture_controller.py     # LSL marker control
+|     |- lsl_state_trigger.py          # State-based EMG control
+|     |- lsl_broadcast_test.py         # LSL broadcasting
+|     |- lsl_subscribe_test.py         # LSL subscription
+|     |- lsl_stacked_plot.py           # Stacked EMG plotting
+|     |- lsl_grid_plot.py              # Grid EMG visualization
+|     `- lsl_rms_barplot.py            # RMS bar plot
+|- calibration/                        # Calibration & range-of-motion
+|  |- calibrate_exo.py                 # CLI calibration wizard (updates config.h)
+|  |- rom_assessment.py                # ROM protocol -> output_data/*.csv
+|  `- profiles/                        # Per-user calibration profiles (JSON)
+|- udp_bindings/                       # Integer UDP binding profiles
+|- scripts/                            # Standalone tools (no Qt)
+|  |- README.md                        # UDP forwarder + panel docs
+|  |- udp_gesture_receiver.py          # UDP integer -> serial gesture forwarder
+|  |- udp_gesture_gui.py               # Tkinter panel that drives the receiver
+|  `- diagnostics/                     # Port scans, CDC latency, pose capture
+`- tests/                              # Unit tests (python -m pytest examples/tests -q)
 ```
+
+`tests/` imports the UDP receiver from `../scripts`, so the two must stay
+siblings under `examples/`.
 
 ---
 

@@ -10,7 +10,7 @@ Manual serial and HC-05 troubleshooting utilities:
 Run these from the repository root after activating the project environment:
 
 ```powershell
-python scripts/diagnostics/scan_ports.py
+python examples/scripts/diagnostics/scan_ports.py
 ```
 
 These scripts interact with real hardware and are not automated unit tests.

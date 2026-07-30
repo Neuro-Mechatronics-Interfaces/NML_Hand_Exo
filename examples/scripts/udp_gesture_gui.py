@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Manual UDP sender for scripts/udp_gesture_receiver.py.
+Manual UDP sender for examples/scripts/udp_gesture_receiver.py.
 
 A small tkinter panel that speaks the receiver's integer protocol so gestures
 can be triggered by hand -- useful for checking wiring, calibration and travel
 without a decoder, an EMG rig or the full Qt GUI in the loop.
 
 Defaults assume the receiver is running on this machine with its own default
-bind port, so `python scripts/udp_gesture_gui.py` next to a default
-`python scripts/udp_gesture_receiver.py` needs no arguments. Destination host
-and port are editable in the window for a receiver running elsewhere.
+bind port, so `python examples/scripts/udp_gesture_gui.py` next to a default
+`python examples/scripts/udp_gesture_receiver.py` needs no arguments.
+Destination host and port are editable in the window for a receiver running
+elsewhere.
 
 Protocol (see Receiver in udp_gesture_receiver.py):
   * Connecting first sends this GUI's own listen port as an integer. Any value
@@ -28,9 +29,9 @@ The command values come from the receiver module itself, so the two cannot
 drift apart: edit build_command_map() there and this panel follows.
 
 Usage:
-    python scripts/udp_gesture_gui.py
-    python scripts/udp_gesture_gui.py --host 192.168.1.50 --port 10003
-    python scripts/udp_gesture_gui.py --local-port 10005
+    python examples/scripts/udp_gesture_gui.py
+    python examples/scripts/udp_gesture_gui.py --host 192.168.1.50 --port 10003
+    python examples/scripts/udp_gesture_gui.py --local-port 10005
 """
 
 import argparse
@@ -488,7 +489,7 @@ class UdpGestureGui:
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Tkinter panel that sends gesture integers to "
-                    "scripts/udp_gesture_receiver.py."
+                    "examples/scripts/udp_gesture_receiver.py."
     )
     parser.add_argument("--host", default=DEFAULT_DEST_HOST,
                         help=f"Receiver address (default {DEFAULT_DEST_HOST})")

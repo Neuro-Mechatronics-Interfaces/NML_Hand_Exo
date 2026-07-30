@@ -4,8 +4,8 @@ This folder contains one-off scripts implementing ad hoc functionality without t
 ## UDP Forwarder ##
 Usage (from `.handexo` virtual environment):
 ```bash
-python scripts/udp_gesture_receiver.py --port 10003
-python scripts/udp_gesture_receiver.py --mock       # no exo attached
+python examples/scripts/udp_gesture_receiver.py --port 10003
+python examples/scripts/udp_gesture_receiver.py --mock       # no exo attached
 ```
 Binds a UDP socket and forwards each received integer to the exo as one or more
 serial commands. Per-joint moves use `set_gesture_angle:<joint>:<percent>`, so
@@ -97,8 +97,8 @@ below `nominal` means the budget is actively clamping.
 
 ## UDP Gesture GUI ##
 ```bash
-python scripts/udp_gesture_gui.py
-python scripts/udp_gesture_gui.py --host 192.168.1.50 --port 10003
+python examples/scripts/udp_gesture_gui.py
+python examples/scripts/udp_gesture_gui.py --host 192.168.1.50 --port 10003
 ```
 A small tkinter panel that speaks the receiver's protocol so gestures can be
 triggered by hand — handy for checking wiring, calibration and travel without a

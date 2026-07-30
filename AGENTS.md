@@ -39,7 +39,8 @@ python examples/basic/hand_exo_cli.py --connect COM5 --info
 ```
 
 Notes:
-- There is no single repo-wide lint/typecheck/test gate configured in the root project; use targeted scripts relevant to your change.
+- Unit tests live in `examples/tests/`: `python -m pytest examples/tests -q`. There is no
+  other repo-wide lint/typecheck gate; otherwise use targeted scripts relevant to your change.
 - If you build `src/nml_wtf_exo`, clean `build/`, `dist/`, and `*.egg-info/` first to avoid recursive artifacts.
 
 ---
@@ -69,6 +70,17 @@ examples/calibration/
   calibrate_exo.py         CLI calibration wizard (also updates config.h)
   rom_assessment.py        ROM protocol → output_data/<name>_rom_<date>_<run>.csv
   profiles/<name>.json     Per-user calibration profiles (include "side" metadata field)
+
+examples/scripts/
+  udp_gesture_receiver.py  UDP integer → serial gesture forwarder (no Qt). Source of
+                           truth for the integer→command map and the pose-ack frame.
+  udp_gesture_gui.py       Tkinter panel that drives the receiver by hand
+  diagnostics/             Port scans, CDC latency, pose capture
+
+examples/tests/
+  test_*.py                Unit tests. Run with `python -m pytest examples/tests -q`;
+                           the UDP tests import the receiver from ../scripts, so both
+                           directories must stay siblings under examples/.
 ```
 
 ---

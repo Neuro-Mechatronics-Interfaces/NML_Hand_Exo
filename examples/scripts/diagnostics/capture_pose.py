@@ -7,12 +7,12 @@ torque off, then capture.
 
 Typical workflow, one capture per physical pose:
 
-    python scripts/diagnostics/capture_pose.py --save home
+    python examples/scripts/diagnostics/capture_pose.py --save home
     #   ... move the digits to ONE extreme of travel ...
-    python scripts/diagnostics/capture_pose.py --save min
+    python examples/scripts/diagnostics/capture_pose.py --save min
     #   ... move the digits to the OTHER extreme ...
-    python scripts/diagnostics/capture_pose.py --save max
-    python scripts/diagnostics/capture_pose.py --emit
+    python examples/scripts/diagnostics/capture_pose.py --save max
+    python examples/scripts/diagnostics/capture_pose.py --emit
 
 "min" and "max" are just slot names for the two extremes -- it does NOT matter
 which one you capture as which.  Each motor's pair is sorted numerically at emit

@@ -23,16 +23,16 @@ that only readers who know its magic need to look at. See pack_pose_ack().
 Requires firmware >= 0.6.0: per-joint moves use set_gesture_angle, whose
 percentages interpolate each gesture's extend and flex postures from that
 version on, and `wrist` drives both dorsal wrist motors together. Pose acks
-switch themselves off against anything older. Use scripts/udp_gesture_gui.py
+switch themselves off against anything older. Use examples/scripts/udp_gesture_gui.py
 to drive this receiver by hand.
 
 Usage:
-    python scripts/udp_gesture_receiver.py
-    python scripts/udp_gesture_receiver.py --port 10003 --cmd-port COM10
-    python scripts/udp_gesture_receiver.py --no-arm         # do not enable motors
-    python scripts/udp_gesture_receiver.py --no-pose-ack    # skip pose queries
-    python scripts/udp_gesture_receiver.py --ignore-replies # hide device replies
-    python scripts/udp_gesture_receiver.py --mock           # no exo attached
+    python examples/scripts/udp_gesture_receiver.py
+    python examples/scripts/udp_gesture_receiver.py --port 10003 --cmd-port COM10
+    python examples/scripts/udp_gesture_receiver.py --no-arm         # do not enable motors
+    python examples/scripts/udp_gesture_receiver.py --no-pose-ack    # skip pose queries
+    python examples/scripts/udp_gesture_receiver.py --ignore-replies # hide device replies
+    python examples/scripts/udp_gesture_receiver.py --mock           # no exo attached
 
 --mock swaps the serial transport for an in-process fake that answers like the
 firmware, so the UDP mapping, the return-port registration and the ack loopback
@@ -205,7 +205,7 @@ def unpack_pose_ack(data):
     """Parse a pose datagram. Returns ``(value, {joint: code})`` or None.
 
     Mirrors :func:`pack_pose_ack` for consumers on the other end of the socket
-    (scripts/udp_gesture_gui.py, tests).  Joint names come from :data:`JOINTS`
+    (examples/scripts/udp_gesture_gui.py, tests).  Joint names come from :data:`JOINTS`
     positionally, so both ends must agree on that order -- which is why the
     frame carries the count, letting a mismatch be detected instead of
     silently shifting every value by one.
