@@ -80,8 +80,8 @@ PY
 ```python
 from nml_hand_exo.interface import HandExo, SerialComm
 
-# Most firmwares use 57600 and semicolon-delimited tokens.
-comm = SerialComm(port="COM5", baudrate=57600, command_delimiter=";", timeout=1)
+# USB firmware uses 1000000 baud and semicolon-delimited responses.
+comm = SerialComm(port="COM5", baudrate=1000000, command_delimiter=";", timeout=1)
 
 # HandExo expects a comm object at construction
 exo = HandExo(comm, name="NMLHandExo", verbose=True)
@@ -209,7 +209,7 @@ exo.reboot_motor(1)
 ```python
 from nml_hand_exo.interface import HandExo, SerialComm, GestureController
 
-exo = HandExo(SerialComm("COM5", 57600, ";", 1), verbose=False)
+exo = HandExo(SerialComm("COM5", 1000000, ";", 1), verbose=False)
 exo.connect()
 
 gc = GestureController(exo, verbose=True)
@@ -324,7 +324,7 @@ rms = window_rms(xr, win=200, step=50)
 from nml_hand_exo.control import StateTriggerRMS
 from nml_hand_exo.interface import HandExo, SerialComm, LSLClient
 
-exo = HandExo(SerialComm("COM5", 57600, ";", 1))
+exo = HandExo(SerialComm("COM5", 1000000, ";", 1))
 exo.connect()
 
 client = LSLClient(stream_name="ExoTelemetry", auto_start=True)

@@ -32,7 +32,21 @@ The **NML Hand Exoskeleton** includes:
 - 🐍 Python API: high-level interface for controlling the device.
 - 🛠️ Demo scripts: examples of using the device with real-time EMG streaming and GUI control.
 
-Code was tested on **Windows 11**, **Python 3.10**.
+Release **0.0.8** is tested on **Windows 11** with **Python 3.11**.
+
+## Primary applications
+
+The supported desktop workflow consists of two applications:
+
+- `handexo emg-centroid` — trains, visualizes, and publishes EMG intent over LSL.
+- `handexo gui` — connects to the exoskeleton and provides guarded control,
+  telemetry, calibration, direct control, and optional EMG Teleop.
+
+EMG Teleop is not a third application and does not open a direct serial link from
+the decoder. It is opt-in inside `handexo gui`; it requires a versioned LSL intent
+stream, an active calibrated DXL ID armed for direct velocity control, fresh valid
+intent, and a held deadman. Any stale, rest, invalid, or low-confidence intent stops
+the previously commanded motor.
 
 ---
 
@@ -70,6 +84,17 @@ For local development, you can also install the python API as a package.
 ```bash
 pip install -e .
 ```
+
+Launch either supported application after installation:
+
+```bash
+handexo gui
+handexo emg-centroid
+```
+
+The firmware defaults to **1 Mbps** for USB and the Dynamixel bus, and
+**115200** for the HC-05 command link. Reflash the OpenRB firmware after
+changing firmware constants.
 
 ### 4. (Optional) Install Max WTF dependencies
 If you are on Max's WTF `dev/Max` side-branch, you can also add his WTF code at your own risk.
@@ -119,7 +144,7 @@ An example of using the Python API for scripting and control:
 ```python
 from nml_hand_exo.interface import HandExo, SerialComm
 
-comm = SerialComm(port="COM3", baudrate=57600)
+comm = SerialComm(port="COM3", baudrate=1000000)
 exo = HandExo(comm)
 exo.connect()
 exo.enable_motor(1)

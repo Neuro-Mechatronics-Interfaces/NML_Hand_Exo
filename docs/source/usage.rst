@@ -25,7 +25,7 @@ We can connect to the device using a USB serial connection
    from hand_exo import HandExo, SerialComm
 
    # Define serial communication parameters
-   com = SerialComm(port='COM3', baudrate=57600) # Change 'COM3' to your device's serial port
+   com = SerialComm(port='COM3', baudrate=1000000) # Change 'COM3' to your device's serial port
 
    # Create an instance of the HandExo class
    exo = HandExo(com)
@@ -283,4 +283,4 @@ Additional Notes
 
 - The `verbose=True` option prints sent and received commands to the terminal with debugging output. Enable this upon initialization or by sending the `debug:on` command.
 - The `port` parameter should be set to the correct serial port for your device (e.g., 'COM3' on Windows, '/dev/ttyUSB0' on Linux).
-- The `baudrate` parameter should match the baud rate set in the firmware (default is 57600).
+- The `baudrate` parameter should match the firmware: 1000000 for USB/Dynamixel and 115200 for HC-05.

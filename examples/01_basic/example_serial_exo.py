@@ -2,7 +2,7 @@ from nml_hand_exo.interface import HandExo, SerialComm
 
 # Serial usage
 port = "COM12"
-baudrate = 115200
+baudrate = 1000000
 
 comm = SerialComm(port=port, baudrate=baudrate)
 exo = HandExo(comm, verbose=False)

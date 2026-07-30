@@ -10,14 +10,14 @@
 Python (host PC)
   SerialComm / TCPComm  (src/nml_hand_exo/interface/_interfaces.py)
        |
-      | USB serial  → DEBUG_SERIAL  = Serial   (2000000 baud)
+      | USB serial  → DEBUG_SERIAL  = Serial   (1000000 baud)
        | BT HC-05    → COMMAND_SERIAL = Serial3  (115200 baud, D13=TX D14=RX)
        |
 Arduino OpenRB-150
   loop() polls both channels identically
   → parseMessage()  (utils.cpp) — dispatches all command strings
   → NMLHandExo      (nml_hand_exo.cpp) — motor control
-   → Serial1 (DXL_SERIAL, 2000000 baud) — Dynamixel bus
+   → Serial1 (DXL_SERIAL, 1000000 baud) — Dynamixel bus
 ```
 
 Both channels are always active. Any command sent to either port is processed
@@ -46,11 +46,27 @@ disable:all
 enable_ids:11:12:13
 disable_ids:11:12:13
 set_exo_mode:gesture_fixed
+get_telemetry_fast:11:12:13
 info
 version
 ```
 
 Responses are terminated with `;`. `SerialComm.receive()` reads until `;` is seen.
+
+### Compact telemetry frame
+
+`get_telemetry_fast:<id>:<id>...` returns one binary frame, intended only for
+the GUI's single serial worker. The version-1 frame has `NX` magic bytes, a
+13-byte little-endian header, and 20-byte records keyed by DXL ID. Its checksum
+is the low 16 bits of the sum of the header bytes before the checksum plus the
+payload bytes.
+
+The current firmware uses the conservative `fallbackRead` method (`flags = 1`):
+it reports relative and absolute position only. The record's zero current and
+velocity fields are placeholders in this mode and **must be shown as unavailable,
+not as measured zero**. Other flag values are reserved for future validated
+multi-register reads. Text polling remains the compatibility fallback for older
+firmware or malformed frames.
 
 ### Direct velocity/current control
 
@@ -84,8 +100,8 @@ set_command_timeout:250
 
 | Channel          | Arduino object | Baud  | Physical connection  |
 |------------------|----------------|-------|----------------------|
-| USB debug        | Serial         | 2000000 | USB port             |
-| Dynamixel bus    | Serial1        | 2000000 | JST DXL connector    |
+| USB debug        | Serial         | 1000000 | USB port             |
+| Dynamixel bus    | Serial1        | 1000000 | JST DXL connector    |
 | HC-05 Bluetooth  | Serial3        | 115200 | D13 (TX), D14 (RX)   |
 
 All three constants are defined in `src/cpp/nml_hand_exo/config.h`:
@@ -207,9 +223,9 @@ when the GUI passes a `name_to_id` mapping. See [docs/dual_exo_architecture.md](
 
 | Constant                | Value    | Meaning                              |
 |-------------------------|----------|--------------------------------------|
-| `DEBUG_BAUD_RATE`       | 2000000  | USB serial baud                      |
+| `DEBUG_BAUD_RATE`       | 1000000  | USB serial baud                      |
 | `COMMAND_BAUD_RATE`     | 115200   | HC-05 Bluetooth baud (firmware side) |
-| `DYNAMIXEL_BAUD_RATE`   | 2000000  | Dynamixel bus baud                   |
+| `DYNAMIXEL_BAUD_RATE`   | 1000000  | Dynamixel bus baud                   |
 | `MOTOR_CURRENT_LIMIT`   | 910      | XC330-T288 current cap per motor (mA) |
 | `DXL_PROTOCOL_VERSION`  | 2.0      | Dynamixel protocol version           |
 | `PULSE_RESOLUTION`      | 4096     | Encoder ticks per revolution         |

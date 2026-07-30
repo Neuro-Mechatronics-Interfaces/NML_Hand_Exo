@@ -461,8 +461,8 @@ class MindRoveExoControlPanel(QMainWindow):
         layout.addWidget(port_label)
         layout.addLayout(port_row)
 
-        self.baud_input = QLineEdit("57600")
-        self.baud_input.textChanged.connect(lambda value: self.selected_baud_value.setText(value.strip() or "57600"))
+        self.baud_input = QLineEdit("1000000")
+        self.baud_input.textChanged.connect(lambda value: self.selected_baud_value.setText(value.strip() or "1000000"))
         baud_label = QLabel("Baudrate")
         baud_label.setObjectName("FieldLabel")
         layout.addWidget(baud_label)
@@ -502,7 +502,7 @@ class MindRoveExoControlPanel(QMainWindow):
             ("Device", self.exo_name_value),
             ("Version", self.exo_version_value),
             ("Selected port", QLabel(self.port_combo.currentText().strip() or "n/a")),
-            ("Baudrate", QLabel(self.baud_input.text().strip() or "57600")),
+            ("Baudrate", QLabel(self.baud_input.text().strip() or "1000000")),
         ]
 
         self.selected_port_value = detail_fields[2][1]
@@ -713,7 +713,7 @@ class MindRoveExoControlPanel(QMainWindow):
             return
 
         try:
-            baudrate = int(float(self.baud_input.text().strip() or "57600"))
+            baudrate = int(float(self.baud_input.text().strip() or "1000000"))
             self.selected_baud_value.setText(str(baudrate))
             comm = SerialComm(port=port, baudrate=baudrate, verbose=False)
             self.exo = HandExo(comm, verbose=False)
@@ -776,7 +776,7 @@ class MindRoveExoControlPanel(QMainWindow):
         self.link_chip_value.style().unpolish(self.link_chip_value)
         self.link_chip_value.style().polish(self.link_chip_value)
         self.selected_port_value.setText(self.port_combo.currentText().strip() or "n/a")
-        self.selected_baud_value.setText(self.baud_input.text().strip() or "57600")
+        self.selected_baud_value.setText(self.baud_input.text().strip() or "1000000")
 
         if not connected or not info:
             self.exo_name_value.setText("n/a")

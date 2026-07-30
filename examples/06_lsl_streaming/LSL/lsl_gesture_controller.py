@@ -47,7 +47,7 @@ if __name__ == "__main__":
     ap.add_argument("--type", default="Markers", help="LSL stream type to subscribe to.")
     ap.add_argument("--name", default="EMGGesture", help="LSL stream name to subscribe to.")
     ap.add_argument("--port", type=str, default="COM4", help="Serial port for Hand Exoskeleton.")
-    ap.add_argument("--baudrate", type=int, default=115200, help="Baudrate for serial communication.")
+    ap.add_argument("--baudrate", type=int, default=1000000, help="Baudrate for serial communication.")
     ap.add_argument("--timeout", type=float, default=5.0)
     ap.add_argument("--verbose", action="store_true", help="Enable verbose output.")
     args = ap.parse_args()

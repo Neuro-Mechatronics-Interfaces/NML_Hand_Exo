@@ -213,6 +213,50 @@ float NMLHandExo::getZeroOffset(uint8_t id) {
   int index = getIndexById(id);
   return (index != -1) ? zeroOffsets_[index] : 0.0f;
 }
+
+uint8_t NMLHandExo::getFastTelemetryRecords(
+  const uint8_t* ids,
+  uint8_t count,
+  FastTelemetryRecord* records,
+  uint8_t& methodOut,
+  uint32_t timeoutMs
+) {
+  constexpr uint8_t MAX_FAST_TELEM_IDS = 32;
+  (void)timeoutMs;
+
+  if (count > MAX_FAST_TELEM_IDS) count = MAX_FAST_TELEM_IDS;
+  methodOut = FAST_TELEM_METHOD_FALLBACK_READ;
+
+  for (uint8_t i = 0; i < count; ++i) {
+    const uint8_t id = ids[i];
+    FastTelemetryRecord& record = records[i];
+    record.id = id;
+    record.error = 0;
+    // The conservative fallback reads position only.  These zeroed wire
+    // fields are intentionally paired with FAST_TELEM_METHOD_FALLBACK_READ;
+    // Python converts them to unavailable values rather than measurements.
+    record.current_mA = 0;
+    record.velocity_raw = 0;
+    record.position_ticks = 0;
+    record.absolute_cdeg = 0;
+    record.relative_cdeg = 0;
+
+    const int index = getIndexById(id);
+    if (index == -1) {
+      record.error = 1;
+      continue;
+    }
+
+    const float absolute_deg = dxl_.getPresentPosition(id, UNIT_DEGREE);
+    float relative_deg = absolute_deg - zeroOffsets_[index];
+    if (flipMotor_[index]) relative_deg *= -1.0f;
+
+    record.position_ticks = (int32_t)round(absolute_deg * PULSE_RESOLUTION / 360.0f);
+    record.absolute_cdeg = (int32_t)round(absolute_deg * 100.0f);
+    record.relative_cdeg = (int32_t)round(relative_deg * 100.0f);
+  }
+  return count;
+}
 void NMLHandExo::resetAllZeros() {
   for (int i = 0; i < numMotors_; ++i) {
     uint8_t id = motorIds_[i];

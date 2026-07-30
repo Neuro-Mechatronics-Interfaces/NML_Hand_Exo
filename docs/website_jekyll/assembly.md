@@ -35,7 +35,7 @@ Use the table below for quick reference, or download the full spreadsheet.
 | Group | Part / Spec | Qty | Example PN / Link | Notes |
 |---|---|---:|---|---|
 | Actuation | Dynamixel (or your model) | 5 | — | Match torque to finger section |
-| Control | OpenRB-150 (or compatible) | 1 | — | Default baud 57600 |
+| Control | OpenRB-150 (or compatible) | 1 | — | USB/Dynamixel default baud 1000000 |
 | Power | 12 V DC PSU, 5 A | 1 | — | Bench supply OK |
 | Fasteners | M2/M3/M4 assortment | — | — | Button/SHCS + nylocs |
 | Sensors | (optional) IMU/EMG set | — | — | Skip for basic build |
@@ -92,7 +92,7 @@ ls /dev/ttyUSB* /dev/ttyACM*
 4. Test communication:
 
 ```powershell
-python examples\tools\hand_exo_cli.py --connect COM5 --baud 57600 --info
+python examples\tools\hand_exo_cli.py --connect COM5 --baud 1000000 --info
 ```
 
 **Expected:** Firmware version and device info without errors.
@@ -294,7 +294,7 @@ Add a tiny amount of **medium threadlocker** on metal-to-metal fasteners only.
 Open a terminal and verify serial communication:
 
 ```powershell
-python examples\tools\hand_exo_cli.py --connect COM5 --baud 57600 --info
+python examples\tools\hand_exo_cli.py --connect COM5 --baud 1000000 --info
 ```
 
 **Expected output:**

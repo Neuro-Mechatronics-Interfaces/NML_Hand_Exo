@@ -15,22 +15,7 @@ python example_pylsl_read.py
 
 ---
 
-### 2. `live_decoder_from_lsl_stream.py`
-**Real-time gesture decoding**
-
-Decode gestures from EMG signals in real-time.
-
-```bash
-python live_decoder_from_lsl_stream.py
-```
-
-**Requirements:**
-- Trained gesture classifier model
-- LSL EMG stream
-
----
-
-### 3. `pca_viewer.py`
+### 2. `pca_viewer.py`
 **PCA visualization**
 
 Visualize EMG data in principal component space.
@@ -97,7 +82,7 @@ JSON configuration file for task parameters:
 from nml_hand_exo.interface import HandExo, SerialComm, LSLClient
 
 # 1. Connect to exo
-comm = SerialComm(port="COM6", baudrate=57600)
+comm = SerialComm(port="COM6", baudrate=1000000)
 exo = HandExo(comm)
 exo.connect()
 

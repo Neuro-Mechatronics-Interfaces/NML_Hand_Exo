@@ -28,7 +28,7 @@ Step 3. Launch Serial Terminal
 ------------------------------
 
 1. Open your preferred serial terminal program.
-2. Set the baud rate to **57600** (default).
+2. Set the USB baud rate to **1000000** (default).
 3. Select the correct serial port (COMx on Windows, `/dev/ttyUSBx` on Linux, or 'dev.usbmodemxxx' on MacOS).
 4. Connect and open the terminal.
 

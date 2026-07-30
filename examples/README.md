@@ -12,10 +12,8 @@ examples/
 ├── 01_basic/                          # Getting started
 │   ├── example_serial_exo.py          # Basic serial connection
 │   ├── example_tcp_exo.py             # TCP/IP connection (WiFi)
-│   └── hand_exo_cli.py                # Command-line interface tool
 ├── 02_motor_control/                  # Motor control basics
 │   ├── motor_test.py                  # Simple motor movement test
-│   ├── joint_range_test.py            # Sweep motors through full range
 │   ├── example_motor_config.py        # Velocity/acceleration/limits
 │   └── example_batch_operations.py    # Batch operations with 'all'
 ├── 03_sensors/                        # Sensor integration
@@ -27,7 +25,6 @@ examples/
 │   └── UART_uno_pico/                 # UART communication examples
 ├── 05_applications/                   # Real-world applications
 │   ├── example_pylsl_read.py          # LSL reading example
-│   ├── live_decoder_from_lsl_stream.py # Real-time decoder
 │   ├── pca_viewer.py                  # PCA visualization
 │   └── task/                          # Task-specific applications
 │       ├── training_task.py           # Training task with GUI
@@ -71,28 +68,6 @@ Example for connecting over TCP/IP (e.g., using Pico W with WiFi).
 python examples/01_basic/example_tcp_exo.py
 ```
 
-#### Command-Line Interface (`01_basic/hand_exo_cli.py`)
-Full-featured CLI tool for sending commands and monitoring serial output.
-
-```bash
-# List available serial ports
-python examples/01_basic/hand_exo_cli.py --list-ports
-
-# Connect and print device info
-python examples/01_basic/hand_exo_cli.py --connect COM5 --baud 57600 --info
-
-# Home all motors
-python examples/01_basic/hand_exo_cli.py --connect COM5 --home
-
-# Send custom command
-python examples/01_basic/hand_exo_cli.py --connect COM5 --send "led:1:on"
-
-# Monitor serial output
-python examples/01_basic/hand_exo_cli.py --connect COM5 --monitor
-```
-
----
-
 ### 02. Motor Control Examples
 
 #### Motor Configuration (`02_motor_control/example_motor_config.py`)
@@ -127,21 +102,6 @@ Simple motor movement test - moves motor 0 to different angles.
 ```bash
 python examples/02_motor_control/motor_test.py
 ```
-
-#### Joint Range Test (`02_motor_control/joint_range_test.py`)
-Systematically sweeps each motor through its full range of motion.
-
-```bash
-python examples/02_motor_control/joint_range_test.py
-```
-
-**Features:**
-- Queries home positions and joint limits
-- Sweeps to upper limit, returns home
-- Sweeps to lower limit, returns home
-- Processes all motors sequentially
-
----
 
 ### 03. Sensor Examples
 
@@ -197,13 +157,6 @@ Example of reading EMG data from LSL streams.
 python examples/05_applications/example_pylsl_read.py
 ```
 
-#### Live Decoder (`05_applications/live_decoder_from_lsl_stream.py`)
-Real-time gesture decoding from EMG streams.
-
-```bash
-python examples/05_applications/live_decoder_from_lsl_stream.py
-```
-
 #### Training Task (`05_applications/task/training_task.py`)
 Complete training task with GUI for data collection.
 
@@ -227,7 +180,7 @@ pip install pylsl
 Uses an EMG classifier to trigger gesture changes.
 
 ```bash
-python examples/06_lsl_streaming/LSL/lsl_classifier_trigger.py --port COM4 --baudrate 115200
+python examples/06_lsl_streaming/LSL/lsl_classifier_trigger.py --port COM4 --baudrate 1000000
 ```
 
 #### LSL Gesture Controller (`06_lsl_streaming/LSL/lsl_gesture_controller.py`)
@@ -241,7 +194,7 @@ python examples/06_lsl_streaming/LSL/lsl_gesture_controller.py --port COM4 --typ
 - `--type`: LSL stream type (default: "Markers")
 - `--name`: LSL stream name (default: "EMGGesture")
 - `--port`: Serial port (default: "COM4")
-- `--baudrate`: Baud rate (default: 115200)
+- `--baudrate`: Baud rate (default: 1000000 for USB serial)
 - `--verbose`: Enable verbose output
 
 #### State Trigger (`06_lsl_streaming/LSL/lsl_state_trigger.py`)
@@ -278,7 +231,7 @@ python examples/06_lsl_streaming/LSL/lsl_rms_barplot.py --type EMG --name OpenEp
 from nml_hand_exo.interface import HandExo, SerialComm
 
 # Create communication interface
-comm = SerialComm(port="COM6", baudrate=57600)
+comm = SerialComm(port="COM6", baudrate=1000000)
 
 # Create HandExo instance
 exo = HandExo(comm, verbose=False)
@@ -298,19 +251,20 @@ exo.close()
 
 ```python
 # Enable motor
-exo.enable_motor(motor_id=0)
+motor_id = sorted(exo.info()["motors"])[0]
+exo.enable_motor(motor_id=motor_id)
 
 # Set motor angle (relative to home position)
-exo.set_motor_angle(motor_id=0, angle=45)
+exo.set_motor_angle(motor_id=motor_id, angle=45)
 
 # Get current angle
-angle = exo.get_motor_angle(motor_id=0)
+angle = exo.get_motor_angle(motor_id=motor_id)
 
 # Set motor to home position
-exo.home(motor_id=0)
+exo.home(motor_id=motor_id)
 
 # Disable motor
-exo.disable_motor(motor_id=0)
+exo.disable_motor(motor_id=motor_id)
 ```
 
 ### Reading Sensor Data
@@ -326,10 +280,10 @@ roll = exo.get_imu_roll()
 pitch = exo.get_imu_pitch()
 
 # Get motor torque
-torque = exo.get_motor_torque(motor_id=0)
+torque = exo.get_motor_torque(motor_id=motor_id)
 
 # Get motor current
-current = exo.get_motor_current(motor_id=0)
+current = exo.get_motor_current(motor_id=motor_id)
 ```
 
 ### Gesture Control

@@ -24,12 +24,12 @@ pip install pyqtgraph pyqt5 numpy
 Uses a trained classifier to decode gestures from EMG and control the exo.
 
 ```bash
-python LSL/lsl_classifier_trigger.py --port COM4 --baudrate 115200
+python LSL/lsl_classifier_trigger.py --port COM4 --baudrate 1000000
 ```
 
 **Arguments:**
 - `--port`: Serial port for exo (default: COM4)
-- `--baudrate`: Serial baudrate (default: 115200)
+- `--baudrate`: Serial baudrate (default: 1000000 for USB serial)
 - `--verbose`: Enable debug output
 
 ---
@@ -47,7 +47,7 @@ python LSL/lsl_gesture_controller.py --port COM4 --type Markers --name EMGGestur
 - `--type`: LSL stream type (default: Markers)
 - `--name`: LSL stream name (default: EMGGesture)
 - `--port`: Serial port (default: COM4)
-- `--baudrate`: Serial baudrate (default: 115200)
+- `--baudrate`: Serial baudrate (default: 1000000 for USB serial)
 - `--timeout`: LSL connection timeout (default: 5.0s)
 - `--verbose`: Enable debug output
 
