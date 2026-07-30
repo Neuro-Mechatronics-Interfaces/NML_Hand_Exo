@@ -151,6 +151,10 @@ void&#160;</td><td class="memItemRight" valign="bottom"><b>initializeMotors</b> 
 <tr class="memitem:a4314a5a5b18b92bbb8f6add9ce40f5a0" id="r_a4314a5a5b18b92bbb8f6add9ce40f5a0"><td class="memItemLeft" align="right" valign="top">float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a4314a5a5b18b92bbb8f6add9ce40f5a0">getZeroOffset</a> (uint8_t id)</td></tr>
 <tr class="memdesc:a4314a5a5b18b92bbb8f6add9ce40f5a0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the stored zero offset for a motor.  <br /></td></tr>
 <tr class="separator:a4314a5a5b18b92bbb8f6add9ce40f5a0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a609ecc6e1824553810bc9601e18a1362" id="r_a609ecc6e1824553810bc9601e18a1362"><td class="memItemLeft" align="right" valign="top"><a id="a609ecc6e1824553810bc9601e18a1362" name="a609ecc6e1824553810bc9601e18a1362"></a>
+uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>getFastTelemetryRecords</b> (const uint8_t *ids, uint8_t count, FastTelemetryRecord *records, uint8_t &amp;methodOut, uint32_t timeoutMs=10)</td></tr>
+<tr class="memdesc:a609ecc6e1824553810bc9601e18a1362"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read compact telemetry records for specific motor IDs. The fallback method is position-only; its current and velocity fields must be treated as unavailable by the host. <br /></td></tr>
+<tr class="separator:a609ecc6e1824553810bc9601e18a1362"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a717ef5205071bb59d054482fc8be3894" id="r_a717ef5205071bb59d054482fc8be3894"><td class="memItemLeft" align="right" valign="top"><a id="a717ef5205071bb59d054482fc8be3894" name="a717ef5205071bb59d054482fc8be3894"></a>
 void&#160;</td><td class="memItemRight" valign="bottom"><b>resetAllZeros</b> ()</td></tr>
 <tr class="memdesc:a717ef5205071bb59d054482fc8be3894"><td class="mdescLeft">&#160;</td><td class="mdescRight">Reset zero offsets for all motors using their current positions. <br /></td></tr>
@@ -356,7 +360,7 @@ unsigned long&#160;</td><td class="memItemRight" valign="bottom"><b>getDirectCom
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="pub-static-attribs" name="pub-static-attribs"></a>
 Static Public Attributes</h2></td></tr>
 <tr class="memitem:a21f2a007112d02fbbdd487d5d9a5defd" id="r_a21f2a007112d02fbbdd487d5d9a5defd"><td class="memItemLeft" align="right" valign="top"><a id="a21f2a007112d02fbbdd487d5d9a5defd" name="a21f2a007112d02fbbdd487d5d9a5defd"></a>
-static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><b>VERSION</b> = &quot;0.2.14&quot;</td></tr>
+static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><b>VERSION</b> = &quot;0.2.15&quot;</td></tr>
 <tr class="memdesc:a21f2a007112d02fbbdd487d5d9a5defd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Current software version. <br /></td></tr>
 <tr class="separator:a21f2a007112d02fbbdd487d5d9a5defd"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>

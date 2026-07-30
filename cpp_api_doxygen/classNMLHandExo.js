@@ -16,6 +16,7 @@ var classNMLHandExo =
     [ "getDirectCommandTimeout", "classNMLHandExo.html#a112bf8dbac103341e5872ade15c77540", null ],
     [ "getExoOperatingMode", "classNMLHandExo.html#a084d6b1d59ae02b0a263268fa86101ae", null ],
     [ "getExoOperatingModeEnum", "classNMLHandExo.html#a50aa395fdb2a4fef05ccdf5f509aac06", null ],
+    [ "getFastTelemetryRecords", "classNMLHandExo.html#a609ecc6e1824553810bc9601e18a1362", null ],
     [ "getFlipMotor", "classNMLHandExo.html#a56b7cc011b3d93c79ac54adcaf4965ab", null ],
     [ "getGoalCurrent", "classNMLHandExo.html#a9a878e036f4ac99eec1525363d5c4534", null ],
     [ "getIndexById", "classNMLHandExo.html#aec362a95e23f2842be47d15b56e6044c", null ],

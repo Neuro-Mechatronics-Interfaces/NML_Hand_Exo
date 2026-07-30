@@ -312,8 +312,8 @@ Either move <code class="language-plaintext highlighter-rouge">nml_hand_exo/</co
 
 <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">nml_hand_exo.interface</span> <span class="kn">import</span> <span class="n">HandExo</span><span class="p">,</span> <span class="n">SerialComm</span>
 
-<span class="c1"># Most firmwares use 57600 and semicolon-delimited tokens.
-</span><span class="n">comm</span> <span class="o">=</span> <span class="n">SerialComm</span><span class="p">(</span><span class="n">port</span><span class="o">=</span><span class="s">"COM5"</span><span class="p">,</span> <span class="n">baudrate</span><span class="o">=</span><span class="mi">57600</span><span class="p">,</span> <span class="n">command_delimiter</span><span class="o">=</span><span class="s">";"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="c1"># USB firmware uses 1000000 baud and semicolon-delimited responses.
+</span><span class="n">comm</span> <span class="o">=</span> <span class="n">SerialComm</span><span class="p">(</span><span class="n">port</span><span class="o">=</span><span class="s">"COM5"</span><span class="p">,</span> <span class="n">baudrate</span><span class="o">=</span><span class="mi">1000000</span><span class="p">,</span> <span class="n">command_delimiter</span><span class="o">=</span><span class="s">";"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
 
 <span class="c1"># HandExo expects a comm object at construction
 </span><span class="n">exo</span> <span class="o">=</span> <span class="n">HandExo</span><span class="p">(</span><span class="n">comm</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">"NMLHandExo"</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
@@ -434,7 +434,7 @@ Either move <code class="language-plaintext highlighter-rouge">nml_hand_exo/</co
 
 <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">nml_hand_exo.interface</span> <span class="kn">import</span> <span class="n">HandExo</span><span class="p">,</span> <span class="n">SerialComm</span><span class="p">,</span> <span class="n">GestureController</span>
 
-<span class="n">exo</span> <span class="o">=</span> <span class="n">HandExo</span><span class="p">(</span><span class="n">SerialComm</span><span class="p">(</span><span class="s">"COM5"</span><span class="p">,</span> <span class="mi">57600</span><span class="p">,</span> <span class="s">";"</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+<span class="n">exo</span> <span class="o">=</span> <span class="n">HandExo</span><span class="p">(</span><span class="n">SerialComm</span><span class="p">(</span><span class="s">"COM5"</span><span class="p">,</span> <span class="mi">1000000</span><span class="p">,</span> <span class="s">";"</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
 <span class="n">exo</span><span class="p">.</span><span class="n">connect</span><span class="p">()</span>
 
 <span class="n">gc</span> <span class="o">=</span> <span class="n">GestureController</span><span class="p">(</span><span class="n">exo</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
@@ -542,7 +542,7 @@ Either move <code class="language-plaintext highlighter-rouge">nml_hand_exo/</co
 <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">nml_hand_exo.control</span> <span class="kn">import</span> <span class="n">StateTriggerRMS</span>
 <span class="kn">from</span> <span class="nn">nml_hand_exo.interface</span> <span class="kn">import</span> <span class="n">HandExo</span><span class="p">,</span> <span class="n">SerialComm</span><span class="p">,</span> <span class="n">LSLClient</span>
 
-<span class="n">exo</span> <span class="o">=</span> <span class="n">HandExo</span><span class="p">(</span><span class="n">SerialComm</span><span class="p">(</span><span class="s">"COM5"</span><span class="p">,</span> <span class="mi">57600</span><span class="p">,</span> <span class="s">";"</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<span class="n">exo</span> <span class="o">=</span> <span class="n">HandExo</span><span class="p">(</span><span class="n">SerialComm</span><span class="p">(</span><span class="s">"COM5"</span><span class="p">,</span> <span class="mi">1000000</span><span class="p">,</span> <span class="s">";"</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
 <span class="n">exo</span><span class="p">.</span><span class="n">connect</span><span class="p">()</span>
 
 <span class="n">client</span> <span class="o">=</span> <span class="n">LSLClient</span><span class="p">(</span><span class="n">stream_name</span><span class="o">=</span><span class="s">"ExoTelemetry"</span><span class="p">,</span> <span class="n">auto_start</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>

@@ -332,7 +332,7 @@ const float JOINT_LIMITS[][2] = {
 <p>// Serial communication
 #define COMMAND_SERIAL Serial  // USB serial
 #define DXL_SERIAL Serial1     // Dynamixel serial
-#define BAUD_RATE 57600</p>
+#define BAUD_RATE 1000000</p>
 <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
 4. Click **Upload** (Ctrl+U)
 
@@ -378,7 +378,7 @@ NMLHandExo(const uint8_t* ids, uint8_t numMotors,
 <h3 id="initializeserialint-baud"><code class="language-plaintext highlighter-rouge">initializeSerial(int baud)</code></h3>
 <p>Initialize the Dynamixel serial port.</p>
 
-<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">exo</span><span class="p">.</span><span class="n">initializeSerial</span><span class="p">(</span><span class="mi">57600</span><span class="p">);</span>
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">exo</span><span class="p">.</span><span class="n">initializeSerial</span><span class="p">(</span><span class="mi">1000000</span><span class="p">);</span>
 </code></pre></div></div>
 
 <h3 id="initializemotors"><code class="language-plaintext highlighter-rouge">initializeMotors()</code></h3>
@@ -631,8 +631,8 @@ led:all:off;                   # Turn off all LEDs
 <span class="n">GestureController</span> <span class="n">gestureCtrl</span><span class="p">(</span><span class="o">&amp;</span><span class="n">exo</span><span class="p">);</span>
 
 <span class="kt">void</span> <span class="n">setup</span><span class="p">()</span> <span class="p">{</span>
-  <span class="n">Serial</span><span class="p">.</span><span class="n">begin</span><span class="p">(</span><span class="mi">57600</span><span class="p">);</span>
-  <span class="n">exo</span><span class="p">.</span><span class="n">initializeSerial</span><span class="p">(</span><span class="mi">57600</span><span class="p">);</span>
+  <span class="n">Serial</span><span class="p">.</span><span class="n">begin</span><span class="p">(</span><span class="mi">1000000</span><span class="p">);</span>
+  <span class="n">exo</span><span class="p">.</span><span class="n">initializeSerial</span><span class="p">(</span><span class="mi">1000000</span><span class="p">);</span>
   <span class="n">exo</span><span class="p">.</span><span class="n">initializeMotors</span><span class="p">();</span>
   
   <span class="n">Serial</span><span class="p">.</span><span class="n">println</span><span class="p">(</span><span class="s">"NML Hand Exo Ready!"</span><span class="p">);</span>
@@ -735,7 +735,7 @@ led:all:off;                   # Turn off all LEDs
 <p><strong>Motor not responding:</strong></p>
 <ul>
   <li>Check Dynamixel ID matches firmware configuration</li>
-  <li>Verify baud rate (57600 default)</li>
+  <li>Verify baud rate (1000000 default for USB/Dynamixel; 115200 for HC-05)</li>
   <li>Check power supply (12V, adequate current)</li>
   <li>Test motor individually with Dynamixel Wizard</li>
 </ul>
@@ -743,7 +743,7 @@ led:all:off;                   # Turn off all LEDs
 <p><strong>Serial communication issues:</strong></p>
 <ul>
   <li>Ensure correct COM port selected</li>
-  <li>Try different baud rates (57600, 115200, 1000000)</li>
+  <li>Verify 1000000 for USB/Dynamixel or 115200 for HC-05</li>
   <li>Check USB cable quality</li>
   <li>Use <code class="language-plaintext highlighter-rouge">help;</code> command to verify connection</li>
 </ul>

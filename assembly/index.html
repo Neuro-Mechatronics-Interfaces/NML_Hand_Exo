@@ -273,7 +273,7 @@ Always disconnect power before adjusting wiring, and keep fingers clear of force
       <td>OpenRB-150 (or compatible)</td>
       <td style="text-align: right">1</td>
       <td>—</td>
-      <td>Default baud 57600</td>
+      <td>USB/Dynamixel default baud 1000000</td>
     </tr>
     <tr>
       <td>Power</td>
@@ -369,7 +369,7 @@ Always disconnect power before adjusting wiring, and keep fingers clear of force
   <li>Test communication:</li>
 </ol>
 
-<div class="language-powershell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">python</span><span class="w"> </span><span class="nx">examples\tools\hand_exo_cli.py</span><span class="w"> </span><span class="nt">--connect</span><span class="w"> </span><span class="nx">COM5</span><span class="w"> </span><span class="nt">--baud</span><span class="w"> </span><span class="nx">57600</span><span class="w"> </span><span class="nt">--info</span><span class="w">
+<div class="language-powershell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">python</span><span class="w"> </span><span class="nx">examples\tools\hand_exo_cli.py</span><span class="w"> </span><span class="nt">--connect</span><span class="w"> </span><span class="nx">COM5</span><span class="w"> </span><span class="nt">--baud</span><span class="w"> </span><span class="nx">1000000</span><span class="w"> </span><span class="nt">--info</span><span class="w">
 </span></code></pre></div></div>
 
 <p><strong>Expected:</strong> Firmware version and device info without errors.</p>
@@ -643,7 +643,7 @@ Always disconnect power before adjusting wiring, and keep fingers clear of force
 
 <p>Open a terminal and verify serial communication:</p>
 
-<div class="language-powershell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">python</span><span class="w"> </span><span class="nx">examples\tools\hand_exo_cli.py</span><span class="w"> </span><span class="nt">--connect</span><span class="w"> </span><span class="nx">COM5</span><span class="w"> </span><span class="nt">--baud</span><span class="w"> </span><span class="nx">57600</span><span class="w"> </span><span class="nt">--info</span><span class="w">
+<div class="language-powershell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">python</span><span class="w"> </span><span class="nx">examples\tools\hand_exo_cli.py</span><span class="w"> </span><span class="nt">--connect</span><span class="w"> </span><span class="nx">COM5</span><span class="w"> </span><span class="nt">--baud</span><span class="w"> </span><span class="nx">1000000</span><span class="w"> </span><span class="nt">--info</span><span class="w">
 </span></code></pre></div></div>
 
 <p><strong>Expected output:</strong></p>
