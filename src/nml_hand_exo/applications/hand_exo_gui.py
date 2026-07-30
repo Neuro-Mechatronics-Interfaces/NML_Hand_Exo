@@ -2510,8 +2510,9 @@ class HandExoGUI(QWidget):
         if not self.exo_connected:
             return
         relative = result.get("relative")
+        positions = result.get("positions")
         if relative is not None:
-            self._apply_motor_angles(relative)
+            self._apply_motor_angles(relative, positions)
 
         positions = result.get("positions")
         torques = result.get("torques")
@@ -3061,6 +3062,7 @@ class HandExoGUI(QWidget):
             except Exception as e:
                 self._log(f"Error toggling motor {motor_ref}: {e}")
         return handler
+
     def _make_motor_position_handler(self, idx, dxl_id):
         def handler():
             if not self.exo_connected:
@@ -3068,6 +3070,14 @@ class HandExoGUI(QWidget):
             w = self.motor_widgets[idx]
             if not w["enabled"]:
                 self._log(f"Motor {dxl_id} is disabled — enable it before sending a position.")
+                return
+            if not self._ensure_position_control():
+                self._log(f"Could not restore current-position mode for motor {dxl_id}.")
+                return
+            try:
+                self.exo.enable_motor(dxl_id)
+            except Exception as e:
+                self._log(f"Error re-enabling motor {dxl_id}: {e}")
                 return
             pct = w["pos_spin"].value()
             lo, hi = w["limit_min"], w["limit_max"]
@@ -3078,7 +3088,6 @@ class HandExoGUI(QWidget):
             except Exception as e:
                 self._log(f"Error setting position for motor {dxl_id}: {e}")
         return handler
-
 
     # -- Gesture Control ---------------------------------------------------
 
@@ -3862,7 +3871,7 @@ class HandExoGUI(QWidget):
         except Exception as e:
             self._log(f"Home error: {e}")
 
-    def _apply_motor_angles(self, angles: dict):
+    def _apply_motor_angles(self, angles: dict, absolute_angles: dict):
         if not self.exo_connected:
             return
         # Source: get_angle:all → firmware getRelativeAngle (zeroed at home, flip applied).
@@ -3872,6 +3881,16 @@ class HandExoGUI(QWidget):
             val = angles.get(dxl_id) if dxl_id is not None else None
             if val is not None:
                 w["angle_lbl"].setText(f"{float(val):.2f} deg")
+
+            abs_val = absolute_angles.get(dxl_id) if (absolute_angles and dxl_id is not None) else None
+            if abs_val is not None:
+                lo, hi = w.get("limit_min", 0.0), w.get("limit_max", 100.0)
+                if hi != lo and not w["pos_spin"].hasFocus():
+                    pct = (abs_val - lo) / (hi - lo) * 100.0
+                    pct = max(0.0, min(100.0, pct))
+                    w["pos_spin"].blockSignals(True)
+                    w["pos_spin"].setValue(pct)
+                    w["pos_spin"].blockSignals(False)
 
         # Normalise each relative angle to [0, 1] for the Hand State visualisation.
         t_dict: dict[str, float] = {}
