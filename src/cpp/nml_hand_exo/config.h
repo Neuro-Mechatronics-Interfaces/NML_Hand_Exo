@@ -227,23 +227,21 @@ constexpr const char* MOTOR_NAMES[] = {
   "wrist", "wrist2", "thumbadd", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky"
 };
 
-/// @brief Home states [left placeholders, right calibrated].
-/// Left values are placeholders overwritten at runtime by apply_calibration.
 constexpr float HOME_STATES[] = {
   // left (IDs 1-9) — placeholders, calibrate before use
-  180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0,
+  228.45, 132.70, 220.79, 232.23, 122.76, 193.34, 80.26, 98.21, 63.80,
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  149.1, 180.0, 180.0, 251.86, 374.53, 162.8, 106.83, 68.99, 115.37
+  228.45, 132.70, 220.79, 232.23, 122.76, 193.34, 80.26, 98.21, 63.80
 };
 
 /// @brief Physical joint limits [min, max] for each motor.
 constexpr float jointLimits[][2] = {
   // left (IDs 1-9) — placeholders
-  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},
-  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},
+  {201.17, 269.46}, {90.02, 163.42}, {198.09, 227.13}, {160.26, 260.86}, {106.74, 147.31},
+  {162.27, 231.35}, {49.54, 102.52}, {74.71, 127.78}, {14.96, 109.65},
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  {320, 166}, {42.0, 190.0}, {140.0, 260.0}, {160.26, 260.86}, {88.53, 174.27},
-  {166.8, 239.93}, {50.5, 104.83}, {66.99, 125.06}, {400.1, 460.37}
+  {201.17, 269.46}, {90.02, 163.42}, {198.09, 227.13}, {160.26, 260.86}, {106.74, 147.31},
+  {162.27, 231.35}, {49.54, 102.52}, {74.71, 127.78}, {14.96, 109.65}
 };
 
 /// @brief Default flip direction per motor.
