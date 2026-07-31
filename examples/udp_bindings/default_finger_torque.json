@@ -1,0 +1,20 @@
+{
+  "schema_version": 2,
+  "name": "Default Finger Torque",
+  "control_mode": "torque",
+  "target": "Both",
+  "repeat_ms": 100,
+  "bindings": [
+    {"value": -5, "command": "set_current:{pinky}:-100", "description": "Pinky extension"},
+    {"value": -4, "command": "set_current:{ring}:-100", "description": "Ring extension"},
+    {"value": -3, "command": "set_current:{middle}:-100", "description": "Middle extension"},
+    {"value": -2, "command": "set_current:{index}:-100", "description": "Index extension"},
+    {"value": -1, "command": "set_current:{thumbflex}:-100", "description": "Thumb extension"},
+    {"value": 0, "command": "stop:all", "description": "REST / no torque"},
+    {"value": 1, "command": "set_current:{thumbflex}:100", "description": "Thumb flexion"},
+    {"value": 2, "command": "set_current:{index}:100", "description": "Index flexion"},
+    {"value": 3, "command": "set_current:{middle}:100", "description": "Middle flexion"},
+    {"value": 4, "command": "set_current:{ring}:100", "description": "Ring flexion"},
+    {"value": 5, "command": "set_current:{pinky}:100", "description": "Pinky flexion"}
+  ]
+}

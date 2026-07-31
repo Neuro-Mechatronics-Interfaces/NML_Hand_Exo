@@ -31,6 +31,39 @@ python pca_viewer.py
 
 ---
 
+### 4. `joystick_udp_direct_gui.py`
+**Joystick-driven UDP direct control test GUI**
+
+Sends `set_velocity` or `set_current` commands to the running HandExo GUI
+through UDP command input.
+
+```bash
+pip install pygame
+python joystick_udp_direct_gui.py
+```
+
+`pygame` is optional when using the on-screen virtual 2D joystick. Install it only
+if you want physical gamepad input.
+
+**Before use in HandExo GUI:**
+- Connect to the device.
+- Open Settings.
+- Enable UDP Command Input.
+- Enable Advanced mode (required for non-gesture commands).
+
+**Notes:**
+- Uses JSON UDP payloads in the form `{"command":"set_velocity:<id>:<value>"}`.
+- Safety limits are clamped to +/-10 rpm (velocity) and +/-910 mA (current/torque).
+- Use explicit integer motor IDs that are active in the current GUI mode.
+- Includes a deadman profile: left stick Y controls command magnitude and the
+    right trigger must be held to stream nonzero commands.
+- Includes an interactive virtual 2D joystick: click and drag with the mouse,
+  release to auto-center.
+- Optional 2-axis dual-motor mode maps Y to the primary motor ID and X to a
+    secondary motor ID.
+
+---
+
 ## Task Applications
 
 The `task/` subfolder contains complete task implementations:

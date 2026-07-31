@@ -1,6 +1,6 @@
 import unittest
 
-from nml_hand_exo.applications.hand_exo_gui import (
+from nml_hand_exo.interface._gesture_protocol import (
     normalize_udp_gesture_angle_command,
 )
 

@@ -16,7 +16,7 @@ class FakeHandExo(object):
         self.verbose = verbose
         self.connected = True  # Simulate a successful connection
         self._imu_data = np.zeros(3)  # Simulated IMU data (roll, pitch, yaw)
-        self.motor_names = ['wrist', 'thumb', 'index', 'middle', 'ring', 'pinky']
+        self.motor_names = ['wrist', 'wrist2', 'thumbadd', 'thumbrot', 'thumbflex', 'index', 'middle', 'ring', 'pinky']
         self.motor_ids = {name: i for i, name in enumerate(self.motor_names)}
         self.home_position = np.zeros(len(self.motor_names))  # Simulated home position
 

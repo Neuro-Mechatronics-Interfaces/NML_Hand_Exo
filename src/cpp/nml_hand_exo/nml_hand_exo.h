@@ -15,6 +15,11 @@ using namespace ControlTableItem;
 /// @brief Verbose output toggle for debugging.
 extern bool VERBOSE;
 
+/// @brief Where command replies / telemetry are emitted (dual-CDC).
+/// One of REPLY_ROUTE_BOTH / REPLY_ROUTE_TELEM / REPLY_ROUTE_CMD (see config.h).
+/// Default REPLY_ROUTE_BOTH keeps legacy single-port hosts working.
+extern uint8_t gReplyRoute;
+
 /// @brief Bluetooth serial stream used for commands.
 //extern Stream& COMMAND_SERIAL;
 //extern Stream* debugStream;
@@ -22,6 +27,10 @@ extern bool VERBOSE;
 /// @brief Debugging print helper function.
 /// @param msg The message to print.
 void debugPrint(const String& msg);
+
+/// @brief Emits a line to the reply/telemetry CDC(s) per gReplyRoute.
+/// @param msg The message to print.
+void telemetryPrintln(const String& msg);
 
 /// @brief Mode press function
 void onModeButtonPress();
@@ -42,6 +51,18 @@ struct __attribute__((packed)) FastTelemetryRecord {
   int32_t position_ticks;
   int32_t absolute_cdeg;
   int32_t relative_cdeg;
+};
+
+/// @brief Outcome of one commanded move, reported in GESTURE_RESULT lines.
+///
+/// The command ack only says the firmware ACCEPTED a goal; these say what the
+/// motor then did. "Accepted but never moved" is otherwise invisible to a host.
+enum MoveVerdict : uint8_t {
+  MOVE_VERDICT_NONE = 0,
+  MOVE_VERDICT_REACHED,   ///< Stopped within tolerance of its goal.
+  MOVE_VERDICT_STALLED,   ///< Drew hard without arriving, or was load-shed.
+  MOVE_VERDICT_SHORT,     ///< Stopped pulling, but not at its goal.
+  MOVE_VERDICT_STARVED    ///< Never funded: the budget had no slot for it.
 };
 
 enum FastTelemetryMethod : uint8_t {
@@ -70,6 +91,15 @@ class NMLHandExo {
       delete[] lastDirectCommandMs_;
       delete[] directCommandActive_;
       delete[] directCommandDirection_;
+      delete[] appliedCurrents_;
+      delete[] motorMoving_;
+      delete[] motorAdmitted_;
+      delete[] admissionMs_;
+      delete[] goalAngle_;
+      delete[] verdictPending_;
+      delete[] lastVerdict_;
+      delete[] goalIssuedMs_;
+      delete[] stallSinceMs_;
     }
 
     // -----------------------------------------------------------
@@ -138,9 +168,19 @@ class NMLHandExo {
     /// @return Zero offset in degrees.
     float getZeroOffset(uint8_t id);
 
-    /// @brief Read compact telemetry records for specific motor IDs.
-    /// The fallback method is position-only; its current and velocity fields
-    /// must be treated as unavailable by the host.
+    /// @brief Fill one compact telemetry record for host streaming.
+    /// @param id Motor ID.
+    /// @param record Destination record.
+    /// @return True if the ID belongs to this exo firmware build.
+    bool getFastTelemetryRecord(uint8_t id, FastTelemetryRecord& record);
+
+    /// @brief Read compact telemetry records for multiple motor IDs.
+    /// @param ids Array of requested Dynamixel IDs.
+    /// @param count Number of requested IDs.
+    /// @param records Destination record array with at least count entries.
+    /// @param methodOut Method used to read telemetry.
+    /// @param timeoutMs Per-status-packet timeout for DXL sync/fallback reads.
+    /// @return Number of records filled.
     uint8_t getFastTelemetryRecords(
       const uint8_t* ids,
       uint8_t count,
@@ -154,7 +194,7 @@ class NMLHandExo {
 
     /// @brief Get a string summarizing the device information.
     // @return Information string.
-    String getDeviceInfo();
+    String getDeviceInfo(bool includeLiveTelemetry = false);
 
     /// @brief Get the hand side this board is compiled for ("right" or "left").
     /// @return HAND_SIDE constant as a C-string.
@@ -283,10 +323,57 @@ class NMLHandExo {
     /// @return Upper limit in degrees, or -1 if invalid ID.
     float getMotorLimitMax(uint8_t id);
 
-    /// Calibrated, flip-aware flexion span from home for normalized gestures.
+    // -----------------------------------------------------------
+    // Gesture fractional axis
+    // -----------------------------------------------------------
+    //
+    // Every gesture percentage -- the EXTEND_*/REST_*/FLEX_* constants,
+    // `set_gesture_angle`, `get_gesture_angle` -- rides on ONE per-motor axis:
+    // 0 at home, 1 at the flexion endstop. Defining it in one place is what
+    // makes those three agree, and what makes the mapping invertible so a
+    // measured angle can be reported back as the percentage that produced it.
+    //
+    // The old form scaled by the whole window width (limit_max - limit_min) and
+    // took its direction solely from the flip flag, which assumed home sat on
+    // the extension endstop. Where it did not -- the wrist and wrist2 axes --
+    // every state landed past the boundary, setAbsoluteAngle() clamped them all
+    // to the same angle, and the joint stopped moving while still acking OK.
+
+    /// @brief The 0% anchor for a motor: home, clamped into its limit window.
+    ///
+    /// A home outside the window is unreachable (setAbsoluteAngle clamps), so
+    /// anchoring on the clamped value keeps set/get exact inverses instead of
+    /// reporting a percentage the joint can never occupy. `check_limits` still
+    /// flags the underlying HOME_OUTSIDE condition.
+    /// @param id Motor ID.
+    /// @return Absolute angle of the 0% end, in degrees.
+    float getGestureOrigin(uint8_t id);
+
+    /// @brief Signed travel from home to the flexion endstop, in degrees.
+    ///
+    /// Sign carries direction, so callers never need the flip flag themselves.
+    /// Magnitude below GESTURE_MIN_TRAVEL_DEG means the joint cannot be
+    /// meaningfully positioned by any gesture.
+    /// @param id Motor ID.
+    /// @return Signed span in degrees; 0 for an unknown ID.
     float getGestureSpan(uint8_t id);
-    /// Convert a normalized gesture fraction to an in-limit absolute target.
+
+    /// @brief Absolute angle for a point on this motor's gesture axis.
+    /// @param id Motor ID.
+    /// @param fraction 0 = home, 1 = flexion endstop.
+    /// @return Absolute target in degrees, inside the limit window by
+    ///         construction for fraction in [0, 1].
     float gestureFractionToAngle(uint8_t id, float fraction);
+
+    /// @brief Where an absolute angle sits on this motor's gesture axis.
+    ///
+    /// Exact inverse of gestureFractionToAngle(). Values outside [0, 1] mean
+    /// the joint is beyond an end of its calibrated travel, which is a real
+    /// state a hand can be in (moved by hand, or a stale multi-turn epoch).
+    /// @param id Motor ID.
+    /// @param angleDeg Absolute angle in degrees.
+    /// @return Fraction, or NAN if the motor has no usable travel.
+    float gestureAngleToFraction(uint8_t id, float angleDeg);
 
     /// @brief Set the joint angle limits for a motor.
     /// @param id Motor ID.
@@ -329,6 +416,43 @@ class NMLHandExo {
 
     /// @brief Read the currently configured goal current in mA.
     float getGoalCurrent(uint8_t id);
+
+    // -----------------------------------------------------------
+    // Combined-motor current budget
+    // -----------------------------------------------------------
+
+    /// @brief Set the combined current budget across all motors, in mA.
+    /// @param budget_mA New fleet budget; clamped to a sane range.
+    void setTotalCurrentBudget(uint16_t budget_mA);
+
+    /// @brief Get the combined current budget across all motors, in mA.
+    uint16_t getTotalCurrentBudget() const;
+
+    /// @brief Set the current allowed to a settled/stalled motor, in mA.
+    void setHoldCurrent(uint16_t hold_mA);
+
+    /// @brief Get the current allowed to a settled/stalled motor, in mA.
+    uint16_t getHoldCurrent() const;
+
+    /// @brief Enable or disable the closed-loop half of the budget enforcement.
+    ///
+    /// Disabling stops all current sampling and leaves the conservative
+    /// feed-forward clamp in charge, which is strictly safer for the supply but
+    /// gives up per-motor effort. It does NOT remove the budget.
+    void setCurrentGovernorEnabled(bool enabled);
+
+    /// @brief Whether the closed-loop half of the budget enforcement is active.
+    bool getCurrentGovernorEnabled() const;
+
+    /// @brief Aggregate current measured on the most recent sample, in mA.
+    /// @return Measured total, or -1 if nothing has been sampled yet.
+    int32_t getMeasuredTotalCurrent() const;
+
+    /// @brief Fraction of nominal effort currently allowed, in [0, 1].
+    float getCurrentBudgetScale() const;
+
+    /// @brief Human-readable budget state for the `current_status` command.
+    String getCurrentBudgetStatus();
 
     /// @brief Set the zero offset for a motor to an arbitrary value.
     /// @param id Motor ID.
@@ -451,7 +575,37 @@ class NMLHandExo {
     String getMotorMode();
 
     /// @brief Current software version.
-    static constexpr const char* VERSION = "0.2.16";
+    ///
+    /// 0.3.0 -- per-joint gestures gained a third "rest" state, "extend" is now
+    /// anchored at home (EXTEND_* = 0.0), a "wrist" gesture was added, and
+    /// set_gesture_angle:<gesture>:<0-100> was introduced. Hosts that need to
+    /// know whether those exist should gate on >= 0.3.0.
+    ///
+    /// 0.3.1 -- added the "rad" gesture on the wrist2 motor. Gate on >= 0.3.1.
+    ///
+    /// 0.4.0 -- combined-motor current budget. GOAL_CURRENT is now owned by the
+    /// budget allocator rather than written directly by set_current_lim, which
+    /// sets the per-motor NOMINAL effort instead. Adds set_total_current_lim,
+    /// get_total_current_lim, set_hold_current, get_hold_current,
+    /// set_current_governor and current_status. Gate on >= 0.4.0.
+    ///
+    /// 0.5.0 -- asynchronous GESTURE_RESULT move verdicts, so a host can tell
+    /// "the firmware accepted the goal" from "the joint got there".
+    ///
+    /// 0.6.0 -- three related changes to gesture positioning:
+    ///   * Travel is now measured on a home -> flexion-endstop axis resolved
+    ///     per motor (getGestureSpan), fixing joints whose home sits mid-window
+    ///     -- the wrist axes -- where every state used to clamp onto the same
+    ///     boundary and the joint never moved while still acking OK.
+    ///   * set_gesture_angle:<g>:<0-100> now interpolates the gesture's own
+    ///     extend -> flex postures, so 0 and 100 ARE those states. It used to
+    ///     drive every named motor to the same fraction of its own travel,
+    ///     which did not reproduce either state on a multi-motor gesture.
+    ///   * The `rad` gesture is GONE and `wrist` drives both dorsal motors
+    ///     together: wrist and wrist2 act on the same structure, so commanding
+    ///     one alone left the other holding position against it.
+    /// Adds get_gesture_angle:<gesture|all>. Gate on >= 0.6.0.
+    static constexpr const char* VERSION = "0.6.0";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.
@@ -504,6 +658,131 @@ class NMLHandExo {
 
     /// @brief Enforce direct-control watchdogs and calibrated position limits.
     void serviceDirectControlSafety();
+
+    /// @brief Snap a goal to within +/-180 deg of present, without leaving the
+    /// calibrated window.
+    ///
+    /// In extended/current-based position mode the motor travels the linear
+    /// tick line from present to goal, so a goal 360 deg away is the same
+    /// physical angle but costs a full revolution. Subtracting the turn avoids
+    /// that -- but on a joint whose window is WIDER than 180 deg (the wrist is
+    /// deliberately multi-turn) the correction can push a legitimately distant
+    /// goal straight outside the limits it was just clamped to. Applying it
+    /// only when the result stays in the window keeps the short-route guard for
+    /// the wrap case it exists for and drops it for genuine long travel.
+    /// @param index Motor index.
+    /// @param goal Absolute goal in degrees, already clamped to the limits.
+    /// @return Goal to actually command.
+    float applyShortestPath(int index, float goal);
+
+    // -- Combined-motor current budget state --------------------------
+    // currentLimits_[i] above is the NOMINAL per-motor effort (what
+    // set_current_lim asked for). appliedCurrents_[i] is what is actually in
+    // the motor's GOAL_CURRENT register after the budget has had its say, so
+    // the two differ whenever the fleet is being clamped.
+
+    /// @brief GOAL_CURRENT actually written per motor, in mA.
+    uint16_t* appliedCurrents_;
+
+    /// @brief True while a motor has an outstanding goal it has not concluded.
+    bool* motorMoving_;
+
+    /// @brief True while a motor is FUNDED to move, not merely wanting to.
+    ///
+    /// The budget admits movers in waves: a motor can want to move (moving_)
+    /// yet be unfunded (not admitted_) because giving it a share now would drop
+    /// every mover below the current it takes to actually travel.
+    bool* motorAdmitted_;
+
+    /// @brief millis() when each motor was admitted, for the move timeout.
+    unsigned long* admissionMs_;
+
+    /// @brief Absolute goal each motor was last sent, for judging arrival.
+    float* goalAngle_;
+
+    /// @brief True between a goal being issued and its verdict being recorded.
+    bool* verdictPending_;
+
+    /// @brief Per-motor MoveVerdict for the batch being summarised.
+    uint8_t* lastVerdict_;
+
+    uint8_t verdictsCollected_ = 0;
+    uint8_t verdictFailures_ = 0;
+
+    /// @brief millis() when each motor's current goal was issued.
+    unsigned long* goalIssuedMs_;
+
+    /// @brief millis() when each motor first drew stall-level current, or 0.
+    unsigned long* stallSinceMs_;
+
+    /// @brief Combined budget across all motors, in mA.
+    uint16_t totalCurrentBudgetMa_ = TOTAL_CURRENT_BUDGET_MA;
+
+    /// @brief Current allowed to a settled or stalled motor, in mA.
+    uint16_t holdCurrentMa_ = HOLD_CURRENT_MA;
+
+    /// @brief Fraction of nominal effort the budget currently allows, in [0, 1].
+    float currentBudgetScale_ = 1.0f;
+
+    /// @brief Closed-loop half of the enforcement; feed-forward runs regardless.
+    bool currentGovernorEnabled_ = true;
+
+    /// @brief Aggregate measured on the last sample, or -1 if never sampled.
+    int32_t measuredTotalMa_ = -1;
+
+    /// @brief Scale the motors' GOAL_CURRENT registers actually reflect.
+    ///
+    /// Distinct from currentBudgetScale_, which is what the control law has
+    /// decided. The gap between them is the write deadband: sub-threshold
+    /// corrections accumulate here rather than being discarded one at a time.
+    float appliedScale_ = 1.0f;
+
+    /// @brief Set when the allocation needs pushing to the motors.
+    ///
+    /// Commands that touch every motor -- a whole-hand gesture, or
+    /// `set_current_lim:all` -- would otherwise rewrite the whole fleet once per
+    /// motor. The flag collapses that into one pass, flushed from update().
+    bool allocationDirty_ = false;
+
+    /// @brief Which motor the incremental current sweep reads next.
+    int governorCursor_ = 0;
+
+    /// @brief Aggregate accumulated so far by the in-progress sweep, in mA.
+    uint32_t sweepAccumMa_ = 0;
+
+    unsigned long lastGovernorSampleMs_ = 0;
+    unsigned long lastGoalIssuedMs_ = 0;
+    uint8_t governorReadFails_ = 0;
+    bool governorMeasurementTrusted_ = true;
+
+    /// @brief Record that a goal was issued for one motor, and pre-clamp the
+    /// fleet to the static worst case so the first transient is bounded.
+    /// @param goalAngle Absolute target, kept so arrival can be judged later.
+    void noteGoalCommanded(int index, float goalAngle);
+
+    /// @brief How many motors may travel at once inside the budget.
+    uint8_t maxConcurrentMovers() const;
+
+    /// @brief End a move, record why it ended, and free its admission slot.
+    void concludeMove(int index, uint8_t verdict);
+
+    /// @brief Emit one GESTURE_RESULT summary once a whole batch has concluded.
+    void reportMoveVerdicts();
+
+    /// @brief Worst-case scale that fits every moving motor inside the budget.
+    float staticBudgetScale() const;
+
+    /// @brief Push the budget-derived GOAL_CURRENT to every motor that needs it.
+    void refreshCurrentAllocation();
+
+    /// @brief Write one motor's GOAL_CURRENT, skipping no-op writes.
+    void applyGoalCurrent(int index, uint16_t current_mA);
+
+    /// @brief Read PRESENT_CURRENT defensively; clears ok on a bus error.
+    int16_t readPresentCurrentMa(uint8_t id, bool& ok);
+
+    /// @brief Sample the aggregate draw and adjust the clamp. Called from update().
+    void serviceCurrentGovernor();
 
     /// @brief Operating mode of exo
     ExoOperatingMode exoMode_ = FREE; // Default mode is free

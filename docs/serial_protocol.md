@@ -8,7 +8,8 @@
 
 ```
 Python (host PC)
-  SerialComm / TCPComm  (src/nml_hand_exo/interface/_interfaces.py)
+  SerialComm / DualSerialComm / TCPComm
+       (src/nml_hand_exo/interface/_interfaces.py)
        |
       | USB serial  → DEBUG_SERIAL  = Serial   (1000000 baud)
        | BT HC-05    → COMMAND_SERIAL = Serial3  (115200 baud, D13=TX D14=RX)
@@ -20,8 +21,11 @@ Arduino OpenRB-150
    → Serial1 (DXL_SERIAL, 1000000 baud) — Dynamixel bus
 ```
 
-Both channels are always active. Any command sent to either port is processed
-by the same `parseMessage()` dispatcher. Responses go to both channels.
+Both command inputs are active. On OpenRB-150, the default build exposes two
+USB CDC interfaces on the same cable: commands use the primary CDC while
+replies and telemetry use the second. `set_reply_route:telem` fully decouples
+them; `set_reply_route:both` retains single-port compatibility. Bluetooth
+commands continue to use the same `parseMessage()` dispatcher.
 
 ---
 
@@ -46,27 +50,88 @@ disable:all
 enable_ids:11:12:13
 disable_ids:11:12:13
 set_exo_mode:gesture_fixed
-get_telemetry_fast:11:12:13
+get_telemetry_fast:11:12:13:14:15:16:17:18:19
+telemetry_diag:11:12:13:14:15:16:17:18:19
 info
 version
 ```
 
-Responses are terminated with `;`. `SerialComm.receive()` reads until `;` is seen.
+Text responses are terminated with `;`. `SerialComm.receive()` reads until `;` is seen.
 
-### Compact telemetry frame
+### Fast telemetry binary frame
 
-`get_telemetry_fast:<id>:<id>...` returns one binary frame, intended only for
-the GUI's single serial worker. The version-1 frame has `NX` magic bytes, a
-13-byte little-endian header, and 20-byte records keyed by DXL ID. Its checksum
-is the low 16 bits of the sum of the header bytes before the checksum plus the
-payload bytes.
+`get_telemetry_fast:<id>:<id>...` returns one compact binary frame on the serial
+stream. `get_telemetry_fast:all` returns all firmware-managed motors. The frame
+starts with magic bytes `NX`, version `1`, followed by fixed-size records with
+DXL ID, error flag, present current, raw present velocity, position ticks,
+absolute angle in centidegrees, and relative angle in centidegrees. Header
+`flags` reports the firmware read method: `2` = fastSyncRead, `3` = syncRead,
+`1` = short-timeout fallback individual reads, `0` = failed. This command is
+intended for GUI polling because it avoids multiple text round trips per motor.
 
-The current firmware uses the conservative `fallbackRead` method (`flags = 1`):
-it reports relative and absolute position only. The record's zero current and
-velocity fields are placeholders in this mode and **must be shown as unavailable,
-not as measured zero**. Other flag values are reserved for future validated
-multi-register reads. Text polling remains the compatibility fallback for older
-firmware or malformed frames.
+`telemetry_diag:<id>:<id>...` returns a text diagnostic using the same firmware
+read path, including method, elapsed microseconds, and per-motor raw values.
+
+### Gesture positioning `[VERIFIED]`
+
+```text
+set_gesture_angle:<gesture>:<0-100>
+get_gesture_angle:<gesture|all>
+```
+
+The percentage interpolates a gesture between its OWN two end postures:
+
+```text
+set_gesture_angle:<g>:0    == set_gesture:<g>:extend
+set_gesture_angle:<g>:100  == set_gesture:<g>:flex
+set_gesture_angle:<g>:50   == halfway between the two
+```
+
+Endpoints come from the `EXTEND_*`/`FLEX_*` constants in `config.h`, so retuning
+those moves the axis with them and a host's percentages keep meaning the same
+postures. Each named motor travels its own share, so a gesture driving several
+motors keeps the ratio between them at every percentage. Each motor's share is
+then placed on its calibrated travel — the signed distance from home to its
+flexion endstop, resolved from home and `[limit_min, limit_max]` by
+`NMLHandExo::getGestureSpan` — so no percentage in range ever clamps, and the
+two commands are exact inverses.
+
+Note `0` is the **extend posture, not home**. With a non-zero `EXTEND_*` a hand
+parked at home sits below 0% and reads back as `101`.
+
+Addressable gestures are exactly those with a `flex` state: `thumb`,
+`thumbadd`, `thumbrot`, `thumbflex`, `index`, `middle`, `ring`, `pinky`, and
+`wrist`. The three specific thumb names expose individual research axes while
+`thumb` coordinates all three. Multi-joint postures (`grasp`, `keygrip`,
+`pinch_*`) are rejected — one percentage cannot describe a posture. `wrist`
+drives both dorsal wrist motors (`wrist` and `wrist2`) together; the `rad`
+gesture that addressed `wrist2` alone existed only in 0.3.1 – 0.5.x.
+
+`get_gesture_angle` replies with a single line of `name=code` pairs:
+
+```text
+GESTURE_ANGLE: thumb=12 index=0 middle=45 ring=101 pinky=100 wrist=255;
+```
+
+| Code | Meaning |
+|---|---|
+| `0`–`100` | Position between the extend and flex postures |
+| `101` | Below the extend end |
+| `102` | Above the flex end |
+| `255` | No position available: no calibrated travel, or the read failed |
+
+A gesture covering several motors (the thumb, the wrist pair, or any joint on a
+dual build) reports the mean of the per-motor percentages, skipping joints that
+cannot carry one. Positions come from ONE batched Dynamixel read, so polling
+this per command costs a single bus transaction.
+Emitted through `commandPrint`, so on a dual-CDC build it follows the active
+reply route — under `set_reply_route:telem` it lands on the telemetry CDC only.
+
+Needs firmware **>= 0.6.0**; earlier builds ignore the command *silently*, so a
+host must gate on the version (or on whether a probe answers) rather than wait
+for an error reply. Run `check_limits` when a joint reports `255` or refuses to
+move: it prints the resolved `span` per motor and flags `NO_TRAVEL`,
+`HOME_OUTSIDE`, `LIMITS_INVERTED` and `SPAN_REVERSED`.
 
 ### Direct velocity/current control
 
@@ -94,36 +159,6 @@ set_command_timeout:250
 - `set_goal_velocity` remains the position-mode profile-velocity setting; it is
   not a direct velocity command.
 
-### Conservative normalized joint gestures
-
-Firmware `0.2.16` adds a calibration-aware command for the angle-addressable
-joint gestures:
-
-```text
-set_gesture_angle:<gesture>:<percent>
-```
-
-`gesture` must be one of `thumb`, `thumbadd`, `thumbrot`, `thumbflex`, `index`,
-`middle`, `ring`, `pinky`, or `wrist`; whole-hand postures such as `grasp` and
-`pinch_index` are rejected. `thumb` is the coordinated three-axis thumb posture;
-the three named thumb axes are research-facing independent controls.
-`percent` is a finite decimal in the range 0–100 (values outside that range are
-clamped). It interpolates between each gesture's conservative `extend` and
-`flex` postures using the motor's calibrated, flip-aware travel span. In dual
-firmware both matching left/right motor IDs are targeted; inactive-side torque
-containment remains the GUI's responsibility.
-
-### UDP command input
-
-The HandExo GUI can receive UDP command datagrams on its configured command
-port. With the default (non-advanced) setting, it accepts `set_gesture` and the
-normalized `set_gesture_angle` command above. UDP angle commands must use a
-supported gesture and a finite 0-100 target; malformed or out-of-range input is
-rejected rather than clamped. The receiver retains only the newest target per
-joint gesture and forwards at most one batch every 20 ms through the GUI's
-existing serialized device connection. Do not run a second UDP-to-serial bridge
-against the same exoskeleton while the GUI is connected.
-
 ---
 
 ## Baud rate map `[VERIFIED]`
@@ -136,6 +171,13 @@ against the same exoskeleton while the GUI is connected.
 
 All three constants are defined in `src/cpp/nml_hand_exo/config.h`:
 `DEBUG_BAUD_RATE`, `DYNAMIXEL_BAUD_RATE`, `COMMAND_BAUD_RATE`.
+
+Live OpenRB/XC330 diagnostics showed that the exo chain was not reliable at a
+2 Mbps Dynamixel bus rate: repeated single-motor `PRESENT_POSITION` reads had
+timeouts, CRC errors, and buffer overflows even with longer read timeouts and
+return delay restored. The same motor was stable at 1 Mbps (`100/100` repeated
+position reads, zero timeout/CRC/overflow errors), so 1 Mbps is the recommended
+rate for both the USB debug link and the DXL bus.
 
 HC-05 factory default is 9600. The firmware is configured for 115200 (`COMMAND_BAUD_RATE`).
 If you swap an HC-05 module, use AT command mode to set it to 115200 before use.
@@ -163,6 +205,8 @@ breaks the corresponding Python code.
 |------------------------|-----------|----------|
 | `name: <word>` | `calibrate_exo.py`, `rom_assessment.py` | Motor name discovery via `info` command |
 | `absolute_angle:<value>` | `calibrate_exo.py`, `rom_assessment.py` | Angle reads |
+| `GESTURE_ANGLE: <name>=<code> ...` | `_hand_exo.py:parse_gesture_angles`, `udp_gesture_receiver.py` | Joint positions / pose acks |
+| `GESTURE_RESULT: reached=N ...` | `udp_gesture_receiver.py`, `udp_gesture_gui.py` | Asynchronous move verdicts |
 
 Regex used: `re.search(r"name:\s*(\w+)", line)` and `line.split("absolute_angle:")`.
 
@@ -260,7 +304,10 @@ when the GUI passes a `name_to_id` mapping. See [docs/dual_exo_architecture.md](
 | `DXL_PROTOCOL_VERSION`  | 2.0      | Dynamixel protocol version           |
 | `PULSE_RESOLUTION`      | 4096     | Encoder ticks per revolution         |
 | `XC330_T288_TORQUE_CONSTANT` | 0.00115  | Estimated N*m per mA at 11.1 V       |
-| `N_GESTURES`            | 6        | Gestures in the library              |
+| `N_GESTURES`            | 15       | Gestures in the library              |
+| `GESTURE_MIN_TRAVEL_DEG` | 2.0     | Least travel a joint needs to be positionable |
+| `GESTURE_FRACTION_TOLERANCE` | 0.02 | Slack before a joint reads as out of range |
+| `GESTURE_AXIS_MIN_SEPARATION` | 0.02 | Least EXTEND_* to FLEX_* gap that carries a position |
 | `STATUS_LED_PIN`        | 0        | Onboard LED pin                      |
 | `COMMAND_DELIMITER`     | `;`      | End-of-message character             |
 

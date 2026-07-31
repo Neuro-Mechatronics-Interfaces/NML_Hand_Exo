@@ -30,7 +30,32 @@ enum ExoState : uint8_t {
   EXO_KEYGRIP_OPEN,
   EXO_KEYGRIP_CLOSE,
   EXO_GRASP_OPEN,
-  EXO_GRASP_CLOSE
+  EXO_GRASP_CLOSE,
+
+  // Per-joint extend/rest/flex gestures. Keep each joint's three entries
+  // contiguous and in FLEX, EXTEND, REST order: mapGestureStateToExoState()
+  // derives the extend variant as FLEX + 1 and the rest variant as FLEX + 2.
+  EXO_THUMB_FLEX,
+  EXO_THUMB_EXTEND,
+  EXO_THUMB_REST,
+  EXO_INDEX_FLEX,
+  EXO_INDEX_EXTEND,
+  EXO_INDEX_REST,
+  EXO_MIDDLE_FLEX,
+  EXO_MIDDLE_EXTEND,
+  EXO_MIDDLE_REST,
+  EXO_RING_FLEX,
+  EXO_RING_EXTEND,
+  EXO_RING_REST,
+  EXO_PINKY_FLEX,
+  EXO_PINKY_EXTEND,
+  EXO_PINKY_REST,
+  EXO_WRIST_FLEX,
+  EXO_WRIST_EXTEND,
+  EXO_WRIST_REST,
+  EXO_RAD_FLEX,
+  EXO_RAD_EXTEND,
+  EXO_RAD_REST
 };
 
 /** Initialize the OLED safely (fast-fail). Returns true if enabled & ready. */
@@ -53,3 +78,6 @@ ExoState oledGetState();
 
 /** Optional: get the displayable PROGMEM text for a given state. */
 const __FlashStringHelper* oledGetStateText(ExoState s);
+
+/** Run the startup animation sequence (blocking for ~3 seconds). */
+void oledStartupAnimation();
