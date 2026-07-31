@@ -19,9 +19,9 @@ Protocol (see Receiver in udp_gesture_receiver.py):
   * Command integers are then acked by echoing them back, but only once the
     DEVICE has actually replied -- an ack here means the exo executed it, not
     merely that the datagram arrived.
-  * A packed binary pose frame follows each ack, carrying where all seven
-    joints now sit as percentages of their calibrated travel. A joint whose
-    percentage never changes -- or that reports no position at all -- is one
+  * A packed binary pose frame follows each ack, carrying both the percentage
+    code and the rest-zeroed signed degree angle for all six joints. A joint
+    whose values never change -- or that reports no position at all -- is one
     the firmware accepted a command for and could not actually move.
   * The negated port arriving means the receiver is shutting down.
 
@@ -436,22 +436,41 @@ class UdpGestureGui:
         """Render the packed pose frame that follows a command ack.
 
         This is the panel's answer to "did anything move?": a joint whose
-        percentage does not change between commands, or that reports 255, is
-        one the exo accepted a goal for and could not travel.
+        percentage/degree pair does not change between commands, or whose
+        fraction reports 255, is one the exo accepted a goal for and could not
+        travel.
         """
         parsed = unpack_pose_ack(data)
         if parsed is None:
             self.log(f"<- unparseable pose frame ({len(data)} bytes)")
             return
-        _, pose = parsed
-        stuck = [joint for joint, code in pose.items() if code == POSE_UNAVAILABLE]
-        rendered = " ".join(
-            f"{joint}={'--' if pose[joint] == POSE_UNAVAILABLE else pose[joint]}"
-            for joint in JOINTS
-        )
-        self.log(f"   pose: {rendered}")
+        ack_value, pose = parsed
+        stuck = [
+            joint for joint, record in pose.items()
+            if record["fraction"] == POSE_UNAVAILABLE
+        ]
+        rendered_parts = []
+        for joint in JOINTS:
+            record = pose[joint]
+            fraction = record["fraction"]
+            angle = record["angle_delta_deg"]
+            if fraction == POSE_UNAVAILABLE:
+                fraction_text = "--"
+            elif fraction == 101:
+                fraction_text = "below"
+            elif fraction == 102:
+                fraction_text = "above"
+            else:
+                fraction_text = f"{fraction}%"
+            angle_text = "--" if angle is None else f"{angle:+.2f}deg"
+            rendered_parts.append(f"{joint}={fraction_text}/{angle_text}")
+        rendered = " ".join(rendered_parts)
+        self.log(f"<- pose ack {ack_value:+d}: {rendered}")
         if stuck:
-            self.log(f"   !! no calibrated travel: {', '.join(stuck)}")
+            self.log(
+                f"   !! position unavailable (no travel or read failure): "
+                f"{', '.join(stuck)}"
+            )
 
     def _handle_outcome(self, payload):
         """Render a GESTURE_RESULT line and flag anything that did not move."""

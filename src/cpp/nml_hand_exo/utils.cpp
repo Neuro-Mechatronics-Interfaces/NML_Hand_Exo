@@ -1208,16 +1208,27 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       commandPrint("ERROR: set_gesture_angle unknown or non-addressable gesture: " + gestureStr);
     }
 
-  } else if (cmd == "get_gesture_angle") {
-    // Read-back half of set_gesture_angle, on the same axis: 0 is the gesture's
-    // extend posture and 100 is its flex posture, so a gesture commanded to 40
-    // reports 40 once it arrives.
+  } else if (cmd == "get_gesture_angle" ||
+             cmd == "get_gesture_sang" ||
+             cmd == "get_gesture_angles") {
+    // Three views of the same batched position sample:
+    //   get_gesture_angle  -> legacy 0-100 percentage/status code
+    //   get_gesture_sang  -> signed physical delta from rest, in degrees
+    //   get_gesture_angles -> both as <code>,<signed-degrees>
+    //
+    // The percentage is the read-back half of set_gesture_angle, on the same
+    // axis: 0 is the gesture's extend posture and 100 is its flex posture, so a
+    // gesture commanded to 40 reports 40 once it arrives.
     //
     // 101 and 102 mean it sits below or above those two postures -- reachable
     // by hand, by a set_angle off the axis, or simply by sitting at home, which
     // is BELOW extend whenever EXTEND_* is non-zero. 255 means no position is
     // available (no calibrated travel, or the read failed); `check_limits` says
     // which.
+    //
+    // Signed degrees use the first motor named by the gesture as the calibrated
+    // physical scale. Rest is 0, toward flex is positive, and toward extend is
+    // negative. `nan` means that physical angle is unavailable.
     //
     // Emitted with commandPrint, so on a dual-CDC build it follows the active
     // reply route: with `set_reply_route:telem` it lands on the telemetry CDC
@@ -1230,15 +1241,28 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     uint8_t count = gc.readGestureAngles(records, N_GESTURES, target);
     if (count == 0) {
       String named = target.length() ? target : String("all");
-      commandPrint("ERROR: get_gesture_angle unknown or non-addressable gesture: " + named);
+      commandPrint("ERROR: " + cmd + " unknown or non-addressable gesture: " + named);
       return;
     }
-    String out = "GESTURE_ANGLE:";
+    const bool signedOnly = cmd == "get_gesture_sang";
+    const bool combined = cmd == "get_gesture_angles";
+    String out = signedOnly ? "GESTURE_SANG:" :
+                 (combined ? "GESTURE_ANGLES:" : "GESTURE_ANGLE:");
     for (uint8_t i = 0; i < count; ++i) {
       out += " ";
       out += gestureLibrary[records[i].gesture].name;
       out += "=";
-      out += String(records[i].code);
+      if (!signedOnly) {
+        out += String(records[i].code);
+        if (combined) out += ",";
+      }
+      if (signedOnly || combined) {
+        if (isnan(records[i].signedAngleDeg)) {
+          out += "nan";
+        } else {
+          out += String(records[i].signedAngleDeg, 2);
+        }
+      }
     }
     commandPrint(out);
 
@@ -1384,6 +1408,8 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_gesture_state     |  NAME:VALUE          | // Set exo gesture state"));
     commandPrint(F(" set_gesture_angle     |  NAME:0-100          | // Interpolate a gesture: 0=its extend state, 100=its flex state"));
     commandPrint(F(" get_gesture_angle     |  NAME/ALL            | // Read positions as 0-100 (101/102 out of range, 255 no travel)"));
+    commandPrint(F(" get_gesture_sang      |  NAME/ALL            | // Read signed degrees from rest: flex positive, extend negative"));
+    commandPrint(F(" get_gesture_angles    |  NAME/ALL            | // Read <percent-code>,<signed-degrees> pairs"));
     commandPrint(F(" get_gesture_state     |                      | // Get exo gesture state"));
     commandPrint(F(" cycle_gesture         |                      | // Executes the next gesture in the library"));
     commandPrint(F(" cycle_gesture_state   |                      | // Cycles the next gesture state"));

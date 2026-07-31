@@ -605,7 +605,14 @@ class NMLHandExo {
     ///     together: wrist and wrist2 act on the same structure, so commanding
     ///     one alone left the other holding position against it.
     /// Adds get_gesture_angle:<gesture|all>. Gate on >= 0.6.0.
-    static constexpr const char* VERSION = "0.6.0";
+    ///
+    /// 0.6.1 -- adds rest-zeroed, OpenSim-style signed gesture angles. The
+    /// first motor named by a gesture supplies its calibrated degree scale;
+    /// motion from rest toward flex is positive and toward extend is negative.
+    /// Adds get_gesture_sang:<gesture|all> (signed degrees only) and
+    /// get_gesture_angles:<gesture|all> (percentage code plus signed degrees).
+    /// Gate on >= 0.6.1.
+    static constexpr const char* VERSION = "0.6.1";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.

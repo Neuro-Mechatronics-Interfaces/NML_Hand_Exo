@@ -1,0 +1,108 @@
+{
+  "schema_version": 3,
+  "name": "Digits and Wrist (Posture)",
+  "control_mode": "position",
+  "target": "Right Only",
+  "repeat_ms": 100,
+  "pulse_shape": "raised_cosine",
+  "pulse_duration_ms": 1000,
+  "pulse_step_ms": 20,
+  "ease_duration_ms": 800,
+  "bindings": [
+    {
+      "value": -6,
+      "command": "set_gesture:wrist:extend",
+      "description": "Wrist Extension"
+    },
+    {
+      "value": -5,
+      "command": "set_gesture:pinky:extend",
+      "description": "Pinky extension"
+    },
+    {
+      "value": -4,
+      "command": "set_gesture:ring:extend",
+      "description": "Ring extension"
+    },
+    {
+      "value": -3,
+      "command": "set_gesture:middle:extend",
+      "description": "Middle extension"
+    },
+    {
+      "value": -2,
+      "command": "set_gesture:index:extend",
+      "description": "Index extension"
+    },
+    {
+      "value": -1,
+      "command": "set_gesture:thumb:extend",
+      "description": "Thumb extension"
+    },
+    {
+      "value": 0,
+      "command": "set_gesture:grasp:open",
+      "description": "REST / no torque"
+    },
+    {
+      "value": 1,
+      "command": "set_gesture:thumb:flex",
+      "description": "Thumb flexion"
+    },
+    {
+      "value": 2,
+      "command": "set_gesture:index:flex",
+      "description": "Index flexion"
+    },
+    {
+      "value": 3,
+      "command": "set_gesture:middle:flex",
+      "description": "Middle flexion"
+    },
+    {
+      "value": 4,
+      "command": "set_gesture:ring:flex",
+      "description": "Ring flexion"
+    },
+    {
+      "value": 5,
+      "command": "set_gesture:pinky:flex",
+      "description": "Pinky flexion"
+    },
+    {
+      "value": 6,
+      "command": "set_gesture:wrist:flex",
+      "description": "Wrist Flexion"
+    },
+    {
+      "value": 11,
+      "command": "set_gesture:thumb:rest",
+      "description": "Thumb Neutral"
+    },
+    {
+      "value": 12,
+      "command": "set_gesture:index:rest",
+      "description": "Index Neutral"
+    },
+    {
+      "value": 13,
+      "command": "set_gesture:middle:rest",
+      "description": "Middle Neutral"
+    },
+    {
+      "value": 14,
+      "command": "set_gesture:ring:rest",
+      "description": "Ring Neutral"
+    },
+    {
+      "value": 15,
+      "command": "set_gesture:pinky:rest",
+      "description": "Pinky Neutral"
+    },
+    {
+      "value": 16,
+      "command": "set_gesture:wrist:rest",
+      "description": "Wrist Neutral"
+    }
+  ]
+}

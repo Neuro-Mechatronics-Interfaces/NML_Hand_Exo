@@ -255,6 +255,7 @@ uint8_t GestureController::resolveGestureAxis(int gestureIndex,
   const int fIdx = findStateIndex(gestureLibrary[gestureIndex], "flex");
   if (fIdx == -1) return 0;
   const int eIdx = findStateIndex(gestureLibrary[gestureIndex], "extend");
+  const int rIdx = findStateIndex(gestureLibrary[gestureIndex], "rest");
   const GestureState& flex = gestureLibrary[gestureIndex].states[fIdx];
 
   uint8_t n = 0;
@@ -280,6 +281,23 @@ uint8_t GestureController::resolveGestureAxis(int gestureIndex,
       }
     }
 
+    // Signed-angle read-back is anchored at this joint's rest posture. Keep a
+    // missing rest as NAN so legacy/future gestures can still use the percent
+    // query without inventing a physical zero for the signed query.
+    float restFraction = NAN;
+    if (rIdx != -1) {
+      const GestureState& rest = gestureLibrary[gestureIndex].states[rIdx];
+      for (uint8_t r = 0; r < rest.nPairs; ++r) {
+        if (!rest.namedPairs[r].joint) continue;
+        String restName = String(rest.namedPairs[r].joint);
+        restName.toLowerCase();
+        if (restName.equals(pairName)) {
+          restFraction = rest.namedPairs[r].value;
+          break;
+        }
+      }
+    }
+
     // Match EVERY motor carrying this name: dual builds list each name twice
     // (left IDs 1-9, right IDs 11-19), same as resolveStateAngles().
     for (int i = 0; i < exo_.getMotorCount() && n < maxPoints; ++i) {
@@ -289,6 +307,7 @@ uint8_t GestureController::resolveGestureAxis(int gestureIndex,
       if (!mName.equals(pairName)) continue;
       out[n].id = id;
       out[n].extendFraction = extendFraction;
+      out[n].restFraction = restFraction;
       out[n].flexFraction = flex.namedPairs[k].value;
       ++n;
     }
@@ -369,6 +388,7 @@ uint8_t GestureController::readGestureAngles(GestureAngleRecord* out,
     }
 
     out[written].gesture = (uint8_t)g;
+    out[written].signedAngleDeg = NAN;
     if (valid == 0) {
       out[written].code = GESTURE_ANGLE_UNAVAILABLE;
     } else {
@@ -382,6 +402,28 @@ uint8_t GestureController::readGestureAngles(GestureAngleRecord* out,
         // Backlash routinely leaves a settled joint a hair beyond 0 or 100.
         out[written].code =
           (uint8_t)lroundf(constrain(mean, 0.0f, 1.0f) * 100.0f);
+      }
+
+      // OpenSim-style signed angle: use the FIRST motor named by the gesture
+      // as the physical reference, regardless of how many motors contribute
+      // to the aggregate percentage. Convert the mean percentage back onto
+      // that motor's gesture fraction, then measure physical travel from its
+      // rest state. fabs(span) removes installation/flip direction; the sign
+      // is the convention the protocol promises (toward flex positive, toward
+      // extend negative), rather than an encoder-direction artifact.
+      const GestureAxisPoint& reference = axis[0];
+      const float referenceSpan = fabsf(exo_.getGestureSpan(reference.id));
+      const float restToFlex = reference.flexFraction - reference.restFraction;
+      if (!isnan(reference.restFraction) &&
+          referenceSpan >= GESTURE_MIN_TRAVEL_DEG &&
+          fabsf(restToFlex) >= GESTURE_AXIS_MIN_SEPARATION) {
+        const float referenceFraction =
+          reference.extendFraction +
+          mean * (reference.flexFraction - reference.extendFraction);
+        const float flexDirection = restToFlex > 0.0f ? 1.0f : -1.0f;
+        out[written].signedAngleDeg =
+          (referenceFraction - reference.restFraction) *
+          flexDirection * referenceSpan;
       }
     }
     ++written;

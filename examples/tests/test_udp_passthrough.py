@@ -3,7 +3,7 @@ import sys
 import unittest
 
 sys.path.insert(
-    0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
+    0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "08_udp")
 )
 
 from udp_gesture_receiver import (  # noqa: E402
@@ -21,8 +21,8 @@ from udp_gesture_receiver import (  # noqa: E402
     unpack_pose_ack,
 )
 from nml_hand_exo.interface._hand_exo import (  # noqa: E402
-    GESTURE_ANGLE_PREFIX,
-    parse_gesture_angles,
+    GESTURE_ANGLES_PREFIX,
+    parse_gesture_angle_pairs,
 )
 from nml_hand_exo.interface._udp_command_bindings import (  # noqa: E402
     UDP_CONNECTION_PORT_THRESHOLD,
@@ -140,6 +140,31 @@ class MoveOutcomeTests(unittest.TestCase):
         self.assertEqual(receiver.outcomes, 1)
         self.assertEqual(len(receiver._pending), 0)
 
+    def test_coalesced_outcome_does_not_hide_the_delimited_command_reply(self):
+        """Real dual-CDC framing can prepend a stale outcome to the next reply."""
+        sent_upstream = []
+
+        class _Comm:
+            replies = [
+                "GESTURE_RESULT: reached=1 stalled=0 short=0 starved=0\n"
+                "OK: gesture index:flex"
+            ]
+
+            def receive(self, *a, **k):
+                return self.replies.pop(0) if self.replies else ""
+
+        receiver = Receiver(_Comm(), COMMAND_MAP, echo_replies=False, verbose=False)
+        receiver.return_addr = ("127.0.0.1", 10004)
+        receiver.send_upstream = lambda v: (sent_upstream.append(int(v)), True)[1]
+        receiver.send_text_upstream = lambda t: True
+        receiver._pending.append([2, 1])
+
+        receiver.drain_replies()
+
+        self.assertEqual(sent_upstream, [2])
+        self.assertEqual(receiver.outcomes, 1)
+        self.assertEqual(len(receiver._pending), 0)
+
 class _PoseComm:
     """Comm stub that replays a fixed list of reply frames, then nothing."""
 
@@ -164,45 +189,61 @@ def _receiver(replies, **kwargs):
     return receiver
 
 
-class GestureAngleParsingTests(unittest.TestCase):
+class GestureAnglePairParsingTests(unittest.TestCase):
     """The device line the pose ack is built from."""
 
-    LINE = (GESTURE_ANGLE_PREFIX + " thumb=12 index=0 middle=45 ring=101 "
-            "pinky=100 wrist=33;")
+    LINE = (GESTURE_ANGLES_PREFIX + " thumb=12,-5.50 index=0,-12.00 "
+            "middle=45,0.00 ring=101,8.25 pinky=100,16.50 wrist=33,nan;")
 
     def test_parses_every_joint_including_the_status_codes(self):
         self.assertEqual(
-            parse_gesture_angles(self.LINE),
-            {"thumb": 12, "index": 0, "middle": 45, "ring": 101,
-             "pinky": 100, "wrist": 33},
+            parse_gesture_angle_pairs(self.LINE),
+            {
+                "thumb": {"fraction": 12, "angle_delta_deg": -5.5},
+                "index": {"fraction": 0, "angle_delta_deg": -12.0},
+                "middle": {"fraction": 45, "angle_delta_deg": 0.0},
+                "ring": {"fraction": 101, "angle_delta_deg": 8.25},
+                "pinky": {"fraction": 100, "angle_delta_deg": 16.5},
+                "wrist": {"fraction": 33, "angle_delta_deg": None},
+            },
         )
 
     def test_covers_exactly_the_joints_the_receiver_reports(self):
-        self.assertEqual(set(parse_gesture_angles(self.LINE)), set(JOINTS))
+        self.assertEqual(set(parse_gesture_angle_pairs(self.LINE)), set(JOINTS))
 
     def test_finds_the_line_inside_surrounding_device_chatter(self):
         noisy = "\n".join(["[GestureController] targets: 11->204.96",
                            self.LINE, "GESTURE_RESULT: reached=1"])
-        self.assertEqual(parse_gesture_angles(noisy)["wrist"], 33)
+        self.assertEqual(
+            parse_gesture_angle_pairs(noisy)["wrist"]["fraction"], 33
+        )
 
     def test_unrelated_or_truncated_input_yields_no_pose_rather_than_raising(self):
         # A poller on the hot path must not take an exception from a dropped
         # USB frame; a missing key is the easier failure to handle.
         for text in ("", None, "OK: gesture_angle index:35.0;",
-                     GESTURE_ANGLE_PREFIX + " thumb= index=7 =3 middle"):
-            parsed = parse_gesture_angles(text)
+                     GESTURE_ANGLES_PREFIX + " thumb= index=7 =3 middle"):
+            parsed = parse_gesture_angle_pairs(text)
             self.assertIsInstance(parsed, dict)
         self.assertEqual(
-            parse_gesture_angles(GESTURE_ANGLE_PREFIX + " thumb= index=7 =3"),
-            {"index": 7},
+            parse_gesture_angle_pairs(
+                GESTURE_ANGLES_PREFIX + " thumb= index=7,-3.5 =3"
+            ),
+            {"index": {"fraction": 7, "angle_delta_deg": -3.5}},
         )
 
 
 class PoseAckFrameTests(unittest.TestCase):
     """The packed frame that carries the pose upstream."""
 
-    POSE = {"thumb": 0, "index": 25, "middle": 50, "ring": 75,
-            "pinky": 100, "wrist": 101}
+    POSE = {
+        "thumb": {"fraction": 0, "angle_delta_deg": -10.0},
+        "index": {"fraction": 25, "angle_delta_deg": -2.5},
+        "middle": {"fraction": 50, "angle_delta_deg": 0.0},
+        "ring": {"fraction": 75, "angle_delta_deg": 5.0},
+        "pinky": {"fraction": 100, "angle_delta_deg": 10.0},
+        "wrist": {"fraction": 101, "angle_delta_deg": None},
+    }
 
     def test_round_trips_value_and_every_joint(self):
         frame = pack_pose_ack(-3, JOINTS, self.POSE)
@@ -213,15 +254,19 @@ class PoseAckFrameTests(unittest.TestCase):
     def test_frame_is_fixed_width_and_magic_prefixed(self):
         frame = pack_pose_ack(2, JOINTS, self.POSE)
         self.assertTrue(frame.startswith(POSE_ACK_MAGIC))
-        # magic(4) + int16 value + uint8 count + one byte per joint
-        self.assertEqual(len(frame), 4 + 2 + 1 + len(JOINTS))
+        # magic(4) + int16 value + uint8 count + (uint8 + float32) per joint
+        self.assertEqual(len(frame), 4 + 2 + 1 + 5 * len(JOINTS))
 
     def test_missing_joints_report_unavailable_not_zero(self):
         # 0 is a real position (home); a joint the device never mentioned is
         # not at home, it is unknown, and the two must not be conflated.
-        _, pose = unpack_pose_ack(pack_pose_ack(1, JOINTS, {"index": 40}))
-        self.assertEqual(pose["index"], 40)
-        self.assertEqual(pose["thumb"], POSE_UNAVAILABLE)
+        _, pose = unpack_pose_ack(pack_pose_ack(1, JOINTS, {
+            "index": {"fraction": 40, "angle_delta_deg": 1.25}
+        }))
+        self.assertEqual(pose["index"]["fraction"], 40)
+        self.assertAlmostEqual(pose["index"]["angle_delta_deg"], 1.25)
+        self.assertEqual(pose["thumb"]["fraction"], POSE_UNAVAILABLE)
+        self.assertIsNone(pose["thumb"]["angle_delta_deg"])
 
     def test_rejects_text_and_truncated_frames(self):
         for bad in (b"", b"2", b"GESTURE_RESULT: reached=1",
@@ -236,8 +281,8 @@ class PoseAckFrameTests(unittest.TestCase):
 class PoseAckFlowTests(unittest.TestCase):
     """Pose queries ride along with commands without disturbing the acks."""
 
-    POSE_LINE = (GESTURE_ANGLE_PREFIX + " thumb=1 index=2 middle=3 ring=4 "
-                 "pinky=5 wrist=6")
+    POSE_LINE = (GESTURE_ANGLES_PREFIX + " thumb=1,-5.0 index=2,-4.0 "
+                 "middle=3,-3.0 ring=4,-2.0 pinky=5,-1.0 wrist=6,0.0")
 
     def test_query_is_appended_after_the_command_not_before_it(self):
         # Ordering matters: the query must never delay the move it reports on.
@@ -269,7 +314,9 @@ class PoseAckFlowTests(unittest.TestCase):
         self.assertEqual(len(receiver._pending), 0, "both replies accounted for")
         self.assertEqual([kind for kind, _ in sent], ["int", "pose"])
         self.assertEqual(sent[0][1], 2)
-        self.assertEqual(unpack_pose_ack(sent[1][1])[1]["wrist"], 6)
+        wrist = unpack_pose_ack(sent[1][1])[1]["wrist"]
+        self.assertEqual(wrist["fraction"], 6)
+        self.assertAlmostEqual(wrist["angle_delta_deg"], 0.0)
 
     def test_pose_reply_retires_its_own_slot_unlike_a_move_outcome(self):
         # The pose answers a query we sent, so it is solicited and must retire
@@ -286,13 +333,33 @@ class PoseAckFlowTests(unittest.TestCase):
         self.assertEqual(acked, [2])
         self.assertEqual(receiver.outcomes, 1)
 
+    def test_pose_ack_survives_outcome_coalesced_into_its_serial_frame(self):
+        receiver = _receiver([
+            "OK: gesture_angle index:85.0",
+            "GESTURE_RESULT: reached=1 stalled=0\n" + self.POSE_LINE,
+        ])
+        sent = []
+        receiver.send_upstream = lambda v: (sent.append(("int", int(v))), True)[1]
+        receiver.send_text_upstream = lambda t: (sent.append(("outcome", t)), True)[1]
+        receiver.send_pose_upstream = lambda v: (
+            sent.append(("pose", pack_pose_ack(v, JOINTS, receiver.pose))), True
+        )[1]
+
+        receiver.handle("2", "127.0.0.1:1")
+        receiver.drain_replies()
+
+        self.assertEqual([kind for kind, _ in sent], ["outcome", "int", "pose"])
+        self.assertEqual(len(receiver._pending), 0)
+        pose = unpack_pose_ack(sent[-1][1])[1]
+        self.assertEqual(pose["wrist"]["fraction"], 6)
+
     def test_silent_firmware_disables_pose_acks_instead_of_stalling_them(self):
         # An unknown command is SILENT in firmware. Left enabled, every command
         # would wait forever on a reply that never comes.
         class _Older(MockComm):
             @staticmethod
             def _reply_for(command):
-                if command.startswith("get_gesture_angle"):
+                if command.startswith("get_gesture_angles"):
                     return None
                 return MockComm._reply_for(command)
 

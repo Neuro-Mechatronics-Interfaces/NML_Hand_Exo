@@ -139,6 +139,25 @@ These are different. `SerialComm.receive()` reads until `;`. The sent delimiter 
 
 ---
 
+## `GESTURE_RESULT` can share the next reply frame
+
+`GESTURE_RESULT` is unsolicited telemetry and does not carry the `;` command
+delimiter. `DualSerialComm` retains that line until the next delimited reply,
+so a real frame can contain both an older outcome and the current solicited
+reply, for example:
+
+```text
+GESTURE_RESULT: reached=1 stalled=0 short=0 starved=0
+GESTURE_ANGLES: index=42,-3.75 ...
+```
+
+Reply consumers must forward or record the outcome **and still account for the
+non-outcome line as the current command reply**. Treating the entire frame as
+unsolicited stalls the UDP pending-ack queue and prevents later `NGA2` pose
+acknowledgements from being sent.
+
+---
+
 ## Wrist multi-turn range
 
 Wrist (ID 1): `jointLimits = {-189, 2840}` in `config.h`. Multi-turn mechanism — intentional.
@@ -197,6 +216,35 @@ rather than retuned.
 The same coupling exists around the thumb: `thumbadd` sits on the side of the
 arm and links to the `thumbflex` motor body, which is itself linked to
 `thumbrot`. Treat any of those as single independent axes with care.
+
+---
+
+## Signed gesture degrees use one reference motor (0.6.1)
+
+`get_gesture_sang` and the signed-degree field in `get_gesture_angles` do not
+average raw motor degrees. The firmware first computes the same aggregate
+gesture position used by `get_gesture_angle`, then maps that position onto the
+calibrated span of the **first motor named by the gesture**. Rest is 0 degrees,
+toward flex is positive, and toward extend is negative regardless of encoder
+direction or `flip`.
+
+This is deliberate for multi-motor gestures, whose motors can have different
+calibrated spans:
+
+- `thumb` uses `thumbadd` as its degree reference.
+- `wrist` uses `wrist`, not `wrist2`.
+- A dual build uses the left-side instance of that motor because IDs 1-9 appear
+  before IDs 11-19 in firmware order.
+
+Consequently, a dual-build percentage may reflect both hands while its degree
+scale reflects the left reference motor. Do not interpret the value as a
+side-specific right-hand angle when the two sides have different calibration
+spans. Use a side-specific firmware build or explicitly account for this
+reference convention in downstream analysis.
+
+`nan` in a signed reply means the reference degree scale is unavailable. In a
+combined reply, the percentage/status field may still be valid if other motors
+in the gesture were readable. Code `255,nan` means neither view is available.
 
 ---
 

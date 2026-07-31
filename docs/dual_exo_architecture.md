@@ -161,6 +161,20 @@ This works because in Dual mode, all motors (both sides) are in `motor_widgets` 
 In Left Only / Right Only modes, the inactive side is not in `motor_widgets` at all;
 containment relies entirely on the connect-time disable described above.
 
+### Signed gesture-angle reference in dual firmware
+
+Firmware 0.6.1 `get_gesture_sang` / `get_gesture_angles` replies follow a
+first-motor convention. The percentage is the aggregate of every readable
+motor carrying the gesture, including both sides, but the rest-zeroed degree
+scale comes from the first matching motor. In the current dual array that is
+always the left-side instance because IDs 1-9 precede IDs 11-19.
+
+For example, `wrist` aggregates the left/right `wrist` and `wrist2` motors, then
+expresses the result in degrees using left wrist ID 1. The value is not a
+right-side-specific physical angle when the two sides have different
+calibration spans. This convention is deterministic, but downstream analysis
+must account for it or use a side-specific firmware build.
+
 ---
 
 ## Calibration — side-specific apply `[VERIFIED]`

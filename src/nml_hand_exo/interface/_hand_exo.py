@@ -37,8 +37,12 @@ FW_CURRENT_BUDGET = (0, 4, 0)
 #: still ACKed -- so there is no reply to detect it from, only the version.
 FW_GESTURE_ANGLE_READBACK = (0, 6, 0)
 
-#: Reported instead of a percentage when a joint sits outside its calibrated
-#: travel: below the 0% end (home) or above the 100% end (flexion endstop).
+#: Firmware version that added rest-zeroed signed gesture angles and the
+#: combined percentage/signed-degree query.
+FW_GESTURE_SIGNED_ANGLE = (0, 6, 1)
+
+#: Reported instead of a percentage when a joint sits outside its gesture
+#: endpoints: below the 0% extend posture or above the 100% flex posture.
 #: Reachable by moving the hand by hand, or by a ``set_angle`` off the axis.
 GESTURE_ANGLE_BELOW_RANGE = 101
 GESTURE_ANGLE_ABOVE_RANGE = 102
@@ -92,6 +96,10 @@ def parse_firmware_version(text: str) -> tuple[int, ...]:
 #: Prefix of the firmware's ``get_gesture_angle`` reply.
 GESTURE_ANGLE_PREFIX = "GESTURE_ANGLE:"
 
+#: Prefixes of the firmware's signed-only and combined gesture-angle replies.
+GESTURE_SANG_PREFIX = "GESTURE_SANG:"
+GESTURE_ANGLES_PREFIX = "GESTURE_ANGLES:"
+
 
 def parse_gesture_angles(text: str) -> dict[str, int]:
     """Parse a ``GESTURE_ANGLE:`` reply into ``{gesture: code}``.
@@ -130,6 +138,100 @@ def parse_gesture_angles(text: str) -> dict[str, int]:
                 angles[name] = int(value)
             except ValueError:
                 continue
+        return angles
+    return {}
+
+
+def parse_gesture_signed_angles(text: str) -> dict[str, float | None]:
+    """Parse a ``GESTURE_SANG:`` reply into signed degree deltas.
+
+    ``rest`` is 0 degrees by convention, motion toward ``flex`` is positive,
+    and motion toward ``extend`` is negative. ``nan`` is returned as ``None``
+    so callers do not need floating-point special-value checks.
+
+    Args:
+        text (str): Raw reply text, possibly multi-line.
+
+    Returns:
+        dict[str, float | None]: Gesture name -> signed angle in degrees, or
+        ``None`` when the firmware could not produce a physical angle.
+
+    """
+    if not text:
+        return {}
+    for line in str(text).splitlines():
+        line = line.strip()
+        if not line.startswith(GESTURE_SANG_PREFIX):
+            continue
+        body = line[len(GESTURE_SANG_PREFIX):].strip().rstrip(";")
+        angles: dict[str, float | None] = {}
+        for token in body.split():
+            name, sep, value = token.partition("=")
+            name = name.strip().lower()
+            if not sep or not name:
+                continue
+            if value.strip().lower() == "nan":
+                angles[name] = None
+                continue
+            try:
+                angle = float(value)
+            except ValueError:
+                continue
+            if math.isfinite(angle):
+                angles[name] = angle
+        return angles
+    return {}
+
+
+def parse_gesture_angle_pairs(
+    text: str,
+) -> dict[str, dict[str, int | float | None]]:
+    """Parse a combined ``GESTURE_ANGLES:`` reply.
+
+    Each wire token is ``name=<percentage-code>,<signed-degrees>``. The first
+    field keeps the exact ``get_gesture_angle`` encoding, including status
+    codes 101, 102, and 255; the second uses the rest-zeroed signed convention.
+
+    Args:
+        text (str): Raw reply text, possibly multi-line.
+
+    Returns:
+        dict: Gesture names mapped to ``fraction`` and ``angle_delta_deg``.
+        An unavailable signed angle is represented by ``None``.
+
+    """
+    if not text:
+        return {}
+    for line in str(text).splitlines():
+        line = line.strip()
+        if not line.startswith(GESTURE_ANGLES_PREFIX):
+            continue
+        body = line[len(GESTURE_ANGLES_PREFIX):].strip().rstrip(";")
+        angles: dict[str, dict[str, int | float | None]] = {}
+        for token in body.split():
+            name, sep, value = token.partition("=")
+            fraction_text, comma, signed_text = value.partition(",")
+            name = name.strip().lower()
+            if not sep or not comma or not name:
+                continue
+            try:
+                fraction = int(fraction_text)
+            except ValueError:
+                continue
+            signed_angle: float | None
+            if signed_text.strip().lower() == "nan":
+                signed_angle = None
+            else:
+                try:
+                    signed_angle = float(signed_text)
+                except ValueError:
+                    continue
+                if not math.isfinite(signed_angle):
+                    continue
+            angles[name] = {
+                "fraction": fraction,
+                "angle_delta_deg": signed_angle,
+            }
         return angles
     return {}
 
@@ -1513,6 +1615,69 @@ class HandExo(object):
             self._require_gesture_firmware(name)
         self.send_command(f"get_gesture_angle:{name}")
         return parse_gesture_angles(
+            self._receive(wait_until_return=True, timeout=timeout)
+        )
+
+    def get_gesture_sang(
+        self, gesture: str = "all", timeout: float = 1.0
+    ) -> dict[str, float | None]:
+        """Read OpenSim-style signed gesture angles in degrees.
+
+        The first motor named by each gesture supplies the calibrated physical
+        degree scale. Its ``rest`` state is 0 degrees; positions toward
+        ``flex`` are positive and positions toward ``extend`` are negative.
+        Multi-motor gesture percentages are still aggregated as documented by
+        :meth:`get_gesture_angle`, then mapped to that first-motor scale.
+
+        Args:
+            gesture (str): A single angle-addressable gesture, or ``"all"``.
+            timeout (float): Seconds to wait for the reply.
+
+        Returns:
+            dict[str, float | None]: Gesture name -> signed degree delta from
+            rest. ``None`` means no signed angle was available.
+
+        Raises:
+            RuntimeError: If the device firmware is older than 0.6.1.
+
+        """
+        self._require_firmware(FW_GESTURE_SIGNED_ANGLE, "get_gesture_sang")
+        name = str(gesture).strip().lower() or "all"
+        if name != "all":
+            self._require_gesture_firmware(name)
+        self.send_command(f"get_gesture_sang:{name}")
+        return parse_gesture_signed_angles(
+            self._receive(wait_until_return=True, timeout=timeout)
+        )
+
+    def get_gesture_angles(
+        self, gesture: str = "all", timeout: float = 1.0
+    ) -> dict[str, dict[str, int | float | None]]:
+        """Read percentage codes and signed degree deltas together.
+
+        This is the combined form of :meth:`get_gesture_angle` and
+        :meth:`get_gesture_sang`, produced from one batched motor read. Each
+        result has ``fraction`` (the legacy 0-100/status code) and
+        ``angle_delta_deg`` (rest-zeroed signed degrees, or ``None``).
+
+        Args:
+            gesture (str): A single angle-addressable gesture, or ``"all"``.
+            timeout (float): Seconds to wait for the reply.
+
+        Returns:
+            dict: Gesture names mapped to ``fraction`` and
+            ``angle_delta_deg`` fields.
+
+        Raises:
+            RuntimeError: If the device firmware is older than 0.6.1.
+
+        """
+        self._require_firmware(FW_GESTURE_SIGNED_ANGLE, "get_gesture_angles")
+        name = str(gesture).strip().lower() or "all"
+        if name != "all":
+            self._require_gesture_firmware(name)
+        self.send_command(f"get_gesture_angles:{name}")
+        return parse_gesture_angle_pairs(
             self._receive(wait_until_return=True, timeout=timeout)
         )
 
