@@ -52,6 +52,7 @@ disable_ids:11:12:13
 set_exo_mode:gesture_fixed
 get_telemetry_fast:11:12:13:14:15:16:17:18:19
 telemetry_diag:11:12:13:14:15:16:17:18:19
+get_gesture_angles:all
 info
 version
 ```
@@ -77,6 +78,8 @@ read path, including method, elapsed microseconds, and per-motor raw values.
 ```text
 set_gesture_angle:<gesture>:<0-100>
 get_gesture_angle:<gesture|all>
+get_gesture_sang:<gesture|all>
+get_gesture_angles:<gesture|all>
 ```
 
 The percentage interpolates a gesture between its OWN two end postures:
@@ -132,6 +135,57 @@ host must gate on the version (or on whether a probe answers) rather than wait
 for an error reply. Run `check_limits` when a joint reports `255` or refuses to
 move: it prints the resolved `span` per motor and flags `NO_TRAVEL`,
 `HOME_OUTSIDE`, `LIMITS_INVERTED` and `SPAN_REVERSED`.
+
+Firmware **0.6.1** adds two rest-zeroed signed-degree views over the same
+batched position sample:
+
+```text
+get_gesture_sang:<gesture|all>
+GESTURE_SANG: index=-12.50 middle=0.00 ring=8.25 wrist=34.75;
+
+get_gesture_angles:<gesture|all>
+GESTURE_ANGLES: index=0,-12.50 middle=45,0.00 ring=101,8.25 wrist=255,nan;
+```
+
+`get_gesture_sang` (signed angle) returns only the signed physical delta in degrees.
+`get_gesture_angles` returns `<percentage-code>,<signed-degrees>` for each
+gesture, preserving the exact `get_gesture_angle` code in the first field.
+`nan` means the signed angle is unavailable; in the combined reply it can
+coexist with a valid percentage, or with code `255` when no position at all is
+available.
+
+The degree convention is intentionally independent of encoder direction and
+the motor `flip` flag:
+
+- The first motor named by the gesture supplies the calibrated degree scale.
+- Its `rest` target is exactly `0 deg`.
+- Travel from rest toward `flex` is positive.
+- Travel from rest toward `extend` is negative.
+
+If `e`, `r`, and `f` are that reference motor's extend, rest, and flex
+fractions, `t` is the underlying gesture position on the extend-to-flex axis,
+and `S` is the motor's calibrated `getGestureSpan()` in degrees, the returned
+angle is:
+
+```text
+reference_fraction = e + t * (f - e)
+signed_degrees = (reference_fraction - r) * sign(f - r) * abs(S)
+```
+
+The calculation uses the underlying (unclamped) `t`, not status code 101 or
+102, so an out-of-range combined result can legitimately be `101,-15.20` or
+`102,42.10`. All three query forms still cost one Dynamixel batch read.
+
+For multi-motor gestures, the percentage remains the mean of all usable motor
+percentages, while degrees use only the first motor's calibrated span. For
+`thumb` that reference is `thumbadd`; for `wrist` it is `wrist`, not `wrist2`.
+In a dual build the first matching motor is on the left side because IDs 1-9
+precede IDs 11-19. The percentage can therefore aggregate both sides while the
+degree scale comes from the left reference motor. Use side-specific firmware
+or account for that convention when left and right calibration spans differ.
+
+Firmware older than **0.6.1** ignores both new command names silently. Gate
+host calls on the version or probe for a correctly prefixed reply.
 
 ### Direct velocity/current control
 
@@ -205,7 +259,9 @@ breaks the corresponding Python code.
 |------------------------|-----------|----------|
 | `name: <word>` | `calibrate_exo.py`, `rom_assessment.py` | Motor name discovery via `info` command |
 | `absolute_angle:<value>` | `calibrate_exo.py`, `rom_assessment.py` | Angle reads |
-| `GESTURE_ANGLE: <name>=<code> ...` | `_hand_exo.py:parse_gesture_angles`, `udp_gesture_receiver.py` | Joint positions / pose acks |
+| `GESTURE_ANGLE: <name>=<code> ...` | `_hand_exo.py:parse_gesture_angles` | Legacy percentage/status read-back |
+| `GESTURE_SANG: <name>=<degrees> ...` | `_hand_exo.py:parse_gesture_signed_angles` | Rest-zeroed signed joint angles |
+| `GESTURE_ANGLES: <name>=<code>,<degrees> ...` | `_hand_exo.py:parse_gesture_angle_pairs`, `udp_gesture_receiver.py` | Combined joint positions / NGA2 pose acks |
 | `GESTURE_RESULT: reached=N ...` | `udp_gesture_receiver.py`, `udp_gesture_gui.py` | Asynchronous move verdicts |
 
 Regex used: `re.search(r"name:\s*(\w+)", line)` and `line.split("absolute_angle:")`.

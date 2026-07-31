@@ -290,6 +290,10 @@ python examples/06_lsl_streaming/LSL/lsl_rms_barplot.py --type EMG --name OpenEp
 
 The two scripts in `08_udp` are designed to run together. `udp_gesture_receiver.py` owns the dual-CDC connection to the exo, translates UDP integers into gesture commands, and returns acknowledgements. `udp_gesture_gui.py` is the manual UDP control panel used to register the acknowledgement port and send those integers.
 
+Firmware **0.6.1 or newer** is required for pose acknowledgements. After each unchanged ASCII integer ack, the receiver sends an additive `NGA2` binary datagram containing a percentage/status code and a rest-zeroed signed degree angle for each of the six joints. The degree convention matches `get_gesture_angles`: rest is 0 degrees, toward flex is positive, and toward extend is negative. The receiver probes `get_gesture_angles:all` at startup and automatically disables pose frames if the firmware does not answer, so command acknowledgements continue to flow.
+
+Little-endian `NGA2` records are `(uint8 fraction_code, float32 angle_delta_deg)`. Fraction codes 0-100 are positions, 101/102 are below/above the gesture endpoints, and 255 is unavailable; an unavailable signed angle is IEEE `NaN`. The frame magic was bumped from `NGA1` because `NGA1` carried percentage codes only. Use `pack_pose_ack()` and `unpack_pose_ack()` from `udp_gesture_receiver.py` rather than decoding the frame layout independently.
+
 > **Safety:** The receiver arms and homes the exo by default. Keep hands and obstructions clear before starting it.
 
 1. Start the receiver in the first terminal. Its defaults use `COM10` for commands and `COM11` for telemetry; pass the appropriate ports if your system enumerated them differently.
@@ -403,6 +407,10 @@ exo.cycle_gesture()
 
 # Cycle through gesture states
 exo.cycle_gesture_state()
+
+# Firmware >= 0.6.1: read percentage/status and rest-zeroed signed degrees
+pose = exo.get_gesture_angles("index")
+# {"index": {"fraction": 42, "angle_delta_deg": -3.75}}
 ```
 
 ---

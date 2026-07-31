@@ -14,17 +14,19 @@ thread, so they never gate the command path.
 
 Edit build_command_map() below to change the integer -> command associations.
 
-Each acked command is followed by a packed binary frame carrying where all
-seven joints now sit, as percentages of their calibrated travel -- so a
-consumer learns the resulting pose without polling for it. The ASCII integer
-ack is unchanged and still goes out first; the pose is an additional datagram
-that only readers who know its magic need to look at. See pack_pose_ack().
+Each acked command is followed by a packed binary frame carrying both the
+gesture percentage/status code and the rest-zeroed signed angle for all six
+joints, so a consumer learns the resulting pose without polling for it. The
+ASCII integer ack is unchanged and still goes out first; the pose is an
+additional datagram that only readers who know its magic need to look at. See
+pack_pose_ack().
 
-Requires firmware >= 0.6.0: per-joint moves use set_gesture_angle, whose
+Requires firmware >= 0.6.1: per-joint moves use set_gesture_angle, whose
 percentages interpolate each gesture's extend and flex postures from that
-version on, and `wrist` drives both dorsal wrist motors together. Pose acks
-switch themselves off against anything older. Use examples/08_udp/udp_gesture_gui.py
-to drive this receiver by hand.
+version on, and `wrist` drives both dorsal wrist motors together. The pose ack
+uses get_gesture_angles, added in 0.6.1, and switches itself off against
+anything older. Use examples/08_udp/udp_gesture_gui.py to drive this receiver
+by hand.
 
 Usage:
     python examples/08_udp/udp_gesture_receiver.py
@@ -51,8 +53,8 @@ import time
 
 from nml_hand_exo import DualSerialComm
 from nml_hand_exo.interface._hand_exo import (
-    GESTURE_ANGLE_PREFIX,
-    parse_gesture_angles,
+    GESTURE_ANGLES_PREFIX,
+    parse_gesture_angle_pairs,
 )
 from nml_hand_exo.interface._udp_command_bindings import (
     UDP_CONNECTION_PORT_MAX,
@@ -157,25 +159,28 @@ GESTURE_RESULT_PREFIX = "GESTURE_RESULT:"
 # ---- Pose acks --------------------------------------------------------------
 # Every dispatched command is followed by this query, so the ack can carry where
 # the hand actually IS rather than only which integer was accepted. One batched
-# Dynamixel read on the device side (firmware >= 0.6.0), issued after the move
+# Dynamixel read on the device side (firmware >= 0.6.1), issued after the move
 # command so it never delays it.
-POSE_QUERY = "get_gesture_angle:all"
+POSE_QUERY = "get_gesture_angles:all"
 
 # The pose travels as its own datagram in a packed binary frame:
 #
-#     magic[4] | int16 value | uint8 count | uint8 code * count
+#     little-endian: magic[4] | int16 value | uint8 count |
+#         (uint8 fraction-code | float32 angle-delta-deg) * count
 #
-# struct rather than text on both ends: the values are already integers in the
-# firmware, and a fixed-width frame costs one memcpy per hop instead of a
-# format-then-reparse. It is a SECOND datagram rather than a new encoding for
-# the ack itself, so every existing consumer of the ASCII integer protocol keeps
-# working untouched and only readers that know the magic pay attention.
+# The NGA2 magic versions the widened record; NGA1 carried only the uint8
+# percentage code. It remains a SECOND datagram rather than a new encoding for
+# the ack itself, so every existing consumer of the ASCII integer protocol
+# keeps working untouched and only readers that know the magic pay attention.
 #
 # `value` is the same integer the ASCII ack carries, so a consumer that reads
-# only these frames still knows which command each pose belongs to. Codes are
-# the firmware's: 0-100 percent, 101/102 out of range low/high, 255 unavailable.
-POSE_ACK_MAGIC = b"NGA1"
+# only these frames still knows which command each pose belongs to. Fraction
+# codes are the firmware's: 0-100 percent, 101/102 out of range low/high, 255
+# unavailable. The float is a signed physical delta from rest: flex positive,
+# extend negative. IEEE NAN means that signed angle is unavailable.
+POSE_ACK_MAGIC = b"NGA2"
 POSE_ACK_HEADER = "<4shB"
+POSE_ACK_RECORD = "Bf"
 
 #: Firmware code for "no position available for this joint" -- it has no
 #: calibrated travel, or the position read failed. Also used locally for a
@@ -189,15 +194,21 @@ def pack_pose_ack(value, joints, pose):
     Args:
         value (int): The command integer being acked.
         joints (tuple[str, ...]): Joint order for the payload.
-        pose (dict): Gesture name -> code, as parsed from the device.
+        pose (dict): Gesture name -> combined ``fraction`` and
+            ``angle_delta_deg`` fields, as parsed from the device.
 
     Returns:
-        bytes: Packed frame, joints missing from ``pose`` reported as 255.
+        bytes: Packed frame. Missing joints use fraction code 255 and NAN.
     """
-    codes = [int(pose.get(joint, POSE_UNAVAILABLE)) & 0xFF for joint in joints]
+    values = []
+    for joint in joints:
+        record = pose.get(joint) or {}
+        fraction = int(record.get("fraction", POSE_UNAVAILABLE)) & 0xFF
+        angle = record.get("angle_delta_deg")
+        values.extend((fraction, float("nan") if angle is None else float(angle)))
     return struct.pack(
-        POSE_ACK_HEADER + "B" * len(codes), POSE_ACK_MAGIC, int(value), len(codes),
-        *codes,
+        POSE_ACK_HEADER + POSE_ACK_RECORD * len(joints),
+        POSE_ACK_MAGIC, int(value), len(joints), *values,
     )
 
 
@@ -214,10 +225,19 @@ def unpack_pose_ack(data):
     if not data or len(data) < header_len or not data.startswith(POSE_ACK_MAGIC):
         return None
     _, value, count = struct.unpack_from(POSE_ACK_HEADER, data)
-    if len(data) < header_len + count or count != len(JOINTS):
+    record_len = struct.calcsize("<" + POSE_ACK_RECORD)
+    if len(data) < header_len + count * record_len or count != len(JOINTS):
         return None
-    codes = struct.unpack_from("B" * count, data, header_len)
-    return value, dict(zip(JOINTS, codes))
+    pose = {}
+    offset = header_len
+    for joint in JOINTS:
+        fraction, angle = struct.unpack_from("<" + POSE_ACK_RECORD, data, offset)
+        pose[joint] = {
+            "fraction": fraction,
+            "angle_delta_deg": angle if angle == angle else None,
+        }
+        offset += record_len
+    return value, pose
 
 
 def parse_passthrough_command(payload):
@@ -450,13 +470,15 @@ class MockComm:
             return "Hold current: 25 mA"
         if head == "set_current_governor":
             return f"OK: current_governor {rest}"
-        if head == "get_gesture_angle":
+        if head == "get_gesture_angles":
             # Fixed pose: the mock has no motors, so there is nothing to move
             # and nothing to read. The point is that the query ANSWERS, which
             # is what the ack correlation and the pose frame depend on.
             codes = (0, 25, 50, 75, 100, 101, 102, 255)
-            return GESTURE_ANGLE_PREFIX + " " + " ".join(
-                f"{joint}={code}" for joint, code in zip(JOINTS, codes)
+            angles = (-12.5, -4.0, 0.0, 8.25, 16.5, 24.0)
+            return GESTURE_ANGLES_PREFIX + " " + " ".join(
+                f"{joint}={code},{angle:.2f}"
+                for joint, code, angle in zip(JOINTS, codes, angles)
             )
         if head == "home":
             return f"OK: home {rest}"
@@ -585,7 +607,7 @@ class Receiver:
             reply = self.comm.receive(wait_until_return=True, timeout=timeout)
             if not reply:
                 break
-            pose = parse_gesture_angles(reply)
+            pose = parse_gesture_angle_pairs(reply)
             if pose:
                 self.pose = pose
                 print(f"  pose acks enabled: {self._format_pose(pose)}")
@@ -593,13 +615,19 @@ class Receiver:
         self.pose_ack = False
         print("  [warn] device did not answer "
               f"{POSE_QUERY!r}; pose acks disabled "
-              "(needs firmware >= 0.6.0)", file=sys.stderr)
+              "(needs firmware >= 0.6.1)", file=sys.stderr)
         return False
 
     @staticmethod
     def _format_pose(pose):
-        return " ".join(f"{joint}={pose.get(joint, POSE_UNAVAILABLE)}"
-                        for joint in JOINTS)
+        rendered = []
+        for joint in JOINTS:
+            record = pose.get(joint) or {}
+            fraction = record.get("fraction", POSE_UNAVAILABLE)
+            angle = record.get("angle_delta_deg")
+            angle_text = "nan" if angle is None else f"{angle:+.2f}deg"
+            rendered.append(f"{joint}={fraction}%/{angle_text}")
+        return " ".join(rendered)
 
     # -- upstream (UDP) ------------------------------------------------
 
@@ -753,29 +781,37 @@ class Receiver:
             reply = self.comm.receive()          # non-blocking
             if not reply:
                 return
+            reply_lines = [line.strip() for line in reply.splitlines()
+                           if line.strip()]
             outcome_lines = []
-            for line in reply.splitlines():
+            solicited_lines = []
+            for line in reply_lines:
                 if self.echo_replies:
                     print(f"      <- {line}")
-                if line.strip().startswith(GESTURE_RESULT_PREFIX):
-                    outcome_lines.append(line.strip())
+                if line.startswith(GESTURE_RESULT_PREFIX):
+                    outcome_lines.append(line)
+                else:
+                    solicited_lines.append(line)
 
             # A pose reply is SOLICITED -- it answers the query appended to the
             # batch -- so it is recorded and then falls through to retire its
-            # slot like any other reply. Only the unsolicited outcome report
-            # below skips retirement.
-            if GESTURE_ANGLE_PREFIX in reply:
-                pose = parse_gesture_angles(reply)
+            # slot like any other reply. A standalone unsolicited outcome skips
+            # retirement; an outcome coalesced with this reply does not hide it.
+            if GESTURE_ANGLES_PREFIX in reply:
+                pose = parse_gesture_angle_pairs(reply)
                 if pose:
                     self.pose = pose
 
-            if outcome_lines:
-                # Unsolicited: it answers no outstanding command, so retiring a
-                # pending ack against it would ack the WRONG command -- and the
-                # next real reply would then have nothing left to retire.
-                for line in outcome_lines:
-                    self.outcomes += 1
-                    self.send_text_upstream(line)
+            # GESTURE_RESULT has no command delimiter. DualSerialComm therefore
+            # retains it as pending telemetry until the NEXT delimited command
+            # reply arrives, and publishes both lines in one frame. Forward the
+            # outcome, but do not discard the solicited reply sharing its frame.
+            # A standalone outcome (the mock transport and simple test stubs can
+            # produce one) still must not retire a pending command.
+            for line in outcome_lines:
+                self.outcomes += 1
+                self.send_text_upstream(line)
+            if not solicited_lines:
                 continue
             self._retire_pending()
 
@@ -803,7 +839,7 @@ class Receiver:
         print(f"  commands dispatched: {self.dispatched}")
         print(f"  acks sent upstream : {self.acked}")
         print(f"  pose frames sent   : {self.pose_acks}"
-              + ("" if self.pose_ack else "  (disabled: firmware < 0.6.0)"))
+              + ("" if self.pose_ack else "  (disabled: firmware < 0.6.1)"))
         print(f"  move outcomes      : {self.outcomes}")
         print(f"  unmapped values    : {self.unmapped}")
         print(f"  malformed payloads : {self.malformed}")
@@ -863,9 +899,10 @@ def main(argv=None):
     parser.add_argument("--no-pose-ack", dest="pose_ack", action="store_false",
                         help="Do not query the joint positions after each "
                              "command. By default every ack is followed by a "
-                             "packed frame carrying all 7 joint percentages, "
+                             "packed frame carrying each joint's percentage "
+                             "code and rest-zeroed signed degree angle, "
                              "which costs one extra device round trip per "
-                             "command and needs firmware >= 0.6.0.")
+                             "command and needs firmware >= 0.6.1.")
     parser.add_argument("--quiet", action="store_true",
                         help="Do not log each datagram.")
     parser.add_argument("--mock", action="store_true",

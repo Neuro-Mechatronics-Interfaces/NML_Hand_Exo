@@ -27,17 +27,20 @@ constexpr uint8_t GESTURE_ANGLE_ABOVE_RANGE = 102;
 /// distinguishes the two.
 constexpr uint8_t GESTURE_ANGLE_UNAVAILABLE = 255;
 
-/// @brief Where one gesture currently sits on its 0-100 percent axis.
+/// @brief Where one gesture currently sits on its percent and signed-degree axes.
 ///
-/// Packed and fixed-width so a batch is a flat array a host can consume
-/// without per-field parsing: the reply for `get_gesture_angle:all` is built
-/// from one of these per gesture, in gestureLibrary order.
-struct __attribute__((packed)) GestureAngleRecord {
-    uint8_t gesture;   ///< Index into gestureLibrary.
-    uint8_t code;      ///< 0-100 percent, or one of the codes above.
+/// The signed angle uses the first motor named by the gesture as its physical
+/// reference. Its `rest` posture is 0 degrees, motion from rest toward `flex`
+/// is positive, and motion from rest toward `extend` is negative. The value is
+/// a physical delta derived from that motor's calibrated joint-limit span;
+/// NAN means the signed angle is unavailable.
+struct GestureAngleRecord {
+    uint8_t gesture;       ///< Index into gestureLibrary.
+    uint8_t code;          ///< 0-100 percent, or one of the codes above.
+    float signedAngleDeg;  ///< Signed physical delta from rest, in degrees.
 };
 
-/// @brief One motor's two endpoints on a gesture's 0-100 percent axis.
+/// @brief One motor's endpoints and rest anchor on a gesture's percent axis.
 ///
 /// The percentage interpolates a gesture between its own `extend` and `flex`
 /// postures, so every motor it names needs BOTH of its endpoints, not a single
@@ -47,6 +50,7 @@ struct __attribute__((packed)) GestureAngleRecord {
 struct GestureAxisPoint {
     uint8_t id;             ///< Dynamixel ID.
     float extendFraction;   ///< Position at 0%, from the gesture's extend state.
+    float restFraction;     ///< Position defined by the gesture's rest state.
     float flexFraction;     ///< Position at 100%, from its flex state.
 };
 
@@ -109,8 +113,10 @@ public:
     /// 0% is the `extend` posture, NOT home. A hand parked at home therefore
     /// reads below 0 (code 101) whenever the extend constants are non-zero.
     ///
-    /// Positions come from ONE batched Dynamixel read rather than a read per
-    /// motor, so polling this per command costs a single bus transaction.
+    /// Each record also carries a signed physical angle derived from the first
+    /// motor in the gesture: rest is 0 degrees, flexion is positive, extension
+    /// is negative. Positions come from ONE batched Dynamixel read rather than
+    /// a read per motor, so polling any reply form costs one bus transaction.
     ///
     /// @param out Destination array.
     /// @param maxRecords Capacity of @p out.
@@ -121,7 +127,7 @@ public:
     uint8_t readGestureAngles(GestureAngleRecord* out, uint8_t maxRecords,
                               const String& only = String());
 
-    /// @brief Resolve one gesture's percent axis into per-motor endpoints.
+    /// @brief Resolve one gesture's percent axis and rest anchor per motor.
     ///
     /// Shared by setGestureAngle() and readGestureAngles() so the command and
     /// its read-back cannot disagree about where 0 and 100 are.

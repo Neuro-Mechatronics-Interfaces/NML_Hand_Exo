@@ -4,12 +4,15 @@ from nml_hand_exo.interface._hand_exo import (
     ANGLE_ADDRESSABLE_GESTURES,
     FW_CURRENT_BUDGET,
     FW_GESTURE_ANGLE_READBACK,
+    FW_GESTURE_SIGNED_ANGLE,
     FW_PER_JOINT_REST,
     FW_RAD_GESTURE,
     GESTURE_ANGLE_ABOVE_RANGE,
     GESTURE_ANGLE_BELOW_RANGE,
     GESTURE_ANGLE_PREFIX,
+    GESTURE_ANGLES_PREFIX,
     GESTURE_ANGLE_UNAVAILABLE,
+    GESTURE_SANG_PREFIX,
     GESTURE_MAX_FIRMWARE,
     GESTURE_MIN_FIRMWARE,
     HandExo,
@@ -325,6 +328,49 @@ class GestureAngleReadbackTests(unittest.TestCase):
         exo = _exo("0.6.0")
         exo.device.next_reply = ""
         self.assertEqual(exo.get_gesture_angle(), {})
+
+
+class GestureSignedAngleReadbackTests(unittest.TestCase):
+    """Rest-zeroed signed and combined read-back landed in firmware 0.6.1."""
+
+    def test_signed_queries_are_gated_off_on_0_6_0(self):
+        exo = _exo("0.6.0")
+        with self.assertRaises(RuntimeError):
+            exo.get_gesture_sang()
+        with self.assertRaises(RuntimeError):
+            exo.get_gesture_angles()
+        self.assertEqual(exo.device.sent, [])
+
+    def test_signed_angle_readback_uses_float_degrees_and_none_for_nan(self):
+        exo = _exo("0.6.1")
+        exo.device.next_reply = (
+            GESTURE_SANG_PREFIX + " index=-12.50 middle=0.00 wrist=34.75 thumb=nan;"
+        )
+        angles = exo.get_gesture_sang()
+        self.assertEqual(exo.device.sent[-1], "get_gesture_sang:all\n")
+        self.assertEqual(angles["index"], -12.5)
+        self.assertEqual(angles["middle"], 0.0)
+        self.assertEqual(angles["wrist"], 34.75)
+        self.assertIsNone(angles["thumb"])
+
+    def test_combined_readback_preserves_fraction_codes_and_signed_degrees(self):
+        exo = _exo("0.6.1")
+        exo.device.next_reply = (
+            GESTURE_ANGLES_PREFIX
+            + " index=0,-12.50 middle=45,0.00 ring=101,8.25 wrist=255,nan;"
+        )
+        angles = exo.get_gesture_angles("Index")
+        self.assertEqual(exo.device.sent[-1], "get_gesture_angles:index\n")
+        self.assertEqual(
+            angles["index"], {"fraction": 0, "angle_delta_deg": -12.5}
+        )
+        self.assertEqual(angles["ring"]["fraction"], GESTURE_ANGLE_BELOW_RANGE)
+        self.assertEqual(angles["ring"]["angle_delta_deg"], 8.25)
+        self.assertEqual(angles["wrist"]["fraction"], GESTURE_ANGLE_UNAVAILABLE)
+        self.assertIsNone(angles["wrist"]["angle_delta_deg"])
+
+    def test_signed_angle_feature_follows_percentage_readback(self):
+        self.assertGreater(FW_GESTURE_SIGNED_ANGLE, FW_GESTURE_ANGLE_READBACK)
 
 
 if __name__ == "__main__":

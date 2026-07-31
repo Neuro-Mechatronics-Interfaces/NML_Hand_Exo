@@ -469,8 +469,10 @@ constexpr int N_GESTURES = 15;
 // and `get_gesture_angle` inverts it. Retuning EXTEND_*/FLEX_* therefore moves
 // the percent axis with them -- which is the point: a host's percentages stay
 // meaningful across a retune instead of pointing at raw travel that no longer
-// corresponds to a posture. REST_* is NOT an endpoint; it just lands wherever
-// its value falls on that axis (`get_gesture_angle` will report where).
+// corresponds to a posture. REST_* is NOT a percent-axis endpoint; it just
+// lands wherever its value falls on that axis (`get_gesture_angle` reports
+// where). Since 0.6.1 it IS the zero-degree anchor for `get_gesture_sang` and
+// the signed-degree field in `get_gesture_angles`.
 //
 // EXTEND_* need not be 0.0. It was pinned there while the axis ran from home,
 // because home IS the extension endstop as calibration defines it (the median
@@ -528,8 +530,9 @@ constexpr float FLEX_WRIST       =  0.95f;
 /// @brief Least travel, in degrees, that counts as a usable gesture range.
 ///
 /// Below this a joint is reported as having no travel rather than being driven
-/// a fraction of nothing: `get_gesture_angle` returns 255 for it and
-/// `check_limits` flags it NO_TRAVEL. Sized just above position-read noise.
+/// a fraction of nothing: `get_gesture_angle` returns 255 for it, signed-angle
+/// queries return nan, and `check_limits` flags it NO_TRAVEL. Sized just above
+/// position-read noise.
 constexpr float GESTURE_MIN_TRAVEL_DEG = 2.0f;
 
 /// @brief How much more travel the non-flip side must offer to be chosen.
