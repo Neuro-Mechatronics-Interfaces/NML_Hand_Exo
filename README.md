@@ -32,7 +32,7 @@ The **NML Hand Exoskeleton** includes:
 - 🐍 Python API: high-level interface for controlling the device.
 - 🛠️ Demo scripts: examples of using the device with real-time EMG streaming and GUI control.
 
-Release **0.0.8** is tested on **Windows 11** with **Python 3.11**.
+Release **0.2.16** is tested on **Windows 11** with **Python 3.11**.
 
 ## Primary applications
 

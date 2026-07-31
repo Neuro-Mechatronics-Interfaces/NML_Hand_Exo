@@ -16,21 +16,38 @@ int jointIndexByName(const char* jointName) {
 // Build a dense angle array from a state, applying relative math if requested
 void resolveStateAngles(const GestureState& state,
                         const float* homeAngles,
-                        float* outAngles) {
+                        float* outAngles,
+                        bool* outTouched) {
     // Start with either zeros (absolute) or the home baseline (relative)
     for (int i = 0; i < N_MOTORS; ++i) {
         outAngles[i] = state.isRelative ? (homeAngles ? homeAngles[i] : 0.0f) : 0.0f;
+        // A dense state specifies every joint; a sparse state only claims the
+        // joints it actually names.  Callers use this to leave unnamed joints
+        // alone instead of driving them back to home.
+        if (outTouched) outTouched[i] = !state.isSparse;
     }
 
     if (state.isSparse) {
-        // Apply only specified joints
+        // Apply specified joints, matching ALL motors with the same name.
+        // In dual-exo mode MOTOR_NAMES[] contains duplicate names (e.g. "wrist"
+        // appears twice: once for left IDs 1-9 and once for right IDs 11-19).
+        // The old jointIndexByName() only returned the first match, so the right
+        // hand never received gesture angles.  This loop finds every matching
+        // index so both exos are commanded by the same named value.
         for (uint8_t k = 0; k < state.nPairs; ++k) {
-            int idx = jointIndexByName(state.namedPairs[k].joint);
-            if (idx < 0 || idx >= N_MOTORS) continue;
-            if (state.isRelative) {
-                outAngles[idx] = (homeAngles ? homeAngles[idx] : 0.0f) + state.namedPairs[k].value;
-            } else {
-                outAngles[idx] = state.namedPairs[k].value;
+            if (!state.namedPairs[k].joint) continue;
+            String pairName = String(state.namedPairs[k].joint);
+            pairName.toLowerCase();
+            for (int i = 0; i < N_MOTORS; ++i) {
+                if (!MOTOR_NAMES[i] || !*MOTOR_NAMES[i]) continue;
+                String mName = String(MOTOR_NAMES[i]); mName.toLowerCase();
+                if (!mName.equals(pairName)) continue;
+                if (state.isRelative) {
+                    outAngles[i] = (homeAngles ? homeAngles[i] : 0.0f) + state.namedPairs[k].value;
+                } else {
+                    outAngles[i] = state.namedPairs[k].value;
+                }
+                if (outTouched) outTouched[i] = true;
             }
         }
     } else {
@@ -48,139 +65,357 @@ void resolveStateAngles(const GestureState& state,
 // You can convert them to relative later if you want.
 
 GestureMap gestureLibrary[N_GESTURES] = {
-    // --- HOME: capture baseline (all zeros relative) ---
-    // {
-    //   "home",
-    //   {
-    //     // name,  is Relative to home, isSparse,         dense...,          sparse...,    nPairs
-    //     { "home",         true,           false,    {0,0,0,0,0,0},          {},           0 }
-    //   },
-    //   1
-    // },
 
-    // --- GRASP: (relative + sparse) ---
+    // --- GRASP: (relative + sparse, normalized 0.0–1.0) ---
+    // Values are fraction of calibrated range: 0.0 = home/open, 1.0 = fully closed
     {
       "grasp",
       {
-        { "open",  true,  true,     {0}, 
+        { "open",  true,  true,     {0},
           {
-            {"thumbflex",   0.0},
-            {"thumbrot",   140.0},
-            {"index",       0.0},
-            {"middle",      0.0},
-            {"ring",        0.0},
-            {"pinky",       0.0}
-          }, 6 },
-        { "close", true,  true,     {0}, 
-          { {"thumbflex",  90.0},
-            {"thumbrot",   140.0},
-            {"index",      60.0},
-            {"middle",     60.0},
-            {"ring",       60.0},
-            {"pinky",      60.0}
-          }, 6 }
-      }, 2
-    },
-
-    // --- KEYGRIP: ---
-    {
-      "keygrip",
-      {
-        // Open: thumb=0, index/middle/ring/pinky=30, ignore wrist
-        { "open",  true, true,   {0}, 
-          {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
             {"thumbflex",  0.0},
             {"thumbrot",   0.0},
-            {"index",     60.0},
-            {"middle",    60.0},
-            {"ring",      60.0},
-            {"pinky",     60.0}
-          }, 6 },
-        // Close: thumb=30, index/middle/ring/pinky=30, ignore wrist
-        { "close", true, true,   {0}, 
-          {
-            {"thumbflex", 60.0},
-            {"thumbrot",   0.0},
-            {"index",     60.0},
-            {"middle",    60.0},
-            {"ring",      60.0},
-            {"pinky",     60.0}
-             }, 6 }
-      }, 2
-    },
-
-    // --- PINCH: (keep as dense absolute; your remapper uses these) ---
-    {
-      "pinch_index",
-      {
-        // open: thumb=0, index=0, others closed=30; wrist omitted
-        { "open",  true,  true,  {0},
-          {
-            {"thumbflex",   0.0},
-            {"thumbrot",   140.0},
-            {"index",       0.0}, // this one
-            {"middle",      0.0},
-            {"ring",        0.0},
-            {"pinky",       0.0}
-          }, 5 },
-        // close: thumb=30, index=30, others closed=30
-        { "close", true,  true,  {0},
-          {
-            {"thumbflex", 60.0},
-            {"thumbrot",  140.0},
-            {"index",     60.0},
+            {"index",      0.0},
             {"middle",     0.0},
             {"ring",       0.0},
             {"pinky",      0.0}
-          }, 5 }
+          }, 9 },
+        { "close", true,  true,     {0},
+          {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
+            {"thumbflex",  1.0},
+            {"thumbrot",   1.0},
+            {"index",      1.0},
+            {"middle",     1.0},
+            {"ring",       1.0},
+            {"pinky",      1.0}
+          }, 9 }
       }, 2
     },
 
+    // --- KEYGRIP: fingers closed, thumb presses side of index ---
+    {
+      "keygrip",
+      {
+        { "open",  true, true,   {0},
+          {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
+            {"thumbflex",  0.0},
+            {"thumbrot",   0.0},
+            {"index",      1.0},
+            {"middle",     1.0},
+            {"ring",       1.0},
+            {"pinky",      1.0}
+          }, 9 },
+        { "close", true, true,   {0},
+          {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
+            {"thumbflex",  1.0},
+            {"thumbrot",   0.0},
+            {"index",      1.0},
+            {"middle",     1.0},
+            {"ring",       1.0},
+            {"pinky",      1.0}
+          }, 9 }
+      }, 2
+    },
+
+    // --- PINCH INDEX: thumb + index pinch ---
+    {
+      "pinch_index",
+      {
+        { "open",  true,  true,  {0},
+          {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
+            {"thumbflex",  0.0},
+            {"thumbrot",   0.0},
+            {"index",      0.0},
+            {"middle",     0.0},
+            {"ring",       0.0},
+            {"pinky",      0.0}
+          }, 9 },
+        { "close", true,  true,  {0},
+          {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
+            {"thumbflex",  1.0},
+            {"thumbrot",   1.0},
+            {"index",      1.0},
+            {"middle",     0.0},
+            {"ring",       0.0},
+            {"pinky",      0.0}
+          }, 9 }
+      }, 2
+    },
+
+    // --- PINCH MIDDLE: thumb + middle pinch ---
     {
       "pinch_middle",
       {
         { "open",  true,  true,  {0},
           {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
             {"thumbflex",  0.0},
-            {"thumbrot",  150.0},
+            {"thumbrot",   0.0},
             {"index",      0.0},
             {"middle",     0.0},
             {"ring",       0.0},
             {"pinky",      0.0}
-          }, 5 },
+          }, 9 },
         { "close", true,  true,  {0},
           {
-            {"thumbflex", 60.0},
-            {"thumbrot",  150.0},
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
+            {"thumbflex",  1.0},
+            {"thumbrot",   1.0},
             {"index",      0.0},
-            {"middle",    60.0},
+            {"middle",     1.0},
             {"ring",       0.0},
             {"pinky",      0.0}
-          }, 5 }
+          }, 9 }
       }, 2
     },
 
+    // --- PINCH RING: thumb + ring pinch ---
     {
       "pinch_ring",
       {
         { "open",  true,  true,  {0},
           {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
             {"thumbflex",  0.0},
-            {"thumbrot",  160.0},
+            {"thumbrot",   0.0},
             {"index",      0.0},
             {"middle",     0.0},
             {"ring",       0.0},
             {"pinky",      0.0}
-          }, 5 },
+          }, 9 },
         { "close", true,  true,  {0},
           {
-            {"thumbflex",  60.0},
-            {"thumbrot",  160.0},
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
+            {"thumbflex",  1.0},
+            {"thumbrot",   1.0},
             {"index",      0.0},
             {"middle",     0.0},
-            {"ring",      60.0},
+            {"ring",       1.0},
             {"pinky",      0.0}
-          }, 5 }
+          }, 9 }
       }, 2
+    },
+
+    // --- PEACE SIGN: index + middle extended, ring + pinky closed, thumb tucked ---
+    {
+      "peace",
+      {
+        { "open",  true,  true,  {0},
+          {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   0.0},
+            {"thumbflex",  0.0},
+            {"thumbrot",   0.0},
+            {"index",      0.0},
+            {"middle",     0.0},
+            {"ring",       0.0},
+            {"pinky",      0.0}
+          }, 9 },
+        { "close", true,  true,  {0},
+          {
+            {"wrist",      0.0},
+            {"wrist2",     0.0},
+            {"thumbadd",   1.0},
+            {"thumbflex",  1.0},
+            {"thumbrot",   1.0},
+            {"index",      0.0},
+            {"middle",     0.0},
+            {"ring",       1.0},
+            {"pinky",      1.0}
+          }, 9 }
+      }, 2
+    },
+
+    // --- PER-JOINT EXTENSION / REST / FLEXION -------------------------------
+    // One gesture per digit (plus the wrist), with three additional research
+    // axes for addressing each thumb motor independently. Travel comes from
+    // the EXTEND_*/REST_*/FLEX_* constants in config.h.
+    //
+    // States are ordered extend -> rest -> flex so travel is monotonic: a
+    // cycle_gesture_state sweep walks the joint through its range in order
+    // instead of jumping across it, and states[0] (the state cycleGesture() and
+    // the button callbacks land on) stays "extend", which is exactly home.
+    //
+    // Each state names ONLY its own joints.  executeGesture() commands just the
+    // named joints, so selecting a joint leaves the rest of the hand exactly
+    // where it was.  Returning to a whole-hand rest is still an explicit
+    // gesture (grasp:open), not an implicit side effect of every other gesture.
+    //
+    // The thumb lists its three joints separately because they do not share a
+    // flip direction; one shared value would drive them opposite ways.
+    {
+      "thumb",
+      {
+        { "extend", true, true, {0},
+          {
+            {"thumbadd", EXTEND_THUMBADD},
+            {"thumbrot", EXTEND_THUMBROT},
+            {"thumbflex", EXTEND_THUMBFLEX}
+          }, 3 },
+        { "rest", true, true, {0},
+          {
+            {"thumbadd", REST_THUMBADD},
+            {"thumbrot", REST_THUMBROT},
+            {"thumbflex", REST_THUMBFLEX}
+          }, 3 },
+        { "flex", true, true, {0},
+          {
+            {"thumbadd", FLEX_THUMBADD},
+            {"thumbrot", FLEX_THUMBROT},
+            {"thumbflex", FLEX_THUMBFLEX}
+          }, 3 }
+      }, 3
+    },
+
+    {
+      "thumbadd",
+      {
+        { "extend", true, true, {0}, {{"thumbadd", EXTEND_THUMBADD}}, 1 },
+        { "rest",   true, true, {0}, {{"thumbadd", REST_THUMBADD}},   1 },
+        { "flex",   true, true, {0}, {{"thumbadd", FLEX_THUMBADD}},   1 }
+      }, 3
+    },
+
+    {
+      "thumbrot",
+      {
+        { "extend", true, true, {0}, {{"thumbrot", EXTEND_THUMBROT}}, 1 },
+        { "rest",   true, true, {0}, {{"thumbrot", REST_THUMBROT}},   1 },
+        { "flex",   true, true, {0}, {{"thumbrot", FLEX_THUMBROT}},   1 }
+      }, 3
+    },
+
+    {
+      "thumbflex",
+      {
+        { "extend", true, true, {0}, {{"thumbflex", EXTEND_THUMBFLEX}}, 1 },
+        { "rest",   true, true, {0}, {{"thumbflex", REST_THUMBFLEX}},   1 },
+        { "flex",   true, true, {0}, {{"thumbflex", FLEX_THUMBFLEX}},   1 }
+      }, 3
+    },
+
+    {
+      "index",
+      {
+        { "extend", true, true, {0},
+          {
+            {"index", EXTEND_INDEX}
+          }, 1 },
+        { "rest", true, true, {0},
+          {
+            {"index", REST_INDEX}
+          }, 1 },
+        { "flex", true, true, {0},
+          {
+            {"index", FLEX_INDEX}
+          }, 1 }
+      }, 3
+    },
+
+    {
+      "middle",
+      {
+        { "extend", true, true, {0},
+          {
+            {"middle", EXTEND_MIDDLE}
+          }, 1 },
+        { "rest", true, true, {0},
+          {
+            {"middle", REST_MIDDLE}
+          }, 1 },
+        { "flex", true, true, {0},
+          {
+            {"middle", FLEX_MIDDLE}
+          }, 1 }
+      }, 3
+    },
+
+    {
+      "ring",
+      {
+        { "extend", true, true, {0},
+          {
+            {"ring", EXTEND_RING}
+          }, 1 },
+        { "rest", true, true, {0},
+          {
+            {"ring", REST_RING}
+          }, 1 },
+        { "flex", true, true, {0},
+          {
+            {"ring", FLEX_RING}
+          }, 1 }
+      }, 3
+    },
+
+    {
+      "pinky",
+      {
+        { "extend", true, true, {0},
+          {
+            {"pinky", EXTEND_PINKY}
+          }, 1 },
+        { "rest", true, true, {0},
+          {
+            {"pinky", REST_PINKY}
+          }, 1 },
+        { "flex", true, true, {0},
+          {
+            {"pinky", FLEX_PINKY}
+          }, 1 }
+      }, 3
+    },
+
+    // Wrist flexion/extension, driving BOTH dorsal motors together. `wrist` and
+    // `wrist2` are mounted on the back of the arm and connect to the dorsal
+    // aspect of the wrist, so they act on the same structure: commanding one
+    // alone leaves the other holding position against it, which is why the
+    // separate single-motor "rad" gesture was removed rather than retuned.
+    {
+      "wrist",
+      {
+        { "extend", true, true, {0},
+          {
+            {"wrist", EXTEND_WRIST},
+            {"wrist2", EXTEND_WRIST}
+          }, 2 },
+        { "rest", true, true, {0},
+          {
+            {"wrist", REST_WRIST},
+            {"wrist2", REST_WRIST}
+          }, 2 },
+        { "flex", true, true, {0},
+          {
+            {"wrist", FLEX_WRIST},
+            {"wrist2", FLEX_WRIST}
+          }, 2 }
+      }, 3
     },
 };

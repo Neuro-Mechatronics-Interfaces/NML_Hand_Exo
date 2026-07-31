@@ -41,6 +41,6 @@ python example_tcp_exo.py
 ## Next Steps
 
 After mastering these basics, move on to:
-- `02_motor_control/` - Control motors precisely
-- `03_sensors/` - Work with IMU and sensors
-- `04_advanced/` - Advanced configuration
+- `../02_motor_control/` - Control motors precisely
+- `../03_sensors/` - Work with IMU and sensors
+- `../04_advanced/` - Advanced configuration

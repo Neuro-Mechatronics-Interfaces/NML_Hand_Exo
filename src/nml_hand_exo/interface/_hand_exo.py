@@ -1,9 +1,137 @@
+import math
 import re
 import struct
 import time
 import numpy as np
 
 from ._interfaces import BaseComm
+from ._gesture_protocol import ANGLE_ADDRESSABLE_GESTURES
+
+
+#: Firmware version that introduced the per-joint "rest" state, anchored
+#: ``extend`` (EXTEND_* = 0.0 == home), the ``wrist`` gesture, and the
+#: ``set_gesture_angle`` command.  Older firmware silently ACKs an unknown
+#: gesture state -- ``set_gesture`` replies ``OK:`` whether or not the state
+#: resolved -- so the host cannot detect the failure from the reply and must
+#: gate on the version instead.
+FW_PER_JOINT_REST = (0, 3, 0)
+
+#: The integration line briefly shipped ``set_gesture_angle`` as 0.2.16
+#: before the feature branch established the 0.3.x-0.6.x firmware sequence.
+#: Keep that backport usable while treating all earlier 0.2.x builds as old.
+FW_GESTURE_ANGLE_BACKPORT = (0, 2, 16)
+
+#: Firmware version that added the ``rad`` gesture on the wrist2 motor.
+FW_RAD_GESTURE = (0, 3, 1)
+
+#: Firmware version that added the combined-motor current budget.  Before this,
+#: ``set_current_lim`` wrote GOAL_CURRENT directly and nothing bounded what the
+#: motors drew together; from 0.4.0 it sets the per-motor nominal and the
+#: firmware allocator owns GOAL_CURRENT under a fleet-wide cap.
+FW_CURRENT_BUDGET = (0, 4, 0)
+
+#: Firmware version that added ``get_gesture_angle`` and re-anchored every
+#: gesture percentage on a home -> flexion-endstop axis resolved per motor.
+#: Before this, joints whose home sat mid-window (the wrist and wrist2 axes)
+#: had every state clamp onto the same limit and never moved, while the command
+#: still ACKed -- so there is no reply to detect it from, only the version.
+FW_GESTURE_ANGLE_READBACK = (0, 6, 0)
+
+#: Reported instead of a percentage when a joint sits outside its calibrated
+#: travel: below the 0% end (home) or above the 100% end (flexion endstop).
+#: Reachable by moving the hand by hand, or by a ``set_angle`` off the axis.
+GESTURE_ANGLE_BELOW_RANGE = 101
+GESTURE_ANGLE_ABOVE_RANGE = 102
+
+#: Reported when no position is available: every motor the gesture names has
+#: less than the firmware's minimum calibrated travel, or the read failed.
+#: ``check_limits`` distinguishes the two.
+GESTURE_ANGLE_UNAVAILABLE = 255
+
+#: Per-joint gesture name -> minimum firmware that defines it.  Gestures absent
+#: from this map (the five digits) exist on every firmware, though they only
+#: gained their ``rest`` state at :data:`FW_PER_JOINT_REST`.
+GESTURE_MIN_FIRMWARE = {
+    "wrist": FW_PER_JOINT_REST,
+    "rad": FW_RAD_GESTURE,
+}
+
+#: Per-joint gesture name -> first firmware that no longer has it (exclusive).
+#: ``rad`` drove the wrist2 motor on its own; from 0.6.0 wrist2 moves with the
+#: ``wrist`` gesture, because both motors pull on the same dorsal structure and
+#: commanding one alone left the other holding position against it.  Firmware
+#: ignores an unknown gesture silently and ``set_gesture`` still replies ``OK:``,
+#: so without this the call would look like it worked.
+GESTURE_MAX_FIRMWARE = {
+    "rad": FW_GESTURE_ANGLE_READBACK,
+}
+
+def parse_firmware_version(text: str) -> tuple[int, ...]:
+    """Parse a firmware version string into a comparable tuple.
+
+    Accepts the bare ``"0.3.0"`` form returned by :meth:`HandExo.version` as
+    well as decorated forms such as ``"Version: 0.3.0;"``.  Returns ``()`` when
+    no version-looking token is present, which compares less than every real
+    version so unknown firmware is treated as "too old" by feature gates.
+
+    Args:
+        text (str): Raw version text from the device.
+
+    Returns:
+        tuple[int, ...]: e.g. ``(0, 3, 0)``, or ``()`` if unparseable.
+
+    """
+    if not text:
+        return ()
+    m = re.search(r"(\d+(?:\.\d+)*)", str(text))
+    if not m:
+        return ()
+    return tuple(int(part) for part in m.group(1).split("."))
+
+
+#: Prefix of the firmware's ``get_gesture_angle`` reply.
+GESTURE_ANGLE_PREFIX = "GESTURE_ANGLE:"
+
+
+def parse_gesture_angles(text: str) -> dict[str, int]:
+    """Parse a ``GESTURE_ANGLE:`` reply into ``{gesture: code}``.
+
+    The reply is one line of ``name=code`` pairs, e.g.::
+
+        GESTURE_ANGLE: thumb=12 index=0 middle=45 ring=101 pinky=100 wrist=33;
+
+    Deliberately tolerant: a device line can arrive with the command delimiter
+    attached, wrapped in surrounding telemetry, or truncated by a dropped USB
+    frame.  Whatever pairs are present are returned; anything else is skipped
+    rather than raising, since a partial pose is still useful to a poller and a
+    missing key is easier to handle than an exception on the hot path.
+
+    Args:
+        text (str): Raw reply text, possibly multi-line.
+
+    Returns:
+        dict[str, int]: Gesture name -> code, in the order the device sent them.
+
+    """
+    if not text:
+        return {}
+    for line in str(text).splitlines():
+        line = line.strip()
+        if not line.startswith(GESTURE_ANGLE_PREFIX):
+            continue
+        body = line[len(GESTURE_ANGLE_PREFIX):].strip().rstrip(";")
+        angles: dict[str, int] = {}
+        for token in body.split():
+            name, sep, value = token.partition("=")
+            name = name.strip().lower()
+            if not sep or not name:
+                continue
+            try:
+                angles[name] = int(value)
+            except ValueError:
+                continue
+        return angles
+    return {}
 
 
 class HandExo(object):
@@ -42,6 +170,8 @@ class HandExo(object):
         self.device.verbose = verbose
         # Side is set explicitly or detected via detect_side() / info().
         self.side: str | None = side
+        # Populated lazily by firmware_version(); None means "not yet queried".
+        self._firmware_version: tuple[int, ...] | None = None
 
         if auto_connect:
             self.device.connect()
@@ -142,44 +272,30 @@ class HandExo(object):
         self,
         timeout: float = 0.5,
         motor_ids: list[int] | tuple[int, ...] | None = None,
-    ) -> dict[int, dict[str, float | int | bool | None]]:
-        """Read one version-1 compact binary telemetry frame from SerialComm.
+    ) -> dict[int, dict[str, float | int | bool]]:
+        """Read the firmware's compact binary telemetry frame.
 
-        This method must be called only by the serial owner (the GUI worker),
-        because it consumes the raw serial stream.  Firmware fallback frames
-        contain position only; current and velocity are represented as ``None``
-        rather than misleading zero measurements.
+        The firmware emits an ``NX`` frame with one fixed-size record per motor.
+        Records are keyed by Dynamixel ID and include relative/absolute angles,
+        present current, raw velocity, and raw position ticks.
         """
         serial_dev = getattr(self.device, "device", None)
         if serial_dev is None:
             raise RuntimeError("get_fast_telemetry requires a SerialComm device")
 
-        header_fmt = "<2sBBBHIH"
-        record_fmt = "<BBhiiii"
-        header_len = struct.calcsize(header_fmt)
-        record_len = struct.calcsize(record_fmt)
         ids = "all" if not motor_ids else ":".join(str(int(mid)) for mid in motor_ids)
-
         try:
             serial_dev.reset_input_buffer()
         except Exception:
             pass
         self.send_command(f"get_telemetry_fast:{ids}")
 
+        header_fmt = "<2sBBBHIH"
+        record_fmt = "<BBhiiii"
+        header_len = struct.calcsize(header_fmt)
+        record_len = struct.calcsize(record_fmt)
+
         deadline = time.monotonic() + timeout
-
-        def read_exact(n_bytes: int) -> bytes:
-            chunks = bytearray()
-            while len(chunks) < n_bytes and time.monotonic() < deadline:
-                chunk = serial_dev.read(n_bytes - len(chunks))
-                if chunk:
-                    chunks.extend(chunk)
-                else:
-                    time.sleep(0.001)
-            if len(chunks) != n_bytes:
-                raise TimeoutError("Timed out reading fast telemetry frame")
-            return bytes(chunks)
-
         prefix = bytearray()
         while time.monotonic() < deadline:
             byte = serial_dev.read(1)
@@ -187,45 +303,50 @@ class HandExo(object):
                 time.sleep(0.001)
                 continue
             prefix.extend(byte)
-            prefix = prefix[-2:]
-            if prefix == b"NX":
+            if len(prefix) > 2:
+                prefix = prefix[-2:]
+            if bytes(prefix) == b"NX":
                 break
         else:
             raise TimeoutError("Timed out waiting for fast telemetry frame")
 
-        header = b"NX" + read_exact(header_len - 2)
+        remaining_header = serial_dev.read(header_len - 2)
+        if len(remaining_header) != header_len - 2:
+            raise TimeoutError("Timed out reading fast telemetry header")
+        header = b"NX" + remaining_header
         magic, version, flags, count, payload_len, timestamp_ms, checksum = struct.unpack(
             header_fmt, header
         )
         if magic != b"NX" or version != 1:
             raise ValueError("Unsupported fast telemetry frame")
-        if count > 32:
-            raise ValueError("Fast telemetry frame exceeds the supported motor count")
-        if payload_len != count * record_len:
-            raise ValueError("Malformed fast telemetry payload length")
 
-        payload = read_exact(payload_len)
-        calculated_checksum = (sum(header[:-2]) + sum(payload)) & 0xFFFF
-        if calculated_checksum != checksum:
+        payload = serial_dev.read(payload_len)
+        if len(payload) != payload_len:
+            raise TimeoutError("Timed out reading fast telemetry payload")
+        calc = (sum(header[: header_len - 2]) + sum(payload)) & 0xFFFF
+        if calc != checksum:
             raise ValueError("Fast telemetry checksum mismatch")
 
-        position_only = flags == 1  # FAST_TELEM_METHOD_FALLBACK_READ
-        records: dict[int, dict[str, float | int | bool | None]] = {}
-        for offset in range(0, payload_len, record_len):
+        records: dict[int, dict[str, float | int | bool]] = {}
+        offset = 0
+        for _ in range(count):
+            if offset + record_len > len(payload):
+                break
             mid, error, current_mA, velocity_raw, position_ticks, absolute_cdeg, relative_cdeg = (
                 struct.unpack_from(record_fmt, payload, offset)
             )
             records[mid] = {
                 "id": mid,
                 "error": bool(error),
-                "current": None if position_only else current_mA,
-                "velocity_raw": None if position_only else velocity_raw,
+                "current": current_mA,
+                "velocity_raw": velocity_raw,
                 "position_ticks": position_ticks,
                 "absolute_angle": absolute_cdeg / 100.0,
                 "angle": relative_cdeg / 100.0,
                 "timestamp_ms": timestamp_ms,
                 "flags": flags,
             }
+            offset += record_len
         return records
 
     def _get_motor_attribute(
@@ -462,6 +583,72 @@ class HandExo(object):
         if response:
             return response.strip().split(':')[1]
         return ""
+
+    def firmware_version(self, refresh: bool = False) -> tuple[int, ...]:
+        """
+        Return the device firmware version as a comparable tuple, e.g. (0, 3, 0).
+
+        The result is cached because feature gates call this on every guarded
+        command and a serial round-trip per call would dominate their cost.
+        Returns ``()`` if the device did not answer or the reply was unparseable;
+        that value compares less than any real version, so gates fail closed.
+
+        Args:
+            refresh (bool): Re-query the device instead of using the cache.
+
+        Returns:
+            tuple[int, ...]: Parsed version, or ``()`` if unknown.
+
+        """
+        if refresh or self._firmware_version is None:
+            self._firmware_version = parse_firmware_version(self.version())
+        return self._firmware_version
+
+    def firmware_at_least(self, minimum: tuple[int, ...]) -> bool:
+        """
+        Check whether the connected firmware is at least ``minimum``.
+
+        Args:
+            minimum (tuple[int, ...]): Version to compare against, e.g. ``(0, 3, 0)``.
+
+        Returns:
+            bool: True if the device reports a version >= ``minimum``.
+
+        """
+        return self.firmware_version() >= minimum
+
+    def _require_firmware(self, minimum: tuple[int, ...], feature: str) -> None:
+        """
+        Raise if the connected firmware predates ``feature``.
+
+        Guards commands whose absence the firmware does not report: ``set_gesture``
+        ACKs with ``OK:`` even for a state it could not resolve, so an ungated
+        call to old firmware looks successful while the hand never moves.
+
+        Args:
+            minimum (tuple[int, ...]): Required firmware version.
+            feature (str): Human-readable feature name for the error message.
+
+        Raises:
+            RuntimeError: If the device firmware is older than ``minimum``.
+
+        """
+        actual = self.firmware_version()
+        if actual >= minimum:
+            return
+        want = ".".join(str(p) for p in minimum)
+        have = ".".join(str(p) for p in actual) if actual else "unknown"
+        raise RuntimeError(
+            f"{feature} requires firmware >= {want}, but the device reports {have}. "
+            "Reflash src/cpp/nml_hand_exo, or use the flex/extend states only."
+        )
+
+    def require_gesture_angle_support(self) -> None:
+        """Raise unless the device supports continuous gesture positioning."""
+        actual = self.firmware_version()
+        if actual == FW_GESTURE_ANGLE_BACKPORT:
+            return
+        self._require_firmware(FW_PER_JOINT_REST, "set_gesture_angle")
 
     def home(self, motor_id: (int or str) = 'all'):
         """
@@ -816,17 +1003,180 @@ class HandExo(object):
 
     def set_current_limit(self, motor_id: (int or str), current_limit: float):
         """
-        Sets the current limit for the specified motor.
+        Sets the per-motor current limit for the specified motor.
+
+        This is a PER-MOTOR knob and does not bound what the motors draw
+        together.  From firmware 0.4.0 it sets the motor's *nominal* effort and
+        the firmware's budget allocator owns GOAL_CURRENT, so the value actually
+        applied may be lower while the fleet is near its combined cap.  See
+        :meth:`set_total_current_limit`.
 
         Args:
             motor_id (int or str): ID of the motor to set the current limit for.
-            current_limit (float): Desired current limit in Amperes.
+            current_limit (float): Desired current limit in mA.
 
         Returns:
             None
 
         """
         self.send_command(f"set_current_lim:{motor_id}:{current_limit}")
+
+    def set_total_current_limit(self, budget_mA: float):
+        """
+        Set the COMBINED current budget across all motors, in mA.
+
+        Per-motor limits cannot protect the supply: N motors each honouring a
+        200 mA limit still draw up to N*200 mA together, which is what browns
+        out the board when a posture commands every joint at once.  This caps
+        the aggregate.  The firmware clamps a new budget to the range it can
+        actually satisfy, so read it back with :meth:`get_total_current_limit`.
+
+        Args:
+            budget_mA (float): Combined budget in mA.
+
+        Returns:
+            None
+
+        Raises:
+            RuntimeError: If the device firmware is older than 0.4.0.
+            ValueError: If ``budget_mA`` is not a positive number.
+
+        """
+        self._require_firmware(FW_CURRENT_BUDGET, "The combined current budget")
+        try:
+            budget = float(budget_mA)
+        except (TypeError, ValueError):
+            raise ValueError(f"budget_mA must be numeric, got {budget_mA!r}")
+        if budget <= 0:
+            raise ValueError(f"budget_mA must be positive, got {budget:g}")
+        self.send_command(f"set_total_current_lim:{budget:g}")
+
+    def get_total_current_limit(self) -> float:
+        """
+        Read the combined current budget across all motors, in mA.
+
+        Returns:
+            float: Budget in mA, or ``float('nan')`` if the device did not answer.
+
+        Raises:
+            RuntimeError: If the device firmware is older than 0.4.0.
+
+        """
+        self._require_firmware(FW_CURRENT_BUDGET, "The combined current budget")
+        self.send_command("get_total_current_lim")
+        response = self._receive(wait_until_return=True)
+        match = re.search(r"([-+]?\d*\.?\d+)", response or "")
+        return float(match.group(1)) if match else float("nan")
+
+    def set_hold_current(self, hold_mA: float):
+        """
+        Set the current a settled or load-shed motor is allowed, in mA.
+
+        Every motor may sit at this value simultaneously, so the firmware caps
+        it at ``budget / n_motors``.
+
+        Args:
+            hold_mA (float): Hold current in mA.
+
+        Returns:
+            None
+
+        Raises:
+            RuntimeError: If the device firmware is older than 0.4.0.
+            ValueError: If ``hold_mA`` is negative or not a number.
+
+        """
+        self._require_firmware(FW_CURRENT_BUDGET, "The combined current budget")
+        try:
+            hold = float(hold_mA)
+        except (TypeError, ValueError):
+            raise ValueError(f"hold_mA must be numeric, got {hold_mA!r}")
+        if hold < 0:
+            raise ValueError(f"hold_mA must be non-negative, got {hold:g}")
+        self.send_command(f"set_hold_current:{hold:g}")
+
+    def set_current_governor(self, enabled: bool):
+        """
+        Enable or disable the closed-loop half of budget enforcement.
+
+        Disabling stops all current sampling and leaves the conservative
+        feed-forward clamp in charge: strictly safer for the supply, but every
+        motor is allocated its static worst-case share whether or not the fleet
+        is actually drawing that much.  It does NOT remove the budget.
+
+        Args:
+            enabled (bool): True to run the governor, False for static clamping.
+
+        Returns:
+            None
+
+        Raises:
+            RuntimeError: If the device firmware is older than 0.4.0.
+
+        """
+        self._require_firmware(FW_CURRENT_BUDGET, "The combined current budget")
+        self.send_command(f"set_current_governor:{'on' if enabled else 'off'}")
+
+    def current_status(self, timeout: float = 2.0) -> dict:
+        """
+        Read the budget state: cap, measured aggregate draw and per-motor allocation.
+
+        Returns
+        -------
+        dict
+            Keys ``total_budget_mA``, ``hold_current_mA``, ``governor`` (bool),
+            ``measured_total_mA`` (None until the firmware has sampled),
+            ``scale`` (fraction of nominal effort currently allowed),
+            ``measurement_trusted`` (bool) and ``motors`` keyed by DXL ID with
+            ``nominal_mA`` / ``applied_mA`` / ``state``.  ``applied`` below
+            ``nominal`` means the budget is actively clamping.
+
+        Raises:
+            RuntimeError: If the device firmware is older than 0.4.0.
+
+        """
+        self._require_firmware(FW_CURRENT_BUDGET, "The combined current budget")
+        self.send_command("current_status")
+        raw = self._receive(wait_until_return=True, timeout=timeout) or ""
+
+        status: dict = {"_raw": raw, "motors": {}}
+        scalars = {
+            "total_budget_mA": (r"total_budget_mA:\s*(\d+)", int),
+            "hold_current_mA": (r"hold_current_mA:\s*(\d+)", int),
+            "scale": (r"scale:\s*([\d.]+)", float),
+        }
+        for key, (pattern, cast) in scalars.items():
+            match = re.search(pattern, raw)
+            if match:
+                status[key] = cast(match.group(1))
+
+        match = re.search(r"governor:\s*(on|off)", raw)
+        if match:
+            status["governor"] = match.group(1) == "on"
+        match = re.search(r"measurement_trusted:\s*(true|false)", raw)
+        if match:
+            status["measurement_trusted"] = match.group(1) == "true"
+
+        # "n/a" until the firmware has taken its first sample; None is a clearer
+        # signal to a caller than 0, which would look like "drawing nothing".
+        match = re.search(r"measured_total_mA:\s*(n/a|\d+)", raw)
+        if match:
+            token = match.group(1)
+            status["measured_total_mA"] = None if token == "n/a" else int(token)
+
+        for line in raw.splitlines():
+            match = re.search(
+                r"id:\s*(\d+),\s*nominal_mA:\s*(\d+),\s*applied_mA:\s*(\d+),"
+                r"\s*state:\s*(\w+)",
+                line,
+            )
+            if match:
+                status["motors"][int(match.group(1))] = {
+                    "nominal_mA": int(match.group(2)),
+                    "applied_mA": int(match.group(3)),
+                    "state": match.group(4),
+                }
+        return status
 
     def get_goal_current(self, motor_id: (int or str) = 'all'):
         """Read signed direct-current goal in mA."""
@@ -1005,14 +1355,166 @@ class HandExo(object):
         """
         Sets the gesture for the exoskeleton.
 
+        Per-joint gestures (thumb/index/middle/ring/pinky/wrist) accept
+        ``extend``, ``rest`` and ``flex``.  ``rest`` needs firmware >= 0.3.0;
+        ``rad`` existed only between 0.3.1 and 0.6.0, where its motor was folded
+        into ``wrist``.  Firmware ACKs a gesture or state it cannot resolve, so
+        this raises on either side of that window instead of letting the caller
+        believe a move happened.
+
         Args:
-            gesture (str): Desired gesture (e.g., "open", "close", "pinch").
+            gesture (str): Desired gesture (e.g., "grasp", "index", "wrist").
+            state (str): Desired state (e.g., "open", "close", "extend", "rest", "flex").
 
         Returns:
             None
 
+        Raises:
+            RuntimeError: If the gesture/state pair needs newer firmware.
+
         """
+        if str(state).strip().lower() == "rest":
+            self._require_firmware(FW_PER_JOINT_REST, "The per-joint 'rest' state")
+        self._require_gesture_firmware(gesture)
         self.send_command(f"set_gesture:{gesture}:{state}")
+
+    def _require_gesture_firmware(self, gesture: str) -> None:
+        """
+        Raise if this gesture postdates -- or has been removed from -- the
+        connected firmware.
+
+        Both directions matter for the same reason: firmware ACKs a gesture it
+        cannot resolve, so neither "too old" nor "no longer exists" is visible
+        from the reply.
+
+        Args:
+            gesture (str): Gesture name, checked against
+                :data:`GESTURE_MIN_FIRMWARE` and :data:`GESTURE_MAX_FIRMWARE`.
+
+        Raises:
+            RuntimeError: If the device firmware does not define the gesture.
+
+        """
+        name = str(gesture).strip().lower()
+        minimum = GESTURE_MIN_FIRMWARE.get(name)
+        if minimum is not None:
+            self._require_firmware(minimum, f"The {name!r} gesture")
+        removed = GESTURE_MAX_FIRMWARE.get(name)
+        if removed is not None and self.firmware_version() >= removed:
+            gone = ".".join(str(p) for p in removed)
+            raise RuntimeError(
+                f"The {name!r} gesture was removed in firmware {gone}; the "
+                "device would ACK it and do nothing. Use 'wrist', which drives "
+                "both dorsal wrist motors together."
+            )
+
+    def set_gesture_angle(self, gesture: str, percent: float):
+        """
+        Position a per-joint gesture anywhere between its two end postures.
+
+        Continuous generalization of the extend/rest/flex states: ``percent``
+        interpolates the gesture between its own endpoints, so
+
+        - ``0``   -> exactly ``set_gesture(gesture, 'extend')``
+        - ``50``  -> halfway between the extend and flex postures
+        - ``100`` -> exactly ``set_gesture(gesture, 'flex')``
+
+        Each motor the gesture names travels its own share, so a gesture driving
+        several motors -- the thumb, or the coupled ``wrist`` pair -- keeps the
+        ratio between them at every percentage.  Retuning ``EXTEND_*``/``FLEX_*``
+        in ``config.h`` moves the axis with them, so a host's percentages keep
+        meaning the same postures across a retune.
+
+        Note that ``0`` is the extend posture, **not** home: with a non-zero
+        ``EXTEND_*`` a hand parked at home sits below 0% and
+        :meth:`get_gesture_angle` reports it as out of range.
+
+        :meth:`get_gesture_angle` is the exact inverse (firmware >= 0.6.0).
+
+        Args:
+            gesture (str): A per-joint gesture name; see
+                :data:`ANGLE_ADDRESSABLE_GESTURES`.  Multi-joint postures
+                (grasp, keygrip, pinch_*) are not addressable this way.
+            percent (float): Position in [0, 100].  The firmware clamps values
+                outside that range.
+
+        Returns:
+            None
+
+        Raises:
+            RuntimeError: If the device firmware is older than 0.3.0, or does
+                not define the gesture (``rad`` exists only in 0.3.1 - 0.5.x).
+            ValueError: If ``percent`` is not a number.
+
+        """
+        name = str(gesture).strip().lower()
+        if name not in ANGLE_ADDRESSABLE_GESTURES and name != "rad":
+            supported = ", ".join(sorted(ANGLE_ADDRESSABLE_GESTURES))
+            raise ValueError(
+                f"gesture must be one of {supported}, got {gesture!r}"
+            )
+        try:
+            pct = float(percent)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"percent must be numeric, got {percent!r}") from exc
+        if not math.isfinite(pct):
+            raise ValueError(f"percent must be finite, got {percent!r}")
+        self.require_gesture_angle_support()
+        if self.firmware_version() != FW_GESTURE_ANGLE_BACKPORT or name == "rad":
+            self._require_gesture_firmware(name)
+        if not 0.0 <= pct <= 100.0:
+            self.logger(
+                f"[set_gesture_angle] {pct:g}% is outside [0, 100]; "
+                "firmware will clamp it.",
+                warning=True,
+            )
+        self.send_command(f"set_gesture_angle:{name}:{pct:g}")
+
+    def get_gesture_angle(
+        self, gesture: str = "all", timeout: float = 1.0
+    ) -> dict[str, int]:
+        """
+        Read where each per-joint gesture currently sits on its 0-100 axis.
+
+        The read-back half of :meth:`set_gesture_angle`, on the same axis: a
+        gesture commanded to 40 reads back 40 once it arrives, ``extend`` reads
+        back as 0 and ``flex`` as 100.  ``rest`` reads back wherever its
+        ``REST_*`` constants place it between the two.
+
+        Values are integers so the out-of-range signals share the encoding:
+
+        - ``0`` to ``100`` -- position between the extend and flex postures
+        - :data:`GESTURE_ANGLE_BELOW_RANGE` (101) -- past the extend end
+        - :data:`GESTURE_ANGLE_ABOVE_RANGE` (102) -- past the flex end
+        - :data:`GESTURE_ANGLE_UNAVAILABLE` (255) -- no position available
+
+        A hand parked at home reads 101 whenever ``EXTEND_*`` is non-zero, since
+        home sits below the extend posture.
+
+        A gesture spanning several motors (the thumb, the coupled ``wrist``
+        pair, or any joint on a dual build) reports the mean of the per-motor
+        percentages, skipping joints that cannot carry one.
+
+        Args:
+            gesture (str): A single gesture name, or ``"all"``.
+            timeout (float): Seconds to wait for the reply.
+
+        Returns:
+            dict[str, int]: Gesture name -> code, in firmware order.  Empty if
+            the device did not answer.
+
+        Raises:
+            RuntimeError: If the device firmware is older than 0.6.0.
+
+        """
+        self._require_firmware(FW_GESTURE_ANGLE_READBACK, "get_gesture_angle")
+        name = str(gesture).strip().lower() or "all"
+        if name != "all":
+            self._require_gesture_firmware(name)
+        self.send_command(f"get_gesture_angle:{name}")
+        return parse_gesture_angles(
+            self._receive(wait_until_return=True, timeout=timeout)
+        )
 
     def set_gesture_state(self, state: str):
         """

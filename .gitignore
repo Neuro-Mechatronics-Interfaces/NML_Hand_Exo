@@ -115,3 +115,6 @@ exo_logs
 # Runtime script logs
 scripts/logs/*.jsonl
 logs/*.jsonl
+
+# Agentic workflow ignores
+.claude

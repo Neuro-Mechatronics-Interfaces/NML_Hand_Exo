@@ -2,51 +2,70 @@
 
 This directory contains example scripts demonstrating how to use the NML Hand Exoskeleton Python API.
 
-## 📁 Directory Structure
+##  Directory Structure
 
 Examples are organized by complexity and topic:
 
 ```
 examples/
-├── README.md                           # This file
-├── 01_basic/                          # Getting started
-│   ├── example_serial_exo.py          # Basic serial connection
-│   ├── example_tcp_exo.py             # TCP/IP connection (WiFi)
-├── 02_motor_control/                  # Motor control basics
-│   ├── motor_test.py                  # Simple motor movement test
-│   ├── example_motor_config.py        # Velocity/acceleration/limits
-│   └── example_batch_operations.py    # Batch operations with 'all'
-├── 03_sensors/                        # Sensor integration
-│   ├── example_imu_control.py         # IMU-based wrist control
-│   └── imu/
-│       └── imu_serial.py              # Read IMU data (roll, pitch, yaw)
-├── 04_advanced/                       # Advanced features
-│   ├── example_advanced_config.py     # Debug, OLED, modes, baudrate
-│   └── UART_uno_pico/                 # UART communication examples
-├── 05_applications/                   # Real-world applications
-│   ├── example_pylsl_read.py          # LSL reading example
-│   ├── pca_viewer.py                  # PCA visualization
-│   └── task/                          # Task-specific applications
-│       ├── training_task.py           # Training task with GUI
-│       ├── task_gui_minimal.py        # Minimal task GUI
-│       └── task_config.json           # Task configuration
-└── 06_lsl_streaming/                  # Lab Streaming Layer
-    └── LSL/
-        ├── lsl_classifier_trigger.py  # EMG classifier control
-        ├── lsl_gesture_controller.py  # LSL marker control
-        ├── lsl_state_trigger.py       # State-based EMG control
-        ├── lsl_broadcast_test.py      # LSL broadcasting
-        ├── lsl_subscribe_test.py      # LSL subscription
-        ├── lsl_stacked_plot.py        # Stacked EMG plotting
-        ├── lsl_grid_plot.py           # Grid EMG visualization
-        └── lsl_rms_barplot.py         # RMS bar plot
+|- README.md                           # This file
+|- 01_basic/                           # Getting started
+|  |- example_serial_exo.py            # Basic serial connection
+|  |- example_tcp_exo.py               # TCP/IP connection (WiFi)
+|  `- hand_exo_cli.py                  # Command-line interface tool
+|- 02_motor_control/                   # Motor control basics
+|  |- motor_test.py                    # Simple motor movement test
+|  |- joint_range_test.py              # Sweep motors through full range
+|  |- example_motor_config.py          # Velocity/acceleration/limits
+|  `- example_batch_operations.py      # Batch operations with 'all'
+|- 03_sensors/                         # Sensor integration
+|  |- example_imu_control.py           # IMU-based wrist control
+|  `- imu/
+|     `- imu_serial.py                 # Read IMU data (roll, pitch, yaw)
+|- 04_advanced/                        # Advanced features
+|  |- example_advanced_config.py       # Debug, OLED, modes, baudrate
+|  `- UART_uno_pico/                   # UART communication examples
+|- 05_applications/                    # Real-world applications
+|  |- example_pylsl_read.py            # LSL reading example
+|  |- live_decoder_from_lsl_stream.py  # Real-time decoder
+|  |- pca_viewer.py                    # PCA visualization
+|  `- task/                            # Task-specific applications
+|     |- training_task.py              # Training task with GUI
+|     |- task_gui_minimal.py           # Minimal task GUI
+|     `- task_config.json              # Task configuration
+|- 06_lsl_streaming/                   # Lab Streaming Layer
+|  `- LSL/
+|     |- lsl_classifier_trigger.py     # EMG classifier control
+|     |- lsl_gesture_controller.py     # LSL marker control
+|     |- lsl_state_trigger.py          # State-based EMG control
+|     |- lsl_broadcast_test.py         # LSL broadcasting
+|     |- lsl_subscribe_test.py         # LSL subscription
+|     |- lsl_stacked_plot.py           # Stacked EMG plotting
+|     |- lsl_grid_plot.py              # Grid EMG visualization
+|     `- lsl_rms_barplot.py            # RMS bar plot
+|- 07_mindrove/                        # MindRove control panel
+|- 08_udp/                             # UDP receiver and manual gesture GUI
+|- calibration/                        # Calibration & range-of-motion
+|  |- calibrate_exo.py                 # CLI calibration wizard (updates config.h)
+|  |- rom_assessment.py                # ROM protocol -> output_data/*.csv
+|  `- profiles/                        # Per-user calibration profiles (JSON)
+|- udp_bindings/                       # Integer UDP binding profiles
+|- scripts/                            # Standalone tools (no Qt)
+|  |- README.md                        # UDP forwarder + panel docs
+|  |- udp_gesture_receiver.py          # UDP integer -> serial gesture forwarder
+|  |- udp_gesture_gui.py               # Tkinter panel that drives the receiver
+|  `- diagnostics/                     # Port scans, CDC latency, pose capture
+`- tests/                              # Unit tests (python -m pytest examples/tests -q)
 ```
+
+`tests/` imports the UDP receiver from `../scripts`, so the two must stay
+siblings under `examples/`.
 
 ---
 
-## 🚀 Getting Started
+##  Getting Started
 
-### 01. Basic Examples - Connection & Setup
+### Basic Examples - Connection & Setup
 
 #### Serial Connection (`01_basic/example_serial_exo.py`)
 Basic example showing how to connect via serial and query device information.
@@ -68,7 +87,29 @@ Example for connecting over TCP/IP (e.g., using Pico W with WiFi).
 python examples/01_basic/example_tcp_exo.py
 ```
 
-### 02. Motor Control Examples
+#### Command-Line Interface (`01_basic/hand_exo_cli.py`)
+Full-featured CLI tool for sending commands and monitoring serial output.
+
+```bash
+# List available serial ports
+python examples/01_basic/hand_exo_cli.py --list-ports
+
+# Connect and print device info
+python examples/01_basic/hand_exo_cli.py --connect COM5 --baud 57600 --info
+
+# Home all motors
+python examples/01_basic/hand_exo_cli.py --connect COM5 --home
+
+# Send custom command
+python examples/01_basic/hand_exo_cli.py --connect COM5 --send "led:1:on"
+
+# Monitor serial output
+python examples/01_basic/hand_exo_cli.py --connect COM5 --monitor
+```
+
+---
+
+### Motor Control Examples
 
 #### Motor Configuration (`02_motor_control/example_motor_config.py`)
 Demonstrates setting velocity, acceleration, and motor limits.
@@ -103,7 +144,22 @@ Simple motor movement test - moves motor 0 to different angles.
 python examples/02_motor_control/motor_test.py
 ```
 
-### 03. Sensor Examples
+#### Joint Range Test (`02_motor_control/joint_range_test.py`)
+Systematically sweeps each motor through its full range of motion.
+
+```bash
+python examples/02_motor_control/joint_range_test.py
+```
+
+**Features:**
+- Queries home positions and joint limits
+- Sweeps to upper limit, returns home
+- Sweeps to lower limit, returns home
+- Processes all motors sequentially
+
+---
+
+### Sensor Examples
 
 #### IMU-Based Control (`03_sensors/example_imu_control.py`)
 Control motor angles based on IMU wrist orientation.
@@ -127,7 +183,7 @@ python examples/03_sensors/imu/imu_serial.py
 
 ---
 
-### 04. Advanced Examples
+### Advanced Examples
 
 #### Advanced Configuration (`04_advanced/example_advanced_config.py`)
 Demonstrates debug mode, OLED control, motor modes, and baudrate settings.
@@ -146,7 +202,7 @@ python examples/04_advanced/example_advanced_config.py
 
 ---
 
-### 05. Application Examples
+### Application Examples
 
 These examples demonstrate complete applications and task implementations.
 
@@ -155,6 +211,13 @@ Example of reading EMG data from LSL streams.
 
 ```bash
 python examples/05_applications/example_pylsl_read.py
+```
+
+#### Live Decoder (`05_applications/live_decoder_from_lsl_stream.py`)
+Real-time gesture decoding from EMG streams.
+
+```bash
+python examples/05_applications/live_decoder_from_lsl_stream.py
 ```
 
 #### Training Task (`05_applications/task/training_task.py`)
@@ -166,7 +229,7 @@ python examples/05_applications/task/training_task.py
 
 ---
 
-### 06. LSL (Lab Streaming Layer) Examples
+### LSL (Lab Streaming Layer) Examples
 
 These examples demonstrate real-time EMG streaming and gesture control using LSL.
 
@@ -180,7 +243,7 @@ pip install pylsl
 Uses an EMG classifier to trigger gesture changes.
 
 ```bash
-python examples/06_lsl_streaming/LSL/lsl_classifier_trigger.py --port COM4 --baudrate 1000000
+python examples/06_lsl_streaming/LSL/lsl_classifier_trigger.py --port COM4 --baudrate 115200
 ```
 
 #### LSL Gesture Controller (`06_lsl_streaming/LSL/lsl_gesture_controller.py`)
@@ -194,7 +257,7 @@ python examples/06_lsl_streaming/LSL/lsl_gesture_controller.py --port COM4 --typ
 - `--type`: LSL stream type (default: "Markers")
 - `--name`: LSL stream name (default: "EMGGesture")
 - `--port`: Serial port (default: "COM4")
-- `--baudrate`: Baud rate (default: 1000000 for USB serial)
+- `--baudrate`: Baud rate (default: 115200)
 - `--verbose`: Enable verbose output
 
 #### State Trigger (`06_lsl_streaming/LSL/lsl_state_trigger.py`)
@@ -223,7 +286,45 @@ python examples/06_lsl_streaming/LSL/lsl_rms_barplot.py --type EMG --name OpenEp
 
 ---
 
-## 🔧 Common Usage Patterns
+### UDP Gesture Control (`08_udp`)
+
+The two scripts in `08_udp` are designed to run together. `udp_gesture_receiver.py` owns the dual-CDC connection to the exo, translates UDP integers into gesture commands, and returns acknowledgements. `udp_gesture_gui.py` is the manual UDP control panel used to register the acknowledgement port and send those integers.
+
+> **Safety:** The receiver arms and homes the exo by default. Keep hands and obstructions clear before starting it.
+
+1. Start the receiver in the first terminal. Its defaults use `COM10` for commands and `COM11` for telemetry; pass the appropriate ports if your system enumerated them differently.
+
+   ```bash
+   python examples/08_udp/udp_gesture_receiver.py --cmd-port COM10 --telem-port COM11
+   ```
+
+2. Wait until the receiver finishes connecting, arming, and binding its UDP socket. It must print the following line before you proceed:
+
+   > Send an integer > 64 first to register the port acks should return on.
+
+Do not click **Connect** in the GUI before this line appears. It means the receiver is ready for the GUI's initial return-port announcement.
+
+3. Start the GUI in a second terminal:
+
+   ```bash
+   python examples/08_udp/udp_gesture_gui.py
+   ```
+
+4. Click **Connect**. The GUI sends its listening port as an integer greater than 64, and the receiver registers that port for acknowledgements.
+
+5. Test every joint in this order, clicking each numbered button once:
+
+   - **Rest:** `+11`, `+12`, `+13`, `+14`, `+15`, `+16`
+   - **Flex:** `+1`, `+2`, `+3`, `+4`, `+5`, `+6`
+   - **Extend:** `-1`, `-2`, `-3`, `-4`, `-5`, `-6`
+
+The values address the thumb, index, middle, ring, pinky, and wrist in that order. You should hear the corresponding motors move after every click, with movement beginning nearly instantly.
+
+If every movement produces the expected immediate motor response, the exo and its acknowledgement path are configured correctly and it is ready for UDP-driven control.
+
+---
+
+##  Common Usage Patterns
 
 ### Basic Connection Setup
 
@@ -231,7 +332,7 @@ python examples/06_lsl_streaming/LSL/lsl_rms_barplot.py --type EMG --name OpenEp
 from nml_hand_exo.interface import HandExo, SerialComm
 
 # Create communication interface
-comm = SerialComm(port="COM6", baudrate=1000000)
+comm = SerialComm(port="COM6", baudrate=57600)
 
 # Create HandExo instance
 exo = HandExo(comm, verbose=False)
@@ -251,20 +352,19 @@ exo.close()
 
 ```python
 # Enable motor
-motor_id = sorted(exo.info()["motors"])[0]
-exo.enable_motor(motor_id=motor_id)
+exo.enable_motor(motor_id=0)
 
 # Set motor angle (relative to home position)
-exo.set_motor_angle(motor_id=motor_id, angle=45)
+exo.set_motor_angle(motor_id=0, angle=45)
 
 # Get current angle
-angle = exo.get_motor_angle(motor_id=motor_id)
+angle = exo.get_motor_angle(motor_id=0)
 
 # Set motor to home position
-exo.home(motor_id=motor_id)
+exo.home(motor_id=0)
 
 # Disable motor
-exo.disable_motor(motor_id=motor_id)
+exo.disable_motor(motor_id=0)
 ```
 
 ### Reading Sensor Data
@@ -280,10 +380,10 @@ roll = exo.get_imu_roll()
 pitch = exo.get_imu_pitch()
 
 # Get motor torque
-torque = exo.get_motor_torque(motor_id=motor_id)
+torque = exo.get_motor_torque(motor_id=0)
 
 # Get motor current
-current = exo.get_motor_current(motor_id=motor_id)
+current = exo.get_motor_current(motor_id=0)
 ```
 
 ### Gesture Control
@@ -307,26 +407,26 @@ exo.cycle_gesture_state()
 
 ---
 
-## ⚠️ Known Issues & Improvements Needed
+##  Known Issues & Improvements Needed
 
 ### Import Inconsistencies
-✅ **FIXED** - All examples now use consistent import patterns:
-- ✅ Correct: `from nml_hand_exo.interface import HandExo, SerialComm`
-- ✅ All examples include proper error handling with try/finally
-- ✅ All examples call `exo.close()` to clean up connections
+ **FIXED** - All examples now use consistent import patterns:
+-  Correct: `from nml_hand_exo.interface import HandExo, SerialComm`
+-  All examples include proper error handling with try/finally
+-  All examples call `exo.close()` to clean up connections
 
 ### Method Call Issues
-✅ **FIXED** - Removed deprecated parameters from all examples
+ **FIXED** - Removed deprecated parameters from all examples
 
 ### Documentation
-✅ **COMPLETE** - Comprehensive README with organized structure
-- ✅ Examples organized by complexity (01-06)
-- ✅ Clear usage instructions for all examples
-- ✅ Common patterns and best practices documented
+ **COMPLETE** - Comprehensive README with organized structure
+-  Examples organized by complexity (basic to lsl_streaming)
+-  Clear usage instructions for all examples
+-  Common patterns and best practices documented
 
 ---
 
-## 📝 Best Practices
+##  Best Practices
 
 1. **Always use explicit imports**: `from nml_hand_exo.interface import HandExo, SerialComm`
 2. **Use context managers or try/finally**: Ensure `exo.close()` is called
@@ -337,38 +437,37 @@ exo.cycle_gesture_state()
 
 ---
 
-## 🆕 Example Coverage
+##  Example Coverage
 
 Complete coverage of all API features:
-- ✅ Basic connection (serial, TCP)
-- ✅ Motor control (position, velocity, acceleration, limits)
-- ✅ Batch operations ('all' keyword)
-- ✅ IMU sensor reading
-- ✅ IMU-based control (`set_yaw_angle`)
-- ✅ Debug mode control
-- ✅ OLED display control
-- ✅ Motor mode switching
-- ✅ Exo mode switching
-- ✅ Gesture control
-- ✅ LSL streaming integration
-- ✅ Real-time visualization
-- ✅ Task applications
+-  Basic connection (serial, TCP)
+-  Motor control (position, velocity, acceleration, limits)
+-  Batch operations ('all' keyword)
+-  IMU sensor reading
+-  IMU-based control (`set_yaw_angle`)
+-  Debug mode control
+-  OLED display control
+-  Motor mode switching
+-  Exo mode switching
+-  Gesture control
+-  LSL streaming integration
+-  Real-time visualization
+-  Task applications
 
 All newly fixed API methods are demonstrated in the examples!
 
 ---
 
-## 🐛 Reporting Issues
+##  Reporting Issues
 
 If you find bugs or inconsistencies in the examples, please report them at:
 https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/issues
 
 ---
 
-## 📚 Additional Resources
+##  Additional Resources
 
 - **API Documentation**: See `docs/` folder
 - **Firmware Source**: `src/cpp/nml_hand_exo/`
 - **Python Package**: `src/nml_hand_exo/`
 - **Command Reference**: `COMMAND_INCONSISTENCIES.md` (now resolved)
-

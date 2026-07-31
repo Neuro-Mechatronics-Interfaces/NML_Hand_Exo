@@ -39,9 +39,15 @@ struct GestureMap {
 extern GestureMap gestureLibrary[N_GESTURES];
 
 int jointIndexByName(const char* jointName);
+/// @brief Resolve a gesture state into absolute per-motor angles.
+/// @param outTouched Optional, length N_MOTORS. Set true for joints this state
+///        actually commands. A sparse state only claims the joints it names, so
+///        callers can leave the rest of the hand where it is rather than
+///        driving it home. Dense states claim every joint.
 void resolveStateAngles(const GestureState& state,
                         const float* homeAngles,   // length N_MOTORS
-                        float* outAngles);         // length N_MOTORS
+                        float* outAngles,          // length N_MOTORS
+                        bool* outTouched = nullptr);
                         
 /// @brief Helper function to find the index of a gesture by name.
 inline int findGestureIndex(const String& gestureName) {
