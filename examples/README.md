@@ -43,6 +43,8 @@ examples/
 |     |- lsl_stacked_plot.py           # Stacked EMG plotting
 |     |- lsl_grid_plot.py              # Grid EMG visualization
 |     `- lsl_rms_barplot.py            # RMS bar plot
+|- 07_mindrove/                        # MindRove control panel
+|- 08_udp/                             # UDP receiver and manual gesture GUI
 |- calibration/                        # Calibration & range-of-motion
 |  |- calibrate_exo.py                 # CLI calibration wizard (updates config.h)
 |  |- rom_assessment.py                # ROM protocol -> output_data/*.csv
@@ -281,6 +283,44 @@ python examples/06_lsl_streaming/LSL/lsl_grid_plot.py --type EMG --name OpenEphy
 ```bash
 python examples/06_lsl_streaming/LSL/lsl_rms_barplot.py --type EMG --name OpenEphysEMG
 ```
+
+---
+
+### UDP Gesture Control (`08_udp`)
+
+The two scripts in `08_udp` are designed to run together. `udp_gesture_receiver.py` owns the dual-CDC connection to the exo, translates UDP integers into gesture commands, and returns acknowledgements. `udp_gesture_gui.py` is the manual UDP control panel used to register the acknowledgement port and send those integers.
+
+> **Safety:** The receiver arms and homes the exo by default. Keep hands and obstructions clear before starting it.
+
+1. Start the receiver in the first terminal. Its defaults use `COM10` for commands and `COM11` for telemetry; pass the appropriate ports if your system enumerated them differently.
+
+   ```bash
+   python examples/08_udp/udp_gesture_receiver.py --cmd-port COM10 --telem-port COM11
+   ```
+
+2. Wait until the receiver finishes connecting, arming, and binding its UDP socket. It must print the following line before you proceed:
+
+   > Send an integer > 64 first to register the port acks should return on.
+
+Do not click **Connect** in the GUI before this line appears. It means the receiver is ready for the GUI's initial return-port announcement.
+
+3. Start the GUI in a second terminal:
+
+   ```bash
+   python examples/08_udp/udp_gesture_gui.py
+   ```
+
+4. Click **Connect**. The GUI sends its listening port as an integer greater than 64, and the receiver registers that port for acknowledgements.
+
+5. Test every joint in this order, clicking each numbered button once:
+
+   - **Rest:** `+11`, `+12`, `+13`, `+14`, `+15`, `+16`
+   - **Flex:** `+1`, `+2`, `+3`, `+4`, `+5`, `+6`
+   - **Extend:** `-1`, `-2`, `-3`, `-4`, `-5`, `-6`
+
+The values address the thumb, index, middle, ring, pinky, and wrist in that order. You should hear the corresponding motors move after every click, with movement beginning nearly instantly.
+
+If every movement produces the expected immediate motor response, the exo and its acknowledgement path are configured correctly and it is ready for UDP-driven control.
 
 ---
 
