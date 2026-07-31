@@ -120,6 +120,17 @@ Enumerations</h2></td></tr>
  }</td></tr>
 <tr class="memdesc:a041ebb14115ab2af92a4b3c1c6c056c2"><td class="mdescLeft">&#160;</td><td class="mdescRight">Enum to manage the operating mode of the exo. <br /></td></tr>
 <tr class="separator:a041ebb14115ab2af92a4b3c1c6c056c2"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a91035ba68220c947363aee92a3983f87" id="r_a91035ba68220c947363aee92a3983f87"><td class="memItemLeft" align="right" valign="top">enum &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="nml__hand__exo_8h.html#a91035ba68220c947363aee92a3983f87">MoveVerdict</a> : uint8_t { <br />
+&#160;&#160;<b>MOVE_VERDICT_NONE</b> = 0
+, <a class="el" href="nml__hand__exo_8h.html#a91035ba68220c947363aee92a3983f87aa1141e505934f52350dd907cc532289f">MOVE_VERDICT_REACHED</a>
+, <a class="el" href="nml__hand__exo_8h.html#a91035ba68220c947363aee92a3983f87a49f78b1a7384d9f2a9612899ba1335f0">MOVE_VERDICT_STALLED</a>
+, <a class="el" href="nml__hand__exo_8h.html#a91035ba68220c947363aee92a3983f87a8b984bbdc81eb2322f07abab4105bdca">MOVE_VERDICT_SHORT</a>
+, <br />
+&#160;&#160;<a class="el" href="nml__hand__exo_8h.html#a91035ba68220c947363aee92a3983f87a8465a99d0144620ba06f4bc44bbcb081">MOVE_VERDICT_STARVED</a>
+<br />
+ }</td></tr>
+<tr class="memdesc:a91035ba68220c947363aee92a3983f87"><td class="mdescLeft">&#160;</td><td class="mdescRight">Outcome of one commanded move, reported in GESTURE_RESULT lines.  <a href="nml__hand__exo_8h.html#a91035ba68220c947363aee92a3983f87">More...</a><br /></td></tr>
+<tr class="separator:a91035ba68220c947363aee92a3983f87"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ac46b19935cb98c01b9592c445d45e0f5" id="r_ac46b19935cb98c01b9592c445d45e0f5"><td class="memItemLeft" align="right" valign="top"><a id="ac46b19935cb98c01b9592c445d45e0f5" name="ac46b19935cb98c01b9592c445d45e0f5"></a>enum &#160;</td><td class="memItemRight" valign="bottom"><b>FastTelemetryMethod</b> : uint8_t { <b>FAST_TELEM_METHOD_FAILED</b> = 0
 , <b>FAST_TELEM_METHOD_FALLBACK_READ</b> = 1
 , <b>FAST_TELEM_METHOD_FAST_SYNC_READ</b> = 2
@@ -132,6 +143,9 @@ Functions</h2></td></tr>
 <tr class="memitem:a0ee7aa6f5a7165bdd7d390174dfbf76c" id="r_a0ee7aa6f5a7165bdd7d390174dfbf76c"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="nml__hand__exo_8h.html#a0ee7aa6f5a7165bdd7d390174dfbf76c">debugPrint</a> (const String &amp;msg)</td></tr>
 <tr class="memdesc:a0ee7aa6f5a7165bdd7d390174dfbf76c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bluetooth serial stream used for commands.  <br /></td></tr>
 <tr class="separator:a0ee7aa6f5a7165bdd7d390174dfbf76c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa6a6812a99f62261438be09cd3e2c38e" id="r_aa6a6812a99f62261438be09cd3e2c38e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="nml__hand__exo_8h.html#aa6a6812a99f62261438be09cd3e2c38e">telemetryPrintln</a> (const String &amp;msg)</td></tr>
+<tr class="memdesc:aa6a6812a99f62261438be09cd3e2c38e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Emits a line to the reply/telemetry CDC(s) per gReplyRoute.  <br /></td></tr>
+<tr class="separator:aa6a6812a99f62261438be09cd3e2c38e"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a393c4f0e144d0f7a406268109fbd5415" id="r_a393c4f0e144d0f7a406268109fbd5415"><td class="memItemLeft" align="right" valign="top"><a id="a393c4f0e144d0f7a406268109fbd5415" name="a393c4f0e144d0f7a406268109fbd5415"></a>
 void&#160;</td><td class="memItemRight" valign="bottom"><b>onModeButtonPress</b> ()</td></tr>
 <tr class="memdesc:a393c4f0e144d0f7a406268109fbd5415"><td class="mdescLeft">&#160;</td><td class="mdescRight">Mode press function. <br /></td></tr>
@@ -146,11 +160,42 @@ Variables</h2></td></tr>
 bool&#160;</td><td class="memItemRight" valign="bottom"><b>VERBOSE</b></td></tr>
 <tr class="memdesc:af99838407de1f00344ce35d8675e41a7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Verbose output toggle for debugging. <br /></td></tr>
 <tr class="separator:af99838407de1f00344ce35d8675e41a7"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae42ed6e89af84ac3fc7dedd4597008ad" id="r_ae42ed6e89af84ac3fc7dedd4597008ad"><td class="memItemLeft" align="right" valign="top">uint8_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="nml__hand__exo_8h.html#ae42ed6e89af84ac3fc7dedd4597008ad">gReplyRoute</a></td></tr>
+<tr class="memdesc:ae42ed6e89af84ac3fc7dedd4597008ad"><td class="mdescLeft">&#160;</td><td class="mdescRight">Where command replies / telemetry are emitted (dual-CDC). One of REPLY_ROUTE_BOTH / REPLY_ROUTE_TELEM / REPLY_ROUTE_CMD (see <a class="el" href="config_8h.html" title="Header file for custom definitions and configs for the NML Hand Exoskeleton project.">config.h</a>). Default REPLY_ROUTE_BOTH keeps legacy single-port hosts working.  <br /></td></tr>
+<tr class="separator:ae42ed6e89af84ac3fc7dedd4597008ad"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>API header for the NML Hand Exoskeleton device. </p>
 <p>This file declares the <a class="el" href="classNMLHandExo.html" title="Class to manage the NML Hand Exoskeleton, providing initialization, motor control,...">NMLHandExo</a> class and helper utilities for managing and controlling the exoskeleton using Dynamixel servos. </p>
-</div><h2 class="groupheader">Function Documentation</h2>
+</div><h2 class="groupheader">Enumeration Type Documentation</h2>
+<a id="a91035ba68220c947363aee92a3983f87" name="a91035ba68220c947363aee92a3983f87"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a91035ba68220c947363aee92a3983f87">&#9670;&#160;</a></span>MoveVerdict</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">enum <a class="el" href="nml__hand__exo_8h.html#a91035ba68220c947363aee92a3983f87">MoveVerdict</a> : uint8_t</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Outcome of one commanded move, reported in GESTURE_RESULT lines. </p>
+<p>The command ack only says the firmware ACCEPTED a goal; these say what the motor then did. "Accepted but never moved" is otherwise invisible to a host. </p>
+<table class="fieldtable">
+<tr><th colspan="2">Enumerator</th></tr><tr><td class="fieldname"><a id="a91035ba68220c947363aee92a3983f87aa1141e505934f52350dd907cc532289f" name="a91035ba68220c947363aee92a3983f87aa1141e505934f52350dd907cc532289f"></a>MOVE_VERDICT_REACHED&#160;</td><td class="fielddoc"><p>Stopped within tolerance of its goal. </p>
+</td></tr>
+<tr><td class="fieldname"><a id="a91035ba68220c947363aee92a3983f87a49f78b1a7384d9f2a9612899ba1335f0" name="a91035ba68220c947363aee92a3983f87a49f78b1a7384d9f2a9612899ba1335f0"></a>MOVE_VERDICT_STALLED&#160;</td><td class="fielddoc"><p>Drew hard without arriving, or was load-shed. </p>
+</td></tr>
+<tr><td class="fieldname"><a id="a91035ba68220c947363aee92a3983f87a8b984bbdc81eb2322f07abab4105bdca" name="a91035ba68220c947363aee92a3983f87a8b984bbdc81eb2322f07abab4105bdca"></a>MOVE_VERDICT_SHORT&#160;</td><td class="fielddoc"><p>Stopped pulling, but not at its goal. </p>
+</td></tr>
+<tr><td class="fieldname"><a id="a91035ba68220c947363aee92a3983f87a8465a99d0144620ba06f4bc44bbcb081" name="a91035ba68220c947363aee92a3983f87a8465a99d0144620ba06f4bc44bbcb081"></a>MOVE_VERDICT_STARVED&#160;</td><td class="fielddoc"><p>Never funded: the budget had no slot for it. </p>
+</td></tr>
+</table>
+
+</div>
+</div>
+<h2 class="groupheader">Function Documentation</h2>
 <a id="a0ee7aa6f5a7165bdd7d390174dfbf76c" name="a0ee7aa6f5a7165bdd7d390174dfbf76c"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a0ee7aa6f5a7165bdd7d390174dfbf76c">&#9670;&#160;</a></span>debugPrint()</h2>
 
@@ -174,6 +219,58 @@ bool&#160;</td><td class="memItemRight" valign="bottom"><b>VERBOSE</b></td></tr>
   </table>
   </dd>
 </dl>
+
+</div>
+</div>
+<a id="aa6a6812a99f62261438be09cd3e2c38e" name="aa6a6812a99f62261438be09cd3e2c38e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa6a6812a99f62261438be09cd3e2c38e">&#9670;&#160;</a></span>telemetryPrintln()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void telemetryPrintln </td>
+          <td>(</td>
+          <td class="paramtype">const String &amp;&#160;</td>
+          <td class="paramname"><em>msg</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Emits a line to the reply/telemetry CDC(s) per gReplyRoute. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">msg</td><td>The message to print. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<h2 class="groupheader">Variable Documentation</h2>
+<a id="ae42ed6e89af84ac3fc7dedd4597008ad" name="ae42ed6e89af84ac3fc7dedd4597008ad"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae42ed6e89af84ac3fc7dedd4597008ad">&#9670;&#160;</a></span>gReplyRoute</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">uint8_t gReplyRoute</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">extern</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Where command replies / telemetry are emitted (dual-CDC). One of REPLY_ROUTE_BOTH / REPLY_ROUTE_TELEM / REPLY_ROUTE_CMD (see <a class="el" href="config_8h.html" title="Header file for custom definitions and configs for the NML Hand Exoskeleton project.">config.h</a>). Default REPLY_ROUTE_BOTH keeps legacy single-port hosts working. </p>
+<p>Where command replies / telemetry are emitted (dual-CDC). One of REPLY_ROUTE_BOTH / REPLY_ROUTE_TELEM / REPLY_ROUTE_CMD (see <a class="el" href="config_8h.html" title="Header file for custom definitions and configs for the NML Hand Exoskeleton project.">config.h</a>). Default REPLY_ROUTE_BOTH keeps legacy single-port hosts working. </p>
 
 </div>
 </div>

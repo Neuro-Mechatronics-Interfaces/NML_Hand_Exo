@@ -1,5 +1,4 @@
 var searchData=
 [
-  ['rebootmotor_0',['rebootMotor',['../classNMLHandExo.html#ac9a95fbaa68f3ff51c3ede9d76447984',1,'NMLHandExo']]],
-  ['resetallzeros_1',['resetAllZeros',['../classNMLHandExo.html#a717ef5205071bb59d054482fc8be3894',1,'NMLHandExo']]]
+  ['parsemessage_0',['parsemessage',['../utils_8cpp.html#aafdf268e3172cc74601bcb324c5e95bf',1,'parseMessage(NMLHandExo &amp;exo, GestureController &amp;gc, Adafruit_BNO055 &amp;imu, String token):&#160;utils.cpp'],['../utils_8h.html#aafdf268e3172cc74601bcb324c5e95bf',1,'parseMessage(NMLHandExo &amp;exo, GestureController &amp;gc, Adafruit_BNO055 &amp;imu, String token):&#160;utils.cpp']]]
 ];

@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['parsemessage_0',['parsemessage',['../utils_8cpp.html#aafdf268e3172cc74601bcb324c5e95bf',1,'parseMessage(NMLHandExo &amp;exo, GestureController &amp;gc, Adafruit_BNO055 &amp;imu, String token):&#160;utils.cpp'],['../utils_8h.html#aafdf268e3172cc74601bcb324c5e95bf',1,'parseMessage(NMLHandExo &amp;exo, GestureController &amp;gc, Adafruit_BNO055 &amp;imu, String token):&#160;utils.cpp']]]
+  ['onmodebuttonpress_0',['onmodebuttonpress',['../nml__hand__exo_8cpp.html#a393c4f0e144d0f7a406268109fbd5415',1,'onModeButtonPress():&#160;nml_hand_exo.cpp'],['../nml__hand__exo_8h.html#a393c4f0e144d0f7a406268109fbd5415',1,'onModeButtonPress():&#160;nml_hand_exo.cpp']]]
 ];

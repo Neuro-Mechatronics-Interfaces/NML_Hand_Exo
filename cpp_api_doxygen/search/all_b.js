@@ -1,8 +1,8 @@
 var searchData=
 [
-  ['max_5fgesture_5fbuttons_0',['MAX_GESTURE_BUTTONS',['../config_8h.html#a67357750ad236f09be640e3fa8399e09',1,'config.h']]],
-  ['max_5fstates_5fper_5fgesture_1',['MAX_STATES_PER_GESTURE',['../config_8h.html#a1a3b4f6162e0ad3c772fbc1611d2a466',1,'config.h']]],
-  ['motor_5fcurrent_5flimit_2',['MOTOR_CURRENT_LIMIT',['../config_8h.html#a358d5498b420a56ebc41c8fa6b893749',1,'config.h']]],
-  ['motor_5fids_3',['MOTOR_IDS',['../config_8h.html#af1ba5713143d2418a7d10c3cb4cb2619',1,'config.h']]],
-  ['motor_5fnames_4',['MOTOR_NAMES',['../config_8h.html#ae51d2f47b5518266570d053f14d8212a',1,'config.h']]]
+  ['loopstatscount_0',['loopstatscount',['../utils_8cpp.html#a6f473b6297c5772c107f515408acf05c',1,'loopStatsCount():&#160;utils.cpp'],['../utils_8h.html#a6f473b6297c5772c107f515408acf05c',1,'loopStatsCount():&#160;utils.cpp']]],
+  ['loopstatsmaxus_1',['loopstatsmaxus',['../utils_8cpp.html#ab874e7458fb6839642af324d17d62ed1',1,'loopStatsMaxUs():&#160;utils.cpp'],['../utils_8h.html#ab874e7458fb6839642af324d17d62ed1',1,'loopStatsMaxUs():&#160;utils.cpp']]],
+  ['loopstatsmeanus_2',['loopstatsmeanus',['../utils_8cpp.html#a114648c7cd01e4951fa47d4e541f7abe',1,'loopStatsMeanUs():&#160;utils.cpp'],['../utils_8h.html#a114648c7cd01e4951fa47d4e541f7abe',1,'loopStatsMeanUs():&#160;utils.cpp']]],
+  ['loopstatsreset_3',['loopstatsreset',['../utils_8cpp.html#afb1ea19a677ffd5413a6e8acad556bce',1,'loopStatsReset():&#160;utils.cpp'],['../utils_8h.html#afb1ea19a677ffd5413a6e8acad556bce',1,'loopStatsReset():&#160;utils.cpp']]],
+  ['loopstatstick_4',['loopstatstick',['../utils_8cpp.html#a89f71cdb1b0510a29dd2ede1771ff89f',1,'loopStatsTick():&#160;utils.cpp'],['../utils_8h.html#a89f71cdb1b0510a29dd2ede1771ff89f',1,'loopStatsTick():&#160;utils.cpp']]]
 ];

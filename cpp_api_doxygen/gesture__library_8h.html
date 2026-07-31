@@ -120,9 +120,9 @@ Functions</h2></td></tr>
 <tr class="memitem:aba82ace27c2eaf7bb9b164854acd2198" id="r_aba82ace27c2eaf7bb9b164854acd2198"><td class="memItemLeft" align="right" valign="top"><a id="aba82ace27c2eaf7bb9b164854acd2198" name="aba82ace27c2eaf7bb9b164854acd2198"></a>
 int&#160;</td><td class="memItemRight" valign="bottom"><b>jointIndexByName</b> (const char *jointName)</td></tr>
 <tr class="separator:aba82ace27c2eaf7bb9b164854acd2198"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ac764ebf68b4b8b6b38be3398e46ea00f" id="r_ac764ebf68b4b8b6b38be3398e46ea00f"><td class="memItemLeft" align="right" valign="top"><a id="ac764ebf68b4b8b6b38be3398e46ea00f" name="ac764ebf68b4b8b6b38be3398e46ea00f"></a>
-void&#160;</td><td class="memItemRight" valign="bottom"><b>resolveStateAngles</b> (const <a class="el" href="structGestureState.html">GestureState</a> &amp;state, const float *homeAngles, float *outAngles)</td></tr>
-<tr class="separator:ac764ebf68b4b8b6b38be3398e46ea00f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a2c65775fe1d28bb09a2ed057d57188da" id="r_a2c65775fe1d28bb09a2ed057d57188da"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="gesture__library_8h.html#a2c65775fe1d28bb09a2ed057d57188da">resolveStateAngles</a> (const <a class="el" href="structGestureState.html">GestureState</a> &amp;state, const float *homeAngles, float *outAngles, bool *outTouched=nullptr)</td></tr>
+<tr class="memdesc:a2c65775fe1d28bb09a2ed057d57188da"><td class="mdescLeft">&#160;</td><td class="mdescRight">Resolve a gesture state into absolute per-motor angles.  <br /></td></tr>
+<tr class="separator:a2c65775fe1d28bb09a2ed057d57188da"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:af09e1889dd0bc1ecd421ae2b99f988aa" id="r_af09e1889dd0bc1ecd421ae2b99f988aa"><td class="memItemLeft" align="right" valign="top"><a id="af09e1889dd0bc1ecd421ae2b99f988aa" name="af09e1889dd0bc1ecd421ae2b99f988aa"></a>
 int&#160;</td><td class="memItemRight" valign="bottom"><b>findGestureIndex</b> (const String &amp;gestureName)</td></tr>
 <tr class="memdesc:af09e1889dd0bc1ecd421ae2b99f988aa"><td class="mdescLeft">&#160;</td><td class="mdescRight">Helper function to find the index of a gesture by name. <br /></td></tr>
@@ -144,7 +144,56 @@ constexpr uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>MAX_SPAR
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>Header file for the gesture library used in the NML Hand Exoskeleton project. </p>
-</div></div><!-- contents -->
+</div><h2 class="groupheader">Function Documentation</h2>
+<a id="a2c65775fe1d28bb09a2ed057d57188da" name="a2c65775fe1d28bb09a2ed057d57188da"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2c65775fe1d28bb09a2ed057d57188da">&#9670;&#160;</a></span>resolveStateAngles()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void resolveStateAngles </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structGestureState.html">GestureState</a> &amp;&#160;</td>
+          <td class="paramname"><em>state</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const float *&#160;</td>
+          <td class="paramname"><em>homeAngles</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float *&#160;</td>
+          <td class="paramname"><em>outAngles</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool *&#160;</td>
+          <td class="paramname"><em>outTouched</em> = <code>nullptr</code>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Resolve a gesture state into absolute per-motor angles. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">outTouched</td><td>Optional, length N_MOTORS. Set true for joints this state actually commands. A sparse state only claims the joints it names, so callers can leave the rest of the hand where it is rather than driving it home. Dense states claim every joint. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+</div><!-- contents -->
 </div><!-- doc-content -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->

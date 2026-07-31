@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['xc330_5ft288_5ftorque_5fconstant_0',['XC330_T288_TORQUE_CONSTANT',['../config_8h.html#a1eb784666f687cf8a78054c26eb033ba',1,'config.h']]]
+  ['pulse_5fresolution_0',['PULSE_RESOLUTION',['../config_8h.html#ac8b5696b618a877a775a1a9fe4267b5c',1,'config.h']]]
 ];

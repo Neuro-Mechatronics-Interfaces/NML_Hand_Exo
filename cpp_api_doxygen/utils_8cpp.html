@@ -111,6 +111,29 @@ $(document).ready(function(){initNavTree('utils_8cpp.html',''); initResizable();
 </div><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="func-members" name="func-members"></a>
 Functions</h2></td></tr>
+<tr class="memitem:a89f71cdb1b0510a29dd2ede1771ff89f" id="r_a89f71cdb1b0510a29dd2ede1771ff89f"><td class="memItemLeft" align="right" valign="top"><a id="a89f71cdb1b0510a29dd2ede1771ff89f" name="a89f71cdb1b0510a29dd2ede1771ff89f"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>loopStatsTick</b> ()</td></tr>
+<tr class="memdesc:a89f71cdb1b0510a29dd2ede1771ff89f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Record one loop iteration. Call once at the very top of loop(). <br /></td></tr>
+<tr class="separator:a89f71cdb1b0510a29dd2ede1771ff89f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:afb1ea19a677ffd5413a6e8acad556bce" id="r_afb1ea19a677ffd5413a6e8acad556bce"><td class="memItemLeft" align="right" valign="top"><a id="afb1ea19a677ffd5413a6e8acad556bce" name="afb1ea19a677ffd5413a6e8acad556bce"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>loopStatsReset</b> ()</td></tr>
+<tr class="memdesc:afb1ea19a677ffd5413a6e8acad556bce"><td class="mdescLeft">&#160;</td><td class="mdescRight">Clear accumulated loop statistics. <br /></td></tr>
+<tr class="separator:afb1ea19a677ffd5413a6e8acad556bce"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6f473b6297c5772c107f515408acf05c" id="r_a6f473b6297c5772c107f515408acf05c"><td class="memItemLeft" align="right" valign="top"><a id="a6f473b6297c5772c107f515408acf05c" name="a6f473b6297c5772c107f515408acf05c"></a>
+uint32_t&#160;</td><td class="memItemRight" valign="bottom"><b>loopStatsCount</b> ()</td></tr>
+<tr class="memdesc:a6f473b6297c5772c107f515408acf05c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Iterations recorded since the last reset. <br /></td></tr>
+<tr class="separator:a6f473b6297c5772c107f515408acf05c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab874e7458fb6839642af324d17d62ed1" id="r_ab874e7458fb6839642af324d17d62ed1"><td class="memItemLeft" align="right" valign="top"><a id="ab874e7458fb6839642af324d17d62ed1" name="ab874e7458fb6839642af324d17d62ed1"></a>
+uint32_t&#160;</td><td class="memItemRight" valign="bottom"><b>loopStatsMaxUs</b> ()</td></tr>
+<tr class="memdesc:ab874e7458fb6839642af324d17d62ed1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Longest single loop iteration since the last reset, microseconds. <br /></td></tr>
+<tr class="separator:ab874e7458fb6839642af324d17d62ed1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a114648c7cd01e4951fa47d4e541f7abe" id="r_a114648c7cd01e4951fa47d4e541f7abe"><td class="memItemLeft" align="right" valign="top"><a id="a114648c7cd01e4951fa47d4e541f7abe" name="a114648c7cd01e4951fa47d4e541f7abe"></a>
+uint32_t&#160;</td><td class="memItemRight" valign="bottom"><b>loopStatsMeanUs</b> ()</td></tr>
+<tr class="memdesc:a114648c7cd01e4951fa47d4e541f7abe"><td class="mdescLeft">&#160;</td><td class="mdescRight">Mean loop iteration time since the last reset, microseconds. <br /></td></tr>
+<tr class="separator:a114648c7cd01e4951fa47d4e541f7abe"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa6a6812a99f62261438be09cd3e2c38e" id="r_aa6a6812a99f62261438be09cd3e2c38e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="utils_8cpp.html#aa6a6812a99f62261438be09cd3e2c38e">telemetryPrintln</a> (const String &amp;msg)</td></tr>
+<tr class="memdesc:aa6a6812a99f62261438be09cd3e2c38e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Emits a line to the reply/telemetry CDC(s) per gReplyRoute.  <br /></td></tr>
+<tr class="separator:aa6a6812a99f62261438be09cd3e2c38e"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a0ee7aa6f5a7165bdd7d390174dfbf76c" id="r_a0ee7aa6f5a7165bdd7d390174dfbf76c"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="utils_8cpp.html#a0ee7aa6f5a7165bdd7d390174dfbf76c">debugPrint</a> (const String &amp;msg)</td></tr>
 <tr class="memdesc:a0ee7aa6f5a7165bdd7d390174dfbf76c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bluetooth serial stream used for commands.  <br /></td></tr>
 <tr class="separator:a0ee7aa6f5a7165bdd7d390174dfbf76c"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -145,18 +168,24 @@ int&#160;</td><td class="memItemRight" valign="bottom"><b>applyTorqueToMotorIDLi
 <tr class="memitem:a925ac266e54eebc037006bcfdae9c3c2" id="r_a925ac266e54eebc037006bcfdae9c3c2"><td class="memItemLeft" align="right" valign="top"><a id="a925ac266e54eebc037006bcfdae9c3c2" name="a925ac266e54eebc037006bcfdae9c3c2"></a>
 struct&#160;</td><td class="memItemRight" valign="bottom"><b>__attribute__</b> ((packed)) FastTelemetryHeader</td></tr>
 <tr class="separator:a925ac266e54eebc037006bcfdae9c3c2"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ad176b266ce262191aa5a6f707bfbc352" id="r_ad176b266ce262191aa5a6f707bfbc352"><td class="memItemLeft" align="right" valign="top"><a id="ad176b266ce262191aa5a6f707bfbc352" name="ad176b266ce262191aa5a6f707bfbc352"></a>
-uint16_t&#160;</td><td class="memItemRight" valign="bottom"><b>fastTelemetryChecksum</b> (const uint8_t *data, size_t length)</td></tr>
-<tr class="separator:ad176b266ce262191aa5a6f707bfbc352"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ab9b9b2a7e8dbc1108d30dfb0c878c2f6" id="r_ab9b9b2a7e8dbc1108d30dfb0c878c2f6"><td class="memItemLeft" align="right" valign="top"><a id="ab9b9b2a7e8dbc1108d30dfb0c878c2f6" name="ab9b9b2a7e8dbc1108d30dfb0c878c2f6"></a>
-void&#160;</td><td class="memItemRight" valign="bottom"><b>writeFastTelemetryFrame</b> (Stream &amp;stream, const FastTelemetryRecord *records, uint8_t count, uint8_t flags)</td></tr>
-<tr class="separator:ab9b9b2a7e8dbc1108d30dfb0c878c2f6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a791c83afd77e37f6177df60f01ea65f4" id="r_a791c83afd77e37f6177df60f01ea65f4"><td class="memItemLeft" align="right" valign="top"><a id="a791c83afd77e37f6177df60f01ea65f4" name="a791c83afd77e37f6177df60f01ea65f4"></a>
+uint16_t&#160;</td><td class="memItemRight" valign="bottom"><b>checksumBytes</b> (const uint8_t *data, size_t len)</td></tr>
+<tr class="separator:a791c83afd77e37f6177df60f01ea65f4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:abe6e15c0a45b7c45b1090af822256310" id="r_abe6e15c0a45b7c45b1090af822256310"><td class="memItemLeft" align="right" valign="top"><a id="abe6e15c0a45b7c45b1090af822256310" name="abe6e15c0a45b7c45b1090af822256310"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>writeFastTelemetryFrame</b> (Stream &amp;stream, FastTelemetryRecord *records, uint8_t count, uint8_t flags)</td></tr>
+<tr class="separator:abe6e15c0a45b7c45b1090af822256310"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a68a12dfe002168e3629a2281d5796a54" id="r_a68a12dfe002168e3629a2281d5796a54"><td class="memItemLeft" align="right" valign="top"><a id="a68a12dfe002168e3629a2281d5796a54" name="a68a12dfe002168e3629a2281d5796a54"></a>
 uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>collectFastTelemetryIDs</b> (<a class="el" href="classNMLHandExo.html">NMLHandExo</a> &amp;exo, const String &amp;token, uint8_t *ids, uint8_t maxIds)</td></tr>
 <tr class="separator:a68a12dfe002168e3629a2281d5796a54"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aba942ac4fc5c23ffd267a929ed494036" id="r_aba942ac4fc5c23ffd267a929ed494036"><td class="memItemLeft" align="right" valign="top"><a id="aba942ac4fc5c23ffd267a929ed494036" name="aba942ac4fc5c23ffd267a929ed494036"></a>
+const char *&#160;</td><td class="memItemRight" valign="bottom"><b>fastTelemetryMethodName</b> (uint8_t method)</td></tr>
+<tr class="separator:aba942ac4fc5c23ffd267a929ed494036"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ae63c623f11ce3b0d8d9487244c57dddd" id="r_ae63c623f11ce3b0d8d9487244c57dddd"><td class="memItemLeft" align="right" valign="top"><a id="ae63c623f11ce3b0d8d9487244c57dddd" name="ae63c623f11ce3b0d8d9487244c57dddd"></a>
 void&#160;</td><td class="memItemRight" valign="bottom"><b>sendFastTelemetry</b> (<a class="el" href="classNMLHandExo.html">NMLHandExo</a> &amp;exo, const String &amp;token)</td></tr>
 <tr class="separator:ae63c623f11ce3b0d8d9487244c57dddd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aaa766d093f0d5e2281ecbd532d282fba" id="r_aaa766d093f0d5e2281ecbd532d282fba"><td class="memItemLeft" align="right" valign="top"><a id="aaa766d093f0d5e2281ecbd532d282fba" name="aaa766d093f0d5e2281ecbd532d282fba"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>sendFastTelemetryDiag</b> (<a class="el" href="classNMLHandExo.html">NMLHandExo</a> &amp;exo, const String &amp;token)</td></tr>
+<tr class="separator:aaa766d093f0d5e2281ecbd532d282fba"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aafdf268e3172cc74601bcb324c5e95bf" id="r_aafdf268e3172cc74601bcb324c5e95bf"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="utils_8cpp.html#aafdf268e3172cc74601bcb324c5e95bf">parseMessage</a> (<a class="el" href="classNMLHandExo.html">NMLHandExo</a> &amp;exo, <a class="el" href="classGestureController.html">GestureController</a> &amp;gc, Adafruit_BNO055 &amp;imu, String token)</td></tr>
 <tr class="memdesc:aafdf268e3172cc74601bcb324c5e95bf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parses a message and executes the corresponding command on the exo device or gesture controller.  <br /></td></tr>
 <tr class="separator:aafdf268e3172cc74601bcb324c5e95bf"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -439,6 +468,33 @@ sensors_event_t&#160;</td><td class="memItemRight" valign="bottom"><b>linearAcce
     <tr><td class="paramname">exo</td><td>The <a class="el" href="classNMLHandExo.html" title="Class to manage the NML Hand Exoskeleton, providing initialization, motor control,...">NMLHandExo</a> instance to control </td></tr>
     <tr><td class="paramname">gc</td><td>The <a class="el" href="classGestureController.html" title="Class to manage predefined gestures and apply them to the NMLHandExo device.">GestureController</a> instance to control gestures </td></tr>
     <tr><td class="paramname">token</td><td>The input string containing the command to parse </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="aa6a6812a99f62261438be09cd3e2c38e" name="aa6a6812a99f62261438be09cd3e2c38e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa6a6812a99f62261438be09cd3e2c38e">&#9670;&#160;</a></span>telemetryPrintln()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void telemetryPrintln </td>
+          <td>(</td>
+          <td class="paramtype">const String &amp;&#160;</td>
+          <td class="paramname"><em>msg</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Emits a line to the reply/telemetry CDC(s) per gReplyRoute. </p>
+<p>Emits a line to the telemetry/reply USB CDC(s) per gReplyRoute. In dual-CDC mode this honors the runtime reply route (BOTH/TELEM/CMD); in single-CDC builds it writes to the one port. Does NOT touch the Bluetooth COMMAND_SERIAL path. Used for replies, verbose logs, and status messages.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">msg</td><td>The message to print. </td></tr>
   </table>
   </dd>
 </dl>

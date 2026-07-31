@@ -1,5 +1,4 @@
 var searchData=
 [
-  ['_7egesturecontroller_0',['~GestureController',['../classGestureController.html#a773e93a252ccd8b26e8a2660aa70cf4b',1,'GestureController']]],
-  ['_7enmlhandexo_1',['~NMLHandExo',['../classNMLHandExo.html#a0ce26f35c395209dde2285ed04310f0f',1,'NMLHandExo']]]
+  ['telemetryprintln_0',['telemetryprintln',['../nml__hand__exo_8h.html#aa6a6812a99f62261438be09cd3e2c38e',1,'telemetryPrintln(const String &amp;msg):&#160;utils.cpp'],['../utils_8cpp.html#aa6a6812a99f62261438be09cd3e2c38e',1,'telemetryPrintln(const String &amp;msg):&#160;utils.cpp'],['../utils_8h.html#aa6a6812a99f62261438be09cd3e2c38e',1,'telemetryPrintln(const String &amp;msg):&#160;utils.cpp']]]
 ];

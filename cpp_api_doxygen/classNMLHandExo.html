@@ -151,18 +151,20 @@ void&#160;</td><td class="memItemRight" valign="bottom"><b>initializeMotors</b> 
 <tr class="memitem:a4314a5a5b18b92bbb8f6add9ce40f5a0" id="r_a4314a5a5b18b92bbb8f6add9ce40f5a0"><td class="memItemLeft" align="right" valign="top">float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a4314a5a5b18b92bbb8f6add9ce40f5a0">getZeroOffset</a> (uint8_t id)</td></tr>
 <tr class="memdesc:a4314a5a5b18b92bbb8f6add9ce40f5a0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the stored zero offset for a motor.  <br /></td></tr>
 <tr class="separator:a4314a5a5b18b92bbb8f6add9ce40f5a0"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a609ecc6e1824553810bc9601e18a1362" id="r_a609ecc6e1824553810bc9601e18a1362"><td class="memItemLeft" align="right" valign="top"><a id="a609ecc6e1824553810bc9601e18a1362" name="a609ecc6e1824553810bc9601e18a1362"></a>
-uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>getFastTelemetryRecords</b> (const uint8_t *ids, uint8_t count, FastTelemetryRecord *records, uint8_t &amp;methodOut, uint32_t timeoutMs=10)</td></tr>
-<tr class="memdesc:a609ecc6e1824553810bc9601e18a1362"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read compact telemetry records for specific motor IDs. The fallback method is position-only; its current and velocity fields must be treated as unavailable by the host. <br /></td></tr>
+<tr class="memitem:afe742a52bc77e3a4ced03a654a339162" id="r_afe742a52bc77e3a4ced03a654a339162"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#afe742a52bc77e3a4ced03a654a339162">getFastTelemetryRecord</a> (uint8_t id, FastTelemetryRecord &amp;record)</td></tr>
+<tr class="memdesc:afe742a52bc77e3a4ced03a654a339162"><td class="mdescLeft">&#160;</td><td class="mdescRight">Fill one compact telemetry record for host streaming.  <br /></td></tr>
+<tr class="separator:afe742a52bc77e3a4ced03a654a339162"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a609ecc6e1824553810bc9601e18a1362" id="r_a609ecc6e1824553810bc9601e18a1362"><td class="memItemLeft" align="right" valign="top">uint8_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a609ecc6e1824553810bc9601e18a1362">getFastTelemetryRecords</a> (const uint8_t *ids, uint8_t count, FastTelemetryRecord *records, uint8_t &amp;methodOut, uint32_t timeoutMs=10)</td></tr>
+<tr class="memdesc:a609ecc6e1824553810bc9601e18a1362"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read compact telemetry records for multiple motor IDs.  <br /></td></tr>
 <tr class="separator:a609ecc6e1824553810bc9601e18a1362"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a717ef5205071bb59d054482fc8be3894" id="r_a717ef5205071bb59d054482fc8be3894"><td class="memItemLeft" align="right" valign="top"><a id="a717ef5205071bb59d054482fc8be3894" name="a717ef5205071bb59d054482fc8be3894"></a>
 void&#160;</td><td class="memItemRight" valign="bottom"><b>resetAllZeros</b> ()</td></tr>
 <tr class="memdesc:a717ef5205071bb59d054482fc8be3894"><td class="mdescLeft">&#160;</td><td class="mdescRight">Reset zero offsets for all motors using their current positions. <br /></td></tr>
 <tr class="separator:a717ef5205071bb59d054482fc8be3894"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a65b2aff16b4221cc13ca1635af028c1b" id="r_a65b2aff16b4221cc13ca1635af028c1b"><td class="memItemLeft" align="right" valign="top"><a id="a65b2aff16b4221cc13ca1635af028c1b" name="a65b2aff16b4221cc13ca1635af028c1b"></a>
-String&#160;</td><td class="memItemRight" valign="bottom"><b>getDeviceInfo</b> ()</td></tr>
-<tr class="memdesc:a65b2aff16b4221cc13ca1635af028c1b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get a string summarizing the device information. <br /></td></tr>
-<tr class="separator:a65b2aff16b4221cc13ca1635af028c1b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a65148f5f9fa36182bbb6b31bcb5ff243" id="r_a65148f5f9fa36182bbb6b31bcb5ff243"><td class="memItemLeft" align="right" valign="top"><a id="a65148f5f9fa36182bbb6b31bcb5ff243" name="a65148f5f9fa36182bbb6b31bcb5ff243"></a>
+String&#160;</td><td class="memItemRight" valign="bottom"><b>getDeviceInfo</b> (bool includeLiveTelemetry=false)</td></tr>
+<tr class="memdesc:a65148f5f9fa36182bbb6b31bcb5ff243"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get a string summarizing the device information. <br /></td></tr>
+<tr class="separator:a65148f5f9fa36182bbb6b31bcb5ff243"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ae866ddb40aebdbac7427c318679ad118" id="r_ae866ddb40aebdbac7427c318679ad118"><td class="memItemLeft" align="right" valign="top">const char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#ae866ddb40aebdbac7427c318679ad118">getSide</a> () const</td></tr>
 <tr class="memdesc:ae866ddb40aebdbac7427c318679ad118"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the hand side this board is compiled for ("right" or "left").  <br /></td></tr>
 <tr class="separator:ae866ddb40aebdbac7427c318679ad118"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -249,6 +251,18 @@ void&#160;</td><td class="memItemRight" valign="bottom"><b>homeAllMotors</b> ()<
 <tr class="memitem:a531f6ac84b4d56b8832d190835bc25b4" id="r_a531f6ac84b4d56b8832d190835bc25b4"><td class="memItemLeft" align="right" valign="top">float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a531f6ac84b4d56b8832d190835bc25b4">getMotorLimitMax</a> (uint8_t id)</td></tr>
 <tr class="memdesc:a531f6ac84b4d56b8832d190835bc25b4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the upper joint limit for a motor.  <br /></td></tr>
 <tr class="separator:a531f6ac84b4d56b8832d190835bc25b4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac6e94053b0dc0bc44de31a45dab7b5dd" id="r_ac6e94053b0dc0bc44de31a45dab7b5dd"><td class="memItemLeft" align="right" valign="top">float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#ac6e94053b0dc0bc44de31a45dab7b5dd">getGestureOrigin</a> (uint8_t id)</td></tr>
+<tr class="memdesc:ac6e94053b0dc0bc44de31a45dab7b5dd"><td class="mdescLeft">&#160;</td><td class="mdescRight">The 0% anchor for a motor: home, clamped into its limit window.  <br /></td></tr>
+<tr class="separator:ac6e94053b0dc0bc44de31a45dab7b5dd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa85e4dea61a0cec4450360762f19deb4" id="r_aa85e4dea61a0cec4450360762f19deb4"><td class="memItemLeft" align="right" valign="top">float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#aa85e4dea61a0cec4450360762f19deb4">getGestureSpan</a> (uint8_t id)</td></tr>
+<tr class="memdesc:aa85e4dea61a0cec4450360762f19deb4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Signed travel from home to the flexion endstop, in degrees.  <br /></td></tr>
+<tr class="separator:aa85e4dea61a0cec4450360762f19deb4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a501b03c173874fa484f7215017afe013" id="r_a501b03c173874fa484f7215017afe013"><td class="memItemLeft" align="right" valign="top">float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a501b03c173874fa484f7215017afe013">gestureFractionToAngle</a> (uint8_t id, float fraction)</td></tr>
+<tr class="memdesc:a501b03c173874fa484f7215017afe013"><td class="mdescLeft">&#160;</td><td class="mdescRight">Absolute angle for a point on this motor's gesture axis.  <br /></td></tr>
+<tr class="separator:a501b03c173874fa484f7215017afe013"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a645292009a10d1ad5ae5e589452c41a3" id="r_a645292009a10d1ad5ae5e589452c41a3"><td class="memItemLeft" align="right" valign="top">float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a645292009a10d1ad5ae5e589452c41a3">gestureAngleToFraction</a> (uint8_t id, float angleDeg)</td></tr>
+<tr class="memdesc:a645292009a10d1ad5ae5e589452c41a3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Where an absolute angle sits on this motor's gesture axis.  <br /></td></tr>
+<tr class="separator:a645292009a10d1ad5ae5e589452c41a3"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a401c76bdc2b2f5110befbc8cacf1341e" id="r_a401c76bdc2b2f5110befbc8cacf1341e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a401c76bdc2b2f5110befbc8cacf1341e">setMotorLimits</a> (uint8_t id, float lowerLimit, float upperLimit)</td></tr>
 <tr class="memdesc:a401c76bdc2b2f5110befbc8cacf1341e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the joint angle limits for a motor.  <br /></td></tr>
 <tr class="separator:a401c76bdc2b2f5110befbc8cacf1341e"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -275,6 +289,39 @@ bool&#160;</td><td class="memItemRight" valign="bottom"><b>setGoalCurrent</b> (u
 float&#160;</td><td class="memItemRight" valign="bottom"><b>getGoalCurrent</b> (uint8_t id)</td></tr>
 <tr class="memdesc:a9a878e036f4ac99eec1525363d5c4534"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read the currently configured goal current in mA. <br /></td></tr>
 <tr class="separator:a9a878e036f4ac99eec1525363d5c4534"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5ce21fd73919526a9155b397424ddf6b" id="r_a5ce21fd73919526a9155b397424ddf6b"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a5ce21fd73919526a9155b397424ddf6b">setTotalCurrentBudget</a> (uint16_t budget_mA)</td></tr>
+<tr class="memdesc:a5ce21fd73919526a9155b397424ddf6b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the combined current budget across all motors, in mA.  <br /></td></tr>
+<tr class="separator:a5ce21fd73919526a9155b397424ddf6b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad96404559616ac05d54ba3c6424a91cf" id="r_ad96404559616ac05d54ba3c6424a91cf"><td class="memItemLeft" align="right" valign="top"><a id="ad96404559616ac05d54ba3c6424a91cf" name="ad96404559616ac05d54ba3c6424a91cf"></a>
+uint16_t&#160;</td><td class="memItemRight" valign="bottom"><b>getTotalCurrentBudget</b> () const</td></tr>
+<tr class="memdesc:ad96404559616ac05d54ba3c6424a91cf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the combined current budget across all motors, in mA. <br /></td></tr>
+<tr class="separator:ad96404559616ac05d54ba3c6424a91cf"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aeb2b7d739d7a74d04c23f4f5c4dc460f" id="r_aeb2b7d739d7a74d04c23f4f5c4dc460f"><td class="memItemLeft" align="right" valign="top"><a id="aeb2b7d739d7a74d04c23f4f5c4dc460f" name="aeb2b7d739d7a74d04c23f4f5c4dc460f"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>setHoldCurrent</b> (uint16_t hold_mA)</td></tr>
+<tr class="memdesc:aeb2b7d739d7a74d04c23f4f5c4dc460f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the current allowed to a settled/stalled motor, in mA. <br /></td></tr>
+<tr class="separator:aeb2b7d739d7a74d04c23f4f5c4dc460f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae9753d6dc1e25b30a71216e372ebc77b" id="r_ae9753d6dc1e25b30a71216e372ebc77b"><td class="memItemLeft" align="right" valign="top"><a id="ae9753d6dc1e25b30a71216e372ebc77b" name="ae9753d6dc1e25b30a71216e372ebc77b"></a>
+uint16_t&#160;</td><td class="memItemRight" valign="bottom"><b>getHoldCurrent</b> () const</td></tr>
+<tr class="memdesc:ae9753d6dc1e25b30a71216e372ebc77b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the current allowed to a settled/stalled motor, in mA. <br /></td></tr>
+<tr class="separator:ae9753d6dc1e25b30a71216e372ebc77b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a94ec5f4e448d69af7b7f3d727330a68d" id="r_a94ec5f4e448d69af7b7f3d727330a68d"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a94ec5f4e448d69af7b7f3d727330a68d">setCurrentGovernorEnabled</a> (bool enabled)</td></tr>
+<tr class="memdesc:a94ec5f4e448d69af7b7f3d727330a68d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Enable or disable the closed-loop half of the budget enforcement.  <br /></td></tr>
+<tr class="separator:a94ec5f4e448d69af7b7f3d727330a68d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a952d9df013d75c92a8f83cf7a145b18b" id="r_a952d9df013d75c92a8f83cf7a145b18b"><td class="memItemLeft" align="right" valign="top"><a id="a952d9df013d75c92a8f83cf7a145b18b" name="a952d9df013d75c92a8f83cf7a145b18b"></a>
+bool&#160;</td><td class="memItemRight" valign="bottom"><b>getCurrentGovernorEnabled</b> () const</td></tr>
+<tr class="memdesc:a952d9df013d75c92a8f83cf7a145b18b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Whether the closed-loop half of the budget enforcement is active. <br /></td></tr>
+<tr class="separator:a952d9df013d75c92a8f83cf7a145b18b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a114c3f0254d70c09b245270172427015" id="r_a114c3f0254d70c09b245270172427015"><td class="memItemLeft" align="right" valign="top">int32_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a114c3f0254d70c09b245270172427015">getMeasuredTotalCurrent</a> () const</td></tr>
+<tr class="memdesc:a114c3f0254d70c09b245270172427015"><td class="mdescLeft">&#160;</td><td class="mdescRight">Aggregate current measured on the most recent sample, in mA.  <br /></td></tr>
+<tr class="separator:a114c3f0254d70c09b245270172427015"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad362574ef1e1eb8ed7011c4f38d91cc6" id="r_ad362574ef1e1eb8ed7011c4f38d91cc6"><td class="memItemLeft" align="right" valign="top"><a id="ad362574ef1e1eb8ed7011c4f38d91cc6" name="ad362574ef1e1eb8ed7011c4f38d91cc6"></a>
+float&#160;</td><td class="memItemRight" valign="bottom"><b>getCurrentBudgetScale</b> () const</td></tr>
+<tr class="memdesc:ad362574ef1e1eb8ed7011c4f38d91cc6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Fraction of nominal effort currently allowed, in [0, 1]. <br /></td></tr>
+<tr class="separator:ad362574ef1e1eb8ed7011c4f38d91cc6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab51b917fe30ebabb2eb2a2e5661573d3" id="r_ab51b917fe30ebabb2eb2a2e5661573d3"><td class="memItemLeft" align="right" valign="top"><a id="ab51b917fe30ebabb2eb2a2e5661573d3" name="ab51b917fe30ebabb2eb2a2e5661573d3"></a>
+String&#160;</td><td class="memItemRight" valign="bottom"><b>getCurrentBudgetStatus</b> ()</td></tr>
+<tr class="memdesc:ab51b917fe30ebabb2eb2a2e5661573d3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Human-readable budget state for the <code>current_status</code> command. <br /></td></tr>
+<tr class="separator:ab51b917fe30ebabb2eb2a2e5661573d3"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aba74eff4fc69f41dfa872143fb54c98e" id="r_aba74eff4fc69f41dfa872143fb54c98e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#aba74eff4fc69f41dfa872143fb54c98e">setZeroOffsetValue</a> (uint8_t id, float offset_deg)</td></tr>
 <tr class="memdesc:aba74eff4fc69f41dfa872143fb54c98e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the zero offset for a motor to an arbitrary value.  <br /></td></tr>
 <tr class="separator:aba74eff4fc69f41dfa872143fb54c98e"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -359,9 +406,8 @@ unsigned long&#160;</td><td class="memItemRight" valign="bottom"><b>getDirectCom
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="pub-static-attribs" name="pub-static-attribs"></a>
 Static Public Attributes</h2></td></tr>
-<tr class="memitem:a21f2a007112d02fbbdd487d5d9a5defd" id="r_a21f2a007112d02fbbdd487d5d9a5defd"><td class="memItemLeft" align="right" valign="top"><a id="a21f2a007112d02fbbdd487d5d9a5defd" name="a21f2a007112d02fbbdd487d5d9a5defd"></a>
-static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><b>VERSION</b> = &quot;0.2.15&quot;</td></tr>
-<tr class="memdesc:a21f2a007112d02fbbdd487d5d9a5defd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Current software version. <br /></td></tr>
+<tr class="memitem:a21f2a007112d02fbbdd487d5d9a5defd" id="r_a21f2a007112d02fbbdd487d5d9a5defd"><td class="memItemLeft" align="right" valign="top">static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a21f2a007112d02fbbdd487d5d9a5defd">VERSION</a> = &quot;0.6.0&quot;</td></tr>
+<tr class="memdesc:a21f2a007112d02fbbdd487d5d9a5defd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Current software version.  <br /></td></tr>
 <tr class="separator:a21f2a007112d02fbbdd487d5d9a5defd"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
@@ -528,6 +574,82 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
   </table>
   </dd>
 </dl>
+
+</div>
+</div>
+<a id="a645292009a10d1ad5ae5e589452c41a3" name="a645292009a10d1ad5ae5e589452c41a3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a645292009a10d1ad5ae5e589452c41a3">&#9670;&#160;</a></span>gestureAngleToFraction()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">float NMLHandExo::gestureAngleToFraction </td>
+          <td>(</td>
+          <td class="paramtype">uint8_t&#160;</td>
+          <td class="paramname"><em>id</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float&#160;</td>
+          <td class="paramname"><em>angleDeg</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Where an absolute angle sits on this motor's gesture axis. </p>
+<p>Exact inverse of <a class="el" href="classNMLHandExo.html#a501b03c173874fa484f7215017afe013" title="Absolute angle for a point on this motor&#39;s gesture axis.">gestureFractionToAngle()</a>. Values outside [0, 1] mean the joint is beyond an end of its calibrated travel, which is a real state a hand can be in (moved by hand, or a stale multi-turn epoch). </p><dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
+    <tr><td class="paramname">angleDeg</td><td>Absolute angle in degrees. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Fraction, or NAN if the motor has no usable travel. </dd></dl>
+
+</div>
+</div>
+<a id="a501b03c173874fa484f7215017afe013" name="a501b03c173874fa484f7215017afe013"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a501b03c173874fa484f7215017afe013">&#9670;&#160;</a></span>gestureFractionToAngle()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">float NMLHandExo::gestureFractionToAngle </td>
+          <td>(</td>
+          <td class="paramtype">uint8_t&#160;</td>
+          <td class="paramname"><em>id</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float&#160;</td>
+          <td class="paramname"><em>fraction</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Absolute angle for a point on this motor's gesture axis. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
+    <tr><td class="paramname">fraction</td><td>0 = home, 1 = flexion endstop. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Absolute target in degrees, inside the limit window by construction for fraction in [0, 1]. </dd></dl>
 
 </div>
 </div>
@@ -706,6 +828,103 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
 
 </div>
 </div>
+<a id="afe742a52bc77e3a4ced03a654a339162" name="afe742a52bc77e3a4ced03a654a339162"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#afe742a52bc77e3a4ced03a654a339162">&#9670;&#160;</a></span>getFastTelemetryRecord()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool NMLHandExo::getFastTelemetryRecord </td>
+          <td>(</td>
+          <td class="paramtype">uint8_t&#160;</td>
+          <td class="paramname"><em>id</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">FastTelemetryRecord &amp;&#160;</td>
+          <td class="paramname"><em>record</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Fill one compact telemetry record for host streaming. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
+    <tr><td class="paramname">record</td><td>Destination record. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>True if the ID belongs to this exo firmware build. </dd></dl>
+
+</div>
+</div>
+<a id="a609ecc6e1824553810bc9601e18a1362" name="a609ecc6e1824553810bc9601e18a1362"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a609ecc6e1824553810bc9601e18a1362">&#9670;&#160;</a></span>getFastTelemetryRecords()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">uint8_t NMLHandExo::getFastTelemetryRecords </td>
+          <td>(</td>
+          <td class="paramtype">const uint8_t *&#160;</td>
+          <td class="paramname"><em>ids</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint8_t&#160;</td>
+          <td class="paramname"><em>count</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">FastTelemetryRecord *&#160;</td>
+          <td class="paramname"><em>records</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint8_t &amp;&#160;</td>
+          <td class="paramname"><em>methodOut</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint32_t&#160;</td>
+          <td class="paramname"><em>timeoutMs</em> = <code>10</code>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Read compact telemetry records for multiple motor IDs. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ids</td><td>Array of requested Dynamixel IDs. </td></tr>
+    <tr><td class="paramname">count</td><td>Number of requested IDs. </td></tr>
+    <tr><td class="paramname">records</td><td>Destination record array with at least count entries. </td></tr>
+    <tr><td class="paramname">methodOut</td><td>Method used to read telemetry. </td></tr>
+    <tr><td class="paramname">timeoutMs</td><td>Per-status-packet timeout for DXL sync/fallback reads. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Number of records filled. </dd></dl>
+
+</div>
+</div>
 <a id="a56b7cc011b3d93c79ac54adcaf4965ab" name="a56b7cc011b3d93c79ac54adcaf4965ab"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a56b7cc011b3d93c79ac54adcaf4965ab">&#9670;&#160;</a></span>getFlipMotor()</h2>
 
@@ -733,6 +952,60 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
 
 </div>
 </div>
+<a id="ac6e94053b0dc0bc44de31a45dab7b5dd" name="ac6e94053b0dc0bc44de31a45dab7b5dd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac6e94053b0dc0bc44de31a45dab7b5dd">&#9670;&#160;</a></span>getGestureOrigin()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">float NMLHandExo::getGestureOrigin </td>
+          <td>(</td>
+          <td class="paramtype">uint8_t&#160;</td>
+          <td class="paramname"><em>id</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>The 0% anchor for a motor: home, clamped into its limit window. </p>
+<p>A home outside the window is unreachable (setAbsoluteAngle clamps), so anchoring on the clamped value keeps set/get exact inverses instead of reporting a percentage the joint can never occupy. <code>check_limits</code> still flags the underlying HOME_OUTSIDE condition. </p><dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Absolute angle of the 0% end, in degrees. </dd></dl>
+
+</div>
+</div>
+<a id="aa85e4dea61a0cec4450360762f19deb4" name="aa85e4dea61a0cec4450360762f19deb4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa85e4dea61a0cec4450360762f19deb4">&#9670;&#160;</a></span>getGestureSpan()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">float NMLHandExo::getGestureSpan </td>
+          <td>(</td>
+          <td class="paramtype">uint8_t&#160;</td>
+          <td class="paramname"><em>id</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Signed travel from home to the flexion endstop, in degrees. </p>
+<p>Sign carries direction, so callers never need the flip flag themselves. Magnitude below GESTURE_MIN_TRAVEL_DEG means the joint cannot be meaningfully positioned by any gesture. </p><dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>Motor ID. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Signed span in degrees; 0 for an unknown ID. </dd></dl>
+
+</div>
+</div>
 <a id="aec362a95e23f2842be47d15b56e6044c" name="aec362a95e23f2842be47d15b56e6044c"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#aec362a95e23f2842be47d15b56e6044c">&#9670;&#160;</a></span>getIndexById()</h2>
 
@@ -757,6 +1030,26 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>The index in the motor array or -1 if not found. </dd></dl>
+
+</div>
+</div>
+<a id="a114c3f0254d70c09b245270172427015" name="a114c3f0254d70c09b245270172427015"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a114c3f0254d70c09b245270172427015">&#9670;&#160;</a></span>getMeasuredTotalCurrent()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int32_t NMLHandExo::getMeasuredTotalCurrent </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Aggregate current measured on the most recent sample, in mA. </p>
+<dl class="section return"><dt>Returns</dt><dd>Measured total, or -1 if nothing has been sampled yet. </dd></dl>
 
 </div>
 </div>
@@ -1525,6 +1818,27 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
 
 </div>
 </div>
+<a id="a94ec5f4e448d69af7b7f3d727330a68d" name="a94ec5f4e448d69af7b7f3d727330a68d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a94ec5f4e448d69af7b7f3d727330a68d">&#9670;&#160;</a></span>setCurrentGovernorEnabled()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void NMLHandExo::setCurrentGovernorEnabled </td>
+          <td>(</td>
+          <td class="paramtype">bool&#160;</td>
+          <td class="paramname"><em>enabled</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Enable or disable the closed-loop half of the budget enforcement. </p>
+<p>Disabling stops all current sampling and leaves the conservative feed-forward clamp in charge, which is strictly safer for the supply but gives up per-motor effort. It does NOT remove the budget. </p>
+
+</div>
+</div>
 <a id="a07676c9aaa793914cd842ceafba777dc" name="a07676c9aaa793914cd842ceafba777dc"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a07676c9aaa793914cd842ceafba777dc">&#9670;&#160;</a></span>setCurrentLimit()</h2>
 
@@ -2021,6 +2335,32 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
 
 </div>
 </div>
+<a id="a5ce21fd73919526a9155b397424ddf6b" name="a5ce21fd73919526a9155b397424ddf6b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5ce21fd73919526a9155b397424ddf6b">&#9670;&#160;</a></span>setTotalCurrentBudget()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void NMLHandExo::setTotalCurrentBudget </td>
+          <td>(</td>
+          <td class="paramtype">uint16_t&#160;</td>
+          <td class="paramname"><em>budget_mA</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set the combined current budget across all motors, in mA. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">budget_mA</td><td>New fleet budget; clamped to a sane range. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
 <a id="a95790acbd7260ff209f7db37b6fc2fa3" name="a95790acbd7260ff209f7db37b6fc2fa3"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a95790acbd7260ff209f7db37b6fc2fa3">&#9670;&#160;</a></span>setVelocityLimit()</h2>
 
@@ -2118,6 +2458,40 @@ static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"
   </table>
   </dd>
 </dl>
+
+</div>
+</div>
+<h2 class="groupheader">Member Data Documentation</h2>
+<a id="a21f2a007112d02fbbdd487d5d9a5defd" name="a21f2a007112d02fbbdd487d5d9a5defd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a21f2a007112d02fbbdd487d5d9a5defd">&#9670;&#160;</a></span>VERSION</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr const char* NMLHandExo::VERSION = &quot;0.6.0&quot;</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Current software version. </p>
+<p>0.3.0 &ndash; per-joint gestures gained a third "rest" state, "extend" is now anchored at home (EXTEND_* = 0.0), a "wrist" gesture was added, and set_gesture_angle:&lt;gesture&gt;:&lt;0-100&gt; was introduced. Hosts that need to know whether those exist should gate on &gt;= 0.3.0.</p>
+<p>0.3.1 &ndash; added the "rad" gesture on the wrist2 motor. Gate on &gt;= 0.3.1.</p>
+<p>0.4.0 &ndash; combined-motor current budget. GOAL_CURRENT is now owned by the budget allocator rather than written directly by set_current_lim, which sets the per-motor NOMINAL effort instead. Adds set_total_current_lim, get_total_current_lim, set_hold_current, get_hold_current, set_current_governor and current_status. Gate on &gt;= 0.4.0.</p>
+<p>0.5.0 &ndash; asynchronous GESTURE_RESULT move verdicts, so a host can tell "the firmware accepted the goal" from "the joint got there".</p>
+<p>0.6.0 &ndash; three related changes to gesture positioning:</p><ul>
+<li>Travel is now measured on a home -&gt; flexion-endstop axis resolved per motor (getGestureSpan), fixing joints whose home sits mid-window &ndash; the wrist axes &ndash; where every state used to clamp onto the same boundary and the joint never moved while still acking OK.</li>
+<li>set_gesture_angle:&lt;g&gt;:&lt;0-100&gt; now interpolates the gesture's own extend -&gt; flex postures, so 0 and 100 ARE those states. It used to drive every named motor to the same fraction of its own travel, which did not reproduce either state on a multi-motor gesture.</li>
+<li>The <code>rad</code> gesture is GONE and <code>wrist</code> drives both dorsal motors together: wrist and wrist2 act on the same structure, so commanding one alone left the other holding position against it. Adds get_gesture_angle:&lt;gesture|all&gt;. Gate on &gt;= 0.6.0. </li>
+</ul>
 
 </div>
 </div>

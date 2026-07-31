@@ -110,6 +110,21 @@ Macros</h2></td></tr>
 <tr class="memitem:af5240a49e70ff6e269be7c077059cfe0" id="r_af5240a49e70ff6e269be7c077059cfe0"><td class="memItemLeft" align="right" valign="top"><a id="af5240a49e70ff6e269be7c077059cfe0" name="af5240a49e70ff6e269be7c077059cfe0"></a>
 #define&#160;</td><td class="memItemRight" valign="bottom"><b>DXL_SERIAL</b>&#160;&#160;&#160;Serial1</td></tr>
 <tr class="separator:af5240a49e70ff6e269be7c077059cfe0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1b75358d0c362a789b673986f9072e69" id="r_a1b75358d0c362a789b673986f9072e69"><td class="memItemLeft" align="right" valign="top"><a id="a1b75358d0c362a789b673986f9072e69" name="a1b75358d0c362a789b673986f9072e69"></a>
+#define&#160;</td><td class="memItemRight" valign="bottom"><b>CMD_SERIAL</b>&#160;&#160;&#160;<a class="el" href="config_8h.html#a61e127df60d55ea4c8bd6b8ec1f88367">DEBUG_SERIAL</a></td></tr>
+<tr class="separator:a1b75358d0c362a789b673986f9072e69"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a95f3224908978ed37e6b0d04e13ceccd" id="r_a95f3224908978ed37e6b0d04e13ceccd"><td class="memItemLeft" align="right" valign="top"><a id="a95f3224908978ed37e6b0d04e13ceccd" name="a95f3224908978ed37e6b0d04e13ceccd"></a>
+#define&#160;</td><td class="memItemRight" valign="bottom"><b>TELEM_SERIAL</b>&#160;&#160;&#160;<a class="el" href="config_8h.html#a61e127df60d55ea4c8bd6b8ec1f88367">DEBUG_SERIAL</a></td></tr>
+<tr class="separator:a95f3224908978ed37e6b0d04e13ceccd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5a0cc762a3d95775a3490945b08ad22a" id="r_a5a0cc762a3d95775a3490945b08ad22a"><td class="memItemLeft" align="right" valign="top"><a id="a5a0cc762a3d95775a3490945b08ad22a" name="a5a0cc762a3d95775a3490945b08ad22a"></a>
+#define&#160;</td><td class="memItemRight" valign="bottom"><b>REPLY_ROUTE_BOTH</b>&#160;&#160;&#160;0</td></tr>
+<tr class="separator:a5a0cc762a3d95775a3490945b08ad22a"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a4cb69533fab709b984ab0db224c01792" id="r_a4cb69533fab709b984ab0db224c01792"><td class="memItemLeft" align="right" valign="top"><a id="a4cb69533fab709b984ab0db224c01792" name="a4cb69533fab709b984ab0db224c01792"></a>
+#define&#160;</td><td class="memItemRight" valign="bottom"><b>REPLY_ROUTE_TELEM</b>&#160;&#160;&#160;1</td></tr>
+<tr class="separator:a4cb69533fab709b984ab0db224c01792"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab3f7bdcf6c0a2a265682b494fef0e71c" id="r_ab3f7bdcf6c0a2a265682b494fef0e71c"><td class="memItemLeft" align="right" valign="top"><a id="ab3f7bdcf6c0a2a265682b494fef0e71c" name="ab3f7bdcf6c0a2a265682b494fef0e71c"></a>
+#define&#160;</td><td class="memItemRight" valign="bottom"><b>REPLY_ROUTE_CMD</b>&#160;&#160;&#160;2</td></tr>
+<tr class="separator:ab3f7bdcf6c0a2a265682b494fef0e71c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a9720929f38527242d79738f5295674cc" id="r_a9720929f38527242d79738f5295674cc"><td class="memItemLeft" align="right" valign="top"><a id="a9720929f38527242d79738f5295674cc" name="a9720929f38527242d79738f5295674cc"></a>
 #define&#160;</td><td class="memItemRight" valign="bottom"><b>IMU_ENABLED_DEFAULT</b>&#160;&#160;&#160;true</td></tr>
 <tr class="separator:a9720929f38527242d79738f5295674cc"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -194,7 +209,6 @@ constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><b>HAN
 <tr class="memdesc:ae51d2f47b5518266570d053f14d8212a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Motor name Array (must match MOTOR_IDS order). Individual motor commands use Dynamixel ID numbers, not names, to avoid duplicate-name collisions between left and right in dual mode.  <br /></td></tr>
 <tr class="separator:ae51d2f47b5518266570d053f14d8212a"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a63fdb386b6bec4f6333c23038f736f9a" id="r_a63fdb386b6bec4f6333c23038f736f9a"><td class="memItemLeft" align="right" valign="top">constexpr float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a63fdb386b6bec4f6333c23038f736f9a">HOME_STATES</a> []</td></tr>
-<tr class="memdesc:a63fdb386b6bec4f6333c23038f736f9a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Home states [left placeholders, right calibrated]. Left values are placeholders overwritten at runtime by apply_calibration.  <br /></td></tr>
 <tr class="separator:a63fdb386b6bec4f6333c23038f736f9a"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aeae48ca31178aa07e9c5700f94100012" id="r_aeae48ca31178aa07e9c5700f94100012"><td class="memItemLeft" align="right" valign="top">constexpr float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#aeae48ca31178aa07e9c5700f94100012">jointLimits</a> [][2]</td></tr>
 <tr class="memdesc:aeae48ca31178aa07e9c5700f94100012"><td class="mdescLeft">&#160;</td><td class="mdescRight">Physical joint limits [min, max] for each motor.  <br /></td></tr>
@@ -204,20 +218,103 @@ constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><b>HAN
 <tr class="separator:acf75e68030805b38b0837ff14492537c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a8bed1e9934090f89402da0bc43f8dc09" id="r_a8bed1e9934090f89402da0bc43f8dc09"><td class="memItemLeft" align="right" valign="top"><a id="a8bed1e9934090f89402da0bc43f8dc09" name="a8bed1e9934090f89402da0bc43f8dc09"></a>
 constexpr long&#160;</td><td class="memItemRight" valign="bottom"><b>DEBUG_BAUD_RATE</b> = 1000000</td></tr>
-<tr class="memdesc:a8bed1e9934090f89402da0bc43f8dc09"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default baud rate for the debug serial connection. <br /></td></tr>
+<tr class="memdesc:a8bed1e9934090f89402da0bc43f8dc09"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default baud rate for the USB debug/command serial connection. <br /></td></tr>
 <tr class="separator:a8bed1e9934090f89402da0bc43f8dc09"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ae88f69f2176565cee09dd707e12d73ed" id="r_ae88f69f2176565cee09dd707e12d73ed"><td class="memItemLeft" align="right" valign="top"><a id="ae88f69f2176565cee09dd707e12d73ed" name="ae88f69f2176565cee09dd707e12d73ed"></a>
 constexpr long&#160;</td><td class="memItemRight" valign="bottom"><b>COMMAND_BAUD_RATE</b> = 115200</td></tr>
 <tr class="memdesc:ae88f69f2176565cee09dd707e12d73ed"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default baud rates for BLE communication. <br /></td></tr>
 <tr class="separator:ae88f69f2176565cee09dd707e12d73ed"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a80175cb10ba793359eb0a8807638ebdc" id="r_a80175cb10ba793359eb0a8807638ebdc"><td class="memItemLeft" align="right" valign="top"><a id="a80175cb10ba793359eb0a8807638ebdc" name="a80175cb10ba793359eb0a8807638ebdc"></a>
-constexpr long&#160;</td><td class="memItemRight" valign="bottom"><b>DYNAMIXEL_BAUD_RATE</b> = 1000000</td></tr>
-<tr class="memdesc:a80175cb10ba793359eb0a8807638ebdc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default baud rate for Dynamixel communication. <br /></td></tr>
+<tr class="memitem:a80175cb10ba793359eb0a8807638ebdc" id="r_a80175cb10ba793359eb0a8807638ebdc"><td class="memItemLeft" align="right" valign="top">constexpr long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a80175cb10ba793359eb0a8807638ebdc">DYNAMIXEL_BAUD_RATE</a> = 1000000</td></tr>
+<tr class="memdesc:a80175cb10ba793359eb0a8807638ebdc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default baud rate for Dynamixel communication.  <br /></td></tr>
 <tr class="separator:a80175cb10ba793359eb0a8807638ebdc"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:afdf26e4ff47a22b0418ebc6acb9ba0d8" id="r_afdf26e4ff47a22b0418ebc6acb9ba0d8"><td class="memItemLeft" align="right" valign="top"><a id="afdf26e4ff47a22b0418ebc6acb9ba0d8" name="afdf26e4ff47a22b0418ebc6acb9ba0d8"></a>
-constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>N_GESTURES</b> = 6</td></tr>
-<tr class="memdesc:afdf26e4ff47a22b0418ebc6acb9ba0d8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Total number of gesture contained in the library. <br /></td></tr>
+constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>N_GESTURES</b> = 15</td></tr>
+<tr class="memdesc:afdf26e4ff47a22b0418ebc6acb9ba0d8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Total number of gesture contained in the library 6 postures (grasp, keygrip, pinch_index, pinch_middle, pinch_ring, peace), one extend/rest/flex gesture for each digit and the wrist, plus three research-facing gestures for the individual thumb motors. <br /></td></tr>
 <tr class="separator:afdf26e4ff47a22b0418ebc6acb9ba0d8"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9a385f18998f9e2555500b4cf2ba89fd" id="r_a9a385f18998f9e2555500b4cf2ba89fd"><td class="memItemLeft" align="right" valign="top"><a id="a9a385f18998f9e2555500b4cf2ba89fd" name="a9a385f18998f9e2555500b4cf2ba89fd"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>EXTEND_THUMBADD</b> = 0.10f</td></tr>
+<tr class="separator:a9a385f18998f9e2555500b4cf2ba89fd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5a0f91415e570e684de95d7eaf990a05" id="r_a5a0f91415e570e684de95d7eaf990a05"><td class="memItemLeft" align="right" valign="top"><a id="a5a0f91415e570e684de95d7eaf990a05" name="a5a0f91415e570e684de95d7eaf990a05"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>REST_THUMBADD</b> = 0.50f</td></tr>
+<tr class="separator:a5a0f91415e570e684de95d7eaf990a05"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9c3cdd2323f81ba57a67f4efd53f88ab" id="r_a9c3cdd2323f81ba57a67f4efd53f88ab"><td class="memItemLeft" align="right" valign="top"><a id="a9c3cdd2323f81ba57a67f4efd53f88ab" name="a9c3cdd2323f81ba57a67f4efd53f88ab"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>FLEX_THUMBADD</b> = 0.90f</td></tr>
+<tr class="separator:a9c3cdd2323f81ba57a67f4efd53f88ab"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a93a481cd024360fb6636f5dd7e5bbb4f" id="r_a93a481cd024360fb6636f5dd7e5bbb4f"><td class="memItemLeft" align="right" valign="top"><a id="a93a481cd024360fb6636f5dd7e5bbb4f" name="a93a481cd024360fb6636f5dd7e5bbb4f"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>EXTEND_THUMBROT</b> = 0.10f</td></tr>
+<tr class="separator:a93a481cd024360fb6636f5dd7e5bbb4f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a30ededcdba6cb7afe1733dd922296eb4" id="r_a30ededcdba6cb7afe1733dd922296eb4"><td class="memItemLeft" align="right" valign="top"><a id="a30ededcdba6cb7afe1733dd922296eb4" name="a30ededcdba6cb7afe1733dd922296eb4"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>REST_THUMBROT</b> = 0.50f</td></tr>
+<tr class="separator:a30ededcdba6cb7afe1733dd922296eb4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:abdf6eaf4b3506afb4d0379190667e287" id="r_abdf6eaf4b3506afb4d0379190667e287"><td class="memItemLeft" align="right" valign="top"><a id="abdf6eaf4b3506afb4d0379190667e287" name="abdf6eaf4b3506afb4d0379190667e287"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>FLEX_THUMBROT</b> = 0.90f</td></tr>
+<tr class="separator:abdf6eaf4b3506afb4d0379190667e287"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aacac0558640b76ca41e5e952a9a9a2ac" id="r_aacac0558640b76ca41e5e952a9a9a2ac"><td class="memItemLeft" align="right" valign="top"><a id="aacac0558640b76ca41e5e952a9a9a2ac" name="aacac0558640b76ca41e5e952a9a9a2ac"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>EXTEND_THUMBFLEX</b> = 0.10f</td></tr>
+<tr class="separator:aacac0558640b76ca41e5e952a9a9a2ac"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:af986fbffa964d188c803e9367383dda1" id="r_af986fbffa964d188c803e9367383dda1"><td class="memItemLeft" align="right" valign="top"><a id="af986fbffa964d188c803e9367383dda1" name="af986fbffa964d188c803e9367383dda1"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>REST_THUMBFLEX</b> = 0.50f</td></tr>
+<tr class="separator:af986fbffa964d188c803e9367383dda1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a86b427b3b651845746c0c2fb7b99ef3e" id="r_a86b427b3b651845746c0c2fb7b99ef3e"><td class="memItemLeft" align="right" valign="top"><a id="a86b427b3b651845746c0c2fb7b99ef3e" name="a86b427b3b651845746c0c2fb7b99ef3e"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>FLEX_THUMBFLEX</b> = 0.90f</td></tr>
+<tr class="separator:a86b427b3b651845746c0c2fb7b99ef3e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a3171a9565eedbadcfce306886047bc43" id="r_a3171a9565eedbadcfce306886047bc43"><td class="memItemLeft" align="right" valign="top"><a id="a3171a9565eedbadcfce306886047bc43" name="a3171a9565eedbadcfce306886047bc43"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>EXTEND_INDEX</b> = 0.10f</td></tr>
+<tr class="separator:a3171a9565eedbadcfce306886047bc43"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aebeaa4ad186f186361acaba5670194d2" id="r_aebeaa4ad186f186361acaba5670194d2"><td class="memItemLeft" align="right" valign="top"><a id="aebeaa4ad186f186361acaba5670194d2" name="aebeaa4ad186f186361acaba5670194d2"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>REST_INDEX</b> = 0.25f</td></tr>
+<tr class="separator:aebeaa4ad186f186361acaba5670194d2"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a06958e777cbd744a159dcad3b0300a95" id="r_a06958e777cbd744a159dcad3b0300a95"><td class="memItemLeft" align="right" valign="top"><a id="a06958e777cbd744a159dcad3b0300a95" name="a06958e777cbd744a159dcad3b0300a95"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>FLEX_INDEX</b> = 0.50f</td></tr>
+<tr class="separator:a06958e777cbd744a159dcad3b0300a95"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a54d0aa78b0f4405db5c52b1028dc8c98" id="r_a54d0aa78b0f4405db5c52b1028dc8c98"><td class="memItemLeft" align="right" valign="top"><a id="a54d0aa78b0f4405db5c52b1028dc8c98" name="a54d0aa78b0f4405db5c52b1028dc8c98"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>EXTEND_MIDDLE</b> = 0.10f</td></tr>
+<tr class="separator:a54d0aa78b0f4405db5c52b1028dc8c98"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad9bbfabd4d91b56a1cea0256d01f0df6" id="r_ad9bbfabd4d91b56a1cea0256d01f0df6"><td class="memItemLeft" align="right" valign="top"><a id="ad9bbfabd4d91b56a1cea0256d01f0df6" name="ad9bbfabd4d91b56a1cea0256d01f0df6"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>REST_MIDDLE</b> = 0.25f</td></tr>
+<tr class="separator:ad9bbfabd4d91b56a1cea0256d01f0df6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a150ac4ab4909e5180d43ecceba86fb9e" id="r_a150ac4ab4909e5180d43ecceba86fb9e"><td class="memItemLeft" align="right" valign="top"><a id="a150ac4ab4909e5180d43ecceba86fb9e" name="a150ac4ab4909e5180d43ecceba86fb9e"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>FLEX_MIDDLE</b> = 0.50f</td></tr>
+<tr class="separator:a150ac4ab4909e5180d43ecceba86fb9e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a4c3cb705461402eef268f744105dbf7c" id="r_a4c3cb705461402eef268f744105dbf7c"><td class="memItemLeft" align="right" valign="top"><a id="a4c3cb705461402eef268f744105dbf7c" name="a4c3cb705461402eef268f744105dbf7c"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>EXTEND_RING</b> = 0.10f</td></tr>
+<tr class="separator:a4c3cb705461402eef268f744105dbf7c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a47237d97b5f50f599658cbb2067cbd5c" id="r_a47237d97b5f50f599658cbb2067cbd5c"><td class="memItemLeft" align="right" valign="top"><a id="a47237d97b5f50f599658cbb2067cbd5c" name="a47237d97b5f50f599658cbb2067cbd5c"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>REST_RING</b> = 0.25f</td></tr>
+<tr class="separator:a47237d97b5f50f599658cbb2067cbd5c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a12ce97211a260968c2861e673bb2c041" id="r_a12ce97211a260968c2861e673bb2c041"><td class="memItemLeft" align="right" valign="top"><a id="a12ce97211a260968c2861e673bb2c041" name="a12ce97211a260968c2861e673bb2c041"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>FLEX_RING</b> = 0.50f</td></tr>
+<tr class="separator:a12ce97211a260968c2861e673bb2c041"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab06dd6a743901ea13c760c91be82f576" id="r_ab06dd6a743901ea13c760c91be82f576"><td class="memItemLeft" align="right" valign="top"><a id="ab06dd6a743901ea13c760c91be82f576" name="ab06dd6a743901ea13c760c91be82f576"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>EXTEND_PINKY</b> = 0.10f</td></tr>
+<tr class="separator:ab06dd6a743901ea13c760c91be82f576"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8b5406299d34019cb3374259dcd6be4f" id="r_a8b5406299d34019cb3374259dcd6be4f"><td class="memItemLeft" align="right" valign="top"><a id="a8b5406299d34019cb3374259dcd6be4f" name="a8b5406299d34019cb3374259dcd6be4f"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>REST_PINKY</b> = 0.25f</td></tr>
+<tr class="separator:a8b5406299d34019cb3374259dcd6be4f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa7b9a894b57883c292cb005df86523c0" id="r_aa7b9a894b57883c292cb005df86523c0"><td class="memItemLeft" align="right" valign="top"><a id="aa7b9a894b57883c292cb005df86523c0" name="aa7b9a894b57883c292cb005df86523c0"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>FLEX_PINKY</b> = 0.50f</td></tr>
+<tr class="separator:aa7b9a894b57883c292cb005df86523c0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8e6ca5e6a1cab51ca0e2cdd8732f36ea" id="r_a8e6ca5e6a1cab51ca0e2cdd8732f36ea"><td class="memItemLeft" align="right" valign="top"><a id="a8e6ca5e6a1cab51ca0e2cdd8732f36ea" name="a8e6ca5e6a1cab51ca0e2cdd8732f36ea"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>EXTEND_WRIST</b> = 0.05f</td></tr>
+<tr class="separator:a8e6ca5e6a1cab51ca0e2cdd8732f36ea"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5cb07b466ea61339a67526aca0b133d2" id="r_a5cb07b466ea61339a67526aca0b133d2"><td class="memItemLeft" align="right" valign="top"><a id="a5cb07b466ea61339a67526aca0b133d2" name="a5cb07b466ea61339a67526aca0b133d2"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>REST_WRIST</b> = 0.25f</td></tr>
+<tr class="separator:a5cb07b466ea61339a67526aca0b133d2"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:acafe5a1dadc8a796dfc0a15c841603c2" id="r_acafe5a1dadc8a796dfc0a15c841603c2"><td class="memItemLeft" align="right" valign="top"><a id="acafe5a1dadc8a796dfc0a15c841603c2" name="acafe5a1dadc8a796dfc0a15c841603c2"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>FLEX_WRIST</b> = 0.95f</td></tr>
+<tr class="separator:acafe5a1dadc8a796dfc0a15c841603c2"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a863a38dfd7233fb6d09d81653e19aa86" id="r_a863a38dfd7233fb6d09d81653e19aa86"><td class="memItemLeft" align="right" valign="top">constexpr float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a863a38dfd7233fb6d09d81653e19aa86">GESTURE_MIN_TRAVEL_DEG</a> = 2.0f</td></tr>
+<tr class="memdesc:a863a38dfd7233fb6d09d81653e19aa86"><td class="mdescLeft">&#160;</td><td class="mdescRight">Least travel, in degrees, that counts as a usable gesture range.  <br /></td></tr>
+<tr class="separator:a863a38dfd7233fb6d09d81653e19aa86"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a41c96bc734f97df87d989ee6ee149b78" id="r_a41c96bc734f97df87d989ee6ee149b78"><td class="memItemLeft" align="right" valign="top">constexpr float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a41c96bc734f97df87d989ee6ee149b78">GESTURE_SPAN_OVERRIDE_RATIO</a> = 2.0f</td></tr>
+<tr class="memdesc:a41c96bc734f97df87d989ee6ee149b78"><td class="mdescLeft">&#160;</td><td class="mdescRight">How much more travel the non-flip side must offer to be chosen.  <br /></td></tr>
+<tr class="separator:a41c96bc734f97df87d989ee6ee149b78"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8cc5ec5926ffa6e161c2465e819de496" id="r_a8cc5ec5926ffa6e161c2465e819de496"><td class="memItemLeft" align="right" valign="top">constexpr float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a8cc5ec5926ffa6e161c2465e819de496">GESTURE_FRACTION_TOLERANCE</a> = 0.02f</td></tr>
+<tr class="memdesc:a8cc5ec5926ffa6e161c2465e819de496"><td class="mdescLeft">&#160;</td><td class="mdescRight">Slack, as a fraction of the axis, before a joint reads out of range.  <br /></td></tr>
+<tr class="separator:a8cc5ec5926ffa6e161c2465e819de496"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8289fe7d1bb434867d3c5f1ecd3bb1a5" id="r_a8289fe7d1bb434867d3c5f1ecd3bb1a5"><td class="memItemLeft" align="right" valign="top">constexpr float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a8289fe7d1bb434867d3c5f1ecd3bb1a5">GESTURE_AXIS_MIN_SEPARATION</a> = 0.02f</td></tr>
+<tr class="memdesc:a8289fe7d1bb434867d3c5f1ecd3bb1a5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Least EXTEND_* to FLEX_* separation for a joint to carry a position.  <br /></td></tr>
+<tr class="separator:a8289fe7d1bb434867d3c5f1ecd3bb1a5"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a67357750ad236f09be640e3fa8399e09" id="r_a67357750ad236f09be640e3fa8399e09"><td class="memItemLeft" align="right" valign="top"><a id="a67357750ad236f09be640e3fa8399e09" name="a67357750ad236f09be640e3fa8399e09"></a>
 constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>MAX_GESTURE_BUTTONS</b> = 6</td></tr>
 <tr class="memdesc:a67357750ad236f09be640e3fa8399e09"><td class="mdescLeft">&#160;</td><td class="mdescRight">Maximum number of gesture buttons that can be configured. <br /></td></tr>
@@ -229,6 +326,61 @@ constexpr long&#160;</td><td class="memItemRight" valign="bottom"><b>MAX_STATES_
 <tr class="memitem:a358d5498b420a56ebc41c8fa6b893749" id="r_a358d5498b420a56ebc41c8fa6b893749"><td class="memItemLeft" align="right" valign="top">constexpr int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a358d5498b420a56ebc41c8fa6b893749">MOTOR_CURRENT_LIMIT</a> = 910</td></tr>
 <tr class="memdesc:a358d5498b420a56ebc41c8fa6b893749"><td class="mdescLeft">&#160;</td><td class="mdescRight">Current limit for XC330-T288 motors.  <br /></td></tr>
 <tr class="separator:a358d5498b420a56ebc41c8fa6b893749"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:abcfe8a1454e5a6d50076c3fa29d5b8f4" id="r_abcfe8a1454e5a6d50076c3fa29d5b8f4"><td class="memItemLeft" align="right" valign="top">constexpr int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#abcfe8a1454e5a6d50076c3fa29d5b8f4">DEFAULT_GOAL_CURRENT_MA</a> = 150</td></tr>
+<tr class="memdesc:abcfe8a1454e5a6d50076c3fa29d5b8f4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Working effort commanded in current-based position mode, in mA.  <br /></td></tr>
+<tr class="separator:abcfe8a1454e5a6d50076c3fa29d5b8f4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a3e51ee903f4e4037ce8469077f43fc69" id="r_a3e51ee903f4e4037ce8469077f43fc69"><td class="memItemLeft" align="right" valign="top"><a id="a3e51ee903f4e4037ce8469077f43fc69" name="a3e51ee903f4e4037ce8469077f43fc69"></a>
+constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>TOTAL_CURRENT_BUDGET_MA</b> = 800</td></tr>
+<tr class="separator:a3e51ee903f4e4037ce8469077f43fc69"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a542b35804594ca0357346ed5b64ae16c" id="r_a542b35804594ca0357346ed5b64ae16c"><td class="memItemLeft" align="right" valign="top">constexpr int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a542b35804594ca0357346ed5b64ae16c">HOLD_CURRENT_MA</a> = 25</td></tr>
+<tr class="memdesc:a542b35804594ca0357346ed5b64ae16c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Current a motor is allowed once it is judged to have settled, in mA.  <br /></td></tr>
+<tr class="separator:a542b35804594ca0357346ed5b64ae16c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a426fad682d580070816eab072c046628" id="r_a426fad682d580070816eab072c046628"><td class="memItemLeft" align="right" valign="top">constexpr unsigned long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a426fad682d580070816eab072c046628">CURRENT_GOVERNOR_SAMPLE_INTERVAL_MS</a> = 2</td></tr>
+<tr class="memdesc:a426fad682d580070816eab072c046628"><td class="mdescLeft">&#160;</td><td class="mdescRight">Minimum gap between the governor's individual motor reads, in ms.  <br /></td></tr>
+<tr class="separator:a426fad682d580070816eab072c046628"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a08941d9d3ae6d6b52392a318b0bd6e9f" id="r_a08941d9d3ae6d6b52392a318b0bd6e9f"><td class="memItemLeft" align="right" valign="top"><a id="a08941d9d3ae6d6b52392a318b0bd6e9f" name="a08941d9d3ae6d6b52392a318b0bd6e9f"></a>
+constexpr unsigned long&#160;</td><td class="memItemRight" valign="bottom"><b>CURRENT_GOVERNOR_ACTIVE_MS</b> = 2000</td></tr>
+<tr class="memdesc:a08941d9d3ae6d6b52392a318b0bd6e9f"><td class="mdescLeft">&#160;</td><td class="mdescRight">How long after the last goal the governor keeps sampling, in ms. <br /></td></tr>
+<tr class="separator:a08941d9d3ae6d6b52392a318b0bd6e9f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac08767e7a5061dbc6b2790433053584a" id="r_ac08767e7a5061dbc6b2790433053584a"><td class="memItemLeft" align="right" valign="top"><a id="ac08767e7a5061dbc6b2790433053584a" name="ac08767e7a5061dbc6b2790433053584a"></a>
+constexpr uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>CURRENT_GOVERNOR_MAX_READ_FAILS</b> = 3</td></tr>
+<tr class="memdesc:ac08767e7a5061dbc6b2790433053584a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Consecutive read failures before the governor stops trusting measurements and falls back to the static worst-case clamp. <br /></td></tr>
+<tr class="separator:ac08767e7a5061dbc6b2790433053584a"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1e0e35d86a8a70f47d3efab15515ba10" id="r_a1e0e35d86a8a70f47d3efab15515ba10"><td class="memItemLeft" align="right" valign="top"><a id="a1e0e35d86a8a70f47d3efab15515ba10" name="a1e0e35d86a8a70f47d3efab15515ba10"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>CURRENT_GOVERNOR_RELEASE_FRACTION</b> = 0.80f</td></tr>
+<tr class="memdesc:a1e0e35d86a8a70f47d3efab15515ba10"><td class="mdescLeft">&#160;</td><td class="mdescRight">Fraction of the budget below which the governor relaxes its clamp. The gap between this and 1.0 is deadband; without it the clamp oscillates. <br /></td></tr>
+<tr class="separator:a1e0e35d86a8a70f47d3efab15515ba10"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a84476de9d40af75f6c874b2342b400d9" id="r_a84476de9d40af75f6c874b2342b400d9"><td class="memItemLeft" align="right" valign="top"><a id="a84476de9d40af75f6c874b2342b400d9" name="a84476de9d40af75f6c874b2342b400d9"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>CURRENT_GOVERNOR_RECOVERY_STEP</b> = 0.08f</td></tr>
+<tr class="memdesc:a84476de9d40af75f6c874b2342b400d9"><td class="mdescLeft">&#160;</td><td class="mdescRight">How fast the clamp relaxes per completed sweep once there is headroom. Recovery is deliberately slower than the clamp-down, which is immediate. <br /></td></tr>
+<tr class="separator:a84476de9d40af75f6c874b2342b400d9"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa109673b37c02479e16d906a1be0eaaa" id="r_aa109673b37c02479e16d906a1be0eaaa"><td class="memItemLeft" align="right" valign="top">constexpr float&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#aa109673b37c02479e16d906a1be0eaaa">CURRENT_GOVERNOR_APPLY_DEADBAND</a> = 0.03f</td></tr>
+<tr class="memdesc:aa109673b37c02479e16d906a1be0eaaa"><td class="mdescLeft">&#160;</td><td class="mdescRight">Minimum change in the allocation scale worth re-writing GOAL_CURRENT for.  <br /></td></tr>
+<tr class="separator:aa109673b37c02479e16d906a1be0eaaa"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0d5c80bbd2c5daa2f69709c41798b0ab" id="r_a0d5c80bbd2c5daa2f69709c41798b0ab"><td class="memItemLeft" align="right" valign="top"><a id="a0d5c80bbd2c5daa2f69709c41798b0ab" name="a0d5c80bbd2c5daa2f69709c41798b0ab"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>STALL_CURRENT_FRACTION</b> = 0.80f</td></tr>
+<tr class="memdesc:a0d5c80bbd2c5daa2f69709c41798b0ab"><td class="mdescLeft">&#160;</td><td class="mdescRight">A motor drawing at least this fraction of its allowance is pushing against something rather than travelling. <br /></td></tr>
+<tr class="separator:a0d5c80bbd2c5daa2f69709c41798b0ab"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa05cc34ab89fb1b757d6e71e4fdd3083" id="r_aa05cc34ab89fb1b757d6e71e4fdd3083"><td class="memItemLeft" align="right" valign="top">constexpr uint16_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#aa05cc34ab89fb1b757d6e71e4fdd3083">MIN_MOVE_CURRENT_MA</a> = 75</td></tr>
+<tr class="memdesc:aa05cc34ab89fb1b757d6e71e4fdd3083"><td class="mdescLeft">&#160;</td><td class="mdescRight">Least current at which a joint can actually break friction and move.  <br /></td></tr>
+<tr class="separator:aa05cc34ab89fb1b757d6e71e4fdd3083"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a44f6da36c29d5aa92809f8d7699efe92" id="r_a44f6da36c29d5aa92809f8d7699efe92"><td class="memItemLeft" align="right" valign="top">constexpr unsigned long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a44f6da36c29d5aa92809f8d7699efe92">MOVE_TIMEOUT_MS</a> = 2500</td></tr>
+<tr class="memdesc:a44f6da36c29d5aa92809f8d7699efe92"><td class="mdescLeft">&#160;</td><td class="mdescRight">Give up on a move this long after it was funded, in ms.  <br /></td></tr>
+<tr class="separator:a44f6da36c29d5aa92809f8d7699efe92"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:af1c5266266a90707f011731339c28a2f" id="r_af1c5266266a90707f011731339c28a2f"><td class="memItemLeft" align="right" valign="top"><a id="af1c5266266a90707f011731339c28a2f" name="af1c5266266a90707f011731339c28a2f"></a>
+constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>GESTURE_REACH_TOLERANCE_DEG</b> = 4.0f</td></tr>
+<tr class="memdesc:af1c5266266a90707f011731339c28a2f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Position error within which a move counts as having reached its goal. <br /></td></tr>
+<tr class="separator:af1c5266266a90707f011731339c28a2f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a402b10cfc2df7a871db40d549041dbb7" id="r_a402b10cfc2df7a871db40d549041dbb7"><td class="memItemLeft" align="right" valign="top">constexpr uint16_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#a402b10cfc2df7a871db40d549041dbb7">CURRENT_SETTLED_MA</a> = 25</td></tr>
+<tr class="memdesc:a402b10cfc2df7a871db40d549041dbb7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Draw below which a motor counts as having arrived, in mA.  <br /></td></tr>
+<tr class="separator:a402b10cfc2df7a871db40d549041dbb7"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aee2487cdbead0c1eb46f5fefda2b8db2" id="r_aee2487cdbead0c1eb46f5fefda2b8db2"><td class="memItemLeft" align="right" valign="top">constexpr unsigned long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="config_8h.html#aee2487cdbead0c1eb46f5fefda2b8db2">MOVE_WINDOW_MS</a> = 500</td></tr>
+<tr class="memdesc:aee2487cdbead0c1eb46f5fefda2b8db2"><td class="mdescLeft">&#160;</td><td class="mdescRight">How long a motor is presumed to still be travelling, in ms.  <br /></td></tr>
+<tr class="separator:aee2487cdbead0c1eb46f5fefda2b8db2"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a4db5490789091829eea512ee7eeb37ab" id="r_a4db5490789091829eea512ee7eeb37ab"><td class="memItemLeft" align="right" valign="top"><a id="a4db5490789091829eea512ee7eeb37ab" name="a4db5490789091829eea512ee7eeb37ab"></a>
+constexpr unsigned long&#160;</td><td class="memItemRight" valign="bottom"><b>STALL_HOLD_MS</b> = 250</td></tr>
+<tr class="memdesc:a4db5490789091829eea512ee7eeb37ab"><td class="mdescLeft">&#160;</td><td class="mdescRight">How long a motor must draw stall-level current before it is demoted to HOLD_CURRENT_MA, in ms. This is what stops a fleet of motors parked on their endstops from holding at full effort indefinitely. <br /></td></tr>
+<tr class="separator:a4db5490789091829eea512ee7eeb37ab"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a05625c464f642ff1efbabc75a7402692" id="r_a05625c464f642ff1efbabc75a7402692"><td class="memItemLeft" align="right" valign="top"><a id="a05625c464f642ff1efbabc75a7402692" name="a05625c464f642ff1efbabc75a7402692"></a>
 constexpr float&#160;</td><td class="memItemRight" valign="bottom"><b>DIRECT_VELOCITY_LIMIT_RPM</b> = 10.0f</td></tr>
 <tr class="memdesc:a05625c464f642ff1efbabc75a7402692"><td class="mdescLeft">&#160;</td><td class="mdescRight">Direct-control limits used by serial velocity/current commands. <br /></td></tr>
@@ -286,6 +438,81 @@ constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>DXL_DIR_PIN<
 </div>
 </div>
 <h2 class="groupheader">Variable Documentation</h2>
+<a id="aa109673b37c02479e16d906a1be0eaaa" name="aa109673b37c02479e16d906a1be0eaaa"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa109673b37c02479e16d906a1be0eaaa">&#9670;&#160;</a></span>CURRENT_GOVERNOR_APPLY_DEADBAND</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr float CURRENT_GOVERNOR_APPLY_DEADBAND = 0.03f</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Minimum change in the allocation scale worth re-writing GOAL_CURRENT for. </p>
+<p>Each refresh is up to N_MOTORS register writes, so pushing every marginal change would cost more bus time than the sampling does. The deadband keeps the writes proportionate to the change that prompted them. </p>
+
+</div>
+</div>
+<a id="a426fad682d580070816eab072c046628" name="a426fad682d580070816eab072c046628"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a426fad682d580070816eab072c046628">&#9670;&#160;</a></span>CURRENT_GOVERNOR_SAMPLE_INTERVAL_MS</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr unsigned long CURRENT_GOVERNOR_SAMPLE_INTERVAL_MS = 2</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Minimum gap between the governor's individual motor reads, in ms. </p>
+<p>The governor reads ONE motor per update() call, not the whole fleet at once. Reading all 18 in a burst would block the control loop for milliseconds and put that jitter straight onto command latency, which the dual-CDC work exists to avoid. One read is roughly 350 us, so a full sweep of 18 motors completes in about 18 * this value and no single loop pass pays for more than one read. Sampling only runs while motors are active, so an idle exo adds no Dynamixel bus traffic at all. </p>
+
+</div>
+</div>
+<a id="a402b10cfc2df7a871db40d549041dbb7" name="a402b10cfc2df7a871db40d549041dbb7"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a402b10cfc2df7a871db40d549041dbb7">&#9670;&#160;</a></span>CURRENT_SETTLED_MA</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr uint16_t CURRENT_SETTLED_MA = 25</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Draw below which a motor counts as having arrived, in mA. </p>
+<p>This is how "arrived" is told apart from "stalled" without position reads: a motor that reached its target coasts at nearly nothing, while one pushing on an endstop or a spastic finger keeps pulling. The distinction matters &ndash; arrived motors are released from the budget, but a motor doing real work is left at full effort unless the fleet is genuinely over budget. </p>
+
+</div>
+</div>
 <a id="acf75e68030805b38b0837ff14492537c" name="acf75e68030805b38b0837ff14492537c"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#acf75e68030805b38b0837ff14492537c">&#9670;&#160;</a></span>DEFAULT_FLIPS</h2>
 
@@ -316,6 +543,182 @@ constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>DXL_DIR_PIN<
 
 </div>
 </div>
+<a id="abcfe8a1454e5a6d50076c3fa29d5b8f4" name="abcfe8a1454e5a6d50076c3fa29d5b8f4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abcfe8a1454e5a6d50076c3fa29d5b8f4">&#9670;&#160;</a></span>DEFAULT_GOAL_CURRENT_MA</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr int DEFAULT_GOAL_CURRENT_MA = 150</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Working effort commanded in current-based position mode, in mA. </p>
+<p>This is GOAL_CURRENT &ndash; the current a motor actually applies while holding or chasing its goal &ndash; as distinct from MOTOR_CURRENT_LIMIT above, which is only the ceiling. They are NOT the same knob: initializing GOAL_CURRENT to the ceiling makes every motor push at the part maximum, so several digits held against resistance at once can pull amps and brown out the supply.</p>
+<p>Keep this at the lowest value that still moves the digit. The ceiling stays high so <code>set_current:&lt;motor&gt;:&lt;mA&gt;</code> can raise effort at runtime for participants whose spasticity needs it. </p>
+
+</div>
+</div>
+<a id="a80175cb10ba793359eb0a8807638ebdc" name="a80175cb10ba793359eb0a8807638ebdc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a80175cb10ba793359eb0a8807638ebdc">&#9670;&#160;</a></span>DYNAMIXEL_BAUD_RATE</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr long DYNAMIXEL_BAUD_RATE = 1000000</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Default baud rate for Dynamixel communication. </p>
+<p>Keep this matched to DEBUG_BAUD_RATE so the GUI/OpenRB link and OpenRB/DXL bus use the same default rate. Live diagnostics on the full exo chain showed intermittent CRC/timeout/overflow errors at 2 Mbps even for single-motor position reads. 1 Mbps was stable in repeated tests. </p>
+
+</div>
+</div>
+<a id="a8289fe7d1bb434867d3c5f1ecd3bb1a5" name="a8289fe7d1bb434867d3c5f1ecd3bb1a5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8289fe7d1bb434867d3c5f1ecd3bb1a5">&#9670;&#160;</a></span>GESTURE_AXIS_MIN_SEPARATION</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr float GESTURE_AXIS_MIN_SEPARATION = 0.02f</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Least EXTEND_* to FLEX_* separation for a joint to carry a position. </p>
+<p>A joint whose two endpoints coincide holds still across the whole percent axis, so where it sits says nothing about the percentage. Such joints are still commanded &ndash; they hold their posture &ndash; but are left out of the mean <code>get_gesture_angle</code> reports, and out of the division that would otherwise blow up on their zero-width segment. </p>
+
+</div>
+</div>
+<a id="a8cc5ec5926ffa6e161c2465e819de496" name="a8cc5ec5926ffa6e161c2465e819de496"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8cc5ec5926ffa6e161c2465e819de496">&#9670;&#160;</a></span>GESTURE_FRACTION_TOLERANCE</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr float GESTURE_FRACTION_TOLERANCE = 0.02f</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Slack, as a fraction of the axis, before a joint reads out of range. </p>
+<p>Gearing backlash and position quantization put a settled joint a hair past its endpoint routinely; without this, a hand parked at 100% would report the out-of-range code about half the time. </p>
+
+</div>
+</div>
+<a id="a863a38dfd7233fb6d09d81653e19aa86" name="a863a38dfd7233fb6d09d81653e19aa86"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a863a38dfd7233fb6d09d81653e19aa86">&#9670;&#160;</a></span>GESTURE_MIN_TRAVEL_DEG</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr float GESTURE_MIN_TRAVEL_DEG = 2.0f</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Least travel, in degrees, that counts as a usable gesture range. </p>
+<p>Below this a joint is reported as having no travel rather than being driven a fraction of nothing: <code>get_gesture_angle</code> returns 255 for it and <code>check_limits</code> flags it NO_TRAVEL. Sized just above position-read noise. </p>
+
+</div>
+</div>
+<a id="a41c96bc734f97df87d989ee6ee149b78" name="a41c96bc734f97df87d989ee6ee149b78"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a41c96bc734f97df87d989ee6ee149b78">&#9670;&#160;</a></span>GESTURE_SPAN_OVERRIDE_RATIO</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr float GESTURE_SPAN_OVERRIDE_RATIO = 2.0f</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>How much more travel the non-flip side must offer to be chosen. </p>
+<p>The flip flag is the calibrated flexion DIRECTION, and normally home sits on the extension endstop so all the travel is on the flip-indicated side. When home instead lands mid-window &ndash; which is how the stock wrist (home 310 in a [166, 320] window) and wrist2 configurations are shaped &ndash; the flip side is a stub a few degrees wide and every gesture state clamps onto the same boundary. Past this ratio the opposite side is taken as the real flexion direction, since a window that lopsided cannot mean anything else. Kept deliberately high so a joint whose two sides are comparable (a home that is genuinely mid-range) keeps the direction calibration recorded for it. </p>
+
+</div>
+</div>
+<a id="a542b35804594ca0357346ed5b64ae16c" name="a542b35804594ca0357346ed5b64ae16c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a542b35804594ca0357346ed5b64ae16c">&#9670;&#160;</a></span>HOLD_CURRENT_MA</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr int HOLD_CURRENT_MA = 25</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Current a motor is allowed once it is judged to have settled, in mA. </p>
+<p>A motor that reached its target draws near zero regardless of this value; the point is to cap what a STALLED motor can keep pulling. The worst case must fit the budget on its own, so keep N_MOTORS * HOLD_CURRENT_MA below TOTAL_CURRENT_BUDGET_MA (18 * 25 = 450 mA against a 800 mA default). </p>
+
+</div>
+</div>
 <a id="a63fdb386b6bec4f6333c23038f736f9a" name="a63fdb386b6bec4f6333c23038f736f9a"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a63fdb386b6bec4f6333c23038f736f9a">&#9670;&#160;</a></span>HOME_STATES</h2>
 
@@ -337,13 +740,11 @@ constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>DXL_DIR_PIN<
 </div><div class="memdoc">
 <b>Initial value:</b><div class="fragment"><div class="line">= {</div>
 <div class="line">  </div>
-<div class="line">  180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0,</div>
+<div class="line">  228.45, 132.70, 220.79, 232.23, 122.76, 193.34, 80.26, 98.21, 63.80,</div>
 <div class="line">  </div>
-<div class="line">  149.1, 180.0, 180.0, 251.86, 374.53, 162.8, 106.83, 68.99, 115.37</div>
+<div class="line">  228.45, 132.70, 220.79, 232.23, 122.76, 193.34, 80.26, 98.21, 63.80</div>
 <div class="line">}</div>
 </div><!-- fragment -->
-<p>Home states [left placeholders, right calibrated]. Left values are placeholders overwritten at runtime by apply_calibration. </p>
-
 </div>
 </div>
 <a id="aeae48ca31178aa07e9c5700f94100012" name="aeae48ca31178aa07e9c5700f94100012"></a>
@@ -367,14 +768,39 @@ constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>DXL_DIR_PIN<
 </div><div class="memdoc">
 <b>Initial value:</b><div class="fragment"><div class="line">= {</div>
 <div class="line">  </div>
-<div class="line">  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},</div>
-<div class="line">  {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0}, {0.0, 360.0},</div>
+<div class="line">  {201.17, 269.46}, {90.02, 163.42}, {198.09, 227.13}, {160.26, 260.86}, {106.74, 147.31},</div>
+<div class="line">  {162.27, 231.35}, {49.54, 102.52}, {74.71, 127.78}, {14.96, 109.65},</div>
 <div class="line">  </div>
-<div class="line">  {320, 166}, {42.0, 190.0}, {140.0, 260.0}, {160.26, 260.86}, {88.53, 174.27},</div>
-<div class="line">  {166.8, 239.93}, {50.5, 104.83}, {66.99, 125.06}, {400.1, 460.37}</div>
+<div class="line">  {201.17, 269.46}, {90.02, 163.42}, {198.09, 227.13}, {160.26, 260.86}, {106.74, 147.31},</div>
+<div class="line">  {162.27, 231.35}, {49.54, 102.52}, {74.71, 127.78}, {14.96, 109.65}</div>
 <div class="line">}</div>
 </div><!-- fragment -->
 <p>Physical joint limits [min, max] for each motor. </p>
+
+</div>
+</div>
+<a id="aa05cc34ab89fb1b757d6e71e4fdd3083" name="aa05cc34ab89fb1b757d6e71e4fdd3083"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa05cc34ab89fb1b757d6e71e4fdd3083">&#9670;&#160;</a></span>MIN_MOVE_CURRENT_MA</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr uint16_t MIN_MOVE_CURRENT_MA = 75</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Least current at which a joint can actually break friction and move. </p>
+<p>The budget must never allocate a motor LESS than this while expecting it to travel. Spreading the budget evenly over every commanded motor does exactly that: 18 motors sharing 800 mA get 44 mA each, too little to move, so they all strain at their full allowance and the fleet parks just under the cap &ndash; no overshoot to clamp, no headroom to relax, nothing moving, every command still acking. Admission (see refreshCurrentAllocation) exists to prevent it: fewer motors move at a usable current instead of all of them uselessly. </p>
 
 </div>
 </div>
@@ -456,6 +882,56 @@ constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>DXL_DIR_PIN<
 <div class="line">}</div>
 </div><!-- fragment -->
 <p>Motor name Array (must match MOTOR_IDS order). Individual motor commands use Dynamixel ID numbers, not names, to avoid duplicate-name collisions between left and right in dual mode. </p>
+
+</div>
+</div>
+<a id="a44f6da36c29d5aa92809f8d7699efe92" name="a44f6da36c29d5aa92809f8d7699efe92"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a44f6da36c29d5aa92809f8d7699efe92">&#9670;&#160;</a></span>MOVE_TIMEOUT_MS</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr unsigned long MOVE_TIMEOUT_MS = 2500</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Give up on a move this long after it was funded, in ms. </p>
+<p>Bounds how long a motor may hold an admission slot, so one joint jammed against an obstruction cannot stop the rest of a gesture from ever being dispatched. Also what turns "no movement" into a reported verdict. </p>
+
+</div>
+</div>
+<a id="aee2487cdbead0c1eb46f5fefda2b8db2" name="aee2487cdbead0c1eb46f5fefda2b8db2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aee2487cdbead0c1eb46f5fefda2b8db2">&#9670;&#160;</a></span>MOVE_WINDOW_MS</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr unsigned long MOVE_WINDOW_MS = 500</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>How long a motor is presumed to still be travelling, in ms. </p>
+<p>Only after this has elapsed is a low draw read as "arrived" rather than "has not started pulling yet". Long enough for a full-range digit move. </p>
 
 </div>
 </div>

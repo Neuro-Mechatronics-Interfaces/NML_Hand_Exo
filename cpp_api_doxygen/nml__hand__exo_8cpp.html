@@ -115,14 +115,35 @@ Variables</h2></td></tr>
 bool&#160;</td><td class="memItemRight" valign="bottom"><b>VERBOSE</b> = <a class="el" href="config_8h.html#a69065b3a9aeef0869b814c5537be9d65">DEFAULT_VERBOSE</a></td></tr>
 <tr class="memdesc:af99838407de1f00344ce35d8675e41a7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Verbose output toggle for debugging. <br /></td></tr>
 <tr class="separator:af99838407de1f00344ce35d8675e41a7"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae42ed6e89af84ac3fc7dedd4597008ad" id="r_ae42ed6e89af84ac3fc7dedd4597008ad"><td class="memItemLeft" align="right" valign="top">uint8_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="nml__hand__exo_8cpp.html#ae42ed6e89af84ac3fc7dedd4597008ad">gReplyRoute</a> = REPLY_ROUTE_BOTH</td></tr>
+<tr class="memdesc:ae42ed6e89af84ac3fc7dedd4597008ad"><td class="mdescLeft">&#160;</td><td class="mdescRight">Reply/telemetry routing for dual-CDC. Legacy-safe default (BOTH).  <br /></td></tr>
+<tr class="separator:ae42ed6e89af84ac3fc7dedd4597008ad"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a30cfb7c1d7024c7e0581bf3e212bd8c2" id="r_a30cfb7c1d7024c7e0581bf3e212bd8c2"><td class="memItemLeft" align="right" valign="top"><a id="a30cfb7c1d7024c7e0581bf3e212bd8c2" name="a30cfb7c1d7024c7e0581bf3e212bd8c2"></a>
-Stream *&#160;</td><td class="memItemRight" valign="bottom"><b>debugStream</b> = &amp;<a class="el" href="config_8h.html#a61e127df60d55ea4c8bd6b8ec1f88367">DEBUG_SERIAL</a></td></tr>
+Stream *&#160;</td><td class="memItemRight" valign="bottom"><b>debugStream</b> = &amp;TELEM_SERIAL</td></tr>
 <tr class="separator:a30cfb7c1d7024c7e0581bf3e212bd8c2"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>Implementation file for the NML Hand Exoskeleton API. </p>
 <p>This file contains the implementation of the <a class="el" href="classNMLHandExo.html" title="Class to manage the NML Hand Exoskeleton, providing initialization, motor control,...">NMLHandExo</a> class, which handles initialization, motor control, angle management, and device telemetry for the exoskeleton. </p>
-</div></div><!-- contents -->
+</div><h2 class="groupheader">Variable Documentation</h2>
+<a id="ae42ed6e89af84ac3fc7dedd4597008ad" name="ae42ed6e89af84ac3fc7dedd4597008ad"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae42ed6e89af84ac3fc7dedd4597008ad">&#9670;&#160;</a></span>gReplyRoute</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">uint8_t gReplyRoute = REPLY_ROUTE_BOTH</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Reply/telemetry routing for dual-CDC. Legacy-safe default (BOTH). </p>
+<p>Where command replies / telemetry are emitted (dual-CDC). One of REPLY_ROUTE_BOTH / REPLY_ROUTE_TELEM / REPLY_ROUTE_CMD (see <a class="el" href="config_8h.html" title="Header file for custom definitions and configs for the NML Hand Exoskeleton project.">config.h</a>). Default REPLY_ROUTE_BOTH keeps legacy single-port hosts working. </p>
+
+</div>
+</div>
+</div><!-- contents -->
 </div><!-- doc-content -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->

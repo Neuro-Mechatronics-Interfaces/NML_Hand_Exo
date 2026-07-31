@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['pulse_5fresolution_0',['PULSE_RESOLUTION',['../config_8h.html#ac8b5696b618a877a775a1a9fe4267b5c',1,'config.h']]]
+  ['jointlimits_0',['jointLimits',['../config_8h.html#aeae48ca31178aa07e9c5700f94100012',1,'config.h']]]
 ];

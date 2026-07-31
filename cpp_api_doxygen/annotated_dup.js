@@ -1,5 +1,6 @@
 var annotated_dup =
 [
+    [ "GestureAxisPoint", "structGestureAxisPoint.html", "structGestureAxisPoint" ],
     [ "GestureButton", "structGestureButton.html", null ],
     [ "GestureController", "classGestureController.html", "classGestureController" ],
     [ "GestureMap", "structGestureMap.html", null ],
