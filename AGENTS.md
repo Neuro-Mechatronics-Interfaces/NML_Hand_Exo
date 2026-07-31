@@ -35,8 +35,8 @@ python test_gui_threading.py
 python test_hc05_wiring.py
 
 # Basic connectivity check
-python examples/basic/hand_exo_cli.py --list-ports
-python examples/basic/hand_exo_cli.py --connect COM5 --info
+python examples/01_basic/hand_exo_cli.py --list-ports
+python examples/01_basic/hand_exo_cli.py --connect COM5 --info
 ```
 
 Notes:

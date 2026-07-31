@@ -9,23 +9,23 @@ Examples are organized by complexity and topic:
 ```
 examples/
 |- README.md                           # This file
-|- basic/                              # Getting started
+|- 01_basic/                           # Getting started
 |  |- example_serial_exo.py            # Basic serial connection
 |  |- example_tcp_exo.py               # TCP/IP connection (WiFi)
 |  `- hand_exo_cli.py                  # Command-line interface tool
-|- motor_control/                      # Motor control basics
+|- 02_motor_control/                   # Motor control basics
 |  |- motor_test.py                    # Simple motor movement test
 |  |- joint_range_test.py              # Sweep motors through full range
 |  |- example_motor_config.py          # Velocity/acceleration/limits
 |  `- example_batch_operations.py      # Batch operations with 'all'
-|- sensors/                            # Sensor integration
+|- 03_sensors/                         # Sensor integration
 |  |- example_imu_control.py           # IMU-based wrist control
 |  `- imu/
 |     `- imu_serial.py                 # Read IMU data (roll, pitch, yaw)
-|- advanced/                           # Advanced features
+|- 04_advanced/                        # Advanced features
 |  |- example_advanced_config.py       # Debug, OLED, modes, baudrate
 |  `- UART_uno_pico/                   # UART communication examples
-|- applications/                       # Real-world applications
+|- 05_applications/                    # Real-world applications
 |  |- example_pylsl_read.py            # LSL reading example
 |  |- live_decoder_from_lsl_stream.py  # Real-time decoder
 |  |- pca_viewer.py                    # PCA visualization
@@ -33,7 +33,7 @@ examples/
 |     |- training_task.py              # Training task with GUI
 |     |- task_gui_minimal.py           # Minimal task GUI
 |     `- task_config.json              # Task configuration
-|- lsl_streaming/                      # Lab Streaming Layer
+|- 06_lsl_streaming/                   # Lab Streaming Layer
 |  `- LSL/
 |     |- lsl_classifier_trigger.py     # EMG classifier control
 |     |- lsl_gesture_controller.py     # LSL marker control
@@ -65,11 +65,11 @@ siblings under `examples/`.
 
 ### Basic Examples - Connection & Setup
 
-#### Serial Connection (`basic/example_serial_exo.py`)
+#### Serial Connection (`01_basic/example_serial_exo.py`)
 Basic example showing how to connect via serial and query device information.
 
 ```bash
-python examples/basic/example_serial_exo.py
+python examples/01_basic/example_serial_exo.py
 ```
 
 **Key Features:**
@@ -78,42 +78,42 @@ python examples/basic/example_serial_exo.py
 - Motor angle/velocity/torque readings
 - Gesture state queries
 
-#### TCP/IP Connection (`basic/example_tcp_exo.py`)
+#### TCP/IP Connection (`01_basic/example_tcp_exo.py`)
 Example for connecting over TCP/IP (e.g., using Pico W with WiFi).
 
 ```bash
-python examples/basic/example_tcp_exo.py
+python examples/01_basic/example_tcp_exo.py
 ```
 
-#### Command-Line Interface (`basic/hand_exo_cli.py`)
+#### Command-Line Interface (`01_basic/hand_exo_cli.py`)
 Full-featured CLI tool for sending commands and monitoring serial output.
 
 ```bash
 # List available serial ports
-python examples/basic/hand_exo_cli.py --list-ports
+python examples/01_basic/hand_exo_cli.py --list-ports
 
 # Connect and print device info
-python examples/basic/hand_exo_cli.py --connect COM5 --baud 57600 --info
+python examples/01_basic/hand_exo_cli.py --connect COM5 --baud 57600 --info
 
 # Home all motors
-python examples/basic/hand_exo_cli.py --connect COM5 --home
+python examples/01_basic/hand_exo_cli.py --connect COM5 --home
 
 # Send custom command
-python examples/basic/hand_exo_cli.py --connect COM5 --send "led:1:on"
+python examples/01_basic/hand_exo_cli.py --connect COM5 --send "led:1:on"
 
 # Monitor serial output
-python examples/basic/hand_exo_cli.py --connect COM5 --monitor
+python examples/01_basic/hand_exo_cli.py --connect COM5 --monitor
 ```
 
 ---
 
 ### Motor Control Examples
 
-#### Motor Configuration (`motor_control/example_motor_config.py`)
+#### Motor Configuration (`02_motor_control/example_motor_config.py`)
 Demonstrates setting velocity, acceleration, and motor limits.
 
 ```bash
-python examples/motor_control/example_motor_config.py
+python examples/02_motor_control/example_motor_config.py
 ```
 
 **Features:**
@@ -122,11 +122,11 @@ python examples/motor_control/example_motor_config.py
 - Test movement with new settings
 - Restore original configuration
 
-#### Batch Operations (`motor_control/example_batch_operations.py`)
+#### Batch Operations (`02_motor_control/example_batch_operations.py`)
 Using the 'all' keyword for simultaneous control of all motors.
 
 ```bash
-python examples/motor_control/example_batch_operations.py
+python examples/02_motor_control/example_batch_operations.py
 ```
 
 **Features:**
@@ -135,18 +135,18 @@ python examples/motor_control/example_batch_operations.py
 - Synchronized position control
 - LED control for all motors
 
-#### Motor Test (`motor_control/motor_test.py`)
+#### Motor Test (`02_motor_control/motor_test.py`)
 Simple motor movement test - moves motor 0 to different angles.
 
 ```bash
-python examples/motor_control/motor_test.py
+python examples/02_motor_control/motor_test.py
 ```
 
-#### Joint Range Test (`motor_control/joint_range_test.py`)
+#### Joint Range Test (`02_motor_control/joint_range_test.py`)
 Systematically sweeps each motor through its full range of motion.
 
 ```bash
-python examples/motor_control/joint_range_test.py
+python examples/02_motor_control/joint_range_test.py
 ```
 
 **Features:**
@@ -159,11 +159,11 @@ python examples/motor_control/joint_range_test.py
 
 ### Sensor Examples
 
-#### IMU-Based Control (`sensors/example_imu_control.py`)
+#### IMU-Based Control (`03_sensors/example_imu_control.py`)
 Control motor angles based on IMU wrist orientation.
 
 ```bash
-python examples/sensors/example_imu_control.py
+python examples/03_sensors/example_imu_control.py
 ```
 
 **Features:**
@@ -172,22 +172,22 @@ python examples/sensors/example_imu_control.py
 - Flex/extend direction control
 - Closed-loop IMU feedback
 
-#### Reading IMU Data (`sensors/imu/imu_serial.py`)
+#### Reading IMU Data (`03_sensors/imu/imu_serial.py`)
 Continuously read and display roll, pitch, and yaw angles from the IMU.
 
 ```bash
-python examples/sensors/imu/imu_serial.py
+python examples/03_sensors/imu/imu_serial.py
 ```
 
 ---
 
 ### Advanced Examples
 
-#### Advanced Configuration (`advanced/example_advanced_config.py`)
+#### Advanced Configuration (`04_advanced/example_advanced_config.py`)
 Demonstrates debug mode, OLED control, motor modes, and baudrate settings.
 
 ```bash
-python examples/advanced/example_advanced_config.py
+python examples/04_advanced/example_advanced_config.py
 ```
 
 **Features:**
@@ -204,25 +204,25 @@ python examples/advanced/example_advanced_config.py
 
 These examples demonstrate complete applications and task implementations.
 
-#### LSL Reading (`applications/example_pylsl_read.py`)
+#### LSL Reading (`05_applications/example_pylsl_read.py`)
 Example of reading EMG data from LSL streams.
 
 ```bash
-python examples/applications/example_pylsl_read.py
+python examples/05_applications/example_pylsl_read.py
 ```
 
-#### Live Decoder (`applications/live_decoder_from_lsl_stream.py`)
+#### Live Decoder (`05_applications/live_decoder_from_lsl_stream.py`)
 Real-time gesture decoding from EMG streams.
 
 ```bash
-python examples/applications/live_decoder_from_lsl_stream.py
+python examples/05_applications/live_decoder_from_lsl_stream.py
 ```
 
-#### Training Task (`applications/task/training_task.py`)
+#### Training Task (`05_applications/task/training_task.py`)
 Complete training task with GUI for data collection.
 
 ```bash
-python examples/applications/task/training_task.py
+python examples/05_applications/task/training_task.py
 ```
 
 ---
@@ -237,18 +237,18 @@ Install LSL support:
 pip install pylsl
 ```
 
-#### EMG Classifier Trigger (`lsl_streaming/LSL/lsl_classifier_trigger.py`)
+#### EMG Classifier Trigger (`06_lsl_streaming/LSL/lsl_classifier_trigger.py`)
 Uses an EMG classifier to trigger gesture changes.
 
 ```bash
-python examples/lsl_streaming/LSL/lsl_classifier_trigger.py --port COM4 --baudrate 115200
+python examples/06_lsl_streaming/LSL/lsl_classifier_trigger.py --port COM4 --baudrate 115200
 ```
 
-#### LSL Gesture Controller (`lsl_streaming/LSL/lsl_gesture_controller.py`)
+#### LSL Gesture Controller (`06_lsl_streaming/LSL/lsl_gesture_controller.py`)
 Listens to LSL marker streams and executes corresponding gestures.
 
 ```bash
-python examples/lsl_streaming/LSL/lsl_gesture_controller.py --port COM4 --type Markers --name EMGGesture
+python examples/06_lsl_streaming/LSL/lsl_gesture_controller.py --port COM4 --type Markers --name EMGGesture
 ```
 
 **Arguments:**
@@ -258,28 +258,28 @@ python examples/lsl_streaming/LSL/lsl_gesture_controller.py --port COM4 --type M
 - `--baudrate`: Baud rate (default: 115200)
 - `--verbose`: Enable verbose output
 
-#### State Trigger (`lsl_streaming/LSL/lsl_state_trigger.py`)
+#### State Trigger (`06_lsl_streaming/LSL/lsl_state_trigger.py`)
 Triggers gestures based on EMG RMS thresholds.
 
 ```bash
-python examples/lsl_streaming/LSL/lsl_state_trigger.py --port COM4
+python examples/06_lsl_streaming/LSL/lsl_state_trigger.py --port COM4
 ```
 
 #### Visualization Tools
 
 **Stacked Plot:**
 ```bash
-python examples/lsl_streaming/LSL/lsl_stacked_plot.py --type EMG --name OpenEphysEMG
+python examples/06_lsl_streaming/LSL/lsl_stacked_plot.py --type EMG --name OpenEphysEMG
 ```
 
 **Grid Plot:**
 ```bash
-python examples/lsl_streaming/LSL/lsl_grid_plot.py --type EMG --name OpenEphysEMG
+python examples/06_lsl_streaming/LSL/lsl_grid_plot.py --type EMG --name OpenEphysEMG
 ```
 
 **RMS Bar Plot:**
 ```bash
-python examples/lsl_streaming/LSL/lsl_rms_barplot.py --type EMG --name OpenEphysEMG
+python examples/06_lsl_streaming/LSL/lsl_rms_barplot.py --type EMG --name OpenEphysEMG
 ```
 
 ---
