@@ -178,6 +178,10 @@ class DualSerialCommReaderTests(unittest.TestCase):
         comm.close()
         self.assertFalse(reader.is_alive())
 
+    def test_fast_telemetry_uses_unclaimed_command_stream(self):
+        comm = self._make()
+        self.assertIs(comm.fast_telemetry_device(), comm._cmd)
+
 
 if __name__ == "__main__":
     unittest.main()

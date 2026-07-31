@@ -27,6 +27,9 @@ DEFAULT_PULSE_STEP_MS = 20
 DEFAULT_EASE_DURATION_MS = 800
 DEFAULT_PULSE_SHAPE = "raised_cosine"
 PULSE_SHAPES = ("raised_cosine",)
+POSITION_BINDING_STATES = (
+    "open", "close", "default", "active", "extend", "rest", "flex",
+)
 
 _SIGNED_INTEGER_RE = re.compile(r"^[+-]?\d+$")
 _MOTOR_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z][A-Za-z0-9_]*)\}")
@@ -114,6 +117,7 @@ def make_default_binding_profile(
         "schema_version": UDP_BINDING_SCHEMA_VERSION,
         "name": name.strip() or "Unnamed UDP Binding Map",
         "control_mode": mode,
+        "allow_gesture_percent": mode == "position",
         "target": "Both",
         "repeat_ms": DEFAULT_REPEAT_MS,
         "pulse_shape": DEFAULT_PULSE_SHAPE,
@@ -158,6 +162,7 @@ def make_index_middle_pinch_profile(
         "schema_version": UDP_BINDING_SCHEMA_VERSION,
         "name": name.strip() or "Index/Middle Pinch (Posture)",
         "control_mode": "position",
+        "allow_gesture_percent": True,
         "target": "Both",
         "repeat_ms": DEFAULT_REPEAT_MS,
         "pulse_shape": DEFAULT_PULSE_SHAPE,
@@ -175,6 +180,11 @@ def normalize_binding_profile(data: dict, fallback_name: str = "") -> dict:
     mode = str(data.get("control_mode", "torque")).strip().lower()
     if mode not in ("torque", "position"):
         raise ValueError("control_mode must be 'torque' or 'position'")
+    allow_gesture_percent = data.get(
+        "allow_gesture_percent", mode == "position"
+    )
+    if not isinstance(allow_gesture_percent, bool):
+        raise ValueError("allow_gesture_percent must be true or false")
 
     repeat_ms = _require_plain_int(
         data.get("repeat_ms", DEFAULT_REPEAT_MS), "repeat_ms"
@@ -244,6 +254,7 @@ def normalize_binding_profile(data: dict, fallback_name: str = "") -> dict:
         "schema_version": UDP_BINDING_SCHEMA_VERSION,
         "name": str(data.get("name") or fallback_name or "Unnamed UDP Binding Map").strip(),
         "control_mode": mode,
+        "allow_gesture_percent": allow_gesture_percent,
         "target": target,
         "repeat_ms": repeat_ms,
         "pulse_shape": pulse_shape,
@@ -291,6 +302,22 @@ def expand_command_templates(
                 expanded = expanded.replace(f"{{{placeholder}}}", str(int(dxl_id)))
             commands.append(expanded)
     return commands
+
+
+def validate_position_commands(commands: list[str]) -> None:
+    """Validate the serial-command subset allowed by posture bindings."""
+    for command in commands:
+        parts = command.split(":")
+        if (
+            len(parts) != 3
+            or parts[0] != "set_gesture"
+            or not parts[1]
+            or parts[2] not in POSITION_BINDING_STATES
+        ):
+            raise ValueError(
+                "Position maps currently accept "
+                "set_gesture:<name>:<state> commands"
+            )
 
 
 def _require_plain_int(value, field_name: str) -> int:

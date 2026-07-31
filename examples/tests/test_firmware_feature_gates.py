@@ -26,6 +26,7 @@ class _RecordingComm:
     def __init__(self, version_reply="Version: 0.3.0"):
         self.verbose = False
         self.sent = []
+        self.receive_calls = []
         self.version_reply = version_reply
         #: Reply handed to the next _receive(); tests set this for read-back APIs.
         self.next_reply = None
@@ -41,6 +42,7 @@ class _RecordingComm:
         self.sent.append(message)
 
     def receive(self, wait_until_return=False, timeout=None):
+        self.receive_calls.append((wait_until_return, timeout))
         if self.next_reply is not None:
             reply, self.next_reply = self.next_reply, None
             return reply
@@ -73,6 +75,29 @@ class ParseFirmwareVersionTests(unittest.TestCase):
         self.assertLess(parse_firmware_version("0.2.17"), parse_firmware_version("0.3.0"))
         self.assertGreaterEqual(parse_firmware_version("0.3.0"), FW_PER_JOINT_REST)
         self.assertLess(parse_firmware_version("0.2.17"), FW_PER_JOINT_REST)
+
+    def test_version_waits_for_a_complete_reply_frame(self):
+        comm = _RecordingComm("Version: 0.6.1")
+        exo = HandExo(comm, auto_connect=False, send_delay=0)
+
+        self.assertEqual(exo.version(), "0.6.1")
+        self.assertEqual(comm.receive_calls, [(True, None)])
+
+    def test_info_caches_connect_time_firmware_version_for_feature_gates(self):
+        comm = _RecordingComm()
+        comm.next_reply = (
+            "Name: NML_HAND_EXO\n"
+            "Version: 0.6.1\n"
+            "Side: both\n"
+            "Number of Motors: 0;\n"
+        )
+        exo = HandExo(comm, auto_connect=False, send_delay=0)
+
+        info = exo.info()
+
+        self.assertEqual(info["version"], "0.6.1")
+        self.assertEqual(exo.firmware_version(), (0, 6, 1))
+        self.assertEqual(comm.sent, ["info\n"])
 
 
 class FeatureGateTests(unittest.TestCase):

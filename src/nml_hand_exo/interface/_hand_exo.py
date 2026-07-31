@@ -381,9 +381,12 @@ class HandExo(object):
         Records are keyed by Dynamixel ID and include relative/absolute angles,
         present current, raw velocity, and raw position ticks.
         """
-        serial_dev = getattr(self.device, "device", None)
+        stream_getter = getattr(self.device, "fast_telemetry_device", None)
+        serial_dev = stream_getter() if callable(stream_getter) else None
         if serial_dev is None:
-            raise RuntimeError("get_fast_telemetry requires a SerialComm device")
+            raise RuntimeError(
+                "get_fast_telemetry requires a serial transport with raw-byte support"
+            )
 
         ids = "all" if not motor_ids else ":".join(str(int(mid)) for mid in motor_ids)
         try:
@@ -679,11 +682,18 @@ class HandExo(object):
         """
         Gets the version of the exo
         """
+        # A feature gate must not consume a delayed reply from an earlier
+        # fire-and-forget command. Both SerialComm and DualSerialComm expose
+        # this at the communication-layer boundary.
+        try:
+            self.device.flush_input()
+        except Exception:
+            pass
         self.send_command("version")
-        response = self._receive()
+        response = self._receive(wait_until_return=True)
 
-        if response:
-            return response.strip().split(':')[1]
+        if response and ':' in response:
+            return response.strip().split(':', 1)[1].strip()
         return ""
 
     def firmware_version(self, refresh: bool = False) -> tuple[int, ...]:
@@ -823,6 +833,14 @@ class HandExo(object):
             if m:
                 info['n_motors'] = int(m.group(1))
                 continue
+
+        # `info` is the authoritative connect-time handshake. Cache its
+        # version so subsequent guarded commands (combined current budget,
+        # gesture readback, etc.) do not perform a second serial transaction
+        # or incorrectly report the already-seen firmware as unknown.
+        parsed_version = parse_firmware_version(info.get('version', ''))
+        if parsed_version:
+            self._firmware_version = parsed_version
 
         # --- Motor detail lines ---
         for ln in lines:

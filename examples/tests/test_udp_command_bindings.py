@@ -15,6 +15,7 @@ from nml_hand_exo.interface._udp_command_bindings import (
     make_index_middle_pinch_profile,
     normalize_binding_profile,
     parse_udp_integer,
+    validate_position_commands,
 )
 
 
@@ -58,6 +59,19 @@ class UDPCommandBindingsTests(unittest.TestCase):
             self.assertEqual(lookup[value]["command"], f"set_gesture:{digit}:flex")
             self.assertEqual(lookup[-value]["command"], f"set_gesture:{digit}:extend")
 
+    def test_position_validator_accepts_joint_flex_extend_and_rest(self):
+        validate_position_commands(
+            [
+                "set_gesture:wrist:extend",
+                "set_gesture:index:flex",
+                "set_gesture:middle:rest",
+                "set_gesture:grasp:open",
+            ]
+        )
+
+        with self.assertRaisesRegex(ValueError, "Position maps"):
+            validate_position_commands(["set_current:16:100"])
+
     def test_profile_rejects_duplicate_and_connection_port_values(self):
         profile = make_default_binding_profile()
         profile["bindings"].append(dict(profile["bindings"][0]))
@@ -93,6 +107,7 @@ class UDPCommandBindingsTests(unittest.TestCase):
         profile = make_index_middle_pinch_profile()
         normalized = normalize_binding_profile(profile)
         self.assertEqual(normalized["control_mode"], "position")
+        self.assertTrue(normalized["allow_gesture_percent"])
         lookup = binding_lookup(normalized)
         self.assertEqual(set(lookup), {0, 2, 3})
         self.assertEqual(lookup[2]["command"], "set_gesture:pinch_index:close")
@@ -100,6 +115,28 @@ class UDPCommandBindingsTests(unittest.TestCase):
         # REST opens both pinches so a "let go" packet fully releases the hand.
         self.assertIn("pinch_index:open", lookup[0]["command"])
         self.assertIn("pinch_middle:open", lookup[0]["command"])
+
+    def test_direct_gesture_percent_option_defaults_by_control_mode(self):
+        self.assertFalse(
+            normalize_binding_profile(
+                make_default_binding_profile(control_mode="torque")
+            )["allow_gesture_percent"]
+        )
+        self.assertTrue(
+            normalize_binding_profile(
+                make_default_binding_profile(control_mode="position")
+            )["allow_gesture_percent"]
+        )
+        legacy_position = make_default_binding_profile(control_mode="position")
+        legacy_position.pop("allow_gesture_percent")
+        self.assertTrue(
+            normalize_binding_profile(legacy_position)["allow_gesture_percent"]
+        )
+
+        invalid = make_default_binding_profile(control_mode="position")
+        invalid["allow_gesture_percent"] = "yes"
+        with self.assertRaisesRegex(ValueError, "allow_gesture_percent"):
+            normalize_binding_profile(invalid)
 
     def test_pulse_fields_default_and_backward_compatible(self):
         # A legacy v2 profile with no pulse fields still loads with defaults.

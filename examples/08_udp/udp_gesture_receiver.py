@@ -47,11 +47,21 @@ import argparse
 import collections
 import signal
 import socket
-import struct
 import sys
 import time
 
 from nml_hand_exo import DualSerialComm
+from nml_hand_exo.interface._gesture_protocol import (
+    COMMAND_PASSTHROUGH_ACK,
+    POSE_ACK_HEADER,
+    POSE_ACK_MAGIC,
+    POSE_ACK_RECORD,
+    POSE_QUERY,
+    POSE_UNAVAILABLE,
+    UDP_GESTURE_JOINTS as JOINTS,
+    pack_pose_ack,
+    unpack_pose_ack,
+)
 from nml_hand_exo.interface._hand_exo import (
     GESTURE_ANGLES_PREFIX,
     parse_gesture_angle_pairs,
@@ -80,9 +90,9 @@ BAUD = 1000000
 #
 # "wrist" drives BOTH dorsal wrist motors (wrist and wrist2) together: they are
 # mounted on the back of the arm and pull on the same structure, so commanding
-# one alone leaves the other holding position against it.  The separate "rad"
-# joint that used to address wrist2 by itself was removed in firmware 0.6.0.
-JOINTS = ("thumb", "index", "middle", "ring", "pinky", "wrist")
+# one alone leaves the other holding position against it. The joint order and
+# pose-frame layout are imported from the SDK so this receiver and the GUI use
+# one wire contract.
 
 # Offset added to a joint's value to address its REST position, e.g. index is
 # +2 flex / -2 extend / +12 rest.  Must keep every value below
@@ -144,100 +154,14 @@ def build_command_map():
 
 COMMAND_MAP = build_command_map()
 
-# Echoed upstream to ack a passthrough command. The integer protocol acks by
-# echoing the value that was sent, and a passthrough has no value to echo, so it
-# gets its own sentinel. Kept below UDP_HEARTBEAT_REQUEST_VALUE (1023) and out
-# of the command range so it cannot be confused with either.
-COMMAND_PASSTHROUGH_ACK = 1000
-
 # Prefix of the firmware's asynchronous move-outcome report. It arrives AFTER
 # the command reply, once the motors have finished (or failed to finish), so it
 # cannot ride on the command ack -- it is forwarded upstream as its own
 # datagram. Needs firmware >= 0.5.0; older builds simply never emit it.
 GESTURE_RESULT_PREFIX = "GESTURE_RESULT:"
 
-# ---- Pose acks --------------------------------------------------------------
-# Every dispatched command is followed by this query, so the ack can carry where
-# the hand actually IS rather than only which integer was accepted. One batched
-# Dynamixel read on the device side (firmware >= 0.6.1), issued after the move
-# command so it never delays it.
-POSE_QUERY = "get_gesture_angles:all"
-
-# The pose travels as its own datagram in a packed binary frame:
-#
-#     little-endian: magic[4] | int16 value | uint8 count |
-#         (uint8 fraction-code | float32 angle-delta-deg) * count
-#
-# The NGA2 magic versions the widened record; NGA1 carried only the uint8
-# percentage code. It remains a SECOND datagram rather than a new encoding for
-# the ack itself, so every existing consumer of the ASCII integer protocol
-# keeps working untouched and only readers that know the magic pay attention.
-#
-# `value` is the same integer the ASCII ack carries, so a consumer that reads
-# only these frames still knows which command each pose belongs to. Fraction
-# codes are the firmware's: 0-100 percent, 101/102 out of range low/high, 255
-# unavailable. The float is a signed physical delta from rest: flex positive,
-# extend negative. IEEE NAN means that signed angle is unavailable.
-POSE_ACK_MAGIC = b"NGA2"
-POSE_ACK_HEADER = "<4shB"
-POSE_ACK_RECORD = "Bf"
-
-#: Firmware code for "no position available for this joint" -- it has no
-#: calibrated travel, or the position read failed. Also used locally for a
-#: joint the device did not mention at all.
-POSE_UNAVAILABLE = 255
-
-
-def pack_pose_ack(value, joints, pose):
-    """Build the binary pose datagram for one acked command.
-
-    Args:
-        value (int): The command integer being acked.
-        joints (tuple[str, ...]): Joint order for the payload.
-        pose (dict): Gesture name -> combined ``fraction`` and
-            ``angle_delta_deg`` fields, as parsed from the device.
-
-    Returns:
-        bytes: Packed frame. Missing joints use fraction code 255 and NAN.
-    """
-    values = []
-    for joint in joints:
-        record = pose.get(joint) or {}
-        fraction = int(record.get("fraction", POSE_UNAVAILABLE)) & 0xFF
-        angle = record.get("angle_delta_deg")
-        values.extend((fraction, float("nan") if angle is None else float(angle)))
-    return struct.pack(
-        POSE_ACK_HEADER + POSE_ACK_RECORD * len(joints),
-        POSE_ACK_MAGIC, int(value), len(joints), *values,
-    )
-
-
-def unpack_pose_ack(data):
-    """Parse a pose datagram. Returns ``(value, {joint: code})`` or None.
-
-    Mirrors :func:`pack_pose_ack` for consumers on the other end of the socket
-    (examples/08_udp/udp_gesture_gui.py, tests).  Joint names come from :data:`JOINTS`
-    positionally, so both ends must agree on that order -- which is why the
-    frame carries the count, letting a mismatch be detected instead of
-    silently shifting every value by one.
-    """
-    header_len = struct.calcsize(POSE_ACK_HEADER)
-    if not data or len(data) < header_len or not data.startswith(POSE_ACK_MAGIC):
-        return None
-    _, value, count = struct.unpack_from(POSE_ACK_HEADER, data)
-    record_len = struct.calcsize("<" + POSE_ACK_RECORD)
-    if len(data) < header_len + count * record_len or count != len(JOINTS):
-        return None
-    pose = {}
-    offset = header_len
-    for joint in JOINTS:
-        fraction, angle = struct.unpack_from("<" + POSE_ACK_RECORD, data, offset)
-        pose[joint] = {
-            "fraction": fraction,
-            "angle_delta_deg": angle if angle == angle else None,
-        }
-        offset += record_len
-    return value, pose
+# Pose-frame constants and pack/unpack helpers come from
+# nml_hand_exo.interface._gesture_protocol.
 
 
 def parse_passthrough_command(payload):

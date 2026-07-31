@@ -38,6 +38,9 @@ py-modules = ["handexo_cli"]
 where = ["src"]
 include = ["nml_hand_exo*"]
 
+[tool.setuptools.package-data]
+"nml_hand_exo.applications" = ["favicon-32x32.svg"]
+
 [project.optional-dependencies]
 ai = [
     "faster-whisper",

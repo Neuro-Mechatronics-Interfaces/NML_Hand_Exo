@@ -10,7 +10,11 @@ from nml_hand_exo.calibration import (
     determine_run_number,
     normalize_angle,
 )
-from nml_hand_exo.interface._serial_ports import format_port_label
+from nml_hand_exo.interface._serial_ports import (
+    find_cdc_sibling,
+    format_port_label,
+    preferred_nml_exo_command_port,
+)
 
 
 class CalibrationProfileStoreTests(unittest.TestCase):
@@ -107,6 +111,50 @@ class SerialPortUtilityTests(unittest.TestCase):
         self.assertIn("[USB, NML_EXO]", label)
         self.assertIn("VID:1234 PID:ABCD", label)
         self.assertIn("SN:xyz", label)
+
+    def test_prefers_expected_nml_exo_primary_cdc_location(self):
+        ports = [
+            SimpleNamespace(
+                device="COM12", vid=0x2F5D, pid=0x2202,
+                location="1-4.2", hwid="", serial_number="exo",
+            ),
+            SimpleNamespace(
+                device="COM11", vid=0x2F5D, pid=0x2202,
+                location="1-4.0", hwid="", serial_number="exo",
+            ),
+            SimpleNamespace(
+                device="COM3", vid=0x1234, pid=0x5678,
+                location="1-2.0", hwid="", serial_number="other",
+            ),
+        ]
+
+        self.assertEqual(preferred_nml_exo_command_port(ports), "COM11")
+
+    def test_does_not_auto_select_an_unrelated_usb_serial_device(self):
+        ports = [
+            SimpleNamespace(
+                device="COM3", vid=0x1234, pid=0x5678,
+                location="1-2.0", hwid="", serial_number="other",
+            )
+        ]
+
+        self.assertIsNone(preferred_nml_exo_command_port(ports))
+
+    def test_pairs_dual_cdc_by_location_when_serial_number_is_missing(self):
+        ports = [
+            SimpleNamespace(
+                device="COM11", vid=0x2F5D, pid=0x2202,
+                location="1-4.0", hwid="", serial_number=None,
+            ),
+            SimpleNamespace(
+                device="COM12", vid=0x2F5D, pid=0x2202,
+                location="1-4.2", hwid="", serial_number=None,
+            ),
+        ]
+
+        self.assertEqual(
+            find_cdc_sibling("COM12", ports), ("COM11", "COM12")
+        )
 
 
 if __name__ == "__main__":

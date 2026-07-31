@@ -6,6 +6,10 @@ import re
 from typing import Any
 
 
+NML_EXO_USB_VID = 0x2F5D
+NML_EXO_USB_PID = 0x2202
+
+
 def format_port_label(port: Any) -> str:
     """Build a readable label from a pyserial ``ListPortInfo`` object."""
     description = port.description or ""
@@ -57,13 +61,37 @@ def usb_interface_index(port: Any) -> int | None:
     return None
 
 
+def preferred_nml_exo_command_port(ports: list[Any]) -> str | None:
+    """Return the primary CDC port for the expected NML exo USB device.
+
+    The OpenRB dual-CDC build enumerates the command interface at USB location
+    ``*.0`` (or ``MI_00`` on Windows) and the telemetry/reply interface at
+    ``*.2`` / ``MI_02``.  Only ports with the project's VID/PID participate so
+    an unrelated composite serial device is never selected automatically.
+    """
+    matches = [
+        port
+        for port in ports
+        if getattr(port, "vid", None) == NML_EXO_USB_VID
+        and getattr(port, "pid", None) == NML_EXO_USB_PID
+    ]
+    if not matches:
+        return None
+
+    primary = [port for port in matches if usb_interface_index(port) == 0]
+    candidates = primary or matches
+    candidates.sort(key=lambda port: str(getattr(port, "device", "")))
+    return str(candidates[0].device) if candidates else None
+
+
 def find_cdc_sibling(device: str, ports: list | None = None) -> tuple[str, str] | None:
     """Pair the two USB-CDC interfaces of one physical device.
 
     Given one COM port ``device`` string, finds the other CDC interface of the
-    SAME physical device (matching ``serial_number`` + VID/PID, different
-    interface) and returns ``(cmd_device, telem_device)`` ordered so the lower
-    USB interface index is the command port.  The direction is only a hint —
+    SAME physical device (matching the USB location root when available, with
+    serial number + VID/PID as a fallback) and returns
+    ``(cmd_device, telem_device)`` ordered so the lower USB interface index is
+    the command port.  The direction is only a hint —
     :class:`~nml_hand_exo.interface.DualSerialComm` probes and corrects it at
     connect time.  Returns ``None`` if no unambiguous sibling is found.
     """
@@ -74,18 +102,34 @@ def find_cdc_sibling(device: str, ports: list | None = None) -> tuple[str, str] 
     if selected is None:
         return None
 
-    serial_number = getattr(selected, "serial_number", None)
     vid = getattr(selected, "vid", None)
     pid = getattr(selected, "pid", None)
-    if not serial_number or vid is None or pid is None:
+    if vid is None or pid is None:
         return None
 
-    group = [
+    candidates = [
         p for p in ports
-        if getattr(p, "serial_number", None) == serial_number
-        and getattr(p, "vid", None) == vid
+        if getattr(p, "vid", None) == vid
         and getattr(p, "pid", None) == pid
     ]
+    selected_location = getattr(selected, "location", "") or ""
+    location_root = re.sub(r"[.:]\d+$", "", selected_location)
+    if selected_location and location_root != selected_location:
+        group = [
+            p
+            for p in candidates
+            if re.sub(r"[.:]\d+$", "", getattr(p, "location", "") or "")
+            == location_root
+        ]
+    else:
+        serial_number = getattr(selected, "serial_number", None)
+        if not serial_number:
+            return None
+        group = [
+            p
+            for p in candidates
+            if getattr(p, "serial_number", None) == serial_number
+        ]
     if len(group) < 2:
         return None
 

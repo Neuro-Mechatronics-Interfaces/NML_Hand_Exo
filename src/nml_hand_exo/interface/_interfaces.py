@@ -34,6 +34,10 @@ class BaseComm:
         """Discard buffered inbound bytes so the next read starts clean."""
         pass
 
+    def fast_telemetry_device(self):
+        """Return the raw byte stream carrying fast telemetry, if supported."""
+        return None
+
 
 class TCPComm(BaseComm):
     def __init__(self, ip, port=5001, timeout=5, verbose=False):
@@ -146,6 +150,9 @@ class SerialComm(BaseComm):
     def flush_input(self):
         if self.device and self.device.is_open:
             self.device.reset_input_buffer()
+
+    def fast_telemetry_device(self):
+        return self.device
 
 
 class DualSerialComm(BaseComm):
@@ -417,4 +424,14 @@ class DualSerialComm(BaseComm):
                 self._replies.get_nowait()
             except queue.Empty:
                 break
+
+    def fast_telemetry_device(self):
+        """Return the CDC stream used by the current binary-frame firmware.
+
+        Text replies follow ``reply_route:telem`` and are drained from
+        ``_telem`` by the background reader.  The current firmware writes the
+        compact ``NX`` frame directly to the primary command CDC, which has no
+        competing reader and can therefore be consumed synchronously here.
+        """
+        return self._cmd
 
