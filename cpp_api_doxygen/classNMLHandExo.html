@@ -406,7 +406,7 @@ unsigned long&#160;</td><td class="memItemRight" valign="bottom"><b>getDirectCom
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="pub-static-attribs" name="pub-static-attribs"></a>
 Static Public Attributes</h2></td></tr>
-<tr class="memitem:a21f2a007112d02fbbdd487d5d9a5defd" id="r_a21f2a007112d02fbbdd487d5d9a5defd"><td class="memItemLeft" align="right" valign="top">static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a21f2a007112d02fbbdd487d5d9a5defd">VERSION</a> = &quot;0.6.0&quot;</td></tr>
+<tr class="memitem:a21f2a007112d02fbbdd487d5d9a5defd" id="r_a21f2a007112d02fbbdd487d5d9a5defd"><td class="memItemLeft" align="right" valign="top">static constexpr const char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNMLHandExo.html#a21f2a007112d02fbbdd487d5d9a5defd">VERSION</a> = &quot;0.6.1&quot;</td></tr>
 <tr class="memdesc:a21f2a007112d02fbbdd487d5d9a5defd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Current software version.  <br /></td></tr>
 <tr class="separator:a21f2a007112d02fbbdd487d5d9a5defd"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
@@ -2472,7 +2472,7 @@ Static Public Attributes</h2></td></tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">constexpr const char* NMLHandExo::VERSION = &quot;0.6.0&quot;</td>
+          <td class="memname">constexpr const char* NMLHandExo::VERSION = &quot;0.6.1&quot;</td>
         </tr>
       </table>
   </td>
@@ -2490,8 +2490,9 @@ Static Public Attributes</h2></td></tr>
 <p>0.6.0 &ndash; three related changes to gesture positioning:</p><ul>
 <li>Travel is now measured on a home -&gt; flexion-endstop axis resolved per motor (getGestureSpan), fixing joints whose home sits mid-window &ndash; the wrist axes &ndash; where every state used to clamp onto the same boundary and the joint never moved while still acking OK.</li>
 <li>set_gesture_angle:&lt;g&gt;:&lt;0-100&gt; now interpolates the gesture's own extend -&gt; flex postures, so 0 and 100 ARE those states. It used to drive every named motor to the same fraction of its own travel, which did not reproduce either state on a multi-motor gesture.</li>
-<li>The <code>rad</code> gesture is GONE and <code>wrist</code> drives both dorsal motors together: wrist and wrist2 act on the same structure, so commanding one alone left the other holding position against it. Adds get_gesture_angle:&lt;gesture|all&gt;. Gate on &gt;= 0.6.0. </li>
+<li>The <code>rad</code> gesture is GONE and <code>wrist</code> drives both dorsal motors together: wrist and wrist2 act on the same structure, so commanding one alone left the other holding position against it. Adds get_gesture_angle:&lt;gesture|all&gt;. Gate on &gt;= 0.6.0.</li>
 </ul>
+<p>0.6.1 &ndash; adds rest-zeroed, OpenSim-style signed gesture angles. The first motor named by a gesture supplies its calibrated degree scale; motion from rest toward flex is positive and toward extend is negative. Adds get_gesture_sang:&lt;gesture|all&gt; (signed degrees only) and get_gesture_angles:&lt;gesture|all&gt; (percentage code plus signed degrees). Gate on &gt;= 0.6.1. </p>
 
 </div>
 </div>

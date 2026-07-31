@@ -665,7 +665,7 @@ constexpr int&#160;</td><td class="memItemRight" valign="bottom"><b>DXL_DIR_PIN<
 </div><div class="memdoc">
 
 <p>Least travel, in degrees, that counts as a usable gesture range. </p>
-<p>Below this a joint is reported as having no travel rather than being driven a fraction of nothing: <code>get_gesture_angle</code> returns 255 for it and <code>check_limits</code> flags it NO_TRAVEL. Sized just above position-read noise. </p>
+<p>Below this a joint is reported as having no travel rather than being driven a fraction of nothing: <code>get_gesture_angle</code> returns 255 for it, signed-angle queries return nan, and <code>check_limits</code> flags it NO_TRAVEL. Sized just above position-read noise. </p>
 
 </div>
 </div>

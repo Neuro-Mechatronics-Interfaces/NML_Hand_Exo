@@ -119,11 +119,11 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:a55155e7dbd209d12ea68289e7d43517e" id="r_a55155e7dbd209d12ea68289e7d43517e"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classGestureController.html#a55155e7dbd209d12ea68289e7d43517e">setGestureAngle</a> (const String &amp;gesture, float percent, uint8_t *movedOut=nullptr, uint8_t *stuckOut=nullptr)</td></tr>
 <tr class="memdesc:a55155e7dbd209d12ea68289e7d43517e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Drive a per-joint gesture to an arbitrary point in its range.  <br /></td></tr>
 <tr class="separator:a55155e7dbd209d12ea68289e7d43517e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aad560be55c44c413f2566af271871fe3" id="r_aad560be55c44c413f2566af271871fe3"><td class="memItemLeft" align="right" valign="top">uint8_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classGestureController.html#aad560be55c44c413f2566af271871fe3">readGestureAngles</a> (GestureAngleRecord *out, uint8_t maxRecords, const String &amp;only=String())</td></tr>
+<tr class="memitem:aad560be55c44c413f2566af271871fe3" id="r_aad560be55c44c413f2566af271871fe3"><td class="memItemLeft" align="right" valign="top">uint8_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classGestureController.html#aad560be55c44c413f2566af271871fe3">readGestureAngles</a> (<a class="el" href="structGestureAngleRecord.html">GestureAngleRecord</a> *out, uint8_t maxRecords, const String &amp;only=String())</td></tr>
 <tr class="memdesc:aad560be55c44c413f2566af271871fe3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Sample where the angle-addressable gestures currently sit.  <br /></td></tr>
 <tr class="separator:aad560be55c44c413f2566af271871fe3"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a966f9934117914af4f3d9824fbbe702d" id="r_a966f9934117914af4f3d9824fbbe702d"><td class="memItemLeft" align="right" valign="top">uint8_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classGestureController.html#a966f9934117914af4f3d9824fbbe702d">resolveGestureAxis</a> (int gestureIndex, <a class="el" href="structGestureAxisPoint.html">GestureAxisPoint</a> *out, uint8_t maxPoints)</td></tr>
-<tr class="memdesc:a966f9934117914af4f3d9824fbbe702d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Resolve one gesture's percent axis into per-motor endpoints.  <br /></td></tr>
+<tr class="memdesc:a966f9934117914af4f3d9824fbbe702d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Resolve one gesture's percent axis and rest anchor per motor.  <br /></td></tr>
 <tr class="separator:a966f9934117914af4f3d9824fbbe702d"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aa494861cb5234d90931c0e73519ada24" id="r_aa494861cb5234d90931c0e73519ada24"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classGestureController.html#aa494861cb5234d90931c0e73519ada24">setGestureStateSwitchButton</a> (const int pin)</td></tr>
 <tr class="memdesc:aa494861cb5234d90931c0e73519ada24"><td class="mdescLeft">&#160;</td><td class="mdescRight">Assign pin for gesture state switch interrupt.  <br /></td></tr>
@@ -367,7 +367,7 @@ void&#160;</td><td class="memItemRight" valign="bottom"><b>update</b> ()</td></t
         <tr>
           <td class="memname">uint8_t GestureController::readGestureAngles </td>
           <td>(</td>
-          <td class="paramtype">GestureAngleRecord *&#160;</td>
+          <td class="paramtype"><a class="el" href="structGestureAngleRecord.html">GestureAngleRecord</a> *&#160;</td>
           <td class="paramname"><em>out</em>, </td>
         </tr>
         <tr>
@@ -393,7 +393,7 @@ void&#160;</td><td class="memItemRight" valign="bottom"><b>update</b> ()</td></t
 <p>Sample where the angle-addressable gestures currently sit. </p>
 <p>The read-back half of <a class="el" href="classGestureController.html#a55155e7dbd209d12ea68289e7d43517e" title="Drive a per-joint gesture to an arbitrary point in its range.">setGestureAngle()</a>: both use the same extend -&gt; flex axis, so a gesture commanded to 40 reports 40 back once it arrives. A gesture spanning several motors (the thumb, the wrist pair, or any joint in a dual build) reports the mean of the per-motor percentages &ndash; averaging percentages, not raw travel fractions, is what makes that hold when its joints travel different distances.</p>
 <p>0% is the <code>extend</code> posture, NOT home. A hand parked at home therefore reads below 0 (code 101) whenever the extend constants are non-zero.</p>
-<p>Positions come from ONE batched Dynamixel read rather than a read per motor, so polling this per command costs a single bus transaction.</p>
+<p>Each record also carries a signed physical angle derived from the first motor in the gesture: rest is 0 degrees, flexion is positive, extension is negative. Positions come from ONE batched Dynamixel read rather than a read per motor, so polling any reply form costs one bus transaction.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">out</td><td>Destination array. </td></tr>
@@ -438,7 +438,7 @@ void&#160;</td><td class="memItemRight" valign="bottom"><b>update</b> ()</td></t
       </table>
 </div><div class="memdoc">
 
-<p>Resolve one gesture's percent axis into per-motor endpoints. </p>
+<p>Resolve one gesture's percent axis and rest anchor per motor. </p>
 <p>Shared by <a class="el" href="classGestureController.html#a55155e7dbd209d12ea68289e7d43517e" title="Drive a per-joint gesture to an arbitrary point in its range.">setGestureAngle()</a> and <a class="el" href="classGestureController.html#aad560be55c44c413f2566af271871fe3" title="Sample where the angle-addressable gestures currently sit.">readGestureAngles()</a> so the command and its read-back cannot disagree about where 0 and 100 are. </p><dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">gestureIndex</td><td>Index into gestureLibrary. </td></tr>

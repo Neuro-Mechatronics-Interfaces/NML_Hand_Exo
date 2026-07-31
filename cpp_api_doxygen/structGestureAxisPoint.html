@@ -96,7 +96,7 @@ $(document).ready(function(){initNavTree('structGestureAxisPoint.html',''); init
 </div><!--header-->
 <div class="contents">
 
-<p>One motor's two endpoints on a gesture's 0-100 percent axis.  
+<p>One motor's endpoints and rest anchor on a gesture's percent axis.  
  <a href="structGestureAxisPoint.html#details">More...</a></p>
 
 <p><code>#include &lt;<a class="el" href="gesture__controller_8h_source.html">gesture_controller.h</a>&gt;</code></p>
@@ -111,13 +111,17 @@ uint8_t&#160;</td><td class="memItemRight" valign="bottom"><b>id</b></td></tr>
 float&#160;</td><td class="memItemRight" valign="bottom"><b>extendFraction</b></td></tr>
 <tr class="memdesc:aeeb158a5d51ea9aa9f1e10b2e01f1614"><td class="mdescLeft">&#160;</td><td class="mdescRight">Position at 0%, from the gesture's extend state. <br /></td></tr>
 <tr class="separator:aeeb158a5d51ea9aa9f1e10b2e01f1614"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a25a1863faec56d334ae9ac61f929ad3c" id="r_a25a1863faec56d334ae9ac61f929ad3c"><td class="memItemLeft" align="right" valign="top"><a id="a25a1863faec56d334ae9ac61f929ad3c" name="a25a1863faec56d334ae9ac61f929ad3c"></a>
+float&#160;</td><td class="memItemRight" valign="bottom"><b>restFraction</b></td></tr>
+<tr class="memdesc:a25a1863faec56d334ae9ac61f929ad3c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Position defined by the gesture's rest state. <br /></td></tr>
+<tr class="separator:a25a1863faec56d334ae9ac61f929ad3c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a3fe98a826244be04142b238875f90a32" id="r_a3fe98a826244be04142b238875f90a32"><td class="memItemLeft" align="right" valign="top"><a id="a3fe98a826244be04142b238875f90a32" name="a3fe98a826244be04142b238875f90a32"></a>
 float&#160;</td><td class="memItemRight" valign="bottom"><b>flexFraction</b></td></tr>
 <tr class="memdesc:a3fe98a826244be04142b238875f90a32"><td class="mdescLeft">&#160;</td><td class="mdescRight">Position at 100%, from its flex state. <br /></td></tr>
 <tr class="separator:a3fe98a826244be04142b238875f90a32"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
-<div class="textblock"><p>One motor's two endpoints on a gesture's 0-100 percent axis. </p>
+<div class="textblock"><p>One motor's endpoints and rest anchor on a gesture's percent axis. </p>
 <p>The percentage interpolates a gesture between its own <code>extend</code> and <code>flex</code> postures, so every motor it names needs BOTH of its endpoints, not a single travel fraction. Keeping them together is what lets a multi-motor gesture hold the ratio between its joints at every percentage, and what makes the read-back an exact inverse. </p>
 </div><hr/>The documentation for this struct was generated from the following file:<ul>
 <li>/home/runner/work/NML_Hand_Exo/NML_Hand_Exo/src/cpp/nml_hand_exo/<a class="el" href="gesture__controller_8h_source.html">gesture_controller.h</a></li>

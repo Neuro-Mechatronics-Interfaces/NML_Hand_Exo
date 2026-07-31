@@ -34,9 +34,10 @@ var searchData=
   ['setvelocitylimit_31',['setVelocityLimit',['../classNMLHandExo.html#a95790acbd7260ff209f7db37b6fc2fa3',1,'NMLHandExo']]],
   ['setzerooffset_32',['setZeroOffset',['../classNMLHandExo.html#ac1f4c9b2304e3ca142c4009a0a978dd4',1,'NMLHandExo']]],
   ['setzerooffsetvalue_33',['setZeroOffsetValue',['../classNMLHandExo.html#aba74eff4fc69f41dfa872143fb54c98e',1,'NMLHandExo']]],
-  ['stall_5fcurrent_5ffraction_34',['STALL_CURRENT_FRACTION',['../config_8h.html#a0d5c80bbd2c5daa2f69709c41798b0ab',1,'config.h']]],
-  ['stall_5fhold_5fms_35',['STALL_HOLD_MS',['../config_8h.html#a4db5490789091829eea512ee7eeb37ab',1,'config.h']]],
-  ['status_5fled_5fpin_36',['STATUS_LED_PIN',['../config_8h.html#a077de5a6f39f72c3609365bda45310a1',1,'config.h']]],
-  ['stopalldirectcontrol_37',['stopAllDirectControl',['../classNMLHandExo.html#af6aebb17f47775fce445c0492373c4ec',1,'NMLHandExo']]],
-  ['stopdirectcontrol_38',['stopDirectControl',['../classNMLHandExo.html#a096f4a09d4d3b2c5f7c5b74bcd536388',1,'NMLHandExo']]]
+  ['signedangledeg_34',['signedAngleDeg',['../structGestureAngleRecord.html#a3331e9495c35ec0c19a5a824a2265f4b',1,'GestureAngleRecord']]],
+  ['stall_5fcurrent_5ffraction_35',['STALL_CURRENT_FRACTION',['../config_8h.html#a0d5c80bbd2c5daa2f69709c41798b0ab',1,'config.h']]],
+  ['stall_5fhold_5fms_36',['STALL_HOLD_MS',['../config_8h.html#a4db5490789091829eea512ee7eeb37ab',1,'config.h']]],
+  ['status_5fled_5fpin_37',['STATUS_LED_PIN',['../config_8h.html#a077de5a6f39f72c3609365bda45310a1',1,'config.h']]],
+  ['stopalldirectcontrol_38',['stopAllDirectControl',['../classNMLHandExo.html#af6aebb17f47775fce445c0492373c4ec',1,'NMLHandExo']]],
+  ['stopdirectcontrol_39',['stopDirectControl',['../classNMLHandExo.html#a096f4a09d4d3b2c5f7c5b74bcd536388',1,'NMLHandExo']]]
 ];

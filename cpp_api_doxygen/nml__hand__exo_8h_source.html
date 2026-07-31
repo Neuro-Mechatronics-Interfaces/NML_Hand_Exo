@@ -426,132 +426,132 @@ $(document).ready(function(){initNavTree('nml__hand__exo_8h_source.html',''); in
 <div class="line"><a id="l00572" name="l00572"></a><span class="lineno">  572</span> </div>
 <div class="line"><a id="l00575" name="l00575"></a><span class="lineno"><a class="line" href="classNMLHandExo.html#ab429160aad4f22f4b293b19ff55fdca0">  575</a></span>    String <a class="code hl_function" href="classNMLHandExo.html#ab429160aad4f22f4b293b19ff55fdca0">getMotorMode</a>();</div>
 <div class="line"><a id="l00576" name="l00576"></a><span class="lineno">  576</span> </div>
-<div class="line"><a id="l00608" name="l00608"></a><span class="lineno"><a class="line" href="classNMLHandExo.html#a21f2a007112d02fbbdd487d5d9a5defd">  608</a></span>    <span class="keyword">static</span> <span class="keyword">constexpr</span> <span class="keyword">const</span> <span class="keywordtype">char</span>* <a class="code hl_variable" href="classNMLHandExo.html#a21f2a007112d02fbbdd487d5d9a5defd">VERSION</a> = <span class="stringliteral">&quot;0.6.0&quot;</span>;</div>
-<div class="line"><a id="l00609" name="l00609"></a><span class="lineno">  609</span> </div>
-<div class="line"><a id="l00610" name="l00610"></a><span class="lineno">  610</span>  <span class="keyword">private</span>:</div>
-<div class="line"><a id="l00612" name="l00612"></a><span class="lineno">  612</span>    Dynamixel2Arduino dxl_;              <span class="comment">// Handle to Dynamixel object</span></div>
-<div class="line"><a id="l00613" name="l00613"></a><span class="lineno">  613</span> </div>
-<div class="line"><a id="l00615" name="l00615"></a><span class="lineno">  615</span>    <span class="keyword">const</span> uint8_t* motorIds_;                 <span class="comment">// List of motor IDs passed by the user</span></div>
+<div class="line"><a id="l00615" name="l00615"></a><span class="lineno"><a class="line" href="classNMLHandExo.html#a21f2a007112d02fbbdd487d5d9a5defd">  615</a></span>    <span class="keyword">static</span> <span class="keyword">constexpr</span> <span class="keyword">const</span> <span class="keywordtype">char</span>* <a class="code hl_variable" href="classNMLHandExo.html#a21f2a007112d02fbbdd487d5d9a5defd">VERSION</a> = <span class="stringliteral">&quot;0.6.1&quot;</span>;</div>
 <div class="line"><a id="l00616" name="l00616"></a><span class="lineno">  616</span> </div>
-<div class="line"><a id="l00618" name="l00618"></a><span class="lineno">  618</span>    <span class="keyword">const</span> <span class="keywordtype">char</span>* <span class="keyword">const</span>* motorNames_;</div>
-<div class="line"><a id="l00619" name="l00619"></a><span class="lineno">  619</span> </div>
-<div class="line"><a id="l00621" name="l00621"></a><span class="lineno">  621</span>    uint8_t numMotors_ = 0;                  <span class="comment">// Number of motors being used, should be detected by the length of motor ids passed</span></div>
-<div class="line"><a id="l00622" name="l00622"></a><span class="lineno">  622</span> </div>
-<div class="line"><a id="l00624" name="l00624"></a><span class="lineno">  624</span>    float (*jointLimits_)[2];      <span class="comment">// Pointer to 2D array of joint limits</span></div>
-<div class="line"><a id="l00625" name="l00625"></a><span class="lineno">  625</span> </div>
-<div class="line"><a id="l00627" name="l00627"></a><span class="lineno">  627</span>    <span class="keywordtype">float</span>* zeroOffsets_;                 <span class="comment">// Track absolute zero positions</span></div>
-<div class="line"><a id="l00628" name="l00628"></a><span class="lineno">  628</span> </div>
-<div class="line"><a id="l00630" name="l00630"></a><span class="lineno">  630</span>    uint16_t* currentLimits_;</div>
-<div class="line"><a id="l00631" name="l00631"></a><span class="lineno">  631</span> </div>
-<div class="line"><a id="l00633" name="l00633"></a><span class="lineno">  633</span>    <span class="keywordtype">int</span> modeSwitchPin = -1;</div>
-<div class="line"><a id="l00634" name="l00634"></a><span class="lineno">  634</span> </div>
-<div class="line"><a id="l00636" name="l00636"></a><span class="lineno">  636</span>    <span class="keyword">static</span> <span class="keyword">volatile</span> <span class="keywordtype">bool</span> modeSwitchFlag;</div>
-<div class="line"><a id="l00637" name="l00637"></a><span class="lineno">  637</span> </div>
-<div class="line"><a id="l00639" name="l00639"></a><span class="lineno">  639</span>    <span class="keywordtype">bool</span> lastButtonState = <span class="keyword">false</span>; <span class="comment">// Last state of the mode switch button</span></div>
-<div class="line"><a id="l00640" name="l00640"></a><span class="lineno">  640</span> </div>
-<div class="line"><a id="l00642" name="l00642"></a><span class="lineno">  642</span>    <span class="keywordtype">int</span> buttonState = HIGH;</div>
-<div class="line"><a id="l00643" name="l00643"></a><span class="lineno">  643</span> </div>
-<div class="line"><a id="l00645" name="l00645"></a><span class="lineno">  645</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> lastDebounceTime = 0;</div>
-<div class="line"><a id="l00646" name="l00646"></a><span class="lineno">  646</span> </div>
-<div class="line"><a id="l00648" name="l00648"></a><span class="lineno">  648</span>    <span class="keyword">const</span> <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> debounceDelay = 50;  <span class="comment">// 50 ms debounce</span></div>
-<div class="line"><a id="l00649" name="l00649"></a><span class="lineno">  649</span> </div>
-<div class="line"><a id="l00651" name="l00651"></a><span class="lineno">  651</span>    String motorControlMode_;            </div>
-<div class="line"><a id="l00652" name="l00652"></a><span class="lineno">  652</span> </div>
-<div class="line"><a id="l00654" name="l00654"></a><span class="lineno">  654</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span>* lastDirectCommandMs_;</div>
-<div class="line"><a id="l00655" name="l00655"></a><span class="lineno">  655</span>    <span class="keywordtype">bool</span>* directCommandActive_;</div>
-<div class="line"><a id="l00656" name="l00656"></a><span class="lineno">  656</span>    <span class="keywordtype">float</span>* directCommandDirection_;</div>
-<div class="line"><a id="l00657" name="l00657"></a><span class="lineno">  657</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> directCommandTimeoutMs_ = DIRECT_COMMAND_TIMEOUT_MS;</div>
-<div class="line"><a id="l00658" name="l00658"></a><span class="lineno">  658</span> </div>
-<div class="line"><a id="l00660" name="l00660"></a><span class="lineno">  660</span>    <span class="keywordtype">void</span> serviceDirectControlSafety();</div>
-<div class="line"><a id="l00661" name="l00661"></a><span class="lineno">  661</span> </div>
-<div class="line"><a id="l00676" name="l00676"></a><span class="lineno">  676</span>    <span class="keywordtype">float</span> applyShortestPath(<span class="keywordtype">int</span> index, <span class="keywordtype">float</span> goal);</div>
-<div class="line"><a id="l00677" name="l00677"></a><span class="lineno">  677</span> </div>
-<div class="line"><a id="l00678" name="l00678"></a><span class="lineno">  678</span>    <span class="comment">// -- Combined-motor current budget state --------------------------</span></div>
-<div class="line"><a id="l00679" name="l00679"></a><span class="lineno">  679</span>    <span class="comment">// currentLimits_[i] above is the NOMINAL per-motor effort (what</span></div>
-<div class="line"><a id="l00680" name="l00680"></a><span class="lineno">  680</span>    <span class="comment">// set_current_lim asked for). appliedCurrents_[i] is what is actually in</span></div>
-<div class="line"><a id="l00681" name="l00681"></a><span class="lineno">  681</span>    <span class="comment">// the motor&#39;s GOAL_CURRENT register after the budget has had its say, so</span></div>
-<div class="line"><a id="l00682" name="l00682"></a><span class="lineno">  682</span>    <span class="comment">// the two differ whenever the fleet is being clamped.</span></div>
-<div class="line"><a id="l00683" name="l00683"></a><span class="lineno">  683</span> </div>
-<div class="line"><a id="l00685" name="l00685"></a><span class="lineno">  685</span>    uint16_t* appliedCurrents_;</div>
-<div class="line"><a id="l00686" name="l00686"></a><span class="lineno">  686</span> </div>
-<div class="line"><a id="l00688" name="l00688"></a><span class="lineno">  688</span>    <span class="keywordtype">bool</span>* motorMoving_;</div>
-<div class="line"><a id="l00689" name="l00689"></a><span class="lineno">  689</span> </div>
-<div class="line"><a id="l00695" name="l00695"></a><span class="lineno">  695</span>    <span class="keywordtype">bool</span>* motorAdmitted_;</div>
+<div class="line"><a id="l00617" name="l00617"></a><span class="lineno">  617</span>  <span class="keyword">private</span>:</div>
+<div class="line"><a id="l00619" name="l00619"></a><span class="lineno">  619</span>    Dynamixel2Arduino dxl_;              <span class="comment">// Handle to Dynamixel object</span></div>
+<div class="line"><a id="l00620" name="l00620"></a><span class="lineno">  620</span> </div>
+<div class="line"><a id="l00622" name="l00622"></a><span class="lineno">  622</span>    <span class="keyword">const</span> uint8_t* motorIds_;                 <span class="comment">// List of motor IDs passed by the user</span></div>
+<div class="line"><a id="l00623" name="l00623"></a><span class="lineno">  623</span> </div>
+<div class="line"><a id="l00625" name="l00625"></a><span class="lineno">  625</span>    <span class="keyword">const</span> <span class="keywordtype">char</span>* <span class="keyword">const</span>* motorNames_;</div>
+<div class="line"><a id="l00626" name="l00626"></a><span class="lineno">  626</span> </div>
+<div class="line"><a id="l00628" name="l00628"></a><span class="lineno">  628</span>    uint8_t numMotors_ = 0;                  <span class="comment">// Number of motors being used, should be detected by the length of motor ids passed</span></div>
+<div class="line"><a id="l00629" name="l00629"></a><span class="lineno">  629</span> </div>
+<div class="line"><a id="l00631" name="l00631"></a><span class="lineno">  631</span>    float (*jointLimits_)[2];      <span class="comment">// Pointer to 2D array of joint limits</span></div>
+<div class="line"><a id="l00632" name="l00632"></a><span class="lineno">  632</span> </div>
+<div class="line"><a id="l00634" name="l00634"></a><span class="lineno">  634</span>    <span class="keywordtype">float</span>* zeroOffsets_;                 <span class="comment">// Track absolute zero positions</span></div>
+<div class="line"><a id="l00635" name="l00635"></a><span class="lineno">  635</span> </div>
+<div class="line"><a id="l00637" name="l00637"></a><span class="lineno">  637</span>    uint16_t* currentLimits_;</div>
+<div class="line"><a id="l00638" name="l00638"></a><span class="lineno">  638</span> </div>
+<div class="line"><a id="l00640" name="l00640"></a><span class="lineno">  640</span>    <span class="keywordtype">int</span> modeSwitchPin = -1;</div>
+<div class="line"><a id="l00641" name="l00641"></a><span class="lineno">  641</span> </div>
+<div class="line"><a id="l00643" name="l00643"></a><span class="lineno">  643</span>    <span class="keyword">static</span> <span class="keyword">volatile</span> <span class="keywordtype">bool</span> modeSwitchFlag;</div>
+<div class="line"><a id="l00644" name="l00644"></a><span class="lineno">  644</span> </div>
+<div class="line"><a id="l00646" name="l00646"></a><span class="lineno">  646</span>    <span class="keywordtype">bool</span> lastButtonState = <span class="keyword">false</span>; <span class="comment">// Last state of the mode switch button</span></div>
+<div class="line"><a id="l00647" name="l00647"></a><span class="lineno">  647</span> </div>
+<div class="line"><a id="l00649" name="l00649"></a><span class="lineno">  649</span>    <span class="keywordtype">int</span> buttonState = HIGH;</div>
+<div class="line"><a id="l00650" name="l00650"></a><span class="lineno">  650</span> </div>
+<div class="line"><a id="l00652" name="l00652"></a><span class="lineno">  652</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> lastDebounceTime = 0;</div>
+<div class="line"><a id="l00653" name="l00653"></a><span class="lineno">  653</span> </div>
+<div class="line"><a id="l00655" name="l00655"></a><span class="lineno">  655</span>    <span class="keyword">const</span> <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> debounceDelay = 50;  <span class="comment">// 50 ms debounce</span></div>
+<div class="line"><a id="l00656" name="l00656"></a><span class="lineno">  656</span> </div>
+<div class="line"><a id="l00658" name="l00658"></a><span class="lineno">  658</span>    String motorControlMode_;            </div>
+<div class="line"><a id="l00659" name="l00659"></a><span class="lineno">  659</span> </div>
+<div class="line"><a id="l00661" name="l00661"></a><span class="lineno">  661</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span>* lastDirectCommandMs_;</div>
+<div class="line"><a id="l00662" name="l00662"></a><span class="lineno">  662</span>    <span class="keywordtype">bool</span>* directCommandActive_;</div>
+<div class="line"><a id="l00663" name="l00663"></a><span class="lineno">  663</span>    <span class="keywordtype">float</span>* directCommandDirection_;</div>
+<div class="line"><a id="l00664" name="l00664"></a><span class="lineno">  664</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> directCommandTimeoutMs_ = DIRECT_COMMAND_TIMEOUT_MS;</div>
+<div class="line"><a id="l00665" name="l00665"></a><span class="lineno">  665</span> </div>
+<div class="line"><a id="l00667" name="l00667"></a><span class="lineno">  667</span>    <span class="keywordtype">void</span> serviceDirectControlSafety();</div>
+<div class="line"><a id="l00668" name="l00668"></a><span class="lineno">  668</span> </div>
+<div class="line"><a id="l00683" name="l00683"></a><span class="lineno">  683</span>    <span class="keywordtype">float</span> applyShortestPath(<span class="keywordtype">int</span> index, <span class="keywordtype">float</span> goal);</div>
+<div class="line"><a id="l00684" name="l00684"></a><span class="lineno">  684</span> </div>
+<div class="line"><a id="l00685" name="l00685"></a><span class="lineno">  685</span>    <span class="comment">// -- Combined-motor current budget state --------------------------</span></div>
+<div class="line"><a id="l00686" name="l00686"></a><span class="lineno">  686</span>    <span class="comment">// currentLimits_[i] above is the NOMINAL per-motor effort (what</span></div>
+<div class="line"><a id="l00687" name="l00687"></a><span class="lineno">  687</span>    <span class="comment">// set_current_lim asked for). appliedCurrents_[i] is what is actually in</span></div>
+<div class="line"><a id="l00688" name="l00688"></a><span class="lineno">  688</span>    <span class="comment">// the motor&#39;s GOAL_CURRENT register after the budget has had its say, so</span></div>
+<div class="line"><a id="l00689" name="l00689"></a><span class="lineno">  689</span>    <span class="comment">// the two differ whenever the fleet is being clamped.</span></div>
+<div class="line"><a id="l00690" name="l00690"></a><span class="lineno">  690</span> </div>
+<div class="line"><a id="l00692" name="l00692"></a><span class="lineno">  692</span>    uint16_t* appliedCurrents_;</div>
+<div class="line"><a id="l00693" name="l00693"></a><span class="lineno">  693</span> </div>
+<div class="line"><a id="l00695" name="l00695"></a><span class="lineno">  695</span>    <span class="keywordtype">bool</span>* motorMoving_;</div>
 <div class="line"><a id="l00696" name="l00696"></a><span class="lineno">  696</span> </div>
-<div class="line"><a id="l00698" name="l00698"></a><span class="lineno">  698</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span>* admissionMs_;</div>
-<div class="line"><a id="l00699" name="l00699"></a><span class="lineno">  699</span> </div>
-<div class="line"><a id="l00701" name="l00701"></a><span class="lineno">  701</span>    <span class="keywordtype">float</span>* goalAngle_;</div>
-<div class="line"><a id="l00702" name="l00702"></a><span class="lineno">  702</span> </div>
-<div class="line"><a id="l00704" name="l00704"></a><span class="lineno">  704</span>    <span class="keywordtype">bool</span>* verdictPending_;</div>
-<div class="line"><a id="l00705" name="l00705"></a><span class="lineno">  705</span> </div>
-<div class="line"><a id="l00707" name="l00707"></a><span class="lineno">  707</span>    uint8_t* lastVerdict_;</div>
-<div class="line"><a id="l00708" name="l00708"></a><span class="lineno">  708</span> </div>
-<div class="line"><a id="l00709" name="l00709"></a><span class="lineno">  709</span>    uint8_t verdictsCollected_ = 0;</div>
-<div class="line"><a id="l00710" name="l00710"></a><span class="lineno">  710</span>    uint8_t verdictFailures_ = 0;</div>
-<div class="line"><a id="l00711" name="l00711"></a><span class="lineno">  711</span> </div>
-<div class="line"><a id="l00713" name="l00713"></a><span class="lineno">  713</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span>* goalIssuedMs_;</div>
-<div class="line"><a id="l00714" name="l00714"></a><span class="lineno">  714</span> </div>
-<div class="line"><a id="l00716" name="l00716"></a><span class="lineno">  716</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span>* stallSinceMs_;</div>
-<div class="line"><a id="l00717" name="l00717"></a><span class="lineno">  717</span> </div>
-<div class="line"><a id="l00719" name="l00719"></a><span class="lineno">  719</span>    uint16_t totalCurrentBudgetMa_ = TOTAL_CURRENT_BUDGET_MA;</div>
-<div class="line"><a id="l00720" name="l00720"></a><span class="lineno">  720</span> </div>
-<div class="line"><a id="l00722" name="l00722"></a><span class="lineno">  722</span>    uint16_t holdCurrentMa_ = <a class="code hl_variable" href="config_8h.html#a542b35804594ca0357346ed5b64ae16c">HOLD_CURRENT_MA</a>;</div>
-<div class="line"><a id="l00723" name="l00723"></a><span class="lineno">  723</span> </div>
-<div class="line"><a id="l00725" name="l00725"></a><span class="lineno">  725</span>    <span class="keywordtype">float</span> currentBudgetScale_ = 1.0f;</div>
-<div class="line"><a id="l00726" name="l00726"></a><span class="lineno">  726</span> </div>
-<div class="line"><a id="l00728" name="l00728"></a><span class="lineno">  728</span>    <span class="keywordtype">bool</span> currentGovernorEnabled_ = <span class="keyword">true</span>;</div>
-<div class="line"><a id="l00729" name="l00729"></a><span class="lineno">  729</span> </div>
-<div class="line"><a id="l00731" name="l00731"></a><span class="lineno">  731</span>    int32_t measuredTotalMa_ = -1;</div>
-<div class="line"><a id="l00732" name="l00732"></a><span class="lineno">  732</span> </div>
-<div class="line"><a id="l00738" name="l00738"></a><span class="lineno">  738</span>    <span class="keywordtype">float</span> appliedScale_ = 1.0f;</div>
+<div class="line"><a id="l00702" name="l00702"></a><span class="lineno">  702</span>    <span class="keywordtype">bool</span>* motorAdmitted_;</div>
+<div class="line"><a id="l00703" name="l00703"></a><span class="lineno">  703</span> </div>
+<div class="line"><a id="l00705" name="l00705"></a><span class="lineno">  705</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span>* admissionMs_;</div>
+<div class="line"><a id="l00706" name="l00706"></a><span class="lineno">  706</span> </div>
+<div class="line"><a id="l00708" name="l00708"></a><span class="lineno">  708</span>    <span class="keywordtype">float</span>* goalAngle_;</div>
+<div class="line"><a id="l00709" name="l00709"></a><span class="lineno">  709</span> </div>
+<div class="line"><a id="l00711" name="l00711"></a><span class="lineno">  711</span>    <span class="keywordtype">bool</span>* verdictPending_;</div>
+<div class="line"><a id="l00712" name="l00712"></a><span class="lineno">  712</span> </div>
+<div class="line"><a id="l00714" name="l00714"></a><span class="lineno">  714</span>    uint8_t* lastVerdict_;</div>
+<div class="line"><a id="l00715" name="l00715"></a><span class="lineno">  715</span> </div>
+<div class="line"><a id="l00716" name="l00716"></a><span class="lineno">  716</span>    uint8_t verdictsCollected_ = 0;</div>
+<div class="line"><a id="l00717" name="l00717"></a><span class="lineno">  717</span>    uint8_t verdictFailures_ = 0;</div>
+<div class="line"><a id="l00718" name="l00718"></a><span class="lineno">  718</span> </div>
+<div class="line"><a id="l00720" name="l00720"></a><span class="lineno">  720</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span>* goalIssuedMs_;</div>
+<div class="line"><a id="l00721" name="l00721"></a><span class="lineno">  721</span> </div>
+<div class="line"><a id="l00723" name="l00723"></a><span class="lineno">  723</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span>* stallSinceMs_;</div>
+<div class="line"><a id="l00724" name="l00724"></a><span class="lineno">  724</span> </div>
+<div class="line"><a id="l00726" name="l00726"></a><span class="lineno">  726</span>    uint16_t totalCurrentBudgetMa_ = TOTAL_CURRENT_BUDGET_MA;</div>
+<div class="line"><a id="l00727" name="l00727"></a><span class="lineno">  727</span> </div>
+<div class="line"><a id="l00729" name="l00729"></a><span class="lineno">  729</span>    uint16_t holdCurrentMa_ = <a class="code hl_variable" href="config_8h.html#a542b35804594ca0357346ed5b64ae16c">HOLD_CURRENT_MA</a>;</div>
+<div class="line"><a id="l00730" name="l00730"></a><span class="lineno">  730</span> </div>
+<div class="line"><a id="l00732" name="l00732"></a><span class="lineno">  732</span>    <span class="keywordtype">float</span> currentBudgetScale_ = 1.0f;</div>
+<div class="line"><a id="l00733" name="l00733"></a><span class="lineno">  733</span> </div>
+<div class="line"><a id="l00735" name="l00735"></a><span class="lineno">  735</span>    <span class="keywordtype">bool</span> currentGovernorEnabled_ = <span class="keyword">true</span>;</div>
+<div class="line"><a id="l00736" name="l00736"></a><span class="lineno">  736</span> </div>
+<div class="line"><a id="l00738" name="l00738"></a><span class="lineno">  738</span>    int32_t measuredTotalMa_ = -1;</div>
 <div class="line"><a id="l00739" name="l00739"></a><span class="lineno">  739</span> </div>
-<div class="line"><a id="l00745" name="l00745"></a><span class="lineno">  745</span>    <span class="keywordtype">bool</span> allocationDirty_ = <span class="keyword">false</span>;</div>
+<div class="line"><a id="l00745" name="l00745"></a><span class="lineno">  745</span>    <span class="keywordtype">float</span> appliedScale_ = 1.0f;</div>
 <div class="line"><a id="l00746" name="l00746"></a><span class="lineno">  746</span> </div>
-<div class="line"><a id="l00748" name="l00748"></a><span class="lineno">  748</span>    <span class="keywordtype">int</span> governorCursor_ = 0;</div>
-<div class="line"><a id="l00749" name="l00749"></a><span class="lineno">  749</span> </div>
-<div class="line"><a id="l00751" name="l00751"></a><span class="lineno">  751</span>    uint32_t sweepAccumMa_ = 0;</div>
-<div class="line"><a id="l00752" name="l00752"></a><span class="lineno">  752</span> </div>
-<div class="line"><a id="l00753" name="l00753"></a><span class="lineno">  753</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> lastGovernorSampleMs_ = 0;</div>
-<div class="line"><a id="l00754" name="l00754"></a><span class="lineno">  754</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> lastGoalIssuedMs_ = 0;</div>
-<div class="line"><a id="l00755" name="l00755"></a><span class="lineno">  755</span>    uint8_t governorReadFails_ = 0;</div>
-<div class="line"><a id="l00756" name="l00756"></a><span class="lineno">  756</span>    <span class="keywordtype">bool</span> governorMeasurementTrusted_ = <span class="keyword">true</span>;</div>
-<div class="line"><a id="l00757" name="l00757"></a><span class="lineno">  757</span> </div>
-<div class="line"><a id="l00761" name="l00761"></a><span class="lineno">  761</span>    <span class="keywordtype">void</span> noteGoalCommanded(<span class="keywordtype">int</span> index, <span class="keywordtype">float</span> goalAngle);</div>
-<div class="line"><a id="l00762" name="l00762"></a><span class="lineno">  762</span> </div>
-<div class="line"><a id="l00764" name="l00764"></a><span class="lineno">  764</span>    uint8_t maxConcurrentMovers() <span class="keyword">const</span>;</div>
-<div class="line"><a id="l00765" name="l00765"></a><span class="lineno">  765</span> </div>
-<div class="line"><a id="l00767" name="l00767"></a><span class="lineno">  767</span>    <span class="keywordtype">void</span> concludeMove(<span class="keywordtype">int</span> index, uint8_t verdict);</div>
-<div class="line"><a id="l00768" name="l00768"></a><span class="lineno">  768</span> </div>
-<div class="line"><a id="l00770" name="l00770"></a><span class="lineno">  770</span>    <span class="keywordtype">void</span> reportMoveVerdicts();</div>
-<div class="line"><a id="l00771" name="l00771"></a><span class="lineno">  771</span> </div>
-<div class="line"><a id="l00773" name="l00773"></a><span class="lineno">  773</span>    <span class="keywordtype">float</span> staticBudgetScale() <span class="keyword">const</span>;</div>
-<div class="line"><a id="l00774" name="l00774"></a><span class="lineno">  774</span> </div>
-<div class="line"><a id="l00776" name="l00776"></a><span class="lineno">  776</span>    <span class="keywordtype">void</span> refreshCurrentAllocation();</div>
-<div class="line"><a id="l00777" name="l00777"></a><span class="lineno">  777</span> </div>
-<div class="line"><a id="l00779" name="l00779"></a><span class="lineno">  779</span>    <span class="keywordtype">void</span> applyGoalCurrent(<span class="keywordtype">int</span> index, uint16_t current_mA);</div>
-<div class="line"><a id="l00780" name="l00780"></a><span class="lineno">  780</span> </div>
-<div class="line"><a id="l00782" name="l00782"></a><span class="lineno">  782</span>    int16_t readPresentCurrentMa(uint8_t <span class="keywordtype">id</span>, <span class="keywordtype">bool</span>&amp; ok);</div>
-<div class="line"><a id="l00783" name="l00783"></a><span class="lineno">  783</span> </div>
-<div class="line"><a id="l00785" name="l00785"></a><span class="lineno">  785</span>    <span class="keywordtype">void</span> serviceCurrentGovernor();</div>
-<div class="line"><a id="l00786" name="l00786"></a><span class="lineno">  786</span> </div>
-<div class="line"><a id="l00788" name="l00788"></a><span class="lineno">  788</span>    <a class="code hl_enumeration" href="nml__hand__exo_8h.html#a041ebb14115ab2af92a4b3c1c6c056c2">ExoOperatingMode</a> exoMode_ = FREE; <span class="comment">// Default mode is free</span></div>
-<div class="line"><a id="l00789" name="l00789"></a><span class="lineno">  789</span> </div>
-<div class="line"><a id="l00791" name="l00791"></a><span class="lineno">  791</span>    <span class="keywordtype">bool</span> isCalibrating = <span class="keyword">false</span>;</div>
-<div class="line"><a id="l00792" name="l00792"></a><span class="lineno">  792</span> </div>
-<div class="line"><a id="l00793" name="l00793"></a><span class="lineno">  793</span>    <span class="comment">// @brief Flag for calibration timed mode</span></div>
-<div class="line"><a id="l00794" name="l00794"></a><span class="lineno">  794</span>    <span class="keywordtype">bool</span> calibrationTimedMode = <span class="keyword">false</span>;</div>
-<div class="line"><a id="l00795" name="l00795"></a><span class="lineno">  795</span> </div>
-<div class="line"><a id="l00797" name="l00797"></a><span class="lineno">  797</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> calibrationStartTime;</div>
-<div class="line"><a id="l00798" name="l00798"></a><span class="lineno">  798</span> </div>
-<div class="line"><a id="l00800" name="l00800"></a><span class="lineno">  800</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> calibrationDuration;</div>
-<div class="line"><a id="l00801" name="l00801"></a><span class="lineno">  801</span> </div>
+<div class="line"><a id="l00752" name="l00752"></a><span class="lineno">  752</span>    <span class="keywordtype">bool</span> allocationDirty_ = <span class="keyword">false</span>;</div>
+<div class="line"><a id="l00753" name="l00753"></a><span class="lineno">  753</span> </div>
+<div class="line"><a id="l00755" name="l00755"></a><span class="lineno">  755</span>    <span class="keywordtype">int</span> governorCursor_ = 0;</div>
+<div class="line"><a id="l00756" name="l00756"></a><span class="lineno">  756</span> </div>
+<div class="line"><a id="l00758" name="l00758"></a><span class="lineno">  758</span>    uint32_t sweepAccumMa_ = 0;</div>
+<div class="line"><a id="l00759" name="l00759"></a><span class="lineno">  759</span> </div>
+<div class="line"><a id="l00760" name="l00760"></a><span class="lineno">  760</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> lastGovernorSampleMs_ = 0;</div>
+<div class="line"><a id="l00761" name="l00761"></a><span class="lineno">  761</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> lastGoalIssuedMs_ = 0;</div>
+<div class="line"><a id="l00762" name="l00762"></a><span class="lineno">  762</span>    uint8_t governorReadFails_ = 0;</div>
+<div class="line"><a id="l00763" name="l00763"></a><span class="lineno">  763</span>    <span class="keywordtype">bool</span> governorMeasurementTrusted_ = <span class="keyword">true</span>;</div>
+<div class="line"><a id="l00764" name="l00764"></a><span class="lineno">  764</span> </div>
+<div class="line"><a id="l00768" name="l00768"></a><span class="lineno">  768</span>    <span class="keywordtype">void</span> noteGoalCommanded(<span class="keywordtype">int</span> index, <span class="keywordtype">float</span> goalAngle);</div>
+<div class="line"><a id="l00769" name="l00769"></a><span class="lineno">  769</span> </div>
+<div class="line"><a id="l00771" name="l00771"></a><span class="lineno">  771</span>    uint8_t maxConcurrentMovers() <span class="keyword">const</span>;</div>
+<div class="line"><a id="l00772" name="l00772"></a><span class="lineno">  772</span> </div>
+<div class="line"><a id="l00774" name="l00774"></a><span class="lineno">  774</span>    <span class="keywordtype">void</span> concludeMove(<span class="keywordtype">int</span> index, uint8_t verdict);</div>
+<div class="line"><a id="l00775" name="l00775"></a><span class="lineno">  775</span> </div>
+<div class="line"><a id="l00777" name="l00777"></a><span class="lineno">  777</span>    <span class="keywordtype">void</span> reportMoveVerdicts();</div>
+<div class="line"><a id="l00778" name="l00778"></a><span class="lineno">  778</span> </div>
+<div class="line"><a id="l00780" name="l00780"></a><span class="lineno">  780</span>    <span class="keywordtype">float</span> staticBudgetScale() <span class="keyword">const</span>;</div>
+<div class="line"><a id="l00781" name="l00781"></a><span class="lineno">  781</span> </div>
+<div class="line"><a id="l00783" name="l00783"></a><span class="lineno">  783</span>    <span class="keywordtype">void</span> refreshCurrentAllocation();</div>
+<div class="line"><a id="l00784" name="l00784"></a><span class="lineno">  784</span> </div>
+<div class="line"><a id="l00786" name="l00786"></a><span class="lineno">  786</span>    <span class="keywordtype">void</span> applyGoalCurrent(<span class="keywordtype">int</span> index, uint16_t current_mA);</div>
+<div class="line"><a id="l00787" name="l00787"></a><span class="lineno">  787</span> </div>
+<div class="line"><a id="l00789" name="l00789"></a><span class="lineno">  789</span>    int16_t readPresentCurrentMa(uint8_t <span class="keywordtype">id</span>, <span class="keywordtype">bool</span>&amp; ok);</div>
+<div class="line"><a id="l00790" name="l00790"></a><span class="lineno">  790</span> </div>
+<div class="line"><a id="l00792" name="l00792"></a><span class="lineno">  792</span>    <span class="keywordtype">void</span> serviceCurrentGovernor();</div>
+<div class="line"><a id="l00793" name="l00793"></a><span class="lineno">  793</span> </div>
+<div class="line"><a id="l00795" name="l00795"></a><span class="lineno">  795</span>    <a class="code hl_enumeration" href="nml__hand__exo_8h.html#a041ebb14115ab2af92a4b3c1c6c056c2">ExoOperatingMode</a> exoMode_ = FREE; <span class="comment">// Default mode is free</span></div>
+<div class="line"><a id="l00796" name="l00796"></a><span class="lineno">  796</span> </div>
+<div class="line"><a id="l00798" name="l00798"></a><span class="lineno">  798</span>    <span class="keywordtype">bool</span> isCalibrating = <span class="keyword">false</span>;</div>
+<div class="line"><a id="l00799" name="l00799"></a><span class="lineno">  799</span> </div>
+<div class="line"><a id="l00800" name="l00800"></a><span class="lineno">  800</span>    <span class="comment">// @brief Flag for calibration timed mode</span></div>
+<div class="line"><a id="l00801" name="l00801"></a><span class="lineno">  801</span>    <span class="keywordtype">bool</span> calibrationTimedMode = <span class="keyword">false</span>;</div>
 <div class="line"><a id="l00802" name="l00802"></a><span class="lineno">  802</span> </div>
-<div class="line"><a id="l00803" name="l00803"></a><span class="lineno">  803</span>    <span class="keywordtype">bool</span>* flipMotor_;</div>
-<div class="line"><a id="l00804" name="l00804"></a><span class="lineno">  804</span> </div>
-<div class="line"><a id="l00805" name="l00805"></a><span class="lineno">  805</span>};</div>
+<div class="line"><a id="l00804" name="l00804"></a><span class="lineno">  804</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> calibrationStartTime;</div>
+<div class="line"><a id="l00805" name="l00805"></a><span class="lineno">  805</span> </div>
+<div class="line"><a id="l00807" name="l00807"></a><span class="lineno">  807</span>    <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> calibrationDuration;</div>
+<div class="line"><a id="l00808" name="l00808"></a><span class="lineno">  808</span> </div>
+<div class="line"><a id="l00809" name="l00809"></a><span class="lineno">  809</span> </div>
+<div class="line"><a id="l00810" name="l00810"></a><span class="lineno">  810</span>    <span class="keywordtype">bool</span>* flipMotor_;</div>
+<div class="line"><a id="l00811" name="l00811"></a><span class="lineno">  811</span> </div>
+<div class="line"><a id="l00812" name="l00812"></a><span class="lineno">  812</span>};</div>
 </div>
-<div class="line"><a id="l00806" name="l00806"></a><span class="lineno">  806</span> </div>
-<div class="line"><a id="l00807" name="l00807"></a><span class="lineno">  807</span><span class="preprocessor">#endif </span><span class="comment">// NML_HAND_EXO_H</span></div>
+<div class="line"><a id="l00813" name="l00813"></a><span class="lineno">  813</span> </div>
+<div class="line"><a id="l00814" name="l00814"></a><span class="lineno">  814</span><span class="preprocessor">#endif </span><span class="comment">// NML_HAND_EXO_H</span></div>
 <div class="ttc" id="aclassNMLHandExo_html"><div class="ttname"><a href="classNMLHandExo.html">NMLHandExo</a></div><div class="ttdoc">Class to manage the NML Hand Exoskeleton, providing initialization, motor control,...</div><div class="ttdef"><b>Definition</b> nml_hand_exo.h:76</div></div>
 <div class="ttc" id="aclassNMLHandExo_html_a07676c9aaa793914cd842ceafba777dc"><div class="ttname"><a href="classNMLHandExo.html#a07676c9aaa793914cd842ceafba777dc">NMLHandExo::setCurrentLimit</a></div><div class="ttdeci">void setCurrentLimit(uint8_t id, uint16_t current_mA)</div><div class="ttdoc">Set the current limit for a motor.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.cpp:872</div></div>
 <div class="ttc" id="aclassNMLHandExo_html_a084d6b1d59ae02b0a263268fa86101ae"><div class="ttname"><a href="classNMLHandExo.html#a084d6b1d59ae02b0a263268fa86101ae">NMLHandExo::getExoOperatingMode</a></div><div class="ttdeci">String getExoOperatingMode()</div><div class="ttdoc">Get the current operating mode for exo.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.cpp:526</div></div>
@@ -563,7 +563,7 @@ $(document).ready(function(){initNavTree('nml__hand__exo_8h_source.html',''); in
 <div class="ttc" id="aclassNMLHandExo_html_a1a046135540546e01d150cf75bd18144"><div class="ttname"><a href="classNMLHandExo.html#a1a046135540546e01d150cf75bd18144">NMLHandExo::initializeMotors</a></div><div class="ttdeci">void initializeMotors()</div><div class="ttdoc">Initialize all motors: disables torque, sets position mode, then re-enables torque.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.cpp:116</div></div>
 <div class="ttc" id="aclassNMLHandExo_html_a1b4b604b6082520ea0436568f86053c0"><div class="ttname"><a href="classNMLHandExo.html#a1b4b604b6082520ea0436568f86053c0">NMLHandExo::update</a></div><div class="ttdeci">void update()</div><div class="ttdoc">Update the exo state, including checking for button pressed, mode switching, and internal routines.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.cpp:465</div></div>
 <div class="ttc" id="aclassNMLHandExo_html_a209a9b16871e435eb139d0e1def35997"><div class="ttname"><a href="classNMLHandExo.html#a209a9b16871e435eb139d0e1def35997">NMLHandExo::getAccelerationLimit</a></div><div class="ttdeci">uint32_t getAccelerationLimit(uint8_t id)</div><div class="ttdoc">Get the acceleration limit of a motor.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.cpp:1515</div></div>
-<div class="ttc" id="aclassNMLHandExo_html_a21f2a007112d02fbbdd487d5d9a5defd"><div class="ttname"><a href="classNMLHandExo.html#a21f2a007112d02fbbdd487d5d9a5defd">NMLHandExo::VERSION</a></div><div class="ttdeci">static constexpr const char * VERSION</div><div class="ttdoc">Current software version.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.h:608</div></div>
+<div class="ttc" id="aclassNMLHandExo_html_a21f2a007112d02fbbdd487d5d9a5defd"><div class="ttname"><a href="classNMLHandExo.html#a21f2a007112d02fbbdd487d5d9a5defd">NMLHandExo::VERSION</a></div><div class="ttdeci">static constexpr const char * VERSION</div><div class="ttdoc">Current software version.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.h:615</div></div>
 <div class="ttc" id="aclassNMLHandExo_html_a26b98d33b39897bcc776dee9457df2c8"><div class="ttname"><a href="classNMLHandExo.html#a26b98d33b39897bcc776dee9457df2c8">NMLHandExo::updateCalibration</a></div><div class="ttdeci">void updateCalibration()</div><div class="ttdoc">Update the calibration state, checking if the calibration is complete.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.cpp:432</div></div>
 <div class="ttc" id="aclassNMLHandExo_html_a323895dcf281120f156efac795812101"><div class="ttname"><a href="classNMLHandExo.html#a323895dcf281120f156efac795812101">NMLHandExo::getMotorLimits</a></div><div class="ttdeci">String getMotorLimits(uint8_t id)</div><div class="ttdoc">Get the joint angle limits for a motor.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.cpp:738</div></div>
 <div class="ttc" id="aclassNMLHandExo_html_a39c8a5ffd57579a0e1e3ad83f6e31588"><div class="ttname"><a href="classNMLHandExo.html#a39c8a5ffd57579a0e1e3ad83f6e31588">NMLHandExo::homeAllMotors</a></div><div class="ttdeci">void homeAllMotors()</div><div class="ttdoc">Home all motors to their stored zero positions.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.cpp:678</div></div>
@@ -644,7 +644,7 @@ $(document).ready(function(){initNavTree('nml__hand__exo_8h_source.html',''); in
 <div class="ttc" id="aclassNMLHandExo_html_afd4fed71f1d08294097f70fce526d008"><div class="ttname"><a href="classNMLHandExo.html#afd4fed71f1d08294097f70fce526d008">NMLHandExo::getPresentVelocity</a></div><div class="ttdeci">float getPresentVelocity(uint8_t id)</div><div class="ttdoc">Read present motor velocity in rpm, using calibrated direction.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.cpp:1461</div></div>
 <div class="ttc" id="aclassNMLHandExo_html_afe742a52bc77e3a4ced03a654a339162"><div class="ttname"><a href="classNMLHandExo.html#afe742a52bc77e3a4ced03a654a339162">NMLHandExo::getFastTelemetryRecord</a></div><div class="ttdeci">bool getFastTelemetryRecord(uint8_t id, FastTelemetryRecord &amp;record)</div><div class="ttdoc">Fill one compact telemetry record for host streaming.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.cpp:250</div></div>
 <div class="ttc" id="aconfig_8h_html"><div class="ttname"><a href="config_8h.html">config.h</a></div><div class="ttdoc">Header file for custom definitions and configs for the NML Hand Exoskeleton project.</div></div>
-<div class="ttc" id="aconfig_8h_html_a542b35804594ca0357346ed5b64ae16c"><div class="ttname"><a href="config_8h.html#a542b35804594ca0357346ed5b64ae16c">HOLD_CURRENT_MA</a></div><div class="ttdeci">constexpr int HOLD_CURRENT_MA</div><div class="ttdoc">Current a motor is allowed once it is judged to have settled, in mA.</div><div class="ttdef"><b>Definition</b> config.h:621</div></div>
+<div class="ttc" id="aconfig_8h_html_a542b35804594ca0357346ed5b64ae16c"><div class="ttname"><a href="config_8h.html#a542b35804594ca0357346ed5b64ae16c">HOLD_CURRENT_MA</a></div><div class="ttdeci">constexpr int HOLD_CURRENT_MA</div><div class="ttdoc">Current a motor is allowed once it is judged to have settled, in mA.</div><div class="ttdef"><b>Definition</b> config.h:624</div></div>
 <div class="ttc" id="aconfig_8h_html_aeae48ca31178aa07e9c5700f94100012"><div class="ttname"><a href="config_8h.html#aeae48ca31178aa07e9c5700f94100012">jointLimits</a></div><div class="ttdeci">constexpr float jointLimits[][2]</div><div class="ttdoc">Physical joint limits [min, max] for each motor.</div><div class="ttdef"><b>Definition</b> config.h:238</div></div>
 <div class="ttc" id="anml__hand__exo_8h_html_a041ebb14115ab2af92a4b3c1c6c056c2"><div class="ttname"><a href="nml__hand__exo_8h.html#a041ebb14115ab2af92a4b3c1c6c056c2">ExoOperatingMode</a></div><div class="ttdeci">ExoOperatingMode</div><div class="ttdoc">Enum to manage the operating mode of the exo.</div><div class="ttdef"><b>Definition</b> nml_hand_exo.h:39</div></div>
 <div class="ttc" id="anml__hand__exo_8h_html_a0ee7aa6f5a7165bdd7d390174dfbf76c"><div class="ttname"><a href="nml__hand__exo_8h.html#a0ee7aa6f5a7165bdd7d390174dfbf76c">debugPrint</a></div><div class="ttdeci">void debugPrint(const String &amp;msg)</div><div class="ttdoc">Bluetooth serial stream used for commands.</div><div class="ttdef"><b>Definition</b> utils.cpp:72</div></div>

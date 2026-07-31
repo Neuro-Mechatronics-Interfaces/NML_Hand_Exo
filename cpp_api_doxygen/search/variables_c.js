@@ -1,6 +1,4 @@
 var searchData=
 [
-  ['stall_5fcurrent_5ffraction_0',['STALL_CURRENT_FRACTION',['../config_8h.html#a0d5c80bbd2c5daa2f69709c41798b0ab',1,'config.h']]],
-  ['stall_5fhold_5fms_1',['STALL_HOLD_MS',['../config_8h.html#a4db5490789091829eea512ee7eeb37ab',1,'config.h']]],
-  ['status_5fled_5fpin_2',['STATUS_LED_PIN',['../config_8h.html#a077de5a6f39f72c3609365bda45310a1',1,'config.h']]]
+  ['restfraction_0',['restFraction',['../structGestureAxisPoint.html#a25a1863faec56d334ae9ac61f929ad3c',1,'GestureAxisPoint']]]
 ];
