@@ -24,9 +24,13 @@ __pycache__/
 # New data files
 *.csv
 *.txt
+data/
 
 # ROM assessment output
 output_data/
+
+# Local Aim 3 analysis and generated proposal artifacts
+aim3_analysis/
 
 # Images (exclude from data folders, but allow docs)
 gesture_classifier/*.png
@@ -40,6 +44,7 @@ gesture_classifier/*.pth
 # Temporary files used for debugging
 /temp/
 temp/*
+examples/diagnostics/
 
 # Distribution / packaging
 .Python

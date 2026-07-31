@@ -360,14 +360,19 @@ constexpr bool DEFAULT_FLIPS[] = {
 
 #endif  // BUILD_LEFT_HAND == 2 vs single-exo
 
-/// @brief Default baud rate for the debug serial connection.
-constexpr long DEBUG_BAUD_RATE = 115200;
+/// @brief Default baud rate for the USB debug/command serial connection.
+constexpr long DEBUG_BAUD_RATE = 1000000;
 
 /// @brief Default baud rates for BLE communication.
 constexpr long COMMAND_BAUD_RATE = 115200;
 
 /// @brief Default baud rate for Dynamixel communication.
-constexpr long DYNAMIXEL_BAUD_RATE = 57600;
+///
+/// Keep this matched to DEBUG_BAUD_RATE so the GUI/OpenRB link and OpenRB/DXL
+/// bus use the same default rate. Live diagnostics on the full exo chain showed
+/// intermittent CRC/timeout/overflow errors at 2 Mbps even for single-motor
+/// position reads. 1 Mbps was stable in repeated tests.
+constexpr long DYNAMIXEL_BAUD_RATE = 1000000;
 
 /// @brief Total number of gesture contained in the library
 constexpr int N_GESTURES = 6;

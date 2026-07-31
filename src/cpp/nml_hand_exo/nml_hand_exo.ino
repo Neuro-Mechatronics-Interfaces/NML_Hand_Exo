@@ -55,7 +55,7 @@ void setup() {
   digitalWrite(STATUS_LED_PIN, LOW);  // initially off
 
   // Serial connections
-  DEBUG_SERIAL.begin(DEBUG_BAUD_RATE);    // Setting a default baud rate of 115200
+  DEBUG_SERIAL.begin(DEBUG_BAUD_RATE);
   COMMAND_SERIAL.begin(COMMAND_BAUD_RATE);     // (Optional) Establish port with TX/RX pins for incomming serial data/commands
 
   // Setup IMU

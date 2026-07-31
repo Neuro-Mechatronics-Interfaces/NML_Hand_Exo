@@ -56,6 +56,7 @@ CONFIG_FILE = os.path.join(PROFILES_DIR, "config.json")
 OUTPUT_DIR = os.path.join(_repo_root(), "output_data")
 DIRECT_VELOCITY_LIMIT_RPM = 10.0
 DIRECT_CURRENT_LIMIT_MA = 910.0
+XC330_T288_TORQUE_CONSTANT = 0.00115
 
 
 # -- Helpers ---------------------------------------------------------------
@@ -1403,10 +1404,15 @@ class SerialWorker(QThread):
         self._run = True
         self._poll_pending = False
         self._last_poll_error_log = 0.0
+        self._motor_ids: list[int] = []
         self._state_lock = threading.Lock()
 
     def set_exo(self, exo):
         self._exo = exo
+
+    def set_motor_ids(self, motor_ids):
+        with self._state_lock:
+            self._motor_ids = [int(mid) for mid in motor_ids]
 
     def request_poll(self, include_telemetry: bool = True):
         with self._state_lock:
@@ -1457,12 +1463,53 @@ class SerialWorker(QThread):
             "positions": None,
             "torques": None,
             "currents": None,
+            "telemetry_meta": None,
             "telemetry_requested": include_telemetry,
         }
         exo = self._exo
         if exo is None:
             self.completed.emit(result)
             return
+        if include_telemetry and self._motor_ids:
+            try:
+                fast = self._get_fast_telemetry(0.5)
+                result["relative"] = {
+                    mid: data.get("angle") for mid, data in fast.items()
+                }
+                result["positions"] = {
+                    mid: data.get("absolute_angle") for mid, data in fast.items()
+                }
+                result["currents"] = {
+                    mid: data.get("current") for mid, data in fast.items()
+                }
+                result["torques"] = {
+                    mid: (
+                        data.get("current") * XC330_T288_TORQUE_CONSTANT
+                        if data.get("current") is not None
+                        else None
+                    )
+                    for mid, data in fast.items()
+                }
+                timestamp_by_id = {
+                    mid: data.get("timestamp_ms") for mid, data in fast.items()
+                }
+                flags_by_id = {
+                    mid: data.get("flags") for mid, data in fast.items()
+                }
+                first_record = next(iter(fast.values()), {})
+                result["telemetry_meta"] = {
+                    "method": "fast_binary",
+                    "firmware_timestamp_ms": first_record.get("timestamp_ms"),
+                    "fast_telemetry_flags": first_record.get("flags"),
+                    "motor_firmware_timestamp_ms": timestamp_by_id,
+                    "motor_fast_telemetry_flags": flags_by_id,
+                    "host_poll_completed_wall_s": time.time(),
+                    "host_poll_completed_monotonic_s": time.monotonic(),
+                }
+                self.completed.emit(result)
+                return
+            except Exception as exc:
+                self._log_poll_error(f"[poll] fast telemetry failed: {exc}")
         try:
             result["relative"] = self._get_motor_attribute("get_angle:all", "angle", 0.5)
         except Exception as exc:
@@ -1482,6 +1529,13 @@ class SerialWorker(QThread):
                 result["currents"] = self._get_motor_attribute("get_current:all", "current", 0.5)
             except Exception as exc:
                 self._log_poll_error(f"[poll] current read failed: {exc}")
+            result["telemetry_meta"] = {
+                "method": "text_fallback",
+                "firmware_timestamp_ms": None,
+                "fast_telemetry_flags": None,
+                "host_poll_completed_wall_s": time.time(),
+                "host_poll_completed_monotonic_s": time.monotonic(),
+            }
         self.completed.emit(result)
 
     def _log_poll_error(self, message: str):
@@ -1510,6 +1564,17 @@ class SerialWorker(QThread):
             }
 
         return self._with_raw_exo(parse)
+
+    def _get_fast_telemetry(self, timeout: float) -> dict:
+        motor_ids = list(self._motor_ids)
+
+        def read_fast(raw_exo):
+            return raw_exo.get_fast_telemetry(
+                timeout=timeout,
+                motor_ids=motor_ids,
+            )
+
+        return self._with_raw_exo(read_fast)
 
     def _transact(self, command: str, timeout: float) -> str:
         def do_transact(raw_exo):
@@ -1589,6 +1654,8 @@ class HandExoGUI(QWidget):
         self._suspend_device_poll_requests = False
 
         self._udp_telemetry = UDPTelemetryPublisher()
+        self._udp_telem_sent_count = 0
+        self._udp_telem_last_status = 0.0
         self._lsl_angles = NumericLSLTelemetryOutlet(
             "NMLHandExoJointAngles", "JointAngles", "degrees"
         )
@@ -2045,6 +2112,9 @@ class HandExoGUI(QWidget):
         self._udp_telem_port.setValue(10002)
         self._udp_telem_status_lbl = QLabel("Disabled")
         self._udp_telem_status_lbl.setStyleSheet("color: #888888;")
+        self._udp_telem_cb.toggled.connect(self._apply_stream_settings)
+        self._udp_telem_host.editingFinished.connect(self._apply_stream_settings)
+        self._udp_telem_port.valueChanged.connect(self._apply_stream_settings)
         udp_out_row.addWidget(self._udp_telem_cb)
         udp_out_row.addWidget(QLabel("Host:"))
         udp_out_row.addWidget(self._udp_telem_host, 1)
@@ -2504,6 +2574,7 @@ class HandExoGUI(QWidget):
         # Telemetry now always follows the configured broadcast rate.
         include_telemetry = True
         self._serial_worker.set_exo(self.exo)
+        self._serial_worker.set_motor_ids(self._motor_dxl_id)
         self._serial_worker.request_poll(include_telemetry)
 
     def _on_device_poll_completed(self, result: dict):
@@ -2523,9 +2594,9 @@ class HandExoGUI(QWidget):
             self._telem_status_lbl.setText(f"Read failed  {ts}")
             self._telem_status_lbl.setStyleSheet("color: #c0392b;")
             return
-        self._apply_telemetry_result(positions, torques, currents)
+        self._apply_telemetry_result(positions, torques, currents, result.get("telemetry_meta"))
 
-    def _apply_telemetry_result(self, positions, torques, currents):
+    def _apply_telemetry_result(self, positions, torques, currents, telemetry_meta=None):
         positions_by_name = {}
         torque_by_name = {}
         current_by_name = {}
@@ -2577,7 +2648,7 @@ class HandExoGUI(QWidget):
         self._telem_status_lbl.setText(status)
         self._telem_status_lbl.setStyleSheet("color: #27ae60;")
         self._publish_telemetry(
-            positions_by_name, torque_by_name, current_by_name
+            positions_by_name, torque_by_name, current_by_name, telemetry_meta
         )
 
     def _publish_telemetry(
@@ -2585,6 +2656,7 @@ class HandExoGUI(QWidget):
         positions: dict[str, float | None],
         torques: dict[str, float | None],
         currents: dict[str, float | None],
+        telemetry_meta: dict | None = None,
     ):
         self._lsl_angles.publish(positions)
         self._lsl_torque.publish(torques)
@@ -2600,9 +2672,30 @@ class HandExoGUI(QWidget):
             "joint_angles_deg": positions,
             "motor_torque_nm": torques,
             "motor_current_ma": currents,
+            "firmware_timestamp_ms": (
+                telemetry_meta.get("firmware_timestamp_ms")
+                if telemetry_meta else None
+            ),
+            "fast_telemetry_flags": (
+                telemetry_meta.get("fast_telemetry_flags")
+                if telemetry_meta else None
+            ),
+            "telemetry_method": (
+                telemetry_meta.get("method") if telemetry_meta else None
+            ),
+            "telemetry_meta": telemetry_meta or {},
         }
         try:
             self._udp_telemetry.publish(frame)
+            self._udp_telem_sent_count += 1
+            now = time.monotonic()
+            if now - self._udp_telem_last_status >= 1.0:
+                self._udp_telem_last_status = now
+                self._udp_telem_status_lbl.setText(
+                    f"Sent {self._udp_telem_sent_count} frame(s) to "
+                    f"{self._udp_telemetry.host}:{self._udp_telemetry.port}"
+                )
+                self._udp_telem_status_lbl.setStyleSheet("color: #27ae60;")
         except (OSError, ValueError) as exc:
             self._udp_telem_status_lbl.setText(f"Send error: {exc}")
             self._udp_telem_status_lbl.setStyleSheet("color: #c0392b;")
@@ -2670,10 +2763,10 @@ class HandExoGUI(QWidget):
         # --- Row 2: Baud, connection actions, and status. ---
         row2 = QHBoxLayout()
         self.baud_combo = QComboBox()
-        for b in ["9600", "57600", "115200", "230400"]:
+        for b in ["9600", "57600", "115200", "230400", "1000000", "2000000"]:
             self.baud_combo.addItem(b)
-        self.baud_combo.setCurrentText("115200")
-        self.baud_combo.setMinimumContentsLength(6)
+        self.baud_combo.setCurrentText("1000000")
+        self.baud_combo.setMinimumContentsLength(7)
 
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.setProperty("accent", True)
@@ -3535,7 +3628,7 @@ class HandExoGUI(QWidget):
                 raise ConnectionError(
                     f"No complete motor records were received from {port} at {baud} baud."
                     f"{detail}{preview} The firmware in this repository defaults the "
-                    "OpenRB USB serial port to 115200 baud; use the exact baud that shows "
+                    "OpenRB USB serial port to 1000000 baud; use the exact baud that shows "
                     "readable output in Arduino Serial Monitor."
                 )
 

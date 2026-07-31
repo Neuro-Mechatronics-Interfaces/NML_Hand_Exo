@@ -10,14 +10,14 @@
 Python (host PC)
   SerialComm / TCPComm  (src/nml_hand_exo/interface/_interfaces.py)
        |
-      | USB serial  → DEBUG_SERIAL  = Serial   (115200 baud)
-       | BT HC-05    → COMMAND_SERIAL = Serial2  (9600 baud, D13=RX D14=TX)
+      | USB serial  → DEBUG_SERIAL  = Serial   (1000000 baud)
+       | BT HC-05    → COMMAND_SERIAL = Serial3  (115200 baud, D13=TX D14=RX)
        |
 Arduino OpenRB-150
   loop() polls both channels identically
   → parseMessage()  (utils.cpp) — dispatches all command strings
   → NMLHandExo      (nml_hand_exo.cpp) — motor control
-   → Serial1 (DXL_SERIAL, 57600 baud) — Dynamixel bus
+   → Serial1 (DXL_SERIAL, 1000000 baud) — Dynamixel bus
 ```
 
 Both channels are always active. Any command sent to either port is processed
@@ -46,11 +46,27 @@ disable:all
 enable_ids:11:12:13
 disable_ids:11:12:13
 set_exo_mode:gesture_fixed
+get_telemetry_fast:11:12:13:14:15:16:17:18:19
+telemetry_diag:11:12:13:14:15:16:17:18:19
 info
 version
 ```
 
-Responses are terminated with `;`. `SerialComm.receive()` reads until `;` is seen.
+Text responses are terminated with `;`. `SerialComm.receive()` reads until `;` is seen.
+
+### Fast telemetry binary frame
+
+`get_telemetry_fast:<id>:<id>...` returns one compact binary frame on the serial
+stream. `get_telemetry_fast:all` returns all firmware-managed motors. The frame
+starts with magic bytes `NX`, version `1`, followed by fixed-size records with
+DXL ID, error flag, present current, raw present velocity, position ticks,
+absolute angle in centidegrees, and relative angle in centidegrees. Header
+`flags` reports the firmware read method: `2` = fastSyncRead, `3` = syncRead,
+`1` = short-timeout fallback individual reads, `0` = failed. This command is
+intended for GUI polling because it avoids multiple text round trips per motor.
+
+`telemetry_diag:<id>:<id>...` returns a text diagnostic using the same firmware
+read path, including method, elapsed microseconds, and per-motor raw values.
 
 ### Direct velocity/current control
 
@@ -84,12 +100,19 @@ set_command_timeout:250
 
 | Channel          | Arduino object | Baud  | Physical connection  |
 |------------------|----------------|-------|----------------------|
-| USB debug        | Serial         | 115200 | USB port             |
-| Dynamixel bus    | Serial1        | 57600 | JST DXL connector    |
+| USB debug        | Serial         | 1000000 | USB port             |
+| Dynamixel bus    | Serial1        | 1000000 | JST DXL connector    |
 | HC-05 Bluetooth  | Serial3        | 115200 | D13 (TX), D14 (RX)   |
 
 All three constants are defined in `src/cpp/nml_hand_exo/config.h`:
 `DEBUG_BAUD_RATE`, `DYNAMIXEL_BAUD_RATE`, `COMMAND_BAUD_RATE`.
+
+Live OpenRB/XC330 diagnostics showed that the exo chain was not reliable at a
+2 Mbps Dynamixel bus rate: repeated single-motor `PRESENT_POSITION` reads had
+timeouts, CRC errors, and buffer overflows even with longer read timeouts and
+return delay restored. The same motor was stable at 1 Mbps (`100/100` repeated
+position reads, zero timeout/CRC/overflow errors), so 1 Mbps is the recommended
+rate for both the USB debug link and the DXL bus.
 
 HC-05 factory default is 9600. The firmware is configured for 115200 (`COMMAND_BAUD_RATE`).
 If you swap an HC-05 module, use AT command mode to set it to 115200 before use.
@@ -207,9 +230,9 @@ when the GUI passes a `name_to_id` mapping. See [docs/dual_exo_architecture.md](
 
 | Constant                | Value    | Meaning                              |
 |-------------------------|----------|--------------------------------------|
-| `DEBUG_BAUD_RATE`       | 57600    | USB serial baud                      |
-| `COMMAND_BAUD_RATE`     | 57600    | HC-05 Bluetooth baud (firmware side) |
-| `DYNAMIXEL_BAUD_RATE`   | 57600    | Dynamixel bus baud                   |
+| `DEBUG_BAUD_RATE`       | 1000000  | USB serial baud                      |
+| `COMMAND_BAUD_RATE`     | 115200   | HC-05 Bluetooth baud (firmware side) |
+| `DYNAMIXEL_BAUD_RATE`   | 1000000  | Dynamixel bus baud                   |
 | `MOTOR_CURRENT_LIMIT`   | 910      | XC330-T288 current cap per motor (mA) |
 | `DXL_PROTOCOL_VERSION`  | 2.0      | Dynamixel protocol version           |
 | `PULSE_RESOLUTION`      | 4096     | Encoder ticks per revolution         |

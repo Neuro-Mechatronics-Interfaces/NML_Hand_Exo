@@ -24,7 +24,7 @@ adopted. Do not instantiate it for the current single-board setup.
 PC (Python)
   └── HandExo — one instance, one serial port
         └── SerialComm → USB → OpenRB-150
-              └── Dynamixel bus (57600 baud)
+              └── Dynamixel bus (1000000 baud)
                     ├── Left motors:  IDs  1,  2,  3,  4,  5,  6,  7,  8,  9
                     └── Right motors: IDs 11, 12, 13, 14, 15, 16, 17, 18, 19
 ```
