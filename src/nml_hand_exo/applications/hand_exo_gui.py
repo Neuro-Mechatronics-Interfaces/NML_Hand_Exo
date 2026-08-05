@@ -24,7 +24,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTextEdit, QGridLayout, QMessageBox, QGroupBox, QComboBox,
     QDialog, QInputDialog, QScrollArea, QFrame, QSizePolicy, QSpacerItem,
     QTabWidget, QTabBar, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QSpinBox, QDoubleSpinBox,
+    QSpinBox, QDoubleSpinBox, QMenu,
 )
 from PyQt5.QtCore import Qt, QEvent, QSettings, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QFontMetrics
@@ -1617,6 +1617,16 @@ class SerialWorker(QThread):
 # ==========================================================================
 
 class HandExoGUI(QWidget):
+    FINGER_GROUPS = {
+        "Thumb Abduction": ["thumbadd"],
+        "Thumb Rotation": ["thumbrot"],
+        "Thumb Flexion": ["thumbflex"],
+        "Index":  ["index"],
+        "Middle": ["middle"],
+        "Ring":   ["ring"],
+        "Pinky":  ["pinky"],
+        "Wrist":  ["wrist", "wrist2"],
+    }
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NML EXO")
@@ -1625,6 +1635,7 @@ class HandExoGUI(QWidget):
         self.n_motors = 0
         self.motor_names = []
         self.motor_widgets = []  # list of dicts per motor row
+        self.cal_motor_checks = []
         self._gesture_ready = False  # set True after calibration + enable for gestures
 
         # Per-motor lookup maps (populated on connect, cleared on disconnect)
@@ -3111,6 +3122,49 @@ class HandExoGUI(QWidget):
 
         return row, widget_dict
 
+    def _show_finger_select_menu(self, entry, pos):
+        """Right-click menu on a Calibration-tab checkbox — pick a whole
+        finger/joint group (e.g. all three thumb motors) at once instead of
+        checking boxes one by one."""
+        row_name = entry["name"]
+        chk = entry["chk"]
+        side_prefix = row_name[:2] if row_name.startswith(("L:", "R:")) else None
+        menu = QMenu(self)
+        for finger, group in self.FINGER_GROUPS.items():
+            label = f"Select {finger} ({'+'.join(group)})" if len(group) > 1 else f"Select {finger}"
+            act = menu.addAction(label)
+            act.triggered.connect(
+                lambda _checked=False, g=group, sp=side_prefix: self._select_motors_for_calibration(g, sp)
+            )
+        menu.addSeparator()
+        all_act = menu.addAction("Select All Motors" + (f" ({side_prefix}*)" if side_prefix else ""))
+        all_act.triggered.connect(
+            lambda _checked=False, sp=side_prefix: self._select_motors_for_calibration(None, sp)
+        )
+        none_act = menu.addAction("Clear Selection")
+        none_act.triggered.connect(self._clear_calibration_selection)
+        menu.exec_(chk.mapToGlobal(pos))
+
+    def _select_motors_for_calibration(self, cmd_names, side_prefix=None):
+        """Check the Calibration-tab boxes for the given cmd_names (or all
+        motors, if ``cmd_names`` is None), restricted to ``side_prefix``
+        ("L:"/"R:") when given. Replaces any previous selection."""
+        for entry in self.cal_motor_checks:
+            chk = entry["chk"]
+            if side_prefix is not None and not entry["name"].startswith(side_prefix):
+                chk.setChecked(False)
+                continue
+            chk.setChecked(cmd_names is None or entry["cmd_name"] in cmd_names)
+
+    def _clear_calibration_selection(self):
+        for entry in self.cal_motor_checks:
+            entry["chk"].setChecked(False)
+
+    def _current_cal_side_prefix(self):
+        if getattr(self, "mode_combo", None) and self.mode_combo.currentText() == "Dual":
+            return "L:" if self.cal_side_combo.currentText().lower() == "left" else "R:"
+        return None
+
     def _make_motor_toggle(self, idx, dxl_id):
         """Return a handler that enables/disables one motor by Dynamixel ID.
 
@@ -3414,8 +3468,6 @@ class HandExoGUI(QWidget):
         box = QGroupBox("Calibration")
         layout = QVBoxLayout()
 
-        # Side selector — visible only in Dual mode; targets which exo to
-        # run calibration or apply a profile for.
         self._cal_side_row = QWidget()
         side_row_layout = QHBoxLayout(self._cal_side_row)
         side_row_layout.setContentsMargins(0, 0, 0, 0)
@@ -3428,11 +3480,31 @@ class HandExoGUI(QWidget):
         self._cal_side_row.setVisible(False)  # shown when mode == "Dual"
         layout.addWidget(self._cal_side_row)
 
+        hint = QLabel(
+            "Check subset of motors to only calibrate those motors. "
+            "Right-click the boxes to select an individual finger. "
+            "Check all boxes or leave them all clear to calibrate entire hand. "
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #9a9a9a; font-size: 12px; padding: 2px 0;")
+        layout.addWidget(hint)
+
+        list_box = QGroupBox("Motors to Calibrate")
+        list_box_layout = QVBoxLayout(list_box)
+        list_box_layout.setContentsMargins(8, 6, 8, 6)
+        self._cal_motor_list_layout = QVBoxLayout()
+        list_box_layout.addLayout(self._cal_motor_list_layout)
+        layout.addWidget(list_box)
+        self._rebuild_calibration_motor_list()  # placeholder until connected
+
         row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Motor:"))
-        self.cal_motor_combo = QComboBox()
-        self.cal_motor_combo.addItem("All Motors")
-        row1.addWidget(self.cal_motor_combo)
+
+        self.cal_select_all_btn = QPushButton("Select All")
+        self.cal_select_all_btn.clicked.connect(lambda: self._select_motors_for_calibration(None, self._current_cal_side_prefix()))
+        self.cal_clear_sel_btn = QPushButton("Clear Selection")
+        self.cal_clear_sel_btn.clicked.connect(self._clear_calibration_selection)
+        row1.addWidget(self.cal_select_all_btn)
+        row1.addWidget(self.cal_clear_sel_btn)
         row1.addWidget(QLabel("Profile Name:"))
         self.cal_name_input = QLineEdit()
         self.cal_name_input.setPlaceholderText("e.g. zach")
@@ -3461,6 +3533,68 @@ class HandExoGUI(QWidget):
 
         # add joint limits edit button under calibration
         self._build_joint_limits_section() 
+
+    def _rebuild_calibration_motor_list(self):
+        """(Re)build the Calibration tab's per-motor checklist.
+
+        Reads from self.motor_names / self._motor_dxl_id, so it must be
+        called after those are populated (i.e. after _build_motor_rows() on
+        connect). Shows a placeholder before a device is connected.
+
+        wrist + wrist2 are merged into a single "Wrist" checkbox (they're
+        always calibrated together) — every other motor gets its own box.
+        """
+        self._clear_layout(self._cal_motor_list_layout)
+        self.cal_motor_checks = []
+
+        if not self.motor_names:
+            placeholder = QLabel("Connect to a device to select motors.")
+            placeholder.setStyleSheet("color: #555555; padding: 4px;")
+            self._cal_motor_list_layout.addWidget(placeholder)
+            return
+
+        entries = []
+        i = 0
+        n = len(self.motor_names)
+        while i < n:
+            name = self.motor_names[i]
+            prefix = name[:2] if name.startswith(("L:", "R:")) else ""
+            cmd_name = name[len(prefix):]
+            dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
+
+            if cmd_name == "wrist" and i + 1 < n:
+                next_name = self.motor_names[i + 1]
+                next_cmd = next_name[len(prefix):] if next_name.startswith(prefix) and prefix else next_name
+                if next_cmd == "wrist2":
+                    next_dxl_id = self._motor_dxl_id[i + 1] if i + 1 < len(self._motor_dxl_id) else None
+                    entries.append({
+                        "name": name, "cmd_name": "wrist",
+                        "dxl_ids": [dxl_id, next_dxl_id], "label": f"{prefix}Wrist",
+                    })
+                    i += 2
+                    continue
+
+            entries.append({"name": name, "cmd_name": cmd_name, "dxl_ids": [dxl_id], "label": name})
+            i += 1
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(18)
+        grid.setVerticalSpacing(4)
+        ncols = 4
+        for idx, entry in enumerate(entries):
+            chk = QCheckBox(entry.pop("label"))
+            chk.setToolTip(
+                "Include this motor in the next calibration run.\n"
+                "Right-click for finger-group selection (e.g. all thumb motors)."
+            )
+            chk.setContextMenuPolicy(Qt.CustomContextMenu)
+            entry["chk"] = chk
+            chk.customContextMenuRequested.connect(
+                lambda pos, e=entry: self._show_finger_select_menu(e, pos)
+            )
+            self.cal_motor_checks.append(entry)
+            grid.addWidget(chk, idx // ncols, idx % ncols)
+        self._cal_motor_list_layout.addLayout(grid)
 
     def _build_joint_limits_section(self):
         row = QHBoxLayout()
@@ -3675,13 +3809,11 @@ class HandExoGUI(QWidget):
             self._motor_row = {name: row for row, name in enumerate(self.motor_names)}
 
             self._build_motor_rows()
+            self._rebuild_calibration_motor_list()
             self._sync_motor_enabled_states_after_connect()
             self._rebuild_telem_table()
             self._rebuild_teleop_table()
             self._rebuild_direct_motor_combo()
-            self.cal_motor_combo.clear()
-            self.cal_motor_combo.addItem("All Motors")
-            self.cal_motor_combo.addItems(self.motor_names)
             self._configure_lsl_outlets()
             self._last_telemetry_update_monotonic = None
             self._telemetry_rate_ema = None
@@ -4086,6 +4218,11 @@ class HandExoGUI(QWidget):
             QMessageBox.warning(self, "No Name", "Enter a profile name.")
             return
 
+        checked_dxl_ids = set()
+        for entry in self.cal_motor_checks:
+            if entry["chk"].isChecked():
+                checked_dxl_ids.update(entry["dxl_ids"])
+
         mode = self.mode_combo.currentText()
         LEFT_IDS  = range(1, 10)
         RIGHT_IDS = range(11, 20)
@@ -4100,24 +4237,28 @@ class HandExoGUI(QWidget):
                 return
             id_range = LEFT_IDS if cal_side == "left" else RIGHT_IDS
             side_dxl_ids = [i for i in self._motor_dxl_id if i in id_range]
-            selected_motor = self.cal_motor_combo.currentText()
-            if selected_motor != "All Motors":
-                idx = side_motor_names.index(selected_motor)
-                side_motor_names = [side_motor_names[idx]]
-                side_dxl_ids = [side_dxl_ids[idx]]
+            if checked_dxl_ids:
+                paired = [(n, d) for n, d in zip(side_motor_names, side_dxl_ids)
+                          if d in checked_dxl_ids]
+                if not paired:
+                    QMessageBox.warning(
+                        self, "No Motors Selected",
+                        f"The checked motors aren't on the {cal_side} side. "
+                        f"Check a {cal_side}-side motor, or clear the selection "
+                        "to calibrate the whole side."
+                    )
+                    return
+                side_motor_names, side_dxl_ids = (list(t) for t in zip(*paired))
             dlg = CalibrationDialog(self.exo, side_motor_names, name, side=cal_side,
                                     dxl_ids=side_dxl_ids, parent=self)
         else:
             side = "left" if mode == "Left Only" else "right"
             side_motor_names = list(self.motor_names)
             side_dxl_ids = list(self._motor_dxl_id)
-
-            selected_motor = self.cal_motor_combo.currentText()
-            if selected_motor != "All Motors":
-                idx = side_motor_names.index(selected_motor)
-                side_motor_names = [side_motor_names[idx]]
-                side_dxl_ids = [side_dxl_ids[idx]]
-
+            if checked_dxl_ids:
+                paired = [(n, d) for n, d in zip(side_motor_names, side_dxl_ids)
+                          if d in checked_dxl_ids]
+                side_motor_names, side_dxl_ids = (list(t) for t in zip(*paired))
             dlg = CalibrationDialog(self.exo, side_motor_names, name, side=side,
                                     dxl_ids=side_dxl_ids, parent=self)
 
