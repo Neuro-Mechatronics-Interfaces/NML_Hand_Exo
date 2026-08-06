@@ -2193,6 +2193,7 @@ class HandExoGUI(QWidget):
         dxl_ids = [self._motor_dxl_id[self._motor_idx[n]] for n in self.motor_names]
         dlg = JointLimitsDialog(self.exo, self.motor_names, dxl_ids, parent=self)
         dlg.exec_()
+        self._refresh_motor_limits_cache()
 
     def _load_stream_settings(self):
         settings = QSettings("NML", "HandExoGUI")
@@ -4209,6 +4210,27 @@ class HandExoGUI(QWidget):
             }
         self._teleop_worker.enqueue(json.dumps(frame, separators=(",", ":")))
 
+    def _refresh_motor_limits_cache(self):
+        """Re-fetch each motor's degree limits from firmware and update the
+        cached values used for percent<->degree conversion (pos_spin, Min/Go/Max).
+
+        Must be called after anything that can change a motor's limits on the
+        firmware side without a reconnect — calibration and profile-apply —
+        otherwise the GUI keeps converting against a stale range and Min/Go/Max
+        drift out of sync with the device (e.g. "Min" landing at 3% instead of 0%).
+        """
+        if not self.exo_connected:
+            return
+        try:
+            limits = self.exo.get_motor_limits('all')
+        except Exception as e:
+            self._log(f"Failed to refresh motor limits: {e}")
+            return
+        for w in self.motor_widgets:
+            lim = limits.get(w["dxl_id"])
+            if lim:
+                w["limit_min"], w["limit_max"] = lim[0], lim[1] 
+
     def _run_calibration(self):
         if not self.exo_connected:
             QMessageBox.warning(self, "Not Connected", "Connect to a device first.")
@@ -4267,6 +4289,7 @@ class HandExoGUI(QWidget):
         # call re-runs _ensure_gesture_ready() and re-enables them.
         self._gesture_ready = False
         self._refresh_profiles()
+        self._refresh_motor_limits_cache()
 
         if dlg.result() == QDialog.Accepted:
             self._log(f"Calibration profile '{name}' saved.")
@@ -4292,6 +4315,7 @@ class HandExoGUI(QWidget):
                                                    name_to_id=self._make_name_to_id())
                         self._set_active_profile(name, load_profile(name))
                     self._log(f"Applied calibration profile: {name}")
+                    self._refresh_motor_limits_cache()
                 except Exception as e:
                     QMessageBox.critical(self, "Error", f"Failed to apply profile:\n{e}")
                     self._log(f"Apply profile error: {e}")
@@ -4925,3 +4949,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
