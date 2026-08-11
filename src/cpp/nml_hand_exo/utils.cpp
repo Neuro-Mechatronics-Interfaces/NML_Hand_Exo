@@ -555,7 +555,9 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     float rpm = getArg(token, 2).toFloat();
     if (id != -1) {
       bool ok = exo.setGoalVelocity(id, rpm);
-      commandPrint(ok ? "OK: set_velocity" : "ERROR: set_velocity requires velocity mode and a valid motor ID");
+      commandPrint(
+          ok ? "OK: set_velocity" :
+               "ERROR: set_velocity requires velocity mode, a reachable ID, and a verified hardware velocity limit");
     }
 
   } else if (cmd == "get_velocity") {
@@ -1069,6 +1071,54 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       }
     }
 
+  } else if (cmd == "hold_position") {
+    // Atomic mixed-mode hold for one explicit DXL ID. Bare names are rejected
+    // because they are ambiguous in dual firmware.
+    String targetToken = getArg(token, 1);
+    String angleToken = getArg(token, 2);
+    String currentToken = getArg(token, 3);
+    targetToken.trim();
+    angleToken.trim();
+    currentToken.trim();
+    int holdId = targetToken.toInt();
+    if (holdId <= 0 || holdId > 255 ||
+        exo.getIndexById((uint8_t)holdId) == -1 || angleToken.length() == 0) {
+      commandPrint(F("ERROR: usage hold_position:<explicit ID>:<relative angle>"));
+    } else {
+      float holdAngle = angleToken.toFloat();
+      long requestedCurrent = 0;
+      if (currentToken.length() > 0) {
+        requestedCurrent = currentToken.toInt();
+        if (requestedCurrent <= 0) {
+          commandPrint(F("ERROR: hold current must be a positive mA value"));
+          return;
+        }
+        requestedCurrent = constrain(requestedCurrent, 1L, 65535L);
+      }
+      if (exo.holdRelativePosition(
+              (uint8_t)holdId, holdAngle, (uint16_t)requestedCurrent)) {
+        commandPrint("OK: hold_position id=" + String(holdId) +
+                     " angle=" + String(holdAngle, 3) +
+                     " current_mA=" +
+                     String(exo.getPositionHoldCurrent((uint8_t)holdId)));
+      } else {
+        commandPrint(F("ERROR: position hold requires global velocity/current mode"));
+      }
+    }
+
+  } else if (cmd == "release_hold") {
+    String targetToken = getArg(token, 1);
+    targetToken.trim();
+    int holdId = targetToken.toInt();
+    if (holdId <= 0 || holdId > 255 ||
+        exo.getIndexById((uint8_t)holdId) == -1) {
+      commandPrint(F("ERROR: usage release_hold:<explicit ID>"));
+    } else if (exo.releasePositionHold((uint8_t)holdId)) {
+      commandPrint("OK: release_hold id=" + String(holdId));
+    } else {
+      commandPrint(F("ERROR: release_hold failed"));
+    }
+
   } else if (cmd == "stop") {
     String target = getArg(token, 1);
     target.trim(); target.toUpperCase();
@@ -1104,8 +1154,11 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     }
     if (modeStr == "position" || modeStr == "current_position" ||
         modeStr == "velocity" || modeStr == "current") {
-      exo.setMotorControlMode(modeStr);
-      commandPrint("Motor control mode: " + modeStr + " (torque remains off until explicitly enabled)");
+      if (exo.setMotorControlMode(modeStr)) {
+        commandPrint("Motor control mode: " + modeStr + " (torque remains off until explicitly enabled)");
+      } else {
+        commandPrint(F("ERROR: motor mode change failed safety verification; torque remains off"));
+      }
     } else {
       commandPrint("Invalid motor mode. Use position, current_position, velocity, or current.");
     }
@@ -1390,6 +1443,8 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" get_goal_current      |  ID/NAME/ALL         | // Get direct current goal in mA"));
     commandPrint(F(" set_current           |  ID:SIGNED_MA        | // Direct current command (current mode)"));
     commandPrint(F(" stop                  |  ID/ALL              | // Zero direct velocity/current goals"));
+    commandPrint(F(" hold_position         |  ID:ANGLE[:MA]       | // Hold one explicit ID with optional per-hold current"));
+    commandPrint(F(" release_hold          |  ID                  | // Disable held ID and restore global mode"));
     commandPrint(F(" set_command_timeout   |  MILLISECONDS        | // Set direct-control watchdog (50-5000 ms)"));
     commandPrint(F(" get_telemetry_fast    |  ID:ID:ID.../ALL     | // Binary current/velocity/position telemetry frame"));
     commandPrint(F(" telemetry_diag        |  ID:ID:ID.../ALL     | // Text diagnostics for fast telemetry reads"));

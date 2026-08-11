@@ -27,6 +27,13 @@ The HandExo GUI is already the correct actuator boundary. `UDPCommandWorker` (`h
 
 **Implementation status (2026-07-30).** The centroid GUI now retains the legacy scalar LSL outlet and publishes a parallel `NMLIntentV1` outlet. The HandExo GUI now has an opt-in LSL intent receiver and guarded single-ID velocity mapper; it is the in-process bridge, not a third GUI and not a UDP client. No firmware change is necessary.
 
+**Continuous two-direction status (2026-08-10).** The separate `handexo
+emg-intent` workflow now publishes a continuous signed open/close value using
+rest-to-MVC shrinkage-LDA projections. Rest noise is anchored at its directional
+95th percentile and the median recorded gesture anchors MVC. This implements the
+bounded two-direction subset of the architecture below; multi-prototype mixture
+output and graded-effort validation remain future work.
+
 ## Why the signed axis is insufficient
 
 It remains a good low-burden binary open/close baseline: it is interpretable, requires only three captures, and has a useful rest gate. It cannot represent orthogonal intent, however. A partial index activation, pinch, or equal ambiguity between nearby gestures is projected onto the same line and becomes an apparently decisive open/close value. The scalar also conflates *which* intent was seen with *how strongly* it was expressed.

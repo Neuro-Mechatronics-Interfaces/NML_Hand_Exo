@@ -1,19 +1,10 @@
 # Scripts Policy
 
-This directory is intentionally limited to thin wrappers and environment bootstrap.
+This directory is intentionally limited to maintained utility scripts.
 
-## Allowed Scripts
-
-- Setup/bootstrap wrappers:
-  - `setup_neurobridge_submodule.bat`
-  - `setup_ai_submodule_env.py`
-- Runtime launch wrappers:
-  - `run_ai_agent.bat`
-  - `run_ai_agent.py`
-  - `run_ai_assist_gui.bat`
-  - `run_ai_assist_gui.py`
-  - `run_exo_visualizer.bat`
-  - `run_exo_visualizer.py`
+The former NeuroBridge setup and launch wrappers have been removed. Application
+entry points are defined in `pyproject.toml` and installed into the virtual
+environment.
 
 ## Not Allowed Here
 

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import sys
 import time
+import json
+import os
+import tempfile
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -70,6 +73,18 @@ def _compute_roll_from_mag_deg(mag_xyz: np.ndarray) -> float:
     return float(np.degrees(np.arctan2(my, mz)))
 
 
+def _compute_pitch_deg(accel_xyz: np.ndarray) -> float:
+    """Gravity-referenced pitch proxy from the accelerometer frame.
+
+    This follows the same sensor-axis convention as ``_compute_roll_deg``:
+    pitch is the tilt of the forearm away from the horizontal reference plane.
+    It is exposed for diagnostics now; roll remains the fitted conditioning
+    variable until pitch-tagged captures are available.
+    """
+    ax, ay, az = (float(v) for v in np.asarray(accel_xyz, dtype=float)[:3])
+    return float(np.degrees(np.arctan2(-ax, np.hypot(ay, az))))
+
+
 def _blend_angles_deg(a_deg: float, b_deg: float, w_b: float) -> float:
     """Circular blend of two angles in degrees."""
     w_b = float(np.clip(w_b, 0.0, 1.0))
@@ -94,6 +109,7 @@ CLASS_LABELS = {
 }
 PLOT_TICK_SEC = 0.05
 PLOT_HISTORY_LIMIT = 200
+SESSION_SCHEMA_VERSION = 2
 
 
 def _common_mode_remove(x: np.ndarray) -> np.ndarray:
@@ -300,27 +316,98 @@ class OrientationGatedDecoder:
     angle from the IMU.  After fitting, one decoder is trained per 5-degree bin
     that has enough data.  At runtime the nearest populated bin is selected.
     A global fallback decoder (trained on all samples) is always available.
+    Runtime rest compensation interpolates between neighboring circular bins;
+    the decoder selection itself still uses the nearest validated bin.
     """
 
     bin_size_deg: float = BIN_SIZE_DEG
     global_decoder: CentroidDirectionDecoder | None = None
     bin_decoders: dict[int, CentroidDirectionDecoder] = field(default_factory=dict)
     bin_counts: dict[int, dict[str, int]] = field(default_factory=dict)
+    # Rest reference and variability in feature space, conditioned on forearm
+    # orientation. Learned from rest captures only and applied before decode.
+    global_rest_baseline: np.ndarray | None = None
+    rest_baselines: dict[int, np.ndarray] = field(default_factory=dict)
+    global_rest_scale: np.ndarray | None = None
+    rest_scales: dict[int, np.ndarray] = field(default_factory=dict)
+    fit_samples: dict[str, list[np.ndarray]] = field(default_factory=dict)
     n_fitted_bins: int = 0
+    # Continuous circular rest model.  This is deliberately separate from
+    # the legacy per-bin decoders so the existing fallback remains available.
+    use_continuous_orientation: bool = True
+    rest_orientation_coef: np.ndarray | None = None
 
     def fit(
         self,
         class_samples: dict[str, list[np.ndarray]],
         class_orientations: dict[str, list[float | None]],
+        use_continuous_orientation: bool = True,
     ) -> None:
-        # Always fit the global decoder first (orientation-agnostic fallback)
+        self.use_continuous_orientation = bool(use_continuous_orientation)
+        # Learn a posture-conditioned rest reference before fitting any decoder.
+        # This prevents gravity/arm-support effort from becoming a gesture solely
+        # because the forearm moved to a new orientation.
+        rest_samples = [np.asarray(x, dtype=np.float64) for x in class_samples["rest"]]
+        self.global_rest_baseline = np.mean(np.vstack(rest_samples), axis=0)
+        global_rest_arr = np.vstack(rest_samples)
+        self.global_rest_scale = np.maximum(np.std(global_rest_arr, axis=0), 1e-6)
+        self.rest_baselines = {}
+        self.rest_scales = {}
+
+        # Fit a smooth circular function of roll for the rest feature vector.
+        # The intercept is the orientation-independent component; sine/cosine
+        # terms avoid the discontinuity at +/-180 degrees.
+        self.rest_orientation_coef = None
+        orient_rows = [
+            (np.asarray(feat, dtype=np.float64), angle)
+            for feat, angle in zip(class_samples["rest"], class_orientations["rest"])
+            if angle is not None
+        ]
+        if self.use_continuous_orientation and len(orient_rows) >= 6:
+            design = np.asarray([
+                [1.0, np.sin(np.deg2rad(float(angle))), np.cos(np.deg2rad(float(angle)))]
+                for _, angle in orient_rows
+            ])
+            values = np.vstack([feat for feat, _ in orient_rows])
+            ridge = 1e-3
+            regularizer = np.diag([0.0, ridge, ridge])
+            self.rest_orientation_coef = np.linalg.solve(
+                design.T @ design + regularizer, design.T @ values
+            )
+
+        rest_by_bin: dict[int, list[np.ndarray]] = {}
+        for feat, angle in zip(class_samples["rest"], class_orientations["rest"]):
+            if angle is not None:
+                rest_by_bin.setdefault(_angle_to_bin(angle), []).append(
+                    np.asarray(feat, dtype=np.float64)
+                )
+        for b, samples in rest_by_bin.items():
+            if len(samples) >= 3:
+                rest_arr = np.vstack(samples)
+                self.rest_baselines[b] = np.mean(rest_arr, axis=0)
+                self.rest_scales[b] = np.maximum(
+                    np.std(rest_arr, axis=0), 0.25 * self.global_rest_scale
+                )
+
+        def corrected(feat: np.ndarray, angle: float | None) -> np.ndarray:
+            return self.correct_feature(feat, angle)
+
+        corrected_samples = {name: [] for name in CLASS_ORDER}
+        for name in CLASS_ORDER:
+            corrected_samples[name] = [
+                corrected(feat, angle)
+                for feat, angle in zip(class_samples[name], class_orientations[name])
+            ]
+        self.fit_samples = corrected_samples
+
+        # Always fit the global decoder first (orientation-agnostic fallback).
         self.global_decoder = CentroidDirectionDecoder()
-        self.global_decoder.fit(class_samples)
+        self.global_decoder.fit(corrected_samples)
 
         # Group samples by orientation bin
         bins_data: dict[int, dict[str, list[np.ndarray]]] = {}
         for name in CLASS_ORDER:
-            for feat, angle in zip(class_samples[name], class_orientations[name]):
+            for feat, angle in zip(corrected_samples[name], class_orientations[name]):
                 if angle is None:
                     continue
                 b = _angle_to_bin(angle)
@@ -342,6 +429,86 @@ class OrientationGatedDecoder:
                     pass
         self.n_fitted_bins = len(self.bin_decoders)
 
+    def correct_feature(self, feature: np.ndarray, angle_deg: float | None) -> np.ndarray:
+        """Return a posture-standardized residual feature."""
+        residual = np.asarray(feature, dtype=np.float64) - self._interpolated_rest_baseline(angle_deg)
+        floor = (
+            0.25 * self.global_rest_scale
+            if self.global_rest_scale is not None
+            else 1e-6
+        )
+        return residual / np.maximum(self._interpolated_rest_scale(angle_deg), floor)
+
+    def _interpolated_rest_baseline(self, angle_deg: float | None) -> np.ndarray:
+        """Blend neighboring circular orientation baselines instead of switching bins."""
+        if self.global_rest_baseline is None:
+            return np.zeros(1, dtype=np.float64)
+        if self.use_continuous_orientation and self.rest_orientation_coef is not None and angle_deg is not None:
+            basis = np.asarray(
+                [1.0, np.sin(np.deg2rad(float(angle_deg))), np.cos(np.deg2rad(float(angle_deg)))]
+            )
+            return basis @ self.rest_orientation_coef
+        if angle_deg is None or not self.rest_baselines:
+            return self.global_rest_baseline
+
+        target = (float(angle_deg) % 360.0) / BIN_SIZE_DEG
+        available = sorted(self.rest_baselines)
+        if len(available) == 1:
+            return self.rest_baselines[available[0]]
+
+        lower = max((b for b in available if b <= target), default=available[-1])
+        upper = min((b for b in available if b >= target), default=available[0])
+        if lower == upper:
+            return self.rest_baselines[lower]
+        upper_unwrapped = float(upper)
+        target_unwrapped = target
+        if upper_unwrapped <= lower:
+            upper_unwrapped += N_BINS
+        if target_unwrapped < lower:
+            target_unwrapped += N_BINS
+        weight = (target_unwrapped - lower) / max(upper_unwrapped - lower, 1e-6)
+        return (1.0 - weight) * self.rest_baselines[lower] + weight * self.rest_baselines[upper]
+
+    def _interpolated_rest_scale(self, angle_deg: float | None) -> np.ndarray:
+        if self.global_rest_scale is None:
+            return np.ones(1, dtype=np.float64)
+        if angle_deg is None or not self.rest_scales:
+            return self.global_rest_scale
+        target = (float(angle_deg) % 360.0) / BIN_SIZE_DEG
+        available = sorted(self.rest_scales)
+        if len(available) == 1:
+            return self.rest_scales[available[0]]
+        lower = max((b for b in available if b <= target), default=available[-1])
+        upper = min((b for b in available if b >= target), default=available[0])
+        if lower == upper:
+            return self.rest_scales[lower]
+        upper_unwrapped = float(upper)
+        target_unwrapped = target
+        if upper_unwrapped <= lower:
+            upper_unwrapped += N_BINS
+        if target_unwrapped < lower:
+            target_unwrapped += N_BINS
+        weight = (target_unwrapped - lower) / max(upper_unwrapped - lower, 1e-6)
+        return np.maximum(
+            (1.0 - weight) * self.rest_scales[lower]
+            + weight * self.rest_scales[upper],
+            1e-6,
+        )
+
+    def adapt_rest_baseline(
+        self, feature: np.ndarray, angle_deg: float | None, alpha: float
+    ) -> None:
+        """Slowly update the rest reference; caller must enforce a verified rest gate."""
+        x = np.asarray(feature, dtype=np.float64)
+        if self.global_rest_baseline is None:
+            self.global_rest_baseline = x.copy()
+        else:
+            self.global_rest_baseline = (1.0 - alpha) * self.global_rest_baseline + alpha * x
+        if angle_deg is not None:
+            b = _angle_to_bin(angle_deg)
+            prior = self.rest_baselines.get(b, self.global_rest_baseline)
+            self.rest_baselines[b] = (1.0 - alpha) * prior + alpha * x
+
     def get_decoder(self, angle_deg: float | None) -> CentroidDirectionDecoder:
         """Return the best decoder for the current orientation angle."""
         if not self.bin_decoders or angle_deg is None:
@@ -361,14 +528,14 @@ class OrientationGatedDecoder:
             return "global (no IMU)"
         target = _angle_to_bin(angle_deg)
         if target in self.bin_decoders:
-            return f"bin {target} ({_bin_center_deg(target):.0f}Â°)"
+            return f"bin {target} ({_bin_center_deg(target):.0f} deg)"
         if not self.bin_decoders:
             return "global (no bins)"
         best = min(
             self.bin_decoders.keys(),
             key=lambda b: min(abs(b - target), N_BINS - abs(b - target)),
         )
-        return f"nearest bin {best} ({_bin_center_deg(best):.0f}Â°)"
+        return f"nearest bin {best} ({_bin_center_deg(best):.0f} deg)"
 
 
 class DecoderFitWorker(QThread):
@@ -384,6 +551,7 @@ class DecoderFitWorker(QThread):
         class_orientations: dict[str, list[float | None]],
         use_riemann: bool,
         max_cov_per_class: int,
+        use_continuous_orientation: bool = True,
     ):
         super().__init__()
         self._class_samples = class_samples
@@ -391,6 +559,7 @@ class DecoderFitWorker(QThread):
         self._class_orientations = class_orientations
         self._use_riemann = use_riemann
         self._max_cov_per_class = max(0, int(max_cov_per_class))
+        self._use_continuous_orientation = bool(use_continuous_orientation)
 
     @staticmethod
     def _subsample_covs(covs: list[np.ndarray], limit: int) -> list[np.ndarray]:
@@ -439,7 +608,11 @@ class DecoderFitWorker(QThread):
                 orientations = self._class_orientations
 
             gated = OrientationGatedDecoder()
-            gated.fit(samples, orientations)
+            gated.fit(
+                samples,
+                orientations,
+                use_continuous_orientation=self._use_continuous_orientation,
+            )
             self.fit_ok.emit(
                 {
                     "gated": gated,
@@ -467,6 +640,7 @@ class EmgCentroidDecoderGUI(QWidget):
         self._imu_buffer = ChunkBuffer(500)
         self._imu_meta: dict[str, object] = {}
         self._current_roll_deg: float | None = None  # live forearm roll angle
+        self._current_pitch_deg: float | None = None  # diagnostic until pitch-tagged fitting is enabled
 
         # Captured class data (feature vectors), raw covariances, per-sample orientation,
         # and optional per-sample 9-axis IMU vectors (ax,ay,az,gx,gy,gz,mx,my,mz).
@@ -516,10 +690,10 @@ class EmgCentroidDecoderGUI(QWidget):
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(20, 10, 20, 10)
         header_layout.setSpacing(2)
-        title = QLabel("NML  Â·  EMG Intent Decoder")
+        title = QLabel("NML - EMG Intent Decoder")
         title.setStyleSheet("font-size: 20px; font-weight: bold; color: #e0e0e0; background: transparent; border: none;")
         note = QLabel(
-            "Centroid-direction decoder  Â·  Common-mode-removed RMS  Â·  Orientation-gated  Â·  LSL publisher"
+            "Centroid decoder  |  common-mode removed RMS  |  orientation aware  |  LSL publisher"
         )
         note.setStyleSheet("color: #555555; font-size: 11px; background: transparent; border: none;")
         header_layout.addWidget(title)
@@ -601,7 +775,7 @@ class EmgCentroidDecoderGUI(QWidget):
         parent.addWidget(box)
 
     def _build_imu_box(self, parent: QVBoxLayout):
-        box = QGroupBox("IMU â€” forearm orientation (optional, for orientation-gated decoder)")
+        box = QGroupBox("IMU - Forearm orientation (optional)")
         grid = QGridLayout(box)
 
         self.imu_stream_type_combo = QComboBox()
@@ -644,7 +818,7 @@ class EmgCentroidDecoderGUI(QWidget):
             "Mag only: useful for testing full 9-axis streams.\n"
             "Note: all mapped 9-axis IMU values are saved per captured sample."
         )
-        self.imu_angle_label = QLabel("Roll: â€” Â°  |  Bin: â€”  |  Source: â€”")
+        self.imu_angle_label = QLabel("Roll: -- deg  |  Pitch: -- deg  |  Bin: --  |  Source: --")
         self.imu_angle_label.setStyleSheet("color: #f1c40f; font-weight: bold;")
 
         grid.addWidget(QLabel("Stream type"), 0, 0)
@@ -670,6 +844,9 @@ class EmgCentroidDecoderGUI(QWidget):
     def _build_capture_box(self, parent: QVBoxLayout):
         box = QGroupBox("Class capture and decoder fit")
         grid = QGridLayout(box)
+        grid.setContentsMargins(16, 18, 16, 16)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(9)
 
         self.channels_edit = QLineEdit("all")
         self.channels_edit.setPlaceholderText("all or 0,1,2")
@@ -684,7 +861,7 @@ class EmgCentroidDecoderGUI(QWidget):
         self.capture_sec_spin.setValue(10.0)
         self.capture_sec_spin.setToolTip(
             "How long to record each class capture.\n"
-            "Use longer (30â€“60 s) sweeping captures when IMU orientation gating is enabled\n"
+            "Use longer (30-60 s) sweeping captures when IMU orientation support is enabled\n"
             "so you cover many wrist orientations per class."
         )
         self.preprocessing_combo = QComboBox()
@@ -696,13 +873,13 @@ class EmgCentroidDecoderGUI(QWidget):
         self.feature_mode_combo = QComboBox()
         self.feature_mode_combo.addItems([
             "RMS + common-mode removal",
-            "Riemannian (covariance â†’ tangent space)",
+            "Riemannian (covariance -> tangent space)",
         ])
         self.feature_mode_combo.setToolTip(
-            "RMS+CMR: fast, interpretable â€” good starting point.\n"
+            "RMS+CMR: fast and interpretable - good starting point.\n"
             "Riemannian: covariance matrix projected to tangent space (36D for 8 ch).\n"
             "  More robust to electrode shift, fatigue, and wrist orientation.\n"
-            "  Both covariance and RMS are stored during capture â€” you can switch and re-fit."
+            "  Both covariance and RMS are stored during capture - you can switch and re-fit."
         )
         self.capture_append_chk = QCheckBox("Append captures")
         self.capture_append_chk.setChecked(True)
@@ -720,20 +897,25 @@ class EmgCentroidDecoderGUI(QWidget):
         )
 
         self.capture_rest_btn = QPushButton("Capture Rest")
+        self.capture_rest_btn.setMinimumHeight(36)
         self.capture_rest_btn.clicked.connect(lambda: self._start_capture("rest"))
         self.capture_flex_btn = QPushButton("Capture Close")
+        self.capture_flex_btn.setMinimumHeight(36)
         self.capture_flex_btn.clicked.connect(lambda: self._start_capture("flex"))
         self.capture_extend_btn = QPushButton("Capture Open")
+        self.capture_extend_btn.setMinimumHeight(36)
         self.capture_extend_btn.clicked.connect(lambda: self._start_capture("extend"))
         self.clear_btn = QPushButton("Clear Classes")
+        self.clear_btn.setMinimumHeight(36)
         self.clear_btn.clicked.connect(self._clear_classes)
         self.fit_btn = QPushButton("Fit Centroid Decoder")
+        self.fit_btn.setMinimumHeight(36)
         self.fit_btn.setProperty("accent", True)
         self.fit_btn.clicked.connect(self._fit_decoder)
-        self.save_btn = QPushButton("Save Sessionâ€¦")
+        self.save_btn = QPushButton("Save session...")
         self.save_btn.clicked.connect(self._save_session)
         self.save_btn.setToolTip("Save captured class data and fitted decoder to a .npz file")
-        self.load_btn = QPushButton("Load Sessionâ€¦")
+        self.load_btn = QPushButton("Load session...")
         self.load_btn.clicked.connect(self._load_session)
         self.load_btn.setToolTip("Load a previously saved .npz session (restores samples and decoder)")
 
@@ -754,33 +936,52 @@ class EmgCentroidDecoderGUI(QWidget):
         self.filter_label = QLabel("Adaptive bandpass: waiting for stream")
         self.filter_label.setStyleSheet("color: #aaaaaa;")
 
-        grid.addWidget(QLabel("Channels"), 0, 0)
-        grid.addWidget(self.channels_edit, 0, 1)
-        grid.addWidget(QLabel("Window (s)"), 0, 2)
-        grid.addWidget(self.window_spin, 0, 3)
-        grid.addWidget(QLabel("Capture (s)"), 1, 0)
-        grid.addWidget(self.capture_sec_spin, 1, 1)
-        grid.addWidget(QLabel("Preprocessing"), 1, 2)
-        grid.addWidget(self.preprocessing_combo, 1, 3)
-        grid.addWidget(QLabel("Feature mode"), 2, 0)
-        grid.addWidget(self.feature_mode_combo, 2, 1, 1, 3)
-        grid.addWidget(self.capture_append_chk, 3, 0, 1, 2)
-        grid.addWidget(QLabel("Riemannian max cov/class"), 3, 2)
-        grid.addWidget(self.riemann_max_cov_spin, 3, 3)
-        grid.addWidget(self.capture_rest_btn, 4, 0)
-        grid.addWidget(self.capture_flex_btn, 4, 1)
-        grid.addWidget(self.capture_extend_btn, 4, 2)
-        grid.addWidget(self.fit_btn, 4, 3)
-        grid.addWidget(self.clear_btn, 5, 0)
-        grid.addWidget(self.save_btn, 5, 1)
-        grid.addWidget(self.load_btn, 5, 2)
-        grid.addWidget(self.capture_status_label, 5, 3)
-        grid.addWidget(self.class_count_label, 6, 0, 1, 4)
-        grid.addWidget(self.orientation_coverage_label, 7, 0, 1, 4)
-        grid.addWidget(self.decoder_status_label, 8, 0, 1, 4)
-        grid.addWidget(self.fit_progress_label, 9, 0, 1, 4)
-        grid.addWidget(self.filter_label, 10, 0, 1, 4)
+        self.capture_advanced_toggle = QPushButton("Show advanced capture settings")
+        self.capture_advanced_toggle.setCheckable(True)
+        self.capture_advanced_toggle.setChecked(False)
+        self.capture_advanced_toggle.toggled.connect(self._toggle_capture_advanced)
+        self._capture_advanced_widgets = []
+        self.continuous_orientation_chk = QCheckBox("Use continuous orientation adapter")
+        self.continuous_orientation_chk.setChecked(True)
+        self.continuous_orientation_chk.setToolTip(
+            "Fit a smooth sine/cosine rest baseline from IMU roll instead of relying only on discrete orientation bins."
+        )
+
+        grid.addWidget(self.capture_advanced_toggle, 0, 0, 1, 4)
+        advanced_rows = [
+            (QLabel("Channels"), self.channels_edit, QLabel("Window (s)"), self.window_spin),
+            (QLabel("Capture (s)"), self.capture_sec_spin, QLabel("Preprocessing"), self.preprocessing_combo),
+            (QLabel("Feature mode"), self.feature_mode_combo, None, None),
+            (self.capture_append_chk, None, QLabel("Riemannian max cov/class"), self.riemann_max_cov_spin),
+            (self.continuous_orientation_chk, None, None, None),
+        ]
+        for row, items in enumerate(advanced_rows, start=1):
+            for col, widget in enumerate(items):
+                if widget is not None:
+                    span = 3 if row == 3 and col == 1 else 1
+                    grid.addWidget(widget, row, col, 1, span)
+                    self._capture_advanced_widgets.append(widget)
+        grid.addWidget(self.capture_rest_btn, 5, 0)
+        grid.addWidget(self.capture_flex_btn, 5, 1)
+        grid.addWidget(self.capture_extend_btn, 5, 2)
+        grid.addWidget(self.fit_btn, 5, 3)
+        grid.addWidget(self.clear_btn, 6, 0)
+        grid.addWidget(self.save_btn, 6, 1)
+        grid.addWidget(self.load_btn, 6, 2)
+        grid.addWidget(self.capture_status_label, 6, 3)
+        grid.addWidget(self.class_count_label, 7, 0, 1, 4)
+        grid.addWidget(self.orientation_coverage_label, 8, 0, 1, 4)
+        grid.addWidget(self.decoder_status_label, 9, 0, 1, 4)
+        grid.addWidget(self.fit_progress_label, 10, 0, 1, 4)
+        grid.addWidget(self.filter_label, 11, 0, 1, 4)
         parent.addWidget(box)
+
+    def _toggle_capture_advanced(self, visible: bool):
+        for widget in self._capture_advanced_widgets:
+            widget.setVisible(visible)
+        self.capture_advanced_toggle.setText(
+            "Hide advanced capture settings" if visible else "Show advanced capture settings"
+        )
 
     def _build_visualization_box(self, parent: QVBoxLayout):
         box = QGroupBox("Intent geometry (rest / close / open)")
@@ -855,7 +1056,7 @@ class EmgCentroidDecoderGUI(QWidget):
         cov_col = QVBoxLayout()
         self.coverage_plot = pg.PlotWidget()
         self.coverage_plot.showGrid(x=True, y=True, alpha=0.25)
-        self.coverage_plot.setLabel("bottom", "Roll angle (Â°)")
+        self.coverage_plot.setLabel("bottom", "Roll angle (deg)")
         self.coverage_plot.setLabel("left", "Samples")
         self.coverage_plot.setMinimumHeight(150)
         self.coverage_plot.setXRange(-185, 185)
@@ -890,7 +1091,7 @@ class EmgCentroidDecoderGUI(QWidget):
         # 1-D strip / number-line projection plot
         self.strip_plot = pg.PlotWidget()
         self.strip_plot.showGrid(x=True, y=False, alpha=0.25)
-        self.strip_plot.setLabel("bottom", "Decoder axis (âˆ’open  â€¦  +close)")
+        self.strip_plot.setLabel("bottom", "Decoder axis (-open ... +close)")
         self.strip_plot.setXRange(-1.25, 1.25)
         self.strip_plot.setYRange(-1.75, 1.75)
         self.strip_plot.setMinimumHeight(220)
@@ -950,8 +1151,8 @@ class EmgCentroidDecoderGUI(QWidget):
         self.gain_spin.setSingleStep(0.001)
         self.gain_spin.setValue(1.0)
         self.gain_spin.setToolTip(
-            "Multiplies the final decoder output before clipping to Â±1.\n"
-            "< 1 = less sensitive (more effort to reach Â±1)\n"
+            "Multiplies the final decoder output before clipping to +/-1.\n"
+            "< 1 = less sensitive (more effort to reach +/-1)\n"
             "> 1 = more sensitive (small movements fill the range)"
         )
 
@@ -973,9 +1174,10 @@ class EmgCentroidDecoderGUI(QWidget):
         self.adaptive_rest_chk = QCheckBox("Adaptive rest update")
         self.adaptive_rest_chk.setChecked(False)
         self.adaptive_rest_chk.setToolTip(
-            "When enabled, the rest centroid slowly follows the current EMG signal\n"
-            "while output is near zero (EMA update).  Adapts to electrode drift and\n"
-            "forearm fatigue without re-capturing classes."
+            "When enabled, the posture-conditioned rest reference slowly follows the\n"
+            "current EMG signal only while output is near zero. Use only during verified\n"
+            "rest with the actuator output stopped; it adapts drift and fatigue without\n"
+            "re-capturing classes."
         )
         self.adaptive_rest_tau_spin = QDoubleSpinBox()
         self.adaptive_rest_tau_spin.setRange(5.0, 300.0)
@@ -984,7 +1186,7 @@ class EmgCentroidDecoderGUI(QWidget):
         self.adaptive_rest_tau_spin.setSuffix(" s")
         self.adaptive_rest_tau_spin.setToolTip(
             "Time constant (Ï„) for the exponential moving average update of the rest centroid.\n"
-            "Larger Ï„ â†’ slower adaptation.  Default 60 s gives a ~1 min settling time."
+            "Larger tau -> slower adaptation. Default 60 s gives a ~1 min settling time."
         )
 
         tuning_grid.addWidget(QLabel("Output gain"), 0, 0)
@@ -997,8 +1199,8 @@ class EmgCentroidDecoderGUI(QWidget):
         tuning_grid.addWidget(self.adaptive_rest_tau_spin, 1, 3)
         tuning_grid.addWidget(
             QLabel(
-                "Gain < 1 â†’ less sensitive   |   Gain > 1 â†’ more sensitive   |   "
-                "Gate scale > 1 â†’ larger dead zone at rest"
+                "Gain < 1 -> less sensitive   |   Gain > 1 -> more sensitive   |   "
+                "Gate scale > 1 -> larger dead zone at rest"
             ),
             2, 0, 1, 5,
         )
@@ -1011,6 +1213,9 @@ class EmgCentroidDecoderGUI(QWidget):
         self.decoder_value_label = QLabel("Live decoder: -")
         self.decoder_value_label.setStyleSheet("color: #aaaaaa; font-weight: bold;")
         layout.addWidget(self.decoder_value_label)
+        self.posture_comp_label = QLabel("Posture compensation: waiting for decoder")
+        self.posture_comp_label.setStyleSheet("color: #e0e0e0; font-size: 11px;")
+        layout.addWidget(self.posture_comp_label)
         parent.addWidget(box)
 
     def _build_user_intent_box(self, parent: QVBoxLayout):
@@ -1040,7 +1245,7 @@ class EmgCentroidDecoderGUI(QWidget):
         sgrid.addWidget(self.intent_stream_status_label, 1, 3)
         sgrid.addWidget(
             QLabel(
-                "Legacy UserIntent: 1 channel Â· float32. Also publishes NMLIntentV1 "
+                "Legacy UserIntent: 1 channel | float32. Also publishes NMLIntentV1 "
                 "[signed, effort, confidence, state] for guarded HandExo GUI teleop."
             ),
             2, 0, 1, 4
@@ -1052,7 +1257,7 @@ class EmgCentroidDecoderGUI(QWidget):
         gauge_layout = QVBoxLayout(gauge_box)
 
         # Big numeric readout
-        self.intent_big_label = QLabel("â€”")
+        self.intent_big_label = QLabel("--")
         self.intent_big_label.setAlignment(Qt.AlignCenter)
         self.intent_big_label.setStyleSheet(
             "font-size: 72px; font-weight: bold; color: #e0e0e0; "
@@ -1069,7 +1274,7 @@ class EmgCentroidDecoderGUI(QWidget):
         self.intent_gauge.setYRange(0, 1)
         self.intent_gauge.hideAxis("left")
         ax = self.intent_gauge.getAxis("bottom")
-        ax.setTicks([[(-1.0, "âˆ’1  open"), (0.0, "  0  rest  "), (1.0, "close  +1")]])
+        ax.setTicks([[(-1.0, "-1  open"), (0.0, "  0  rest  "), (1.0, "close  +1")]])
         ax.setStyle(tickFont=pg.Qt.QtGui.QFont("Segoe UI", 9))
 
         # track background
@@ -1101,7 +1306,7 @@ class EmgCentroidDecoderGUI(QWidget):
         gauge_layout.addWidget(self.intent_gauge)
 
         # Stats row
-        self.intent_stats_label = QLabel("Samples published: 0  |  Rate: â€” Hz  |  Elapsed: â€”")
+        self.intent_stats_label = QLabel("Samples published: 0  |  Rate: -- Hz  |  Elapsed: --")
         self.intent_stats_label.setAlignment(Qt.AlignCenter)
         self.intent_stats_label.setStyleSheet("color: #555555; font-size: 11px;")
         gauge_layout.addWidget(self.intent_stats_label)
@@ -1236,7 +1441,8 @@ class EmgCentroidDecoderGUI(QWidget):
         self.imu_status_label.setText("IMU disconnected")
         self.imu_status_label.setStyleSheet("color: #888888;")
         self._current_roll_deg = None
-        self.imu_angle_label.setText("Roll: â€” Â°  |  Bin: â€”  |  Source: â€”")
+        self._current_pitch_deg = None
+        self.imu_angle_label.setText("Roll: -- deg  |  Pitch: -- deg  |  Bin: --  |  Source: --")
         self.orientation_coverage_label.setText("Orientation bins: IMU disconnected")
 
     def _on_status(self, message: str, color: str):
@@ -1270,7 +1476,7 @@ class EmgCentroidDecoderGUI(QWidget):
         self._log_line(
             f"IMU stream ready: {self._imu_meta.get('name')} | {self._imu_meta.get('channel_count')} channels | {fs} Hz"
         )
-        self.orientation_coverage_label.setText("Orientation bins: IMU connected â€” start capturing")
+        self.orientation_coverage_label.setText("Orientation bins: IMU connected - start capturing")
 
     def _adaptive_bandpass_label(self, fs: int) -> tuple[float, float]:
         return _adaptive_bandpass_limits(fs)
@@ -1365,9 +1571,19 @@ class EmgCentroidDecoderGUI(QWidget):
         return snapshot
 
     def _start_capture(self, state: str):
-        if self._buffer.snapshot() is None:
+        snapshot = self._buffer.snapshot()
+        if snapshot is None or snapshot.shape[1] < 8:
             QMessageBox.information(self, "No data", "Connect an LSL stream before capturing a class.")
             return
+        if self._capture_state is not None:
+            QMessageBox.information(
+                self,
+                "Capture already running",
+                "Stop or wait for the current capture to finish before starting another class.",
+            )
+            return
+        if self._imu_worker is None:
+            self._log_line("Capture warning: IMU is not connected; posture compensation will use the global baseline.")
         append_mode = bool(self.capture_append_chk.isChecked())
         if not append_mode:
             self._class_samples[state] = []
@@ -1382,7 +1598,10 @@ class EmgCentroidDecoderGUI(QWidget):
         mode_note = "append" if append_mode else "replace"
         intent = CLASS_LABELS.get(state, state)
         self.capture_status_label.setText(f"Capture: recording {intent} [{mode_note}]{imu_note}")
-        self._log_line(f"Capture started: {intent} [{mode_note}]{imu_note}")
+        self._log_line(
+            f"Capture started: {intent} [{mode_note}]{imu_note} | "
+            f"window={self.window_spin.value():.2f}s | preprocessing={self.preprocessing_combo.currentText()}"
+        )
 
     def _save_session(self):
         """Save class samples, orientations, and fitted decoder to a .npz file."""
@@ -1395,6 +1614,20 @@ class EmgCentroidDecoderGUI(QWidget):
             path += ".npz"
 
         arrays: dict[str, object] = {}
+        metadata = {
+            "schema_version": SESSION_SCHEMA_VERSION,
+            "created_unix": time.time(),
+            "emg_stream": dict(self._stream_meta),
+            "imu_stream": dict(self._imu_meta),
+            "channels": self.channels_edit.text().strip(),
+            "window_seconds": float(self.window_spin.value()),
+            "preprocessing": self.preprocessing_combo.currentText(),
+            "feature_mode": self.feature_mode_combo.currentText(),
+            "orientation_bin_size_deg": BIN_SIZE_DEG,
+            "continuous_orientation_adapter": bool(self.continuous_orientation_chk.isChecked()),
+            "class_order": list(CLASS_ORDER),
+        }
+        arrays["session_metadata_json"] = np.array(json.dumps(metadata, sort_keys=True))
 
         # Class samples and orientation tags
         for name in CLASS_ORDER:
@@ -1430,6 +1663,16 @@ class EmgCentroidDecoderGUI(QWidget):
                     arrays["dec_pca_mean"] = dec.pca_mean
                 if dec.pca_basis is not None:
                     arrays["dec_pca_basis"] = dec.pca_basis
+            if self._gated_decoder.global_rest_baseline is not None:
+                arrays["posture_global_rest_baseline"] = self._gated_decoder.global_rest_baseline
+            if self._gated_decoder.global_rest_scale is not None:
+                arrays["posture_global_rest_scale"] = self._gated_decoder.global_rest_scale
+            if self._gated_decoder.rest_orientation_coef is not None:
+                arrays["posture_rest_orientation_coef"] = self._gated_decoder.rest_orientation_coef
+            for b, baseline in self._gated_decoder.rest_baselines.items():
+                arrays[f"posture_rest_{b}"] = baseline
+            for b, scale in self._gated_decoder.rest_scales.items():
+                arrays[f"posture_scale_{b}"] = scale
 
             # Per-bin decoders: save each bin's centroids and direction
             bin_ids = np.array(list(self._gated_decoder.bin_decoders.keys()), dtype=np.int32)
@@ -1446,9 +1689,21 @@ class EmgCentroidDecoderGUI(QWidget):
         if self._riemann_extractor is not None and self._riemann_extractor.ref_mean is not None:
             arrays["dec_riemann_ref_mean"] = self._riemann_extractor.ref_mean
 
+        temp_path = None
         try:
-            np.savez_compressed(path, **arrays)
+            directory = os.path.dirname(os.path.abspath(path)) or "."
+            fd, temp_path = tempfile.mkstemp(
+                prefix=f".{os.path.basename(path)}.", suffix=".tmp.npz", dir=directory
+            )
+            os.close(fd)
+            np.savez_compressed(temp_path, **arrays)
+            os.replace(temp_path, path)
         except Exception as exc:
+            if temp_path:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
             QMessageBox.warning(self, "Save failed", str(exc))
             return
 
@@ -1459,7 +1714,7 @@ class EmgCentroidDecoderGUI(QWidget):
         }
         n_bins = self._gated_decoder.n_fitted_bins if self._gated_decoder else 0
         self._log_line(
-            f"Session saved â†’ {path} | "
+            f"Session saved -> {path} | "
             + " ".join(f"{CLASS_LABELS.get(n, n)}={n_samples[n]}" for n in CLASS_ORDER)
             + " | imu9 "
             + " ".join(f"{CLASS_LABELS.get(n, n)}={n_imu9[n]}" for n in CLASS_ORDER)
@@ -1479,6 +1734,26 @@ class EmgCentroidDecoderGUI(QWidget):
         except Exception as exc:
             QMessageBox.warning(self, "Load failed", str(exc))
             return
+
+        metadata: dict[str, object] = {}
+        if "session_metadata_json" in data:
+            try:
+                metadata = json.loads(str(data["session_metadata_json"].item()))
+                schema = int(metadata.get("schema_version", 1))
+                if schema > SESSION_SCHEMA_VERSION:
+                    QMessageBox.warning(
+                        self,
+                        "Unsupported session",
+                        f"Session schema {schema} is newer than this decoder (schema {SESSION_SCHEMA_VERSION}).",
+                    )
+                    return
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                QMessageBox.warning(self, "Invalid session metadata", str(exc))
+                return
+        self._log_line(
+            f"Session loaded: schema={metadata.get('schema_version', 1)} | "
+            f"feature={metadata.get('feature_mode', 'legacy/unknown')}"
+        )
 
         # Restore class samples
         new_samples: dict[str, list[np.ndarray]] = {name: [] for name in CLASS_ORDER}
@@ -1507,6 +1782,8 @@ class EmgCentroidDecoderGUI(QWidget):
         self._class_samples = new_samples
         self._class_orientations = new_orientations
         self._class_imu9 = new_imu9
+        if "continuous_orientation_adapter" in metadata:
+            self.continuous_orientation_chk.setChecked(bool(metadata["continuous_orientation_adapter"]))
         for name in CLASS_ORDER:
             n_s = len(self._class_samples[name])
             n_i = len(self._class_imu9[name])
@@ -1547,6 +1824,37 @@ class EmgCentroidDecoderGUI(QWidget):
                         )
 
                 gated = OrientationGatedDecoder(global_decoder=global_dec)
+                gated.use_continuous_orientation = bool(
+                    metadata.get("continuous_orientation_adapter", True)
+                )
+                if "posture_rest_orientation_coef" in data:
+                    gated.rest_orientation_coef = data["posture_rest_orientation_coef"].copy()
+                if "posture_global_rest_baseline" in data:
+                    gated.global_rest_baseline = data["posture_global_rest_baseline"].copy()
+                if "posture_global_rest_scale" in data:
+                    gated.global_rest_scale = np.maximum(
+                        data["posture_global_rest_scale"].copy(), 1e-6
+                    )
+                for key in data.files:
+                    if key.startswith("posture_rest_"):
+                        try:
+                            gated.rest_baselines[int(key.rsplit("_", 1)[-1])] = data[key].copy()
+                        except (TypeError, ValueError):
+                            continue
+                    if key.startswith("posture_scale_"):
+                        try:
+                            gated.rest_scales[int(key.rsplit("_", 1)[-1])] = np.maximum(
+                                data[key].copy(), 1e-6
+                            )
+                        except (TypeError, ValueError):
+                            continue
+                gated.fit_samples = {
+                    name: [
+                        gated.correct_feature(sample, angle)
+                        for sample, angle in zip(new_samples[name], self._class_orientations[name])
+                    ]
+                    for name in CLASS_ORDER
+                }
 
                 # Restore per-bin decoders
                 if "bin_ids" in data:
@@ -1597,7 +1905,7 @@ class EmgCentroidDecoderGUI(QWidget):
             self._update_projection_plot()
             self._update_coverage_plot()
         else:
-            self.decoder_status_label.setText("Session loaded (samples only â€” re-fit to use decoder)")
+            self.decoder_status_label.setText("Session loaded (samples only - re-fit to use decoder)")
             self.decoder_status_label.setStyleSheet("color: #f1c40f; font-weight: bold;")
             self.fit_progress_label.setText("Fit progress: session has samples only")
             self.fit_progress_label.setStyleSheet("color: #f1c40f;")
@@ -1609,7 +1917,7 @@ class EmgCentroidDecoderGUI(QWidget):
         }
         n_bins = self._gated_decoder.n_fitted_bins if self._gated_decoder else 0
         self._log_line(
-            f"Session loaded â† {path} | "
+            f"Session loaded <- {path} | "
             + " ".join(f"{CLASS_LABELS.get(n, n)}={n_samples[n]}" for n in CLASS_ORDER)
             + " | imu9 "
             + " ".join(f"{CLASS_LABELS.get(n, n)}={n_imu9[n]}" for n in CLASS_ORDER)
@@ -1659,7 +1967,7 @@ class EmgCentroidDecoderGUI(QWidget):
         self.strip_live_line.setValue(0.0)
         self.coverage_plot.clear()
         self.coverage_plot.showGrid(x=True, y=True, alpha=0.25)
-        self.coverage_plot.setLabel("bottom", "Forearm roll angle (Â°)")
+        self.coverage_plot.setLabel("bottom", "Forearm roll angle (deg)")
         self.coverage_plot.setLabel("left", "Samples in bin")
         self.coverage_plot.setXRange(-185, 185)
         self.coverage_live_line = pg.InfiniteLine(
@@ -1685,6 +1993,28 @@ class EmgCentroidDecoderGUI(QWidget):
             QMessageBox.information(self, "Fit in progress", "Decoder fitting is already running.")
             return
 
+        counts = {name: len(self._class_samples[name]) for name in CLASS_ORDER}
+        if any(counts[name] < 20 for name in CLASS_ORDER):
+            QMessageBox.information(
+                self,
+                "More data recommended",
+                "Use at least 20 windows per class before fitting.\n\n"
+                + ", ".join(f"{CLASS_LABELS.get(name, name)}={counts[name]}" for name in CLASS_ORDER),
+            )
+            return
+        for name in CLASS_ORDER:
+            if len(self._class_orientations[name]) != counts[name]:
+                QMessageBox.warning(
+                    self,
+                    "Capture metadata mismatch",
+                    f"{name} has {counts[name]} samples but "
+                    f"{len(self._class_orientations[name])} orientation tags.",
+                )
+                return
+            if not all(np.all(np.isfinite(np.asarray(sample))) for sample in self._class_samples[name]):
+                QMessageBox.warning(self, "Invalid capture", f"Non-finite feature data found in {name}.")
+                return
+
         use_riemann = self.feature_mode_combo.currentText().startswith("Riemannian")
         samples_copy = {
             name: [np.array(v, copy=True) for v in self._class_samples[name]]
@@ -1700,15 +2030,15 @@ class EmgCentroidDecoderGUI(QWidget):
         }
 
         self.fit_btn.setEnabled(False)
-        self.fit_btn.setText("Fittingâ€¦")
-        self.decoder_status_label.setText("Decoder: fitting in backgroundâ€¦")
+        self.fit_btn.setText("Fitting...")
+        self.decoder_status_label.setText("Decoder: fitting in background...")
         self.decoder_status_label.setStyleSheet("color: #f1c40f; font-weight: bold;")
         if use_riemann:
             self.fit_progress_label.setText(
-                f"Fit progress: Fitting (Riemannian, cap={int(self.riemann_max_cov_spin.value())}/class)â€¦"
+                f"Fit progress: Fitting (Riemannian, cap={int(self.riemann_max_cov_spin.value())}/class)..."
             )
         else:
-            self.fit_progress_label.setText("Fit progress: Fitting (RMS)â€¦")
+            self.fit_progress_label.setText("Fit progress: Fitting (RMS)...")
         self.fit_progress_label.setStyleSheet("color: #f1c40f;")
         self.capture_status_label.setText("Capture: idle (fit running)")
         self._log_line("Decoder fit started (background worker)")
@@ -1719,6 +2049,7 @@ class EmgCentroidDecoderGUI(QWidget):
             class_orientations=orientations_copy,
             use_riemann=use_riemann,
             max_cov_per_class=int(self.riemann_max_cov_spin.value()),
+            use_continuous_orientation=self.continuous_orientation_chk.isChecked(),
         )
         self._fit_worker.fit_ok.connect(self._on_fit_ok)
         self._fit_worker.fit_failed.connect(self._on_fit_failed)
@@ -1746,6 +2077,9 @@ class EmgCentroidDecoderGUI(QWidget):
         n_bins = gated.n_fitted_bins
         use_riemann = extractor is not None
         mode_tag = "Riemannian+CMR-dir" if use_riemann else "RMS+CMR-dir"
+        mode_tag += "+posture-standardized"
+        if gated.use_continuous_orientation and gated.rest_orientation_coef is not None:
+            mode_tag += "+continuous-roll"
         extra = f" | cov used={n_cov_used}" if use_riemann else ""
         self.decoder_status_label.setText(
             f"Decoder: fit [{mode_tag}] | fisher={global_dec.fisher_ratio:.2f} | rest gate={global_dec.rest_gate:.3f}"
@@ -1782,8 +2116,9 @@ class EmgCentroidDecoderGUI(QWidget):
         if self._gated_decoder is None:
             return
         dec = self._gated_decoder.global_decoder
+        plot_samples = self._gated_decoder.fit_samples or self._class_samples
         for name in CLASS_ORDER:
-            samples = self._class_samples[name]
+            samples = plot_samples[name]
             if not samples:
                 continue
             arr = np.vstack(samples)
@@ -1830,9 +2165,10 @@ class EmgCentroidDecoderGUI(QWidget):
         if self._gated_decoder is None:
             return
         dec = self._gated_decoder.global_decoder
+        plot_samples = self._gated_decoder.fit_samples or self._class_samples
         rng = np.random.default_rng(0)
         for name in CLASS_ORDER:
-            samples = self._class_samples[name]
+            samples = plot_samples[name]
             if not samples:
                 self.strip_scatter[name].setData([], [])
                 self.strip_mean_items[name].setData([], [])
@@ -1855,7 +2191,7 @@ class EmgCentroidDecoderGUI(QWidget):
         """Draw stacked bars showing sample counts per orientation bin per class."""
         self.coverage_plot.clear()
         self.coverage_plot.showGrid(x=True, y=True, alpha=0.25)
-        self.coverage_plot.setLabel("bottom", "Forearm roll angle (Â°)")
+        self.coverage_plot.setLabel("bottom", "Forearm roll angle (deg)")
         self.coverage_plot.setLabel("left", "Samples in bin")
         self.coverage_plot.setXRange(-185, 185)
 
@@ -1919,7 +2255,7 @@ class EmgCentroidDecoderGUI(QWidget):
         self.coverage_label.setText(
             f"Orientation coverage: {n_bins_with_data} bins with data  |  "
             f"{n_bins_fitted} bins with fitted decoders  |  "
-            f"~{span_deg:.0f}Â° span covered"
+            f"~{span_deg:.0f} deg span covered"
         )
 
     def _reset_tuning(self):
@@ -1963,7 +2299,7 @@ class EmgCentroidDecoderGUI(QWidget):
         self._publish_count = 0
         self._publish_start_time = time.time()
         self.intent_publish_btn.setText("Stop Publishing")
-        self.intent_stream_status_label.setText("Publishing â—")
+        self.intent_stream_status_label.setText("Publishing")
         self.intent_stream_status_label.setStyleSheet("color: #27ae60; font-weight: bold;")
         name = self.intent_stream_name_edit.text().strip() or "UserIntent"
         self._log_line(f"LSL outlets started: '{name}' and 'NMLIntentV1'")
@@ -2042,14 +2378,21 @@ class EmgCentroidDecoderGUI(QWidget):
         accel, gyro, mag = self._latest_imu_vectors()
         imu9 = self._compose_imu9_vector(accel, gyro, mag)
         roll, source_tag = self._estimate_roll_deg(accel, mag)
+        pitch = _compute_pitch_deg(accel) if accel is not None and accel.shape[0] == 3 else None
+        self._current_pitch_deg = pitch
         if roll is not None:
             self._current_roll_deg = roll
             b = _angle_to_bin(roll)
-            self.imu_angle_label.setText(f"Roll: {roll:+.1f}Â°  |  Bin: {b}  |  Source: {source_tag}")
+            pitch_text = f"{pitch:+.1f} deg" if pitch is not None else "--"
+            self.imu_angle_label.setText(
+                f"Roll: {roll:+.1f} deg  |  Pitch: {pitch_text}  |  Bin: {b}  |  Source: {source_tag}"
+            )
             self.coverage_live_line.setValue(roll)
             self._update_orientation_coverage_label()
         elif self._imu_worker is not None:
-            self.imu_angle_label.setText(f"Roll: â€” Â°  |  Bin: â€”  |  Source: {source_tag}")
+            self.imu_angle_label.setText(
+                f"Roll: -- deg  |  Pitch: {'--' if pitch is None else f'{pitch:+.1f} deg'}  |  Bin: --  |  Source: {source_tag}"
+            )
 
         # --- Read EMG window ---
         window = self._latest_window()
@@ -2113,8 +2456,13 @@ class EmgCentroidDecoderGUI(QWidget):
 
         # --- Decode ---
         if self._gated_decoder is not None:
+            # Decode posture-corrected features while retaining the raw feature
+            # plot for diagnostics and reproducibility.
+            decode_feature = self._gated_decoder.correct_feature(
+                feature, self._current_roll_deg
+            )
             active_dec = self._gated_decoder.get_decoder(self._current_roll_deg)
-            signed = self._project_tuned(feature, active_dec)
+            signed = self._project_tuned(decode_feature, active_dec)
             now = time.time()
             self._live_time_history.append(now)
             self._live_signed_history.append(signed)
@@ -2123,7 +2471,9 @@ class EmgCentroidDecoderGUI(QWidget):
                 list(self._live_signed_history),
             )
             # 2D scatter always uses rms_feature projected via PCA for visual consistency
-            live_2d = self._gated_decoder.global_decoder.project_2d(rms_feature.reshape(1, -1))[0]
+            live_2d = self._gated_decoder.global_decoder.project_2d(
+                decode_feature.reshape(1, -1)
+            )[0]
             self.live_scatter_item.setData([live_2d[0]], [live_2d[1]])
             self.strip_live_line.setValue(signed)
             bin_label = self._gated_decoder.active_bin_label(self._current_roll_deg)
@@ -2131,9 +2481,16 @@ class EmgCentroidDecoderGUI(QWidget):
             self.intent_bin_label.setText(f"Active decoder: {bin_label}")
             g_dec = self._gated_decoder.global_decoder
             self.decoder_value_label.setText(
-                f"Live decoder: {signed:+.3f}  [gain={self.gain_spin.value():.3f}  gateÃ—{self.rest_gate_scale_spin.value():.2f}]"
-                f"  | closeâ‰ˆ{g_dec.class_projection_means['flex']:+.3f}"
-                f"  | openâ‰ˆ{g_dec.class_projection_means['extend']:+.3f}"
+                f"Live decoder: {signed:+.3f}  [gain={self.gain_spin.value():.3f}  gate x{self.rest_gate_scale_spin.value():.2f}]"
+                f"  | close~{g_dec.class_projection_means['flex']:+.3f}"
+                f"  | open~{g_dec.class_projection_means['extend']:+.3f}"
+            )
+            raw_norm = float(np.linalg.norm(feature))
+            corrected_norm = float(np.linalg.norm(decode_feature))
+            self.posture_comp_label.setText(
+                f"Posture compensation: interpolated baseline · {bin_label} | "
+                f"raw feature {raw_norm:.3f} "
+                f"→ standardized residual {corrected_norm:.3f}"
             )
             self._push_intent_sample(signed)
 
@@ -2150,12 +2507,9 @@ class EmgCentroidDecoderGUI(QWidget):
                         alpha = PLOT_TICK_SEC / max(tau, 0.1)
                         alpha = min(alpha, 0.05)  # cap to avoid instability
                         # Update rest centroid in all fitted decoders (global + bins)
-                        for dec in [self._gated_decoder.global_decoder] + list(
-                            self._gated_decoder.bin_decoders.values()
-                        ):
-                            dec.rest_centroid = (
-                                (1.0 - alpha) * dec.rest_centroid + alpha * feature
-                            )
+                        self._gated_decoder.adapt_rest_baseline(
+                            feature, self._current_roll_deg, alpha
+                        )
                 else:
                     self._adaptive_rest_idle_since = None
 
@@ -2174,7 +2528,7 @@ class EmgCentroidDecoderGUI(QWidget):
             for a in self._class_orientations[name]:
                 if a is not None:
                     occupied_bins.add(_angle_to_bin(a))
-        roll_str = f"{self._current_roll_deg:+.1f}Â°" if self._current_roll_deg is not None else "â€”"
+        roll_str = f"{self._current_roll_deg:+.1f} deg" if self._current_roll_deg is not None else "--"
         self.orientation_coverage_label.setText(
             f"Orientation bins: current={roll_str}  |  {len(occupied_bins)} bins occupied  |  "
             f"{total_tagged} orientation-tagged samples across all classes"

@@ -94,7 +94,7 @@ class ROMUtilityTests(unittest.TestCase):
 
 
 class SerialPortUtilityTests(unittest.TestCase):
-    def test_formats_metadata_and_connection_tags(self):
+    def test_formats_compact_connection_tags(self):
         port = SimpleNamespace(
             device="COM7",
             description="NML_EXO USB Serial Device",
@@ -107,10 +107,9 @@ class SerialPortUtilityTests(unittest.TestCase):
 
         label = format_port_label(port)
 
-        self.assertIn("COM7", label)
-        self.assertIn("[USB, NML_EXO]", label)
-        self.assertIn("VID:1234 PID:ABCD", label)
-        self.assertIn("SN:xyz", label)
+        self.assertEqual(label, "COM7 - [USB, NML_EXO]")
+        self.assertNotIn("VID:", label)
+        self.assertNotIn("SN:", label)
 
     def test_prefers_expected_nml_exo_primary_cdc_location(self):
         ports = [

@@ -91,6 +91,9 @@ class NMLHandExo {
       delete[] lastDirectCommandMs_;
       delete[] directCommandActive_;
       delete[] directCommandDirection_;
+      delete[] directVelocityLimitBlock_;
+      delete[] directVelocityLimitVerified_;
+      delete[] positionHoldActive_;
       delete[] appliedCurrents_;
       delete[] motorMoving_;
       delete[] motorAdmitted_;
@@ -123,7 +126,7 @@ class NMLHandExo {
 
     /// @brief Set the operating mode of the motors
     /// @param name Name of the mode (e.g. "position", "current_position", "velocity").
-    void setMotorControlMode(const String& name);
+    bool setMotorControlMode(const String& name);
 
     /// @brief Get the motor ID from a user-supplied token (either name or ID as a string).
     /// @param token The token string (e.g. "WRIST" or "1").
@@ -511,6 +514,21 @@ class NMLHandExo {
     /// @brief Return the direct-command watchdog timeout.
     unsigned long getDirectCommandTimeout() const;
 
+    /// @brief Hold one explicit motor at a relative angle while the remaining
+    /// motors stay in the global velocity/current mode.
+    bool holdRelativePosition(
+      uint8_t id, float relativeAngle, uint16_t requestedCurrentMa = 0);
+
+    /// @brief Return the current applied to an active auxiliary hold, or zero.
+    uint16_t getPositionHoldCurrent(uint8_t id) const;
+
+    /// @brief Disable a held motor and restore its operating mode to the
+    /// current global motor-control mode. Torque remains off.
+    bool releasePositionHold(uint8_t id);
+
+    /// @brief Return whether a motor is currently in auxiliary position hold.
+    bool isPositionHoldActive(uint8_t id) const;
+
     // -----------------------------------------------------------
     // Acceleration commands
     // -----------------------------------------------------------
@@ -612,7 +630,14 @@ class NMLHandExo {
     /// Adds get_gesture_sang:<gesture|all> (signed degrees only) and
     /// get_gesture_angles:<gesture|all> (percentage code plus signed degrees).
     /// Gate on >= 0.6.1.
-    static constexpr const char* VERSION = "0.6.1";
+    ///
+    /// 0.6.2 -- adds per-ID auxiliary position hold during global direct
+    /// velocity/current control: hold_position:<id>:<relative-angle> and
+    /// release_hold:<id>. Gate on >= 0.6.2.
+    /// Development extension -- hold_position accepts optional per-hold
+    /// current in mA and reports the applied, safety-clamped value. Keep the
+    /// public version at 0.6.2 until these accumulated changes are released.
+    static constexpr const char* VERSION = "0.6.2";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.
@@ -661,7 +686,17 @@ class NMLHandExo {
     unsigned long* lastDirectCommandMs_;
     bool* directCommandActive_;
     float* directCommandDirection_;
+    int8_t* directVelocityLimitBlock_;
+    bool* directVelocityLimitVerified_;
+    bool* positionHoldActive_;
     unsigned long directCommandTimeoutMs_ = DIRECT_COMMAND_TIMEOUT_MS;
+
+    /// @brief Taper an outward velocity near a limit and latch at the hard margin.
+    float limitDirectVelocity(int index, float velocity_rpm, float position);
+
+    /// @brief Ensure the motor's EEPROM VELOCITY_LIMIT register matches the
+    /// firmware direct-command ceiling. Torque must already be off.
+    bool ensureDirectVelocityLimit(uint8_t id);
 
     /// @brief Enforce direct-control watchdogs and calibrated position limits.
     void serviceDirectControlSafety();

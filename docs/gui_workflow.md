@@ -50,6 +50,20 @@ nothing is disabled.
 
 ---
 
+## Setup motor limits `[VERIFIED]`
+
+Each motor row exposes an explicit-ID current limit in mA and velocity limit in
+rpm. **Apply** writes the current limit only to that row's Dynamixel ID; it
+retains the velocity value as that motor's host-side ceiling for GUI direct and
+EMG teleoperation commands. The current limit remains subject to the shared
+combined-current budget. The GUI deliberately does not derive this ceiling from
+`PROFILE_VELOCITY`: raw zero means an unlimited position profile and that
+register is not used in Velocity Control Mode. Firmware independently clamps
+direct commands to 50 rpm and verifies each motor's hardware `VELOCITY_LIMIT`
+register before entering Velocity mode.
+
+---
+
 ## CalibrationDialog `[VERIFIED]`
 
 ### Initialization

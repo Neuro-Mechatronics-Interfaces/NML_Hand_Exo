@@ -19,7 +19,6 @@ This document defines lightweight, testable safety requirements for NML_Hand_Exo
 | SAF-005 | Deployment bundle manifests must be schema-validated. | `src/nml_hand_exo/robotics/bundles.py` | `src/nml_hand_exo/robotics/test_bundles.py`, `src/nml_hand_exo/robotics/test_repo_manifests.py` |
 | SAF-006 | Policy profile manifests must be schema-validated. | `src/nml_hand_exo/robotics/policy_profiles.py` | `src/nml_hand_exo/robotics/test_policy_profiles.py`, `src/nml_hand_exo/robotics/test_repo_manifests.py` |
 | SAF-007 | Robot adapter config manifests must be schema-validated and matched to adapter IDs. | `src/nml_hand_exo/robotics/config.py` | `src/nml_hand_exo/robotics/test_robot_config.py`, `src/nml_hand_exo/robotics/test_repo_manifests.py` |
-| SAF-008 | Runtime setup must default to pinned submodule sources, not machine-local paths. | `scripts/setup_neurobridge_submodule.bat`, `scripts/setup_ai_submodule_env.py`, `.gitmodules` | Code review + CI on committed files |
 
 ## Process Rules
 

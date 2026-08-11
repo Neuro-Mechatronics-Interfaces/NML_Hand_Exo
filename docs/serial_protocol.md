@@ -199,9 +199,18 @@ set_current:16:50
 stop:16
 stop:all
 set_command_timeout:250
+hold_position:14:22.5
+release_hold:14
 ```
 
-- `set_velocity` uses signed rpm and is clamped to `DIRECT_VELOCITY_LIMIT_RPM`.
+- `set_velocity` uses signed rpm and is clamped to `DIRECT_VELOCITY_LIMIT_RPM` (50 rpm in the current validated firmware source).
+- Before entering Velocity mode, firmware turns torque off, reads each motor's
+  hardware `VELOCITY_LIMIT` register, conditionally writes raw `218`
+  (approximately 49.9 rpm at 0.229 rpm/unit), and verifies readback. A failed
+  verification aborts the mode change with torque remaining off. The EEPROM
+  register is not rewritten when it already matches. Dual firmware skips IDs
+  that are not physically reachable, but records verification per ID and
+  rejects direct velocity commands for any ID that was not verified.
 - `set_current` uses signed mA and is clamped to `DIRECT_CURRENT_LIMIT_MA`
   (910 mA for XC330-T288 in this firmware build).
 - `enable_ids` / `disable_ids` accept colon-separated explicit DXL IDs and
@@ -212,6 +221,42 @@ set_command_timeout:250
   joint-limit margin.
 - `set_goal_velocity` remains the position-mode profile-velocity setting; it is
   not a direct velocity command.
+
+Firmware **0.6.2** adds an auxiliary mixed-mode position hold for joints that
+must keep a fixed posture while other motors receive direct EMG commands:
+
+- `hold_position:<explicit ID>:<relative angle>` atomically stops that motor,
+  disables its torque, switches only that ID to current-based position mode,
+  writes a goal through the existing calibrated joint-limit clamp, applies the
+  configured settled-motor hold current, and re-enables torque.
+- `release_hold:<explicit ID>` disables the held motor and restores its
+  operating mode to the current global direct mode. Torque remains off.
+- Bare motor names are rejected because they are ambiguous in dual firmware.
+- The global mode must already be `velocity` or `current` before a hold is
+  engaged. Direct velocity/current commands to a held ID are rejected.
+- `stop:<id|all>` zeros direct commands but deliberately does not release a
+  position hold. This lets a held thumb posture survive neutral or stale intent.
+  Call `release_hold` explicitly; the GUI does this for STOP TELEOP,
+  STOP ALL MOTION, mode changes, and disconnect.
+
+The current development firmware extends the command with an optional per-hold
+current while retaining the 0.6.2 version identifier until release:
+
+- `hold_position:<explicit ID>:<relative angle>:<requested mA>`
+- The requested current is clamped to the selected motor's configured
+  per-motor current limit, the XC330 firmware maximum, and the configured total
+  current budget.
+- Omitting the fourth argument preserves the 0.6.2 behavior and uses the global
+  settled-motor hold current.
+- The acknowledgement reports the current that was actually applied. The GUI
+  also reads `get_enabled:<ID>` before declaring the hold verified.
+
+Successful replies are:
+
+```text
+OK: hold_position id=14 angle=22.500 current_mA=80
+OK: release_hold id=14
+```
 
 ---
 

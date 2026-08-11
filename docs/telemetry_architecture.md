@@ -37,11 +37,24 @@ The Controls tab uses a layout-redirect pattern during `_build_ui()` so all exis
 
 | Timer | Attribute | Interval | Purpose |
 |-------|-----------|----------|---------|
-| Controls angle poll | `_angle_timer` | 500 ms | Motor angle labels in Controls tab |
-| Telemetry poll | `_telem_timer` | 500 ms | Telemetry table values |
+| Device telemetry poll | `_angle_timer` | Configured 1-100 Hz; default 50 Hz | Motor-row angles and telemetry buffers |
+| Telemetry renderer | `_telemetry_render_timer` | 100 ms | Throttled Qt table, motor-row, and hand-state painting |
+| Sensor-only teleop poll | `_teleop_timer` | Configured telemetry rate | Angle frames while WebSocket teleop owns polling |
+| EMG intent control | `_emg_control_timer` | 50 ms | Coalesce the newest per-ID direct command set for `SerialWorker` |
 
-Both start in `_connect()`, stop in `_disconnect()`.
-`_telem_timer` only starts if the Auto-refresh checkbox is checked at connect time.
+The device timer starts in `_connect()` and stops in `_disconnect()`.
+Velocity/current DIRECT keeps it active at up to 10 Hz. Latched EMG teleop uses
+a stricter real-time policy: 2 Hz, only the commanded and held IDs, with a
+150 ms compact-telemetry deadline. A failed compact read is reported as missing
+telemetry; it never enters the sequential text fallback while EMG commands are
+active, because that fallback can exceed the firmware's 250 ms direct-command
+watchdog. Poll requests are asynchronous and de-duplicated by
+`SerialWorker`, so only one automatic read can be pending. EMG commands are also
+executed by that worker rather than Qt's GUI thread. Each update is emitted as
+one transport write containing the existing per-ID protocol lines, and pending
+actions are coalesced per motor so a newer stop overrides an unsent motion
+command without accumulating a serial backlog. High-rate UDP command
+bursts may still defer polling briefly, then restart it after the idle timer.
 Calibration and ROM dialogs own separate dialog-scoped timers at 100 ms.
 
 ---

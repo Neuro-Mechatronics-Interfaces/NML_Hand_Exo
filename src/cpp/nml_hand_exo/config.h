@@ -702,9 +702,14 @@ constexpr unsigned long MOVE_WINDOW_MS = 500;
 constexpr unsigned long STALL_HOLD_MS = 250;
 
 /// @brief Direct-control limits used by serial velocity/current commands.
-constexpr float DIRECT_VELOCITY_LIMIT_RPM = 10.0f;
+constexpr float DIRECT_VELOCITY_LIMIT_RPM = 50.0f;
+/// @brief XC330 VELOCITY_LIMIT register value nearest 50 rpm (0.229 rpm/unit).
+constexpr uint32_t DIRECT_VELOCITY_LIMIT_RAW = 218;
 constexpr int DIRECT_CURRENT_LIMIT_MA = MOTOR_CURRENT_LIMIT;
 constexpr unsigned long DIRECT_COMMAND_TIMEOUT_MS = 250;
+/// @brief Distance from a joint limit where direct velocity begins tapering.
+constexpr float DIRECT_VELOCITY_SOFT_ZONE_DEG = 10.0f;
+/// @brief Hard stop distance retained inside each calibrated joint limit.
 constexpr float DIRECT_LIMIT_MARGIN_DEG = 2.0f;
 
 /// @brief Debounce duration for mode switch button in milliseconds.

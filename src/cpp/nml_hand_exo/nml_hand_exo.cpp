@@ -75,6 +75,9 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
   lastDirectCommandMs_ = new unsigned long[numMotors_];
   directCommandActive_ = new bool[numMotors_];
   directCommandDirection_ = new float[numMotors_];
+  directVelocityLimitBlock_ = new int8_t[numMotors_];
+  directVelocityLimitVerified_ = new bool[numMotors_];
+  positionHoldActive_ = new bool[numMotors_];
   appliedCurrents_ = new uint16_t[numMotors_];
   motorMoving_ = new bool[numMotors_];
   motorAdmitted_ = new bool[numMotors_];
@@ -89,6 +92,9 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
     lastDirectCommandMs_[i] = 0;
     directCommandActive_[i] = false;
     directCommandDirection_[i] = 0;
+    directVelocityLimitBlock_[i] = 0;
+    directVelocityLimitVerified_[i] = false;
+    positionHoldActive_[i] = false;
     appliedCurrents_[i] = 0;
     motorMoving_[i] = false;
     motorAdmitted_[i] = false;
@@ -718,6 +724,7 @@ void NMLHandExo::setMotorLowerBound(uint8_t id, float lowerBound) {
   }
 
   jointLimits_[index][0] = lowerBound;
+  directVelocityLimitBlock_[index] = 0;
   debugPrint("Set lower bound for motor " + String(id) + " to " + String(lowerBound) + " deg");
 }
 void NMLHandExo::setMotorUpperBound(uint8_t id, float upperBound) {
@@ -733,6 +740,7 @@ void NMLHandExo::setMotorUpperBound(uint8_t id, float upperBound) {
   }
 
   jointLimits_[index][1] = upperBound;
+  directVelocityLimitBlock_[index] = 0;
   debugPrint("Set upper bound for motor " + String(id) + " to " + String(upperBound) + " deg");
 }
 String NMLHandExo::getMotorLimits(uint8_t id) {
@@ -762,6 +770,7 @@ void NMLHandExo::setMotorLimits(uint8_t id, float lowerLimit, float upperLimit) 
 
   jointLimits_[index][0] = lowerLimit;
   jointLimits_[index][1] = upperLimit;
+  directVelocityLimitBlock_[index] = 0;
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "Set limits for motor %d: [%.2f, %.2f]", id, lowerLimit, upperLimit);
   debugPrint(buffer);
@@ -908,7 +917,7 @@ float NMLHandExo::getTorque(uint8_t id) {
 }
 bool NMLHandExo::setGoalCurrent(uint8_t id, float current_mA) {
   int index = getIndexById(id);
-  if (index == -1 || motorControlMode_ != "CURRENT") return false;
+  if (index == -1 || motorControlMode_ != "CURRENT" || positionHoldActive_[index]) return false;
 
   current_mA = constrain(
       current_mA,
@@ -1435,9 +1444,51 @@ void NMLHandExo::setVelocityLimit(uint8_t id, uint32_t vel) {
 uint32_t NMLHandExo::getVelocityLimit(uint8_t id) {
   return dxl_.readControlTableItem(PROFILE_VELOCITY, id);
 }
+float NMLHandExo::limitDirectVelocity(
+    int index, float velocity_rpm, float position) {
+  if (velocity_rpm == 0.0f) return 0.0f;
+
+  const int8_t direction = velocity_rpm > 0.0f ? 1 : -1;
+  const float lower = jointLimits_[index][0];
+  const float upper = jointLimits_[index][1];
+  const float halfRange = max(0.0f, (upper - lower) * 0.5f);
+  const float softZone = min(
+      DIRECT_VELOCITY_SOFT_ZONE_DEG,
+      max(DIRECT_LIMIT_MARGIN_DEG, halfRange));
+
+  // A command away from a blocked boundary is always allowed immediately.
+  if (directVelocityLimitBlock_[index] != 0 &&
+      direction != directVelocityLimitBlock_[index]) {
+    directVelocityLimitBlock_[index] = 0;
+  }
+
+  const float distanceToLimit =
+      direction > 0 ? upper - position : position - lower;
+  if (directVelocityLimitBlock_[index] == direction) {
+    if (distanceToLimit < softZone) return 0.0f;
+    directVelocityLimitBlock_[index] = 0;
+  }
+
+  if (distanceToLimit <= DIRECT_LIMIT_MARGIN_DEG) {
+    directVelocityLimitBlock_[index] = direction;
+    return 0.0f;
+  }
+  if (distanceToLimit >= softZone ||
+      softZone <= DIRECT_LIMIT_MARGIN_DEG) {
+    return velocity_rpm;
+  }
+
+  const float normalized =
+      (distanceToLimit - DIRECT_LIMIT_MARGIN_DEG) /
+      (softZone - DIRECT_LIMIT_MARGIN_DEG);
+  const float smoothScale =
+      normalized * normalized * (3.0f - 2.0f * normalized);
+  return velocity_rpm * smoothScale;
+}
 bool NMLHandExo::setGoalVelocity(uint8_t id, float velocity_rpm) {
   int index = getIndexById(id);
-  if (index == -1 || motorControlMode_ != "VELOCITY") return false;
+  if (index == -1 || motorControlMode_ != "VELOCITY" ||
+      !directVelocityLimitVerified_[index] || positionHoldActive_[index]) return false;
 
   velocity_rpm = constrain(
       velocity_rpm,
@@ -1446,12 +1497,17 @@ bool NMLHandExo::setGoalVelocity(uint8_t id, float velocity_rpm) {
   if (flipMotor_[index]) velocity_rpm *= -1.0f;
 
   float position = getAbsoluteAngle(id);
-  if ((velocity_rpm > 0 && position >= jointLimits_[index][1] - DIRECT_LIMIT_MARGIN_DEG) ||
-      (velocity_rpm < 0 && position <= jointLimits_[index][0] + DIRECT_LIMIT_MARGIN_DEG)) {
-    velocity_rpm = 0;
+  float limited_velocity_rpm =
+      limitDirectVelocity(index, velocity_rpm, position);
+
+  int32_t raw = (int32_t)round(limited_velocity_rpm / 0.229f);
+  const int32_t requestedRaw = (int32_t)round(velocity_rpm / 0.229f);
+  if (raw == 0 && requestedRaw != 0 && limited_velocity_rpm != 0.0f) {
+    // The taper fell below one register step. Latch here rather than letting
+    // repeated teleop packets alternate between raw velocity 0 and 1.
+    directVelocityLimitBlock_[index] = velocity_rpm > 0.0f ? 1 : -1;
   }
 
-  int32_t raw = (int32_t)round(velocity_rpm / 0.229f);
   dxl_.writeControlTableItem(GOAL_VELOCITY, id, raw);
   lastDirectCommandMs_[index] = millis();
   directCommandActive_[index] = (raw != 0);
@@ -1468,7 +1524,12 @@ float NMLHandExo::getPresentVelocity(uint8_t id) {
 void NMLHandExo::stopDirectControl(uint8_t id) {
   int index = getIndexById(id);
   if (index == -1) return;
-  if (motorControlMode_ == "VELOCITY") {
+  if (positionHoldActive_[index]) {
+    directCommandActive_[index] = false;
+    directCommandDirection_[index] = 0;
+    lastDirectCommandMs_[index] = millis();
+    return;
+  } else if (motorControlMode_ == "VELOCITY") {
     dxl_.writeControlTableItem(GOAL_VELOCITY, id, 0);
   } else if (motorControlMode_ == "CURRENT") {
     dxl_.writeControlTableItem(GOAL_CURRENT, id, 0);
@@ -1488,6 +1549,65 @@ void NMLHandExo::setDirectCommandTimeout(unsigned long timeout_ms) {
 unsigned long NMLHandExo::getDirectCommandTimeout() const {
   return directCommandTimeoutMs_;
 }
+
+bool NMLHandExo::holdRelativePosition(
+    uint8_t id, float relativeAngle, uint16_t requestedCurrentMa) {
+  int index = getIndexById(id);
+  if (index == -1) return false;
+  if (motorControlMode_ != "VELOCITY" && motorControlMode_ != "CURRENT") {
+    return false;
+  }
+
+  stopDirectControl(id);
+  directVelocityLimitBlock_[index] = 0;
+  enableTorque(id, false);
+  setMotorControlMode(id, "CURRENT_POSITION");
+
+  // Mixed-mode holds are outside the global current-position allocator.
+  // Give the held joint only the configured settled-motor current, bounded by
+  // its per-motor limit and the part maximum.
+  uint16_t hold_mA = requestedCurrentMa > 0
+                       ? requestedCurrentMa
+                       : holdCurrentMa_;
+  hold_mA = min(hold_mA, currentLimits_[index]);
+  hold_mA = min(hold_mA, (uint16_t)MOTOR_CURRENT_LIMIT);
+  hold_mA = min(hold_mA, totalCurrentBudgetMa_);
+  appliedCurrents_[index] = hold_mA;
+  dxl_.writeControlTableItem(GOAL_CURRENT, id, hold_mA);
+  setRelativeAngle(id, relativeAngle);  // Existing joint-limit clamp applies.
+  positionHoldActive_[index] = true;
+  enableTorque(id, true);
+  return true;
+}
+
+uint16_t NMLHandExo::getPositionHoldCurrent(uint8_t id) const {
+  for (int i = 0; i < numMotors_; ++i) {
+    if (motorIds_[i] == id) {
+      return positionHoldActive_[i] ? appliedCurrents_[i] : 0;
+    }
+  }
+  return 0;
+}
+
+bool NMLHandExo::releasePositionHold(uint8_t id) {
+  int index = getIndexById(id);
+  if (index == -1) return false;
+  enableTorque(id, false);
+  positionHoldActive_[index] = false;
+  appliedCurrents_[index] = 0;
+  directCommandActive_[index] = false;
+  directCommandDirection_[index] = 0;
+  directVelocityLimitBlock_[index] = 0;
+  setMotorControlMode(id, motorControlMode_);
+  return true;
+}
+
+bool NMLHandExo::isPositionHoldActive(uint8_t id) const {
+  for (int i = 0; i < numMotors_; ++i) {
+    if (motorIds_[i] == id) return positionHoldActive_[i];
+  }
+  return false;
+}
 void NMLHandExo::serviceDirectControlSafety() {
   if (motorControlMode_ != "VELOCITY" && motorControlMode_ != "CURRENT") return;
   unsigned long now = millis();
@@ -1502,6 +1622,10 @@ void NMLHandExo::serviceDirectControlSafety() {
         (directCommandDirection_[i] > 0 &&
          position >= jointLimits_[i][1] - DIRECT_LIMIT_MARGIN_DEG));
     if (timedOut || drivingIntoLimit) {
+      if (drivingIntoLimit && motorControlMode_ == "VELOCITY") {
+        directVelocityLimitBlock_[i] =
+            directCommandDirection_[i] > 0 ? 1 : -1;
+      }
       stopDirectControl(id);
     }
   }
@@ -1567,20 +1691,60 @@ void NMLHandExo::setMotorControlMode(uint8_t id, const String& mode){
     debugPrint("[ERROR] Unknown operating mode: " + m);
   }
 }
-void NMLHandExo::setMotorControlMode(const String& mode) {
+bool NMLHandExo::ensureDirectVelocityLimit(uint8_t id) {
+  uint32_t current = dxl_.readControlTableItem(VELOCITY_LIMIT, id);
+  if (current != DIRECT_VELOCITY_LIMIT_RAW) {
+    if (!dxl_.writeControlTableItem(
+            VELOCITY_LIMIT, id, DIRECT_VELOCITY_LIMIT_RAW)) {
+      debugPrint("[ERROR] Could not write VELOCITY_LIMIT for motor " + String(id));
+      return false;
+    }
+    current = dxl_.readControlTableItem(VELOCITY_LIMIT, id);
+  }
+  if (current != DIRECT_VELOCITY_LIMIT_RAW) {
+    debugPrint("[ERROR] VELOCITY_LIMIT readback mismatch for motor " +
+               String(id) + ": " + String(current));
+    return false;
+  }
+  return true;
+}
+
+bool NMLHandExo::setMotorControlMode(const String& mode) {
   String m = mode;
   m.toUpperCase();
   for (int i = 0; i < numMotors_; i++) {
     dxl_.torqueOff(motorIds_[i]);
+  }
+  if (m == "VELOCITY") {
+    for (int i = 0; i < numMotors_; i++) {
+      directVelocityLimitVerified_[i] = false;
+      // Dual firmware can legitimately run with only one hand attached.
+      // Missing configured IDs must not block the reachable side, but an ID
+      // that was not verified is rejected later by setGoalVelocity().
+      if (dxl_.ping(motorIds_[i]) == 0) continue;
+      if (!ensureDirectVelocityLimit(motorIds_[i])) {
+        motorControlMode_ = "DISABLED";
+        stopAllDirectControl();
+        return false;
+      }
+      directVelocityLimitVerified_[i] = true;
+    }
+  } else {
+    for (int i = 0; i < numMotors_; i++) {
+      directVelocityLimitVerified_[i] = false;
+    }
   }
   for (int i = 0; i < numMotors_; i++) {
     uint8_t id = motorIds_[i];
     NMLHandExo::setMotorControlMode(id, m); // Set the mode for each motor
     directCommandActive_[i] = false;
     directCommandDirection_[i] = 0;
+    directVelocityLimitBlock_[i] = 0;
+    positionHoldActive_[i] = false;
   }
   motorControlMode_ = m;
   stopAllDirectControl();
+  return true;
 }
 String NMLHandExo::getMotorControlMode() {
   String mode = "UNKNOWN";

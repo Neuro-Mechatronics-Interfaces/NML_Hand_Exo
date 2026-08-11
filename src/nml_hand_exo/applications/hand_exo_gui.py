@@ -50,7 +50,13 @@ from nml_hand_exo.interface._gesture_protocol import (
     normalize_udp_gesture_angle_command,
     pack_pose_ack,
 )
-from nml_hand_exo.interface._hand_exo import parse_gesture_angle_pairs
+from nml_hand_exo.interface._hand_exo import (
+    FW_AUX_POSITION_HOLD,
+    FW_AUX_POSITION_HOLD_CURRENT,
+    ProtocolResponseError,
+    parse_firmware_version,
+    parse_gesture_angle_pairs,
+)
 from nml_hand_exo.interface._serial_ports import (
     find_cdc_sibling,
     format_port_label,
@@ -89,8 +95,11 @@ except ImportError:
     _WEBSOCKETS_AVAILABLE = False
 
 
-DIRECT_VELOCITY_LIMIT_RPM = 10.0
+DIRECT_VELOCITY_LIMIT_RPM = 50.0
 DIRECT_CURRENT_LIMIT_MA = 910.0
+EMG_FINGER_MOTOR_NAMES = frozenset(
+    {"thumbadd", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky"}
+)
 XC330_T288_TORQUE_CONSTANT = 0.00115
 UDP_HEARTBEAT_INTERVAL_MS = 15000
 UDP_HEARTBEAT_RESPONSE_TIMEOUT_MS = 500
@@ -99,8 +108,12 @@ UDP_METRIC_EMA_ALPHA = 0.2
 UDP_BACKLOG_EMA_TIME_CONSTANT_S = 2.0
 HOME_GROUP_SETTLE_MS = 750
 TELEMETRY_DEFAULT_RATE_HZ = 50
+DIRECT_TELEMETRY_MAX_RATE_HZ = 10
+EMG_TELEMETRY_RATE_HZ = 2
+EMG_FAST_TELEMETRY_TIMEOUT_S = 0.15
 TELEMETRY_RENDER_INTERVAL_MS = 100
 TELEMETRY_BUFFER_SAMPLES = 5
+POSITION_HOLD_CAPTURE_MAX_AGE_S = 1.0
 WINDOW_ICON_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "favicon-32x32.svg"
 )
@@ -1215,6 +1228,7 @@ class SerialWorker(QThread):
     completed = pyqtSignal(object)
     line_received = pyqtSignal(str)
     pose_completed = pyqtSignal(int, str, int, object, str)
+    direct_failed = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1223,6 +1237,10 @@ class SerialWorker(QThread):
         self._poll_q = queue.Queue()
         self._run = True
         self._poll_pending = False
+        self._direct_pending = False
+        self._direct_actions: dict[int, tuple[str, float | None]] = {}
+        self._realtime_control = False
+        self._realtime_motor_ids: list[int] = []
         self._last_poll_error_log = 0.0
         self._motor_ids: list[int] = []
         self._state_lock = threading.Lock()
@@ -1233,6 +1251,14 @@ class SerialWorker(QThread):
     def set_motor_ids(self, motor_ids):
         with self._state_lock:
             self._motor_ids = [int(mid) for mid in motor_ids]
+
+    def set_realtime_control(self, enabled: bool, motor_ids=()):
+        """Bound telemetry work while latency-sensitive control is active."""
+        with self._state_lock:
+            self._realtime_control = bool(enabled)
+            self._realtime_motor_ids = sorted(
+                {int(mid) for mid in motor_ids if int(mid) > 0}
+            )
 
     def request_poll(self, include_telemetry: bool = True):
         with self._state_lock:
@@ -1247,6 +1273,33 @@ class SerialWorker(QThread):
 
     def enqueue(self, command: str, timeout: float = 1.0):
         self._urgent_q.put(("command", command, float(timeout)))
+
+    def request_direct_actions(
+        self, actions: dict[int, tuple[str, float | None]]
+    ):
+        """Coalesce per-ID direct commands for execution off the Qt thread.
+
+        The newest action for an ID wins. In particular, a queued ``stop``
+        replaces any unsent motion command for that same motor.
+        """
+        normalized: dict[int, tuple[str, float | None]] = {}
+        for motor_id, action in actions.items():
+            dxl_id = int(motor_id)
+            mode, value = action
+            if dxl_id <= 0 or mode not in {"velocity", "current", "stop"}:
+                raise ValueError(f"Invalid direct action for ID {motor_id}: {action}")
+            normalized[dxl_id] = (
+                mode,
+                None if mode == "stop" else float(value),
+            )
+        if not normalized:
+            return
+        with self._state_lock:
+            self._direct_actions.update(normalized)
+            if self._direct_pending:
+                return
+            self._direct_pending = True
+        self._urgent_q.put(("direct",))
 
     def enqueue_pose_ack(
         self, value: int, host: str, port: int, timeout: float = 1.0
@@ -1280,6 +1333,8 @@ class SerialWorker(QThread):
             elif tag == "pose_ack":
                 _, value, host, port, timeout = item
                 self._handle_pose_ack(value, host, port, timeout)
+            elif tag == "direct":
+                self._handle_direct_actions()
             elif tag == "poll":
                 _, include_telemetry = item
                 try:
@@ -1288,12 +1343,52 @@ class SerialWorker(QThread):
                     with self._state_lock:
                         self._poll_pending = False
 
+    def _handle_direct_actions(self):
+        with self._state_lock:
+            actions = self._direct_actions
+            self._direct_actions = {}
+        try:
+            def apply(raw_exo):
+                commands = []
+                for dxl_id, (mode, value) in sorted(actions.items()):
+                    if mode == "velocity":
+                        commands.append(
+                            f"set_velocity:{dxl_id}:{float(value)}"
+                        )
+                    elif mode == "current":
+                        commands.append(
+                            f"set_current:{dxl_id}:{float(value)}"
+                        )
+                    else:
+                        commands.append(f"stop:{dxl_id}")
+                if not commands:
+                    return
+                delimiter = raw_exo.command_delimiter
+                payload = "".join(
+                    command + delimiter for command in commands
+                )
+                # These high-rate setters are intentionally fire-and-forget.
+                # Send the complete set in one transport write so per-command
+                # HandExo.send_delay cannot exceed the 50 ms control period.
+                raw_exo.device.send(payload)
+
+            self._with_raw_exo(apply)
+        except Exception as exc:
+            self.direct_failed.emit(str(exc))
+        finally:
+            with self._state_lock:
+                if self._direct_actions:
+                    self._urgent_q.put(("direct",))
+                else:
+                    self._direct_pending = False
+
     def _handle_poll(self, include_telemetry: bool):
         result = {
             "relative": None,
             "positions": None,
             "torques": None,
             "currents": None,
+            "velocities": None,
             "telemetry_meta": None,
             "telemetry_requested": include_telemetry,
         }
@@ -1301,9 +1396,19 @@ class SerialWorker(QThread):
         if exo is None:
             self.completed.emit(result)
             return
-        if include_telemetry and self._motor_ids:
+        with self._state_lock:
+            realtime_control = self._realtime_control
+            poll_ids = list(
+                self._realtime_motor_ids
+                if realtime_control
+                else self._motor_ids
+            )
+        if include_telemetry and poll_ids:
             try:
-                fast = self._get_fast_telemetry(0.5)
+                fast = self._get_fast_telemetry(
+                    EMG_FAST_TELEMETRY_TIMEOUT_S if realtime_control else 0.5,
+                    poll_ids,
+                )
                 result["relative"] = {
                     mid: data.get("angle") for mid, data in fast.items()
                 }
@@ -1312,6 +1417,14 @@ class SerialWorker(QThread):
                 }
                 result["currents"] = {
                     mid: data.get("current") for mid, data in fast.items()
+                }
+                result["velocities"] = {
+                    mid: (
+                        float(data.get("velocity_raw")) * 0.229
+                        if data.get("velocity_raw") is not None
+                        else None
+                    )
+                    for mid, data in fast.items()
                 }
                 result["torques"] = {
                     mid: (
@@ -1341,6 +1454,12 @@ class SerialWorker(QThread):
                 return
             except Exception as exc:
                 self._log_poll_error(f"[poll] fast telemetry failed: {exc}")
+        if realtime_control:
+            # Text fallback can block for several sequential 500 ms reads.
+            # During EMG control, missing telemetry is safer than delaying the
+            # next direct-command refresh beyond the firmware watchdog.
+            self.completed.emit(result)
+            return
         try:
             result["relative"] = self._get_motor_attribute("get_angle:all", "angle", 0.5)
         except Exception as exc:
@@ -1378,6 +1497,12 @@ class SerialWorker(QThread):
     def _handle_command(self, command: str, timeout: float):
         try:
             raw = self._transact(command, timeout)
+            if not raw.strip():
+                raise ProtocolResponseError(
+                    command=command,
+                    expected="a delimited firmware acknowledgement or response",
+                    raw_response=raw,
+                )
             for line in raw.splitlines():
                 line = line.strip().rstrip(";").strip()
                 if line:
@@ -1402,20 +1527,28 @@ class SerialWorker(QThread):
         raw = self._transact(command, timeout)
 
         def parse(raw_exo):
+            parsed = raw_exo._parse_motor_data_block(raw)
+            if not parsed:
+                raise ProtocolResponseError(
+                    command=command,
+                    expected=f"motor data containing attribute {attr!r}",
+                    raw_response=raw,
+                )
             return {
                 mid: data.get(attr)
-                for mid, data in raw_exo._parse_motor_data_block(raw).items()
+                for mid, data in parsed.items()
             }
 
         return self._with_raw_exo(parse)
 
-    def _get_fast_telemetry(self, timeout: float) -> dict:
-        motor_ids = list(self._motor_ids)
-
+    def _get_fast_telemetry(
+        self, timeout: float, motor_ids: list[int] | None = None
+    ) -> dict:
+        selected_ids = list(self._motor_ids if motor_ids is None else motor_ids)
         def read_fast(raw_exo):
             return raw_exo.get_fast_telemetry(
                 timeout=timeout,
-                motor_ids=motor_ids,
+                motor_ids=selected_ids,
             )
 
         return self._with_raw_exo(read_fast)
@@ -1453,6 +1586,13 @@ class SerialWorker(QThread):
 
 class HandExoGUI(QWidget):
 
+    # Firmware builds whose built-in ROM has been reviewed for calibration-free
+    # operation. A device merely reporting limits is not enough to authorize
+    # participant use, so this allow-list stays explicit.
+    VALIDATED_FIRMWARE_VERSION = (0, 6, 2)
+    VALIDATED_FIRMWARE_SIDES = frozenset({"right", "dual"})
+    VALIDATED_RIGHT_IDS = frozenset(range(11, 20))
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NML EXO")
@@ -1471,6 +1611,10 @@ class HandExoGUI(QWidget):
         # Cached after every successful apply_calibration; used by Hand State tab
         # to normalise live relative angles against per-motor calibrated limits.
         self._active_cal_profile: dict | None = None
+        self._firmware_limits_by_id: dict[int, tuple[float, float]] = {}
+        self._firmware_version_text = "unknown"
+        self._firmware_build_side = "unknown"
+        self._validated_firmware_reason = "not connected"
 
         # Dual-mode per-side calibration profiles (populated separately for each side).
         # In single mode these are None; _active_cal_profile is used instead.
@@ -1488,11 +1632,13 @@ class HandExoGUI(QWidget):
         self._telemetry_rate_ema: float | None = None
         self._telemetry_buffers: dict[str, dict[int, deque]] = {
             field: {}
-            for field in ("relative", "positions", "torques", "currents")
+            for field in ("relative", "positions", "torques", "currents", "velocities")
         }
         self._telemetry_buffer_dirty = False
         self._buffered_telemetry_meta: dict | None = None
         self._direct_armed_ids: set[int] = set()
+        self._direct_arm_checkboxes: dict[int, QCheckBox] = {}
+        self._direct_arm_selection_dirty = False
         self._direct_mode: str | None = None
         self._direct_command_active = False
         self._suspend_device_poll_requests = False
@@ -1505,6 +1651,10 @@ class HandExoGUI(QWidget):
         self._emg_deadman_active = False
         self._emg_last_command_id: int | None = None
         self._emg_commanded_ids: set[int] = set()
+        self._emg_custom_motor_ids: dict[str, set[int]] = {}
+        self._emg_hold_angle: float | None = None
+        self._emg_hold_active = False
+        self._emg_hold_applied_current_mA: int | None = None
 
         self._udp_telemetry = UDPTelemetryPublisher()
         self._udp_telem_sent_count = 0
@@ -1598,6 +1748,7 @@ class HandExoGUI(QWidget):
         self._serial_worker.completed.connect(self._on_device_poll_completed)
         self._serial_worker.line_received.connect(self._log)
         self._serial_worker.pose_completed.connect(self._on_udp_pose_ack_ready)
+        self._serial_worker.direct_failed.connect(self._on_emg_direct_failed)
         self._serial_worker.start()
 
         self._build_ui()
@@ -1656,6 +1807,14 @@ class HandExoGUI(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
 
+        # Keep the identity and emergency stop outside the scrolling content,
+        # so STOP ALL MOTION remains reachable at every scroll position/tab.
+        header = QWidget()
+        self._header_layout = QVBoxLayout(header)
+        self._header_layout.setContentsMargins(16, 10, 16, 0)
+        self._header_layout.setSpacing(4)
+        outer.addWidget(header)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -1686,9 +1845,11 @@ class HandExoGUI(QWidget):
         controls_layout = QVBoxLayout(controls_container)
         controls_layout.setSpacing(10)
         controls_layout.setContentsMargins(0, 4, 0, 4)
+        self._setup_page = controls_container
         _saved_layout = self.main_layout
         self.main_layout = controls_layout
         self._build_motor_section()
+        self._build_position_hold_section()
         self._build_serial_terminal_section()
         self._build_gesture_section()
         self._build_calibration_section()
@@ -1696,14 +1857,34 @@ class HandExoGUI(QWidget):
         self.main_layout.addStretch()
         self.main_layout = _saved_layout
 
-        self.main_tabs.addTab(controls_container, "Controls")
-        self.main_tabs.addTab(self._build_telemetry_tab(), "Telemetry")
-        self.main_tabs.addTab(self._build_visualization_tab(), "Hand State")
-        self.main_tabs.addTab(self._build_direct_control_tab(), "Direct Control")
-        self.main_tabs.addTab(self._build_emg_teleop_tab(), "EMG Teleop")
-        self.main_tabs.addTab(self._build_teleop_tab(), "Teleop")
-        self.main_tabs.addTab(self._build_udp_bindings_tab(), "UDP Bindings")
-        self.main_tabs.addTab(self._build_settings_tab(), "Settings")
+        # Keep the existing feature pages and handlers intact, but organize
+        # them into a smaller workflow-oriented set of top-level tabs.  The
+        # nested tabs are deliberately conservative: this is a presentation
+        # change, not a command/safety-state rewrite.
+        telemetry_page = self._build_telemetry_tab()
+        hand_state_page = self._build_visualization_tab()
+        direct_control_page = self._build_direct_control_tab()
+        emg_page = self._build_emg_teleop_tab()
+        teleop_page = self._build_teleop_tab()
+        udp_page = self._build_udp_bindings_tab()
+        settings_page = self._build_settings_tab()
+
+        monitor_tabs = QTabWidget()
+        monitor_tabs.setDocumentMode(True)
+        monitor_tabs.addTab(telemetry_page, "Telemetry")
+        monitor_tabs.addTab(hand_state_page, "Hand State")
+
+        integrations_tabs = QTabWidget()
+        integrations_tabs.setDocumentMode(True)
+        integrations_tabs.addTab(teleop_page, "WebSocket Teleop")
+        integrations_tabs.addTab(udp_page, "UDP Bindings")
+        integrations_tabs.addTab(settings_page, "Streaming Settings")
+
+        self.main_tabs.addTab(emg_page, "Operate")
+        self.main_tabs.addTab(controls_container, "Setup")
+        self.main_tabs.addTab(monitor_tabs, "Monitor")
+        self.main_tabs.addTab(direct_control_page, "Advanced")
+        self.main_tabs.addTab(integrations_tabs, "Integrations")
 
         self._build_log_section()
         for button in self.findChildren(QPushButton):
@@ -1829,7 +2010,59 @@ class HandExoGUI(QWidget):
         mode_layout.addLayout(mode_status_row)
         layout.addWidget(mode_box)
 
-        command_box = QGroupBox("Per-Motor Command")
+        arming_box = QGroupBox("Motor Arming")
+        arming_layout = QVBoxLayout(arming_box)
+        arming_note = QLabel(
+            "Toggle every motor needed for this run, then apply the selection once. "
+            "Arming requires one confirmation for the complete set; disarming does not."
+        )
+        arming_note.setWordWrap(True)
+        arming_note.setStyleSheet("color: #aaaaaa;")
+        arming_layout.addWidget(arming_note)
+        self._direct_arm_checks_widget = QWidget()
+        self._direct_arm_checks_layout = QGridLayout(
+            self._direct_arm_checks_widget
+        )
+        self._direct_arm_checks_layout.setContentsMargins(0, 0, 0, 0)
+        arming_layout.addWidget(self._direct_arm_checks_widget)
+        preset_row = QHBoxLayout()
+        self._direct_select_fingers_btn = QPushButton("FINGER MOTORS")
+        self._direct_select_fingers_btn.clicked.connect(
+            self._select_direct_finger_motors
+        )
+        self._direct_select_power_btn = QPushButton("POWER GRASP")
+        self._direct_select_power_btn.clicked.connect(
+            self._select_direct_power_grasp_motors
+        )
+        self._direct_select_all_btn = QPushButton("ALL ACTIVE-SIDE MOTORS")
+        self._direct_select_all_btn.clicked.connect(
+            lambda: self._set_direct_arm_checkboxes(set(self._motor_dxl_id), dirty=True)
+        )
+        self._direct_clear_arm_btn = QPushButton("CLEAR")
+        self._direct_clear_arm_btn.clicked.connect(
+            lambda: self._set_direct_arm_checkboxes(set(), dirty=True)
+        )
+        preset_row.addWidget(self._direct_select_fingers_btn)
+        preset_row.addWidget(self._direct_select_power_btn)
+        preset_row.addWidget(self._direct_select_all_btn)
+        preset_row.addWidget(self._direct_clear_arm_btn)
+        preset_row.addStretch()
+        arming_layout.addLayout(preset_row)
+        apply_row = QHBoxLayout()
+        self._direct_arm_selection_status = QLabel("No motors selected")
+        self._direct_arm_selection_status.setStyleSheet("color: #888888;")
+        apply_row.addWidget(self._direct_arm_selection_status, 1)
+        self._direct_apply_arming_btn = QPushButton("APPLY ARMING SELECTION")
+        self._direct_apply_arming_btn.setProperty("accent", True)
+        self._direct_apply_arming_btn.setMinimumHeight(42)
+        self._direct_apply_arming_btn.clicked.connect(
+            self._apply_direct_arming_selection
+        )
+        apply_row.addWidget(self._direct_apply_arming_btn)
+        arming_layout.addLayout(apply_row)
+        layout.addWidget(arming_box)
+
+        command_box = QGroupBox("Per-Motor Command (diagnostics)")
         command_layout = QVBoxLayout(command_box)
         target_row = QHBoxLayout()
         target_row.addWidget(QLabel("Motor:"))
@@ -1838,12 +2071,17 @@ class HandExoGUI(QWidget):
             self._update_direct_arm_status
         )
         target_row.addWidget(self._direct_motor_combo, 1)
-        self._direct_arm_btn = QCheckBox("Arm Selected Motor")
+        self._direct_arm_btn = QPushButton("ARM ONLY THIS MOTOR")
+        self._direct_arm_btn.setCheckable(True)
+        self._direct_arm_btn.setMinimumHeight(42)
+        self._direct_arm_btn.setProperty("accent", True)
         self._direct_arm_btn.toggled.connect(self._on_direct_arm_toggled)
         target_row.addWidget(self._direct_arm_btn)
         self._direct_arm_confirm_cb = QCheckBox("Require arm confirmation")
         self._direct_arm_confirm_cb.setChecked(True)
-        target_row.addWidget(self._direct_arm_confirm_cb)
+        # Confirmation remains enabled as a safety default, but is not a
+        # primary operator-facing control.
+        self._direct_arm_confirm_cb.setVisible(False)
         command_layout.addLayout(target_row)
 
         command_row = QHBoxLayout()
@@ -1863,13 +2101,13 @@ class HandExoGUI(QWidget):
         self._direct_arm_status = QLabel("No motor armed")
         self._direct_arm_status.setStyleSheet("color: #888888;")
         stop_row.addWidget(self._direct_arm_status, 1)
-        self._direct_zero_btn = QPushButton("Zero Target")
+        self._direct_zero_btn = QPushButton("STOP TARGET")
+        self._direct_zero_btn.setProperty("danger", True)
+        self._direct_zero_btn.setToolTip("Stop the selected motor's direct command.")
         self._direct_zero_btn.clicked.connect(self._zero_direct_target)
         stop_row.addWidget(self._direct_zero_btn)
         self._direct_stop_all_btn = QPushButton("STOP ALL")
-        self._direct_stop_all_btn.setStyleSheet(
-            "background-color: #8e1b1b; color: white; font-weight: bold;"
-        )
+        self._direct_stop_all_btn.setProperty("danger", True)
         self._direct_stop_all_btn.clicked.connect(self._stop_all_direct_control)
         stop_row.addWidget(self._direct_stop_all_btn)
         command_layout.addLayout(stop_row)
@@ -1893,16 +2131,61 @@ class HandExoGUI(QWidget):
         return widget
 
     def _build_emg_teleop_tab(self) -> QWidget:
-        """Guarded one-motor NMLIntentV1-to-velocity adapter."""
+        """Guarded explicit-ID NMLIntentV1-to-direct-control adapter."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         warning = QLabel(
-            "Disabled by default. Commands one explicitly armed active DXL ID only while "
-            "a fresh, confident NMLIntentV1 sample and the held deadman are present."
+            "Connect the decoder, choose an explicit motor or finger group, arm every "
+            "listed DXL ID, verify the safety envelope, then start latched EMG control."
         )
         warning.setWordWrap(True)
         warning.setStyleSheet("color: #f39c12; font-weight: bold;")
         layout.addWidget(warning)
+
+        preflight_box = QWidget()
+        preflight_box.setObjectName("run-readiness-strip")
+        preflight_box.setMaximumHeight(52)
+        preflight_box.setStyleSheet(
+            "QWidget#run-readiness-strip { background-color: #171717; "
+            "border: 1px solid #333333; border-radius: 6px; }"
+        )
+        preflight_layout = QHBoxLayout(preflight_box)
+        preflight_layout.setContentsMargins(10, 6, 10, 6)
+        preflight_layout.setSpacing(6)
+        self._emg_preflight_summary = QLabel("0/6 READY")
+        self._emg_preflight_summary.setStyleSheet(
+            "color: #f39c12; font-weight: bold;"
+        )
+        preflight_layout.addWidget(self._emg_preflight_summary)
+        preflight_layout.addSpacing(6)
+        self._emg_preflight_labels = {}
+        for key, short_text, detail in (
+            ("exo", "EXO", "Exoskeleton connected"),
+            ("decoder", "LSL", "Intent decoder connected"),
+            ("mode", "MODE", "Compatible direct-control mode applied"),
+            ("target", "TARGET", "Explicit motor target selected"),
+            ("safety", "LIMITS", "Safety envelope verified"),
+            ("armed", "ARMED", "Every target motor armed"),
+        ):
+            label = QLabel(f"○ {short_text}")
+            label.setToolTip(detail)
+            label.setAlignment(Qt.AlignCenter)
+            label.setStyleSheet(
+                "color: #aaaaaa; background-color: #232323; "
+                "border: 1px solid #444444; border-radius: 8px; "
+                "padding: 3px 8px; font-weight: bold;"
+            )
+            self._emg_preflight_labels[key] = label
+            preflight_layout.addWidget(label)
+        self._emg_hold_summary_btn = QPushButton("○ AUX HOLD · not configured")
+        self._emg_hold_summary_btn.setToolTip(
+            "Configure a stationary auxiliary joint in Setup > Position and Hold."
+        )
+        self._emg_hold_summary_btn.setFlat(True)
+        self._emg_hold_summary_btn.clicked.connect(self._show_setup_position_hold)
+        preflight_layout.addWidget(self._emg_hold_summary_btn)
+        preflight_layout.addStretch()
+        layout.addWidget(preflight_box)
 
         input_box = QGroupBox("Intent Input")
         input_layout = QGridLayout(input_box)
@@ -1925,12 +2208,13 @@ class HandExoGUI(QWidget):
         map_box = QGroupBox("Explicit-ID Mapping")
         map_layout = QGridLayout(map_box)
         self._emg_motor_combo = QComboBox()
+        self._emg_motor_combo.currentIndexChanged.connect(self._on_emg_target_changed)
         self._emg_direction_combo = QComboBox()
-        self._emg_direction_combo.addItem("+ intent = positive velocity", 1.0)
-        self._emg_direction_combo.addItem("+ intent = negative velocity", -1.0)
-        self._emg_max_rpm_spin = QDoubleSpinBox()
-        self._emg_max_rpm_spin.setRange(0.1, DIRECT_VELOCITY_LIMIT_RPM)
-        self._emg_max_rpm_spin.setValue(2.0)
+        self._emg_direction_combo.addItem("+ intent = positive command", 1.0)
+        self._emg_direction_combo.addItem("+ intent = negative command", -1.0)
+        self._emg_max_command_spin = QDoubleSpinBox()
+        self._emg_max_command_spin.setRange(0.1, DIRECT_VELOCITY_LIMIT_RPM)
+        self._emg_max_command_spin.setValue(2.0)
         self._emg_deadband_spin = QDoubleSpinBox()
         self._emg_deadband_spin.setRange(0.0, 0.95)
         self._emg_deadband_spin.setValue(0.15)
@@ -1940,32 +2224,119 @@ class HandExoGUI(QWidget):
         self._emg_confidence_spin = QDoubleSpinBox()
         self._emg_confidence_spin.setRange(0.0, 1.0)
         self._emg_confidence_spin.setValue(0.70)
-        map_layout.addWidget(QLabel("Target active motor:"), 0, 0)
+        self._emg_firmware_fallback_cb = QCheckBox(
+            "Use validated firmware ROM (no participant profile)"
+        )
+        self._emg_firmware_fallback_cb.setToolTip(
+            "Allows operation without a participant profile only when the connected "
+            "firmware version/build and right-hand ROM are on the validated allow-list."
+        )
+        self._emg_firmware_fallback_cb.setEnabled(False)
+        self._emg_safety_lbl = QLabel("Safety envelope: not verified")
+        self._emg_safety_lbl.setStyleSheet("color: #888888;")
+        self._emg_firmware_fallback_cb.toggled.connect(
+            lambda _checked: self._update_emg_safety_status()
+        )
+        map_layout.addWidget(QLabel("EMG target:"), 0, 0)
         map_layout.addWidget(self._emg_motor_combo, 0, 1)
-        map_layout.addWidget(QLabel("Direction:"), 0, 2)
+        direction_label = QLabel("Direction:")
+        map_layout.addWidget(direction_label, 0, 2)
         map_layout.addWidget(self._emg_direction_combo, 0, 3)
-        map_layout.addWidget(QLabel("Max rpm:"), 1, 0)
-        map_layout.addWidget(self._emg_max_rpm_spin, 1, 1)
-        map_layout.addWidget(QLabel("Deadband:"), 1, 2)
+        self._emg_max_command_label = QLabel("Max command:")
+        map_layout.addWidget(self._emg_max_command_label, 1, 0)
+        map_layout.addWidget(self._emg_max_command_spin, 1, 1)
+        deadband_label = QLabel("Deadband:")
+        map_layout.addWidget(deadband_label, 1, 2)
         map_layout.addWidget(self._emg_deadband_spin, 1, 3)
-        map_layout.addWidget(QLabel("Freshness (ms):"), 2, 0)
+        freshness_label = QLabel("Freshness (ms):")
+        map_layout.addWidget(freshness_label, 2, 0)
         map_layout.addWidget(self._emg_stale_ms_spin, 2, 1)
-        map_layout.addWidget(QLabel("Min confidence:"), 2, 2)
+        confidence_label = QLabel("Min confidence:")
+        map_layout.addWidget(confidence_label, 2, 2)
         map_layout.addWidget(self._emg_confidence_spin, 2, 3)
+        self._emg_arm_btn = QPushButton("ARM EMG TARGET")
+        self._emg_arm_btn.setCheckable(True)
+        self._emg_arm_btn.setMinimumHeight(36)
+        self._emg_arm_btn.setProperty("accent", True)
+        self._emg_arm_btn.toggled.connect(self._on_emg_arm_toggled)
+        self._emg_arm_status = QLabel("EMG target is not armed")
+        self._emg_arm_status.setStyleSheet("color: #888888;")
+        map_layout.addWidget(self._emg_arm_btn, 3, 0, 1, 2)
+        map_layout.addWidget(self._emg_arm_status, 3, 2, 1, 2)
+        self._emg_use_armed_btn = QPushButton("USE ARMED MOTORS AS TARGET")
+        self._emg_use_armed_btn.clicked.connect(
+            self._use_armed_finger_motors_as_emg_target
+        )
+        self._emg_customize_btn = QPushButton("CUSTOMIZE...")
+        self._emg_customize_btn.clicked.connect(self._configure_emg_custom_target)
+        self._emg_customize_btn.setEnabled(False)
+        self._emg_custom_status = QLabel("Select Custom finger group to edit its motors")
+        self._emg_custom_status.setStyleSheet("color: #888888;")
+        map_layout.addWidget(self._emg_use_armed_btn, 4, 0)
+        map_layout.addWidget(self._emg_customize_btn, 4, 1)
+        map_layout.addWidget(self._emg_custom_status, 4, 2, 1, 2)
+        map_layout.addWidget(self._emg_safety_lbl, 5, 0, 1, 4)
+        self._emg_advanced_widgets = [
+            direction_label,
+            self._emg_direction_combo,
+            deadband_label,
+            self._emg_deadband_spin,
+            freshness_label,
+            self._emg_stale_ms_spin,
+            confidence_label,
+            self._emg_confidence_spin,
+        ]
+        self._emg_advanced_toggle = QCheckBox("Show advanced intent settings")
+        self._emg_advanced_toggle.toggled.connect(self._set_emg_advanced_visible)
+        map_layout.addWidget(self._emg_advanced_toggle, 6, 0, 1, 4)
+        self._set_emg_advanced_visible(False)
         layout.addWidget(map_box)
 
+        control_box = QGroupBox("Control")
+        control_layout = QVBoxLayout(control_box)
+        self._emg_readiness_lbl = QLabel(
+            "Setup required: connect decoder, select and arm an EMG target, and verify the safety envelope."
+        )
+        self._emg_readiness_lbl.setWordWrap(True)
+        self._emg_readiness_lbl.setStyleSheet("color: #f39c12; font-weight: bold;")
+        control_layout.addWidget(self._emg_readiness_lbl)
+        action_row = QHBoxLayout()
+        self._emg_start_btn = QPushButton("START EMG TELEOP")
+        self._emg_start_btn.setMinimumHeight(48)
+        self._emg_start_btn.setProperty("accent", True)
+        self._emg_start_btn.clicked.connect(lambda: self._on_emg_live_toggled(True))
+        self._emg_stop_btn = QPushButton("STOP TELEOP")
+        self._emg_stop_btn.setMinimumHeight(48)
+        self._emg_stop_btn.setProperty("danger", True)
+        self._emg_stop_btn.clicked.connect(lambda: self._on_emg_live_toggled(False))
+        self._emg_stop_btn.setEnabled(False)
+        action_row.addWidget(self._emg_start_btn, 2)
+        action_row.addWidget(self._emg_stop_btn, 1)
+        control_layout.addLayout(action_row)
+        self._emg_command_lbl = QLabel("Commanded output: —")
+        self._emg_command_lbl.setStyleSheet("color: #27ae60; font-weight: bold;")
+        self._emg_feedback_lbl = QLabel("Measured feedback: —")
+        self._emg_feedback_lbl.setStyleSheet("color: #e0e0e0; font-weight: bold;")
+        control_layout.addWidget(self._emg_command_lbl)
+        control_layout.addWidget(self._emg_feedback_lbl)
         self._emg_live_cb = QCheckBox("Enable EMG Teleop")
+        self._emg_live_cb.setVisible(False)
         self._emg_deadman_btn = QPushButton("Hold Deadman to Command")
-        self._emg_deadman_btn.setProperty("accent", True)
-        self._emg_live_status_lbl = QLabel("Disabled — monitor-only")
+        self._emg_deadman_btn.setVisible(False)
+        self._emg_live_status_lbl = QLabel("Monitor-only — teleop stopped")
         self._emg_live_cb.toggled.connect(self._on_emg_live_toggled)
         self._emg_deadman_btn.pressed.connect(self._on_emg_deadman_pressed)
         self._emg_deadman_btn.released.connect(self._on_emg_deadman_released)
-        layout.addWidget(self._emg_live_cb)
-        layout.addWidget(self._emg_deadman_btn)
-        layout.addWidget(self._emg_live_status_lbl)
+        control_layout.addWidget(self._emg_live_status_lbl)
+        layout.addWidget(control_box)
         layout.addStretch()
+        self._update_emg_preflight()
         return widget
+
+    def _set_emg_advanced_visible(self, visible: bool):
+        """Show decoder tuning only when the operator explicitly asks for it."""
+        for widget in getattr(self, "_emg_advanced_widgets", []):
+            widget.setVisible(bool(visible))
 
     def _build_teleop_tab(self) -> QWidget:
         widget = QWidget()
@@ -2383,6 +2754,23 @@ class HandExoGUI(QWidget):
         udp_out_layout.addLayout(udp_out_row)
         layout.addWidget(udp_out_box)
 
+        safety_box = QGroupBox("Safety Envelope")
+        safety_layout = QVBoxLayout(safety_box)
+        safety_layout.addWidget(self._emg_firmware_fallback_cb)
+        safety_note = QLabel(
+            "Participant calibration remains the default. Validated firmware ROM "
+            "is available only for approved firmware/build combinations and is "
+            "rechecked after every connection."
+        )
+        safety_note.setWordWrap(True)
+        safety_note.setStyleSheet("color: #888888; font-size: 10px;")
+        safety_layout.addWidget(safety_note)
+        self._firmware_validation_lbl = QLabel("Firmware validation: not connected")
+        self._firmware_validation_lbl.setWordWrap(True)
+        self._firmware_validation_lbl.setStyleSheet("color: #888888; font-size: 10px;")
+        safety_layout.addWidget(self._firmware_validation_lbl)
+        layout.addWidget(safety_box)
+
         apply_btn = QPushButton("Apply Streaming Settings")
         apply_btn.setProperty("accent", True)
         apply_btn.clicked.connect(self._apply_stream_settings)
@@ -2456,10 +2844,9 @@ class HandExoGUI(QWidget):
         )
 
         interval_ms = max(10, round(1000 / self._telemetry_rate_spin.value()))
-        self._angle_timer.setInterval(interval_ms)
         self._teleop_timer.setInterval(interval_ms)
         if self.exo_connected and not self._teleop_streaming:
-            self._angle_timer.start(interval_ms)
+            self._start_device_polling()
 
         self._udp_telemetry.configure(
             self._udp_telem_cb.isChecked(),
@@ -4185,7 +4572,7 @@ class HandExoGUI(QWidget):
                 selected_mode = command.rsplit(":", 1)[-1]
                 if selected_mode in ("velocity", "current"):
                     self._direct_mode = selected_mode
-                    self._angle_timer.stop()
+                    self._start_device_polling(force_refresh=True)
                 else:
                     self._direct_mode = None
                     self._resume_normal_polling()
@@ -4278,12 +4665,13 @@ class HandExoGUI(QWidget):
         try:
             # Let any in-flight poll finish so bulk commands don't queue behind it.
             self._wait_for_pending_poll(1200)
-            action_callback()
+            result = action_callback()
         finally:
             self._suspend_device_poll_requests = False
             if was_angle_timer_active:
                 self._resume_normal_polling()
         self._request_device_poll(force_telemetry=True)
+        return result
 
     def _wait_for_pending_poll(self, timeout_ms: int):
         """Give an in-flight automatic poll a brief chance to finish."""
@@ -4299,11 +4687,44 @@ class HandExoGUI(QWidget):
             return
         if self._suspend_device_poll_requests:
             return
-        # Telemetry now always follows the configured broadcast rate.
+        # Full fast telemetry supplies both the motor rows and measured EMG
+        # feedback. Scheduling is capped separately during DIRECT control.
         include_telemetry = True
         self._serial_worker.set_exo(self.exo)
         self._serial_worker.set_motor_ids(self._motor_dxl_id)
         self._serial_worker.request_poll(include_telemetry)
+
+    def _device_poll_interval_ms(self) -> int:
+        """Return the live-feedback interval for the active control mode."""
+        rate_hz = (
+            self._telemetry_rate_spin.value()
+            if hasattr(self, "_telemetry_rate_spin")
+            else TELEMETRY_DEFAULT_RATE_HZ
+        )
+        interval_ms = max(10, round(1000 / max(1, rate_hz)))
+        if getattr(self, "_emg_live", False):
+            return max(
+                interval_ms,
+                round(1000 / EMG_TELEMETRY_RATE_HZ),
+            )
+        if self._direct_mode is not None:
+            interval_ms = max(
+                interval_ms, round(1000 / DIRECT_TELEMETRY_MAX_RATE_HZ)
+            )
+        return interval_ms
+
+    def _start_device_polling(self, *, force_refresh: bool = False):
+        """Keep motor feedback live without competing with sensor-only teleop."""
+        if (
+            not self.exo_connected
+            or self._teleop_streaming
+            or self._suspend_device_poll_requests
+        ):
+            return
+        interval_ms = HandExoGUI._device_poll_interval_ms(self)
+        self._angle_timer.start(interval_ms)
+        if force_refresh:
+            self._request_device_poll(force_telemetry=True)
 
     def _on_device_poll_completed(self, result: dict):
         if not self.exo_connected:
@@ -4312,13 +4733,14 @@ class HandExoGUI(QWidget):
         positions = result.get("positions")
         torques = result.get("torques")
         currents = result.get("currents")
+        velocities = result.get("velocities")
         if not result.get("telemetry_requested", True):
             # Teleop owns its configured stream rate and intentionally renders
             # each sensor frame; normal telemetry uses the decoupled renderer.
             if relative is not None:
                 self._apply_motor_angles(relative)
             return
-        if positions is None and torques is None and currents is None:
+        if positions is None and torques is None and currents is None and velocities is None:
             self._buffer_telemetry_field("relative", relative)
             self._telemetry_buffer_dirty = bool(relative)
             ts = datetime.now().strftime("%H:%M:%S")
@@ -4332,6 +4754,7 @@ class HandExoGUI(QWidget):
         self._buffer_telemetry_field("positions", positions)
         self._buffer_telemetry_field("torques", torques)
         self._buffer_telemetry_field("currents", currents)
+        self._buffer_telemetry_field("velocities", velocities)
         self._buffered_telemetry_meta = telemetry_meta
         self._telemetry_buffer_dirty = True
 
@@ -4368,6 +4791,21 @@ class HandExoGUI(QWidget):
             for motor_id, samples in self._telemetry_buffers[field].items()
             if samples
         }
+
+    def _fresh_cached_relative_angle(
+        self,
+        motor_id: int,
+        max_age_s: float = POSITION_HOLD_CAPTURE_MAX_AGE_S,
+    ) -> float | None:
+        """Return a recent displayed relative angle without another serial read."""
+        updated = self._last_telemetry_update_monotonic
+        if updated is None or time.monotonic() - updated > float(max_age_s):
+            return None
+        value = self._averaged_telemetry_field("relative").get(int(motor_id))
+        if value is None:
+            return None
+        angle = float(value)
+        return angle if math.isfinite(angle) else None
 
     def _telemetry_values_by_name(
         self, values: dict | None
@@ -4409,12 +4847,14 @@ class HandExoGUI(QWidget):
         positions = self._averaged_telemetry_field("positions")
         torques = self._averaged_telemetry_field("torques")
         currents = self._averaged_telemetry_field("currents")
+        velocities = self._averaged_telemetry_field("velocities")
         if relative:
             self._apply_motor_angles(relative)
         self._apply_telemetry_result(
             positions,
             torques,
             currents,
+            velocities,
             self._buffered_telemetry_meta,
             publish=False,
         )
@@ -4424,6 +4864,7 @@ class HandExoGUI(QWidget):
         positions,
         torques,
         currents,
+        velocities,
         telemetry_meta=None,
         publish: bool = True,
     ):
@@ -4436,6 +4877,7 @@ class HandExoGUI(QWidget):
             pos  = positions.get(dxl_id) if (positions is not None and dxl_id is not None) else None
             torq = torques.get(dxl_id)   if (torques   is not None and dxl_id is not None) else None
             curr = currents.get(dxl_id)  if (currents  is not None and dxl_id is not None) else None
+            velocity = velocities.get(dxl_id) if (velocities is not None and dxl_id is not None) else None
             positions_by_name[name] = pos
             torque_by_name[name] = torq
             current_by_name[name] = curr
@@ -4448,6 +4890,16 @@ class HandExoGUI(QWidget):
             self._telem_table.item(row, 3).setText(
                 f"{curr:.1f}" if curr is not None else "—"
             )
+            if dxl_id == self._selected_emg_motor_id() and hasattr(self, "_emg_feedback_lbl"):
+                measured = []
+                if velocity is not None:
+                    measured.append(f"velocity {velocity:+.2f} rpm")
+                if curr is not None:
+                    measured.append(f"current {curr:+.1f} mA")
+                self._emg_feedback_lbl.setText(
+                    "Measured feedback: " + " · ".join(measured)
+                    if measured else "Measured feedback: —"
+                )
 
         actual_rate = self._telemetry_rate_ema
         ts = datetime.now().strftime("%H:%M:%S")
@@ -4519,17 +4971,47 @@ class HandExoGUI(QWidget):
             self._udp_telem_status_lbl.setStyleSheet("color: #c0392b;")
 
     def _build_header(self):
+        target_layout = getattr(self, "_header_layout", self.main_layout)
+        row = QHBoxLayout()
         title = QLabel("NML EXO")
         title.setObjectName("title")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         title.setFont(QFont("Segoe UI", 28, QFont.Bold))
-        self.main_layout.addWidget(title)
+        row.addWidget(title, 1)
+
+        self._global_stop_btn = QPushButton("STOP ALL MOTION")
+        self._global_stop_btn.setProperty("danger", True)
+        self._global_stop_btn.setMinimumSize(210, 48)
+        self._global_stop_btn.setToolTip(
+            "Stop every GUI control source and disable each active-side motor by explicit DXL ID."
+        )
+        self._global_stop_btn.clicked.connect(self._global_stop_all_motion)
+        self._global_stop_btn.setEnabled(False)
+        row.addWidget(self._global_stop_btn)
+        target_layout.addLayout(row)
 
         line = QLabel()
         line.setObjectName("accent-line")
         line.setFixedHeight(2)
-        self.main_layout.addWidget(line)
-        self.main_layout.addSpacing(4)
+        target_layout.addWidget(line)
+        target_layout.addSpacing(4)
+
+    def _global_stop_all_motion(self):
+        """Stop every GUI command source and torque-off active-side IDs."""
+        self._finish_home_sequence(resume_polling=False)
+        if self._teleop_streaming:
+            self._on_teleop_stop()
+        self._stop_emg_control(
+            "global stop pressed", stop_timer=True, release_deadman=True
+        )
+        self._stop_udp_binding_output(disable_motors=True)
+        self._stop_all_direct_control()
+        if self.exo_connected:
+            # _motor_all intentionally uses explicit active-side DXL IDs.  Do
+            # not replace this with firmware-level disable:all in dual builds.
+            self._motor_all("disable")
+        self._log("[SAFETY] STOP ALL MOTION pressed; active-side motors disabled.")
+        self._update_emg_preflight()
 
     # -- Connection --------------------------------------------------------
 
@@ -4570,7 +5052,7 @@ class HandExoGUI(QWidget):
         self.port_combo.setSizeAdjustPolicy(
             QComboBox.AdjustToMinimumContentsLengthWithIcon
         )
-        self.port_combo.setMinimumContentsLength(24)
+        self.port_combo.setMinimumContentsLength(12)
         self.port_combo.currentIndexChanged.connect(self._cache_selected_port)
 
         self.refresh_btn = QPushButton("Refresh")
@@ -4757,25 +5239,6 @@ class HandExoGUI(QWidget):
         self.motor_layout.addLayout(btn_row)
 
         limits_grid = QGridLayout()
-        self._current_limit_target_combo = QComboBox()
-        self._current_limit_target_combo.addItem("All active motors", None)
-        self._current_limit_target_combo.setToolTip(
-            "Apply the nominal working-current limit to every motor in the "
-            "selected GUI mode, or to one explicit Dynamixel ID."
-        )
-        self._per_motor_current_spin = QSpinBox()
-        self._per_motor_current_spin.setRange(1, int(DIRECT_CURRENT_LIMIT_MA))
-        self._per_motor_current_spin.setValue(150)
-        self._per_motor_current_spin.setSuffix(" mA")
-        self._per_motor_current_spin.setToolTip(
-            "Nominal current available to each selected motor. The firmware "
-            "may allocate less while the combined budget is active."
-        )
-        self._set_per_motor_current_btn = QPushButton("Set Per-Motor")
-        self._set_per_motor_current_btn.clicked.connect(
-            self._set_per_motor_current_limit
-        )
-
         self._total_current_spin = QSpinBox()
         self._total_current_spin.setRange(1, 65535)
         self._total_current_spin.setValue(800)
@@ -4789,15 +5252,15 @@ class HandExoGUI(QWidget):
             self._set_total_current_limit
         )
 
-        limits_grid.addWidget(QLabel("Current target:"), 0, 0)
-        limits_grid.addWidget(self._current_limit_target_combo, 0, 1)
-        limits_grid.addWidget(QLabel("Per-motor:"), 0, 2)
-        limits_grid.addWidget(self._per_motor_current_spin, 0, 3)
-        limits_grid.addWidget(self._set_per_motor_current_btn, 0, 4)
-        limits_grid.addWidget(QLabel("Combined total:"), 1, 2)
-        limits_grid.addWidget(self._total_current_spin, 1, 3)
-        limits_grid.addWidget(self._set_total_current_btn, 1, 4)
-        limits_grid.setColumnStretch(1, 1)
+        limits_grid.addWidget(QLabel("Combined current budget:"), 0, 0)
+        limits_grid.addWidget(self._total_current_spin, 0, 1)
+        limits_grid.addWidget(self._set_total_current_btn, 0, 2)
+        limits_grid.addWidget(
+            QLabel("Per-motor current and velocity limits are set in each row below."),
+            0,
+            3,
+        )
+        limits_grid.setColumnStretch(3, 1)
         self.motor_layout.addLayout(limits_grid)
 
         # Panel container — populated by _build_motor_rows() on connect.
@@ -4816,8 +5279,81 @@ class HandExoGUI(QWidget):
         self.motor_box.setLayout(self.motor_layout)
         self.main_layout.addWidget(self.motor_box)
 
+    def _build_position_hold_section(self):
+        """Build the Setup workflow for one stationary mixed-mode joint."""
+        self._position_hold_box = QGroupBox("Position and Hold")
+        layout = QGridLayout(self._position_hold_box)
+
+        self._emg_hold_enable_cb = QCheckBox()
+        self._emg_hold_enable_cb.setVisible(False)
+        self._emg_hold_enable_cb.toggled.connect(self._on_emg_hold_toggled)
+
+        self._emg_hold_motor_combo = QComboBox()
+        self._emg_hold_motor_combo.currentIndexChanged.connect(
+            self._on_emg_hold_motor_changed
+        )
+        self._emg_hold_current_lbl = QLabel("--")
+        self._emg_hold_current_lbl.setMinimumWidth(90)
+        self._emg_hold_current_lbl.setStyleSheet("font-weight: bold;")
+        self._emg_hold_target_spin = QDoubleSpinBox()
+        self._emg_hold_target_spin.setRange(-3600.0, 3600.0)
+        self._emg_hold_target_spin.setDecimals(2)
+        self._emg_hold_target_spin.setSingleStep(1.0)
+        self._emg_hold_target_spin.setSuffix(" deg")
+        self._emg_hold_target_spin.setToolTip(
+            "Relative joint angle. The command is clamped to the configured "
+            "firmware joint limits."
+        )
+        self._emg_hold_effort_spin = QSpinBox()
+        self._emg_hold_effort_spin.setRange(1, int(DIRECT_CURRENT_LIMIT_MA))
+        self._emg_hold_effort_spin.setValue(25)
+        self._emg_hold_effort_spin.setSuffix(" mA")
+        self._emg_hold_effort_spin.setToolTip(
+            "Current requested for this stationary hold. Firmware clamps it "
+            "to the selected motor's configured current limit, the motor "
+            "maximum, and the configured total budget."
+        )
+
+        self._emg_hold_capture_btn = QPushButton("HOLD CURRENT POSITION")
+        self._emg_hold_capture_btn.setProperty("accent", True)
+        self._emg_hold_capture_btn.clicked.connect(
+            self._hold_current_emg_position
+        )
+        self._emg_hold_move_btn = QPushButton("MOVE & HOLD")
+        self._emg_hold_move_btn.clicked.connect(self._move_and_hold_emg_position)
+        self._emg_hold_release_btn = QPushButton("RELEASE HOLD")
+        self._emg_hold_release_btn.setProperty("danger", True)
+        self._emg_hold_release_btn.clicked.connect(
+            self._manual_release_emg_position_hold
+        )
+        self._emg_hold_status_lbl = QLabel(
+            "Optional — apply a direct mode, position the joint, then hold it."
+        )
+        self._emg_hold_status_lbl.setWordWrap(True)
+        self._emg_hold_status_lbl.setStyleSheet("color: #888888;")
+
+        layout.addWidget(QLabel("Joint:"), 0, 0)
+        layout.addWidget(self._emg_hold_motor_combo, 0, 1)
+        layout.addWidget(QLabel("Angle:"), 0, 2)
+        layout.addWidget(self._emg_hold_current_lbl, 0, 3)
+        layout.addWidget(QLabel("Target:"), 0, 4)
+        layout.addWidget(self._emg_hold_target_spin, 0, 5)
+        layout.addWidget(QLabel("Hold effort:"), 1, 0)
+        layout.addWidget(self._emg_hold_effort_spin, 1, 1)
+        layout.addWidget(self._emg_hold_capture_btn, 2, 0, 1, 2)
+        layout.addWidget(self._emg_hold_move_btn, 2, 2, 1, 2)
+        layout.addWidget(self._emg_hold_release_btn, 2, 4, 1, 2)
+        layout.addWidget(self._emg_hold_status_lbl, 3, 0, 1, 6)
+        layout.setColumnStretch(1, 2)
+        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(5, 1)
+
+        self.main_layout.addWidget(self._position_hold_box)
+
     def _build_serial_terminal_section(self):
-        box = QGroupBox("Raw Serial Command")
+        box = QGroupBox("Raw Serial Command (advanced)")
+        box.setCheckable(True)
+        box.setChecked(False)
         layout = QHBoxLayout()
         self._raw_command_edit = QLineEdit()
         self._raw_command_edit.setPlaceholderText(
@@ -4834,6 +5370,10 @@ class HandExoGUI(QWidget):
         layout.addWidget(self._raw_command_edit, 1)
         layout.addWidget(self._raw_send_btn)
         box.setLayout(layout)
+        self._raw_command_edit.setVisible(False)
+        self._raw_send_btn.setVisible(False)
+        box.toggled.connect(self._raw_command_edit.setVisible)
+        box.toggled.connect(self._raw_send_btn.setVisible)
         self.main_layout.addWidget(box)
 
     def _build_motor_rows(self):
@@ -4852,27 +5392,14 @@ class HandExoGUI(QWidget):
             self._build_motor_rows_dual()
         else:
             self._build_motor_rows_single()
-        self._rebuild_current_limit_targets()
-
-    def _rebuild_current_limit_targets(self):
-        previous = self._current_limit_target_combo.currentData()
-        self._current_limit_target_combo.blockSignals(True)
-        self._current_limit_target_combo.clear()
-        self._current_limit_target_combo.addItem("All active motors", None)
-        for name, dxl_id in zip(self.motor_names, self._motor_dxl_id):
-            self._current_limit_target_combo.addItem(
-                f"{name} (ID {dxl_id})", int(dxl_id)
-            )
-        if previous is not None:
-            index = self._current_limit_target_combo.findData(previous)
-            if index >= 0:
-                self._current_limit_target_combo.setCurrentIndex(index)
-        self._current_limit_target_combo.blockSignals(False)
 
     def _build_motor_rows_single(self):
         """Single-exo layout: column headers + motor rows in one column."""
         col_header = QHBoxLayout()
-        for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("", 1)]:
+        for text, stretch in [
+            ("Motor", 2), ("Angle", 2), ("Status", 1),
+            ("Current", 2), ("Velocity", 2), ("", 1), ("", 1),
+        ]:
             lbl = QLabel(text)
             lbl.setStyleSheet("color: #9a9a9a; font-size: 13px; font-weight: 600;")
             col_header.addWidget(lbl, stretch)
@@ -4961,7 +5488,10 @@ class HandExoGUI(QWidget):
 
         # Column headers
         col_hdr = QHBoxLayout()
-        for text, stretch in [("Motor", 2), ("Angle", 2), ("Status", 1), ("", 1)]:
+        for text, stretch in [
+            ("Motor", 2), ("Angle", 2), ("Status", 1),
+            ("Current", 2), ("Velocity", 2), ("", 1), ("", 1),
+        ]:
             lbl = QLabel(text)
             lbl.setStyleSheet("color: #9a9a9a; font-size: 13px; font-weight: 600;")
             col_hdr.addWidget(lbl, stretch)
@@ -4995,6 +5525,29 @@ class HandExoGUI(QWidget):
         angle_lbl  = QLabel("--")
         status_lbl = QLabel("--")
 
+        current_limit_spin = QSpinBox()
+        current_limit_spin.setRange(1, int(DIRECT_CURRENT_LIMIT_MA))
+        current_limit_spin.setValue(150)
+        current_limit_spin.setSuffix(" mA")
+        current_limit_spin.setToolTip(
+            "Per-motor current limit. Firmware also enforces the combined current budget."
+        )
+        velocity_limit_spin = QDoubleSpinBox()
+        velocity_limit_spin.setRange(0.229, DIRECT_VELOCITY_LIMIT_RPM)
+        velocity_limit_spin.setDecimals(2)
+        velocity_limit_spin.setSingleStep(0.5)
+        velocity_limit_spin.setValue(DIRECT_VELOCITY_LIMIT_RPM)
+        velocity_limit_spin.setSuffix(" rpm")
+        velocity_limit_spin.setToolTip(
+            "Host-side per-motor ceiling for GUI direct/EMG commands. The "
+            "firmware independently verifies the motor's 50 rpm hardware limit."
+        )
+        apply_limits_btn = QPushButton("Apply")
+        apply_limits_btn.setToolTip(
+            "Apply the current limit to this Dynamixel ID and retain the "
+            "velocity ceiling in the GUI."
+        )
+
         toggle_btn = QPushButton("Enable")
         toggle_btn.setMinimumWidth(102)
         toggle_btn.setStyleSheet("padding: 4px 12px;")
@@ -5004,6 +5557,9 @@ class HandExoGUI(QWidget):
         row_layout.addWidget(name_lbl,   2)
         row_layout.addWidget(angle_lbl,  2)
         row_layout.addWidget(status_lbl, 1)
+        row_layout.addWidget(current_limit_spin, 2)
+        row_layout.addWidget(velocity_limit_spin, 2)
+        row_layout.addWidget(apply_limits_btn, 1)
         row_layout.addWidget(toggle_btn, 1)
 
         widget_dict = {
@@ -5012,13 +5568,60 @@ class HandExoGUI(QWidget):
             "dxl_id":     dxl_id,   # integer Dynamixel ID; use for per-motor commands
             "angle_lbl":  angle_lbl,
             "status_lbl": status_lbl,
+            "current_limit_spin": current_limit_spin,
+            "velocity_limit_spin": velocity_limit_spin,
+            "velocity_limit_rpm": velocity_limit_spin.value(),
+            "apply_limits_btn": apply_limits_btn,
             "toggle_btn": toggle_btn,
             # Cached GUI belief about device torque state.
             "enabled": False,
             # Persistent user-intent lock.
             "user_disabled": False,
         }
+        apply_limits_btn.clicked.connect(
+            lambda _checked=False, w=widget_dict: self._apply_motor_row_limits(w)
+        )
         return row, widget_dict
+
+    def _apply_motor_row_limits(self, motor: dict):
+        """Apply the hardware current limit and cache the GUI velocity ceiling."""
+        if not self.exo_connected:
+            return
+        if (
+            getattr(self, "_emg_live", False)
+            or getattr(self, "_direct_command_active", False)
+            or getattr(self, "_emg_hold_active", False)
+        ):
+            self._log(
+                "Stop EMG/direct motion and release the position hold before "
+                "changing motor limits."
+            )
+            return
+        dxl_id = motor.get("dxl_id")
+        if dxl_id is None:
+            return
+        current_mA = int(motor["current_limit_spin"].value())
+        velocity_rpm = float(motor["velocity_limit_spin"].value())
+        try:
+            def _apply(raw_exo):
+                raw_exo.set_current_limit(int(dxl_id), current_mA)
+                return raw_exo.get_motor_current_limit(int(dxl_id))
+
+            applied_current = self._run_bulk_serial_action(
+                lambda: self.exo.run_locked(_apply)
+            )
+            if int(round(applied_current)) != current_mA:
+                raise RuntimeError(
+                    f"current readback was {applied_current} mA, expected {current_mA} mA"
+                )
+            motor["current_limit_spin"].setValue(int(round(applied_current)))
+            motor["velocity_limit_rpm"] = velocity_rpm
+            self._log(
+                f"Verified ID {dxl_id} limits: {applied_current:.0f} mA, "
+                f"GUI direct ceiling {velocity_rpm:.2f} rpm."
+            )
+        except Exception as exc:
+            self._log(f"Motor ID {dxl_id} limit update failed: {exc}")
 
     def _make_motor_toggle(self, idx, dxl_id):
         """Return a handler that enables/disables one motor by Dynamixel ID.
@@ -5033,6 +5636,10 @@ class HandExoGUI(QWidget):
             w = self.motor_widgets[idx]
             motor_ref = dxl_id if dxl_id is not None else w["cmd_name"]
             try:
+                if self._emg_hold_active and dxl_id == self._configured_emg_hold_id():
+                    self._manual_release_emg_position_hold()
+                    self._log(f"Released position hold for motor {motor_ref}")
+                    return
                 if w["enabled"]:
                     self.exo.disable_motor(motor_ref)
                     w["enabled"] = False
@@ -5406,7 +6013,9 @@ class HandExoGUI(QWidget):
     # -- Log ---------------------------------------------------------------
 
     def _build_log_section(self):
-        box = QGroupBox("Log")
+        box = QGroupBox("Session Log")
+        box.setCheckable(True)
+        box.setChecked(False)
         layout = QVBoxLayout()
 
         self.log_text = QTextEdit()
@@ -5416,6 +6025,8 @@ class HandExoGUI(QWidget):
         layout.addWidget(self.log_text)
 
         box.setLayout(layout)
+        self.log_text.setVisible(False)
+        box.toggled.connect(self.log_text.setVisible)
         self.main_layout.addWidget(box)
 
     # -- Actions -----------------------------------------------------------
@@ -5431,6 +6042,11 @@ class HandExoGUI(QWidget):
         port = self.port_combo.currentData() or self.port_combo.currentText().split()[0]
         baud = int(self.baud_combo.currentText())
         self._cache_selected_port()
+
+        self.connect_btn.setEnabled(False)
+        self.status_label.setText(f"Connecting to {port}...")
+        self.status_label.setStyleSheet("color: #f39c12; font-weight: bold;")
+        QApplication.processEvents()
 
         try:
             # One controller, one serial connection for all modes.
@@ -5487,6 +6103,12 @@ class HandExoGUI(QWidget):
 
             info = self.exo.info(timeout=5.0)
             motors_dict = info.get("motors", {})  # keyed by Dynamixel ID
+            self._firmware_limits_by_id = {
+                int(dxl_id): (float(md["limits"][0]), float(md["limits"][1]))
+                for dxl_id, md in motors_dict.items()
+                if isinstance(md.get("limits"), (list, tuple))
+                and len(md["limits"]) == 2
+            }
 
             # ID ranges that define handedness on the shared bus.
             LEFT_IDS  = range(1, 10)   # IDs 1-9  → left hand
@@ -5580,8 +6202,10 @@ class HandExoGUI(QWidget):
             self._active_cal_profile = None
             self._active_cal_left    = None
             self._active_cal_right   = None
+            self._refresh_validated_firmware_mode(info)
 
             self.status_label.setText(f"Connected — {self.n_motors} motors")
+            self.status_label.setStyleSheet("")
             self.status_label.setObjectName("status-connected")
             self.status_label.setStyle(self.status_label.style())
             self._log(f"Connected: {conn_desc} — {self.n_motors} motors: {', '.join(self.motor_names)}")
@@ -5593,6 +6217,7 @@ class HandExoGUI(QWidget):
 
             self._build_motor_rows()
             self._sync_motor_enabled_states_after_connect()
+            self._sync_motor_limits_after_connect()
             self._rebuild_telem_table()
             self._rebuild_teleop_table()
             self._rebuild_direct_motor_combo()
@@ -5604,8 +6229,7 @@ class HandExoGUI(QWidget):
             self._telem_status_lbl.setStyleSheet("color: #888888;")
             self._refresh_profiles()
             self._telemetry_render_timer.start(TELEMETRY_RENDER_INTERVAL_MS)
-            self._angle_timer.start(self._angle_timer.interval() or 50)
-            self._request_device_poll()
+            self._start_device_polling(force_refresh=True)
         except Exception as e:
             try:
                 if self.exo:
@@ -5614,6 +6238,10 @@ class HandExoGUI(QWidget):
                 pass
             self.exo = None
             self.exo_connected = False
+            self.status_label.setStyleSheet("")
+            self.status_label.setText("Connection failed")
+            self.status_label.setObjectName("status-disconnected")
+            self.status_label.setStyle(self.status_label.style())
             QMessageBox.critical(self, "Connection Error", str(e))
             self._log(f"Connection failed: {e}")
 
@@ -5665,15 +6293,26 @@ class HandExoGUI(QWidget):
         self._right_motor_names = []
         self._motor_dxl_id      = []
         self.motor_names        = []
-        self._rebuild_current_limit_targets()
         self._direct_motor_combo.clear()
         self._emg_motor_combo.clear()
+        self._emg_hold_angle = None
+        self._emg_hold_active = False
+        self._emg_hold_applied_current_mA = None
+        self._emg_hold_enable_cb.blockSignals(True)
+        self._emg_hold_enable_cb.setChecked(False)
+        self._emg_hold_enable_cb.blockSignals(False)
+        self._rebuild_emg_hold_combo()
+        self._rebuild_direct_arming_checklist()
         self._direct_mode = None
         self._direct_mode_status.setText("Not configured")
         self._direct_mode_status.setStyleSheet("color: #888888;")
         self._configure_lsl_outlets()
         self._active_cal_left   = None
         self._active_cal_right  = None
+        self._firmware_limits_by_id = {}
+        self._firmware_version_text = "unknown"
+        self._firmware_build_side = "unknown"
+        self._refresh_validated_firmware_mode(None)
         self._set_active_profile("", None)
         self._hand_vis.update_motor_states({}, connected=False)
         self._udp_hand_vis.update_motor_states({}, connected=False)
@@ -5693,31 +6332,6 @@ class HandExoGUI(QWidget):
         self.status_label.setStyle(self.status_label.style())
         self._log("Disconnected.")
         self._update_enabled_state()
-
-    def _set_per_motor_current_limit(self):
-        if not self.exo_connected:
-            return
-        selected_id = self._current_limit_target_combo.currentData()
-        targets = (
-            list(self._motor_dxl_id)
-            if selected_id is None
-            else [int(selected_id)]
-        )
-        if not targets:
-            self._log("No active motors are available for a current-limit update.")
-            return
-        current_mA = self._per_motor_current_spin.value()
-        try:
-            def _apply(raw_exo):
-                for dxl_id in targets:
-                    raw_exo.set_current_limit(dxl_id, current_mA)
-
-            self._run_bulk_serial_action(lambda: self.exo.run_locked(_apply))
-            self._log(
-                f"Set {current_mA} mA per-motor limit for IDs {targets}."
-            )
-        except Exception as exc:
-            self._log(f"Per-motor current-limit error: {exc}")
 
     def _set_total_current_limit(self):
         if not self.exo_connected:
@@ -5759,6 +6373,8 @@ class HandExoGUI(QWidget):
         """
         if not self.exo_connected:
             return
+        if self._emg_hold_active:
+            self._release_emg_position_hold()
         try:
             if action == "enable":
                 # Do not rely only on cached _direct_mode. UDP direct commands
@@ -5852,6 +6468,29 @@ class HandExoGUI(QWidget):
                 f"Warning: could not resolve enabled state for motor IDs {sorted(unresolved_ids)}."
             )
 
+    def _sync_motor_limits_after_connect(self):
+        """Populate hardware current limits without misusing PROFILE_VELOCITY."""
+        if not self.exo_connected or not self.motor_widgets:
+            return
+        try:
+            def _read(raw_exo):
+                return raw_exo.get_motor_current_limit("all")
+
+            current_by_id = self.exo.run_locked(_read)
+        except Exception as exc:
+            self._log(f"Warning: could not read initial motor limits: {exc}")
+            return
+
+        for motor in getattr(self, "motor_widgets", []):
+            dxl_id = motor.get("dxl_id")
+            if dxl_id is None:
+                continue
+            current = current_by_id.get(dxl_id) if isinstance(current_by_id, dict) else None
+            if current is not None:
+                motor["current_limit_spin"].setValue(
+                    max(1, min(int(DIRECT_CURRENT_LIMIT_MA), int(round(current))))
+                )
+
     def _motor_side(self, action: str, side: str):
         """Enable or disable all motors belonging to one exo side.
 
@@ -5866,6 +6505,11 @@ class HandExoGUI(QWidget):
         if not side_widgets:
             self._log(f"No {side} motors to {action}.")
             return
+        held_id = self._configured_emg_hold_id()
+        if self._emg_hold_active and any(
+            w.get("dxl_id") == held_id for w in side_widgets
+        ):
+            self._release_emg_position_hold()
         try:
             if action == "enable":
                 # Force position mode before side enable to avoid stale direct mode.
@@ -6045,6 +6689,11 @@ class HandExoGUI(QWidget):
             val = angles.get(dxl_id) if dxl_id is not None else None
             if val is not None:
                 w["angle_lbl"].setText(f"{float(val):.2f} deg")
+                if (
+                    hasattr(self, "_emg_hold_current_lbl")
+                    and dxl_id == self._selected_emg_hold_motor_id()
+                ):
+                    self._emg_hold_current_lbl.setText(f"{float(val):+.2f}°")
 
         # Normalise each relative angle to [0, 1] for the Hand State visualisation.
         t_dict: dict[str, float] = {}
@@ -6311,12 +6960,12 @@ class HandExoGUI(QWidget):
         self.enable_all_btn.setEnabled(on)
         self.disable_all_btn.setEnabled(on)
         self.home_all_btn.setEnabled(on)
-        self._current_limit_target_combo.setEnabled(on)
-        self._per_motor_current_spin.setEnabled(on)
-        self._set_per_motor_current_btn.setEnabled(on)
         self._total_current_spin.setEnabled(on)
         self._set_total_current_btn.setEnabled(on)
         self._raw_send_btn.setEnabled(on)
+        self._global_stop_btn.setEnabled(on)
+        self._emg_use_armed_btn.setEnabled(on)
+        self._update_position_hold_controls()
         self.cal_run_btn.setEnabled(on)
         self.apply_profile_btn.setEnabled(on)
         self.rom_run_btn.setEnabled(on)
@@ -6329,12 +6978,22 @@ class HandExoGUI(QWidget):
         for widget in (
             self._direct_apply_mode_btn,
             self._direct_position_btn,
+            self._direct_select_fingers_btn,
+            self._direct_select_power_btn,
+            self._direct_select_all_btn,
+            self._direct_clear_arm_btn,
+            self._direct_apply_arming_btn,
             self._direct_arm_btn,
             self._direct_send_btn,
             self._direct_zero_btn,
             self._direct_stop_all_btn,
         ):
             widget.setEnabled(on)
+        reserved_hold_id = self._configured_emg_hold_id()
+        for dxl_id, checkbox in self._direct_arm_checkboxes.items():
+            checkbox.setEnabled(on and dxl_id != reserved_hold_id)
+        self._update_emg_preflight()
+        self._refresh_emg_readiness_message()
 
     # -- EMG intent teleop -------------------------------------------------
 
@@ -6350,6 +7009,7 @@ class HandExoGUI(QWidget):
         self._emg_connect_btn.setEnabled(False)
         self._emg_disconnect_btn.setEnabled(True)
         self._emg_intent_worker.start()
+        self._update_emg_preflight()
 
     def _on_emg_disconnect(self):
         self._stop_emg_control("LSL input disconnected", stop_timer=True, release_deadman=True)
@@ -6358,10 +7018,14 @@ class HandExoGUI(QWidget):
             self._emg_intent_worker.wait(1200)
         self._emg_connect_btn.setEnabled(True)
         self._emg_disconnect_btn.setEnabled(False)
+        self._update_emg_preflight()
+        self._refresh_emg_readiness_message()
 
     def _on_emg_intent_status(self, text: str, color: str):
         self._emg_status_lbl.setText(text)
         self._emg_status_lbl.setStyleSheet(f"color: {color};")
+        self._update_emg_preflight()
+        self._refresh_emg_readiness_message()
 
     def _on_emg_intent_sample(self, sample: dict):
         self._emg_latest = sample
@@ -6374,10 +7038,696 @@ class HandExoGUI(QWidget):
             )
         else:
             self._emg_sample_lbl.setText("Invalid NMLIntentV1 sample (need 4 channels)")
+        self._update_emg_preflight()
 
     def _selected_emg_motor_id(self) -> int | None:
         value = self._emg_motor_combo.currentData()
-        return int(value) if value is not None else None
+        return int(value) if isinstance(value, int) and not isinstance(value, bool) else None
+
+    def _emg_target_ids(self) -> list[int]:
+        """Return explicit active DXL IDs for the selected EMG target."""
+        single_id = self._selected_emg_motor_id()
+        if single_id is not None:
+            return [single_id] if single_id in self._motor_dxl_id else []
+
+        target = self._emg_motor_combo.currentData()
+        if target in {"custom_fingers", "left_custom_fingers", "right_custom_fingers"}:
+            active = set(int(dxl_id) for dxl_id in self._motor_dxl_id)
+            return sorted(self._emg_custom_motor_ids.get(str(target), set()) & active)
+        if target not in {"all_fingers", "left_fingers", "right_fingers"}:
+            return []
+        ids = []
+        for motor in self.motor_widgets:
+            dxl_id = motor.get("dxl_id")
+            name = str(motor.get("name", ""))
+            bare = str(motor.get("cmd_name", name)).removeprefix("L:").removeprefix("R:")
+            if bare not in EMG_FINGER_MOTOR_NAMES or dxl_id not in self._motor_dxl_id:
+                continue
+            if target == "left_fingers" and not name.startswith("L:"):
+                continue
+            if target == "right_fingers" and not name.startswith("R:"):
+                continue
+            ids.append(int(dxl_id))
+        return ids
+
+    def _emg_target_name(self) -> str:
+        if self._emg_motor_combo.currentIndex() < 0:
+            return "EMG target"
+        return self._emg_motor_combo.currentText()
+
+    def _emg_group_selected(self) -> bool:
+        return self._emg_motor_combo.currentData() in {
+            "all_fingers", "left_fingers", "right_fingers",
+            "custom_fingers", "left_custom_fingers", "right_custom_fingers",
+        }
+
+    def _emg_full_finger_group_selected(self) -> bool:
+        return self._emg_motor_combo.currentData() in {
+            "all_fingers", "left_fingers", "right_fingers"
+        }
+
+    def _on_emg_target_changed(self):
+        if self._emg_live:
+            self._stop_emg_control("EMG target changed")
+        custom = self._emg_motor_combo.currentData() in {
+            "custom_fingers", "left_custom_fingers", "right_custom_fingers"
+        }
+        if hasattr(self, "_emg_customize_btn"):
+            self._emg_customize_btn.setEnabled(custom)
+        self._update_emg_custom_status()
+        self._update_emg_safety_status()
+        self._update_emg_arm_status()
+
+    def _use_armed_finger_motors_as_emg_target(self) -> bool:
+        """Operator action: reuse the Advanced-tab arming set for EMG."""
+        return self._sync_armed_finger_motors_to_emg_target(show_warning=True)
+
+    def _sync_armed_finger_motors_to_emg_target(
+        self, *, show_warning: bool
+    ) -> bool:
+        """Copy armed finger IDs into the appropriate custom EMG target."""
+        finger_ids_by_side = {"left": set(), "right": set(), "single": set()}
+        for motor in self.motor_widgets:
+            dxl_id = motor.get("dxl_id")
+            name = str(motor.get("name", ""))
+            bare = str(motor.get("cmd_name", name)).removeprefix("L:").removeprefix("R:")
+            if bare not in EMG_FINGER_MOTOR_NAMES or dxl_id not in self._direct_armed_ids:
+                continue
+            if name.startswith("L:"):
+                finger_ids_by_side["left"].add(int(dxl_id))
+            elif name.startswith("R:"):
+                finger_ids_by_side["right"].add(int(dxl_id))
+            else:
+                finger_ids_by_side["single"].add(int(dxl_id))
+
+        if self.mode_combo.currentText() == "Dual":
+            current_target = self._emg_motor_combo.currentData()
+            if current_target == "left_custom_fingers":
+                side, target_key = "left", "left_custom_fingers"
+            elif current_target == "right_custom_fingers":
+                side, target_key = "right", "right_custom_fingers"
+            else:
+                populated = [
+                    side for side in ("left", "right")
+                    if finger_ids_by_side[side]
+                ]
+                if len(populated) != 1:
+                    if show_warning:
+                        QMessageBox.warning(
+                            self,
+                            "Choose an EMG Side",
+                            "Armed finger motors exist on both sides. Select Left custom "
+                            "finger group or Right custom finger group, then try again.",
+                        )
+                    return False
+                side = populated[0]
+                target_key = f"{side}_custom_fingers"
+            selected_ids = finger_ids_by_side[side]
+        else:
+            target_key = "custom_fingers"
+            selected_ids = finger_ids_by_side["single"]
+
+        if not selected_ids:
+            if show_warning:
+                QMessageBox.warning(
+                    self,
+                    "No Armed Finger Motors",
+                    "Arm at least one thumb or digit motor in Advanced, then apply "
+                    "the arming selection.",
+                )
+            return False
+
+        if self._emg_live:
+            self._stop_emg_control("EMG target changed")
+        self._emg_custom_motor_ids[target_key] = set(selected_ids)
+        self._refresh_emg_custom_combo_text()
+        for index in range(self._emg_motor_combo.count()):
+            if self._emg_motor_combo.itemData(index) == target_key:
+                self._emg_motor_combo.setCurrentIndex(index)
+                break
+        self._update_emg_custom_status()
+        self._update_emg_safety_status()
+        self._update_emg_arm_status()
+        self._refresh_emg_readiness_message()
+        self._log(
+            f"[EMG] Using armed finger motors as target: explicit IDs "
+            f"{sorted(selected_ids)}."
+        )
+        return True
+
+    def _emg_aux_hold_supported(self) -> bool:
+        version = parse_firmware_version(str(self._firmware_version_text))
+        return version is not None and version >= FW_AUX_POSITION_HOLD
+
+    def _emg_aux_hold_current_supported(self) -> bool:
+        version = parse_firmware_version(str(self._firmware_version_text))
+        return version is not None and version >= FW_AUX_POSITION_HOLD_CURRENT
+
+    def _show_setup_position_hold(self):
+        if hasattr(self, "_setup_page"):
+            self.main_tabs.setCurrentWidget(self._setup_page)
+        if hasattr(self, "_emg_hold_motor_combo"):
+            self._emg_hold_motor_combo.setFocus(Qt.OtherFocusReason)
+
+    def _configured_emg_hold_id(self) -> int | None:
+        if (
+            not hasattr(self, "_emg_hold_enable_cb")
+            or not self._emg_hold_enable_cb.isChecked()
+            or getattr(self, "_emg_hold_angle", None) is None
+        ):
+            return None
+        return self._selected_emg_hold_motor_id()
+
+    def _emg_hold_motor_name(self, dxl_id: int | None) -> str:
+        for motor in self.motor_widgets:
+            if motor.get("dxl_id") == dxl_id:
+                return str(motor.get("name", f"ID {dxl_id}"))
+        return f"ID {dxl_id}" if dxl_id is not None else "joint"
+
+    def _update_emg_hold_summary(self):
+        if not hasattr(self, "_emg_hold_summary_btn"):
+            return
+        dxl_id = self._configured_emg_hold_id()
+        if self.exo_connected and not self._emg_aux_hold_supported():
+            text = "○ AUX HOLD · firmware 0.6.2+"
+            style = "color: #f39c12; font-weight: bold;"
+        elif dxl_id is None:
+            text = "○ AUX HOLD · not configured"
+            style = "color: #aaaaaa;"
+        else:
+            name = self._emg_hold_motor_name(dxl_id)
+            state = "HOLD" if self._emg_hold_active else "READY"
+            marker = "●" if self._emg_hold_active else "○"
+            text = (
+                f"{marker} AUX {state} · {name} ID {dxl_id} · "
+                f"{self._emg_hold_angle:+.2f}°"
+            )
+            style = (
+                "color: #27ae60; font-weight: bold;"
+                if self._emg_hold_active
+                else "color: #f39c12; font-weight: bold;"
+            )
+        self._emg_hold_summary_btn.setText(text)
+        self._emg_hold_summary_btn.setStyleSheet(style)
+
+    def _update_position_hold_controls(self):
+        if not hasattr(self, "_emg_hold_motor_combo"):
+            return
+        connected = bool(self.exo_connected)
+        supported = connected and self._emg_aux_hold_supported()
+        can_command = supported and self._direct_mode in {"velocity", "current"}
+        active = bool(self._emg_hold_active)
+        self._emg_hold_motor_combo.setEnabled(supported and not active)
+        self._emg_hold_target_spin.setEnabled(supported and not active)
+        self._emg_hold_effort_spin.setEnabled(
+            supported
+            and self._emg_aux_hold_current_supported()
+            and not active
+        )
+        self._emg_hold_capture_btn.setEnabled(can_command and not active)
+        self._emg_hold_move_btn.setEnabled(can_command and not active)
+        self._emg_hold_release_btn.setEnabled(active)
+        if connected and not supported:
+            self._emg_hold_status_lbl.setText("Firmware 0.6.2+ required")
+            self._emg_hold_status_lbl.setStyleSheet("color: #f39c12;")
+        elif supported and not active and self._direct_mode is None:
+            self._emg_hold_status_lbl.setText(
+                "Apply Velocity or Current / Torque mode, then hold the joint."
+            )
+            self._emg_hold_status_lbl.setStyleSheet("color: #f39c12;")
+        elif supported and not active:
+            dxl_id = self._configured_emg_hold_id()
+            if dxl_id is not None:
+                self._emg_hold_status_lbl.setText(
+                    f"Ready to hold ID {dxl_id} at {self._emg_hold_angle:+.2f} deg"
+                )
+                self._emg_hold_status_lbl.setStyleSheet("color: #27ae60;")
+            else:
+                self._emg_hold_status_lbl.setText(
+                    "Position the joint manually and hold current, or enter a target."
+                )
+                self._emg_hold_status_lbl.setStyleSheet("color: #888888;")
+        self._update_emg_hold_summary()
+
+    def _rebuild_emg_hold_combo(self):
+        if not hasattr(self, "_emg_hold_motor_combo"):
+            return
+        previous_id = self._emg_hold_motor_combo.currentData()
+        self._emg_hold_motor_combo.blockSignals(True)
+        self._emg_hold_motor_combo.clear()
+        thumbrot_index = -1
+        previous_index = -1
+        for name, dxl_id in zip(self.motor_names, self._motor_dxl_id):
+            index = self._emg_hold_motor_combo.count()
+            self._emg_hold_motor_combo.addItem(f"{name} (ID {dxl_id})", int(dxl_id))
+            bare = str(name).removeprefix("L:").removeprefix("R:")
+            if bare == "thumbrot":
+                thumbrot_index = index
+            if dxl_id == previous_id:
+                previous_index = index
+        target_index = previous_index if previous_index >= 0 else thumbrot_index
+        if target_index >= 0:
+            self._emg_hold_motor_combo.setCurrentIndex(target_index)
+        self._emg_hold_motor_combo.blockSignals(False)
+        self._update_emg_hold_target_limits()
+        self._update_emg_hold_summary()
+
+    def _selected_emg_hold_motor_id(self) -> int | None:
+        value = self._emg_hold_motor_combo.currentData()
+        return int(value) if isinstance(value, int) and not isinstance(value, bool) else None
+
+    def _update_emg_hold_target_limits(self):
+        if not hasattr(self, "_emg_hold_target_spin"):
+            return
+        dxl_id = self._selected_emg_hold_motor_id()
+        lower, upper = self._relative_emg_hold_limits(dxl_id)
+        self._emg_hold_target_spin.setRange(lower, upper)
+
+    def _relative_emg_hold_limits(self, dxl_id: int | None) -> tuple[float, float]:
+        """Return relative-angle bounds without confusing them with encoder limits."""
+        for motor in getattr(self, "motor_widgets", []):
+            if motor.get("dxl_id") != dxl_id:
+                continue
+            name = str(motor.get("name", ""))
+            bare = str(motor.get("cmd_name", name)).removeprefix("L:").removeprefix("R:")
+            profile = self._active_cal_left if name.startswith("L:") else (
+                self._active_cal_right if name.startswith("R:") else self._active_cal_profile
+            )
+            values = (profile or {}).get("motors", {}).get(bare, {})
+            try:
+                home = float(values["home"])
+                absolute_lower = float(values["limit_min"])
+                absolute_upper = float(values["limit_max"])
+                sign = -1.0 if bool(values.get("flip", False)) else 1.0
+                relative = (
+                    sign * (absolute_lower - home),
+                    sign * (absolute_upper - home),
+                )
+                if all(math.isfinite(value) for value in relative):
+                    return min(relative), max(relative)
+            except (KeyError, TypeError, ValueError):
+                pass
+            break
+
+        # Firmware reports absolute encoder limits but not the active zero/flip
+        # in its info frame. Their width is still a safe upper bound on relative
+        # travel; the firmware performs the final exact clamp.
+        limits = self._firmware_limits_by_id.get(dxl_id)
+        if limits is not None:
+            try:
+                span = abs(float(limits[1]) - float(limits[0]))
+                if math.isfinite(span) and span > 0:
+                    return -span, span
+            except (IndexError, TypeError, ValueError):
+                pass
+        return -3600.0, 3600.0
+
+    def _on_emg_hold_motor_changed(self, _index: int):
+        if self._emg_hold_active:
+            return
+        self._emg_hold_enable_cb.setChecked(False)
+        self._emg_hold_angle = None
+        self._update_emg_hold_target_limits()
+        self._emg_hold_current_lbl.setText("--")
+        self._emg_hold_status_lbl.setText("Capture the desired joint angle")
+        self._emg_hold_status_lbl.setStyleSheet("color: #f39c12;")
+        self._rebuild_direct_arming_checklist()
+        self._update_emg_safety_status()
+        self._update_position_hold_controls()
+
+    def _on_emg_hold_toggled(self, checked: bool):
+        if not checked and self._emg_hold_active:
+            self._release_emg_position_hold()
+        self._rebuild_direct_arming_checklist()
+        self._update_emg_safety_status()
+        self._update_position_hold_controls()
+
+    def _capture_emg_hold_angle(self):
+        if not self.exo_connected:
+            return False
+        if not self._emg_aux_hold_supported():
+            QMessageBox.warning(
+                self,
+                "Firmware Update Required",
+                "Auxiliary position hold requires firmware 0.6.2 or newer.",
+            )
+            return False
+        dxl_id = self._selected_emg_hold_motor_id()
+        if dxl_id is None:
+            return False
+        if self._emg_live:
+            self._stop_emg_control("auxiliary hold pose recaptured")
+        try:
+            # The motor table already displays serialized worker telemetry.
+            # Reuse that fresh sample so capture cannot consume an unrelated
+            # response while polling is active. Query directly only before the
+            # first usable telemetry sample has arrived.
+            angle = self._fresh_cached_relative_angle(dxl_id)
+            if angle is None:
+                angle = float(self.exo.get_motor_angle(dxl_id))
+            if not math.isfinite(angle):
+                raise ValueError(f"non-finite angle {angle}")
+        except Exception as exc:
+            QMessageBox.critical(
+                self, "Capture Failed", f"Could not read motor ID {dxl_id}:\n{exc}"
+            )
+            return False
+        self._emg_hold_angle = angle
+        if hasattr(self, "_emg_hold_target_spin"):
+            self._emg_hold_target_spin.setValue(angle)
+        if hasattr(self, "_emg_hold_current_lbl"):
+            self._emg_hold_current_lbl.setText(f"{angle:+.2f}°")
+        self._emg_hold_enable_cb.setChecked(True)
+        self._emg_hold_status_lbl.setText(
+            f"Captured ID {dxl_id} at {angle:+.2f} deg"
+        )
+        self._emg_hold_status_lbl.setStyleSheet("color: #27ae60;")
+        self._update_emg_safety_status()
+        self._log(
+            f"[EMG] Captured auxiliary hold for ID {dxl_id}: {angle:+.3f} deg."
+        )
+        return True
+
+    def _hold_current_emg_position(self):
+        if self._capture_emg_hold_angle():
+            if not self._engage_emg_position_hold(
+                require_emg_compatibility=False
+            ):
+                QMessageBox.warning(
+                    self,
+                    "Position Hold Not Ready",
+                    self._position_hold_ready_reason()
+                    or "The joint could not be placed in position hold.",
+                )
+
+    def _move_and_hold_emg_position(self):
+        if not self.exo_connected:
+            return
+        self._emg_hold_angle = float(self._emg_hold_target_spin.value())
+        self._emg_hold_enable_cb.setChecked(True)
+        if not self._engage_emg_position_hold(
+            require_emg_compatibility=False
+        ):
+            QMessageBox.warning(
+                self,
+                "Position Hold Not Ready",
+                self._position_hold_ready_reason()
+                or "The joint could not be moved into position hold.",
+            )
+
+    def _manual_release_emg_position_hold(self):
+        self._release_emg_position_hold()
+        self._emg_hold_enable_cb.setChecked(False)
+        self._update_position_hold_controls()
+
+    def _position_hold_ready_reason(self) -> str | None:
+        if not self._emg_hold_enable_cb.isChecked():
+            return None
+        if not self._emg_aux_hold_supported():
+            return "auxiliary hold requires firmware 0.6.2 or newer"
+        if self._direct_mode not in {"velocity", "current"}:
+            return "apply direct Velocity or Current / Torque mode first"
+        dxl_id = self._selected_emg_hold_motor_id()
+        if dxl_id is None or self._emg_hold_angle is None:
+            return "capture the auxiliary hold angle"
+        return None
+
+    def _emg_hold_ready_reason(self) -> str | None:
+        reason = self._position_hold_ready_reason()
+        if reason:
+            return reason
+        if not self._emg_hold_enable_cb.isChecked():
+            return None
+        dxl_id = self._selected_emg_hold_motor_id()
+        if dxl_id in self._emg_target_ids():
+            return f"held motor ID {dxl_id} cannot also be an EMG target"
+        return None
+
+    def _exclude_emg_hold_from_direct_arming(self, dxl_id: int):
+        if dxl_id not in getattr(self, "_direct_armed_ids", set()):
+            return
+        self.exo.stop_direct_control(dxl_id)
+        self.exo.disable_motor(dxl_id)
+        self._direct_armed_ids.discard(dxl_id)
+        if hasattr(self, "_set_direct_arm_checkboxes"):
+            self._set_direct_arm_checkboxes(
+                set(self._direct_armed_ids), dirty=False
+            )
+        if hasattr(self, "_update_direct_motor_armed_widgets"):
+            self._update_direct_motor_armed_widgets()
+        if hasattr(self, "_update_direct_arm_status"):
+            self._update_direct_arm_status()
+        if hasattr(self, "_update_emg_arm_status"):
+            self._update_emg_arm_status()
+        self._log(
+            f"[Hold] Removed ID {dxl_id} from DIRECT arming before position hold."
+        )
+
+    def _engage_emg_position_hold(
+        self, *, require_emg_compatibility: bool = True
+    ) -> bool:
+        if not self._emg_hold_enable_cb.isChecked():
+            return True
+        if self._emg_hold_active:
+            return True
+        reason = (
+            self._emg_hold_ready_reason()
+            if require_emg_compatibility
+            else self._position_hold_ready_reason()
+        )
+        if reason:
+            return False
+        dxl_id = self._selected_emg_hold_motor_id()
+        hold_engaged = False
+        try:
+            HandExoGUI._exclude_emg_hold_from_direct_arming(self, dxl_id)
+            supports_effort = (
+                self._emg_aux_hold_current_supported()
+                if hasattr(self, "_emg_aux_hold_current_supported")
+                else False
+            )
+            requested_current = (
+                int(self._emg_hold_effort_spin.value())
+                if supports_effort and hasattr(self, "_emg_hold_effort_spin")
+                else None
+            )
+            if requested_current is None:
+                response = self.exo.hold_motor_position(
+                    dxl_id, self._emg_hold_angle
+                )
+            else:
+                response = self.exo.hold_motor_position(
+                    dxl_id, self._emg_hold_angle, requested_current
+                )
+            hold_engaged = True
+            enabled = bool(self.exo.is_enabled(dxl_id))
+            if not enabled:
+                raise RuntimeError(
+                    f"firmware acknowledged hold for ID {dxl_id}, but torque readback is OFF"
+                )
+            match = re.search(r"current_mA=(\d+)", str(response))
+            self._emg_hold_applied_current_mA = (
+                int(match.group(1)) if match else None
+            )
+            self._emg_hold_active = True
+            for motor in self.motor_widgets:
+                if motor.get("dxl_id") != dxl_id:
+                    continue
+                motor["enabled"] = True
+                motor["user_disabled"] = False
+                motor["toggle_btn"].setText("Disable")
+                motor["status_lbl"].setText(
+                    f"HOLD {self._emg_hold_angle:+.1f}°"
+                )
+                motor["status_lbl"].setStyleSheet("color: #27ae60;")
+                break
+            current_text = (
+                f" - APPLIED {self._emg_hold_applied_current_mA} mA"
+                if self._emg_hold_applied_current_mA is not None
+                else ""
+            )
+            self._emg_hold_status_lbl.setText(
+                f"HOLD VERIFIED - TORQUE ON - ID {dxl_id} at "
+                f"{self._emg_hold_angle:+.2f} deg{current_text}"
+            )
+            self._emg_hold_status_lbl.setStyleSheet(
+                "color: #27ae60; font-weight: bold;"
+            )
+            self._log(
+                f"[EMG] Auxiliary position hold engaged for ID {dxl_id}."
+            )
+            if hasattr(self, "_rebuild_direct_arming_checklist"):
+                self._rebuild_direct_arming_checklist()
+            if hasattr(self, "_update_position_hold_controls"):
+                self._update_position_hold_controls()
+            return True
+        except Exception as exc:
+            if hold_engaged:
+                try:
+                    self.exo.release_motor_hold(dxl_id)
+                except Exception:
+                    pass
+            self._emg_hold_active = False
+            self._emg_hold_applied_current_mA = None
+            self._log(f"[EMG] Could not engage auxiliary position hold: {exc}")
+            self._emg_hold_status_lbl.setText(f"HOLD FAILED - {exc}")
+            self._emg_hold_status_lbl.setStyleSheet(
+                "color: #c0392b; font-weight: bold;"
+            )
+            return False
+
+    def _release_emg_position_hold(self):
+        if not self._emg_hold_active:
+            return
+        dxl_id = self._selected_emg_hold_motor_id()
+        try:
+            if self.exo_connected and dxl_id is not None:
+                self.exo.release_motor_hold(dxl_id)
+        except Exception as exc:
+            self._log(f"[EMG] Could not release auxiliary hold ID {dxl_id}: {exc}")
+        finally:
+            self._emg_hold_active = False
+            self._emg_hold_applied_current_mA = None
+            for motor in self.motor_widgets:
+                if motor.get("dxl_id") != dxl_id:
+                    continue
+                motor["enabled"] = False
+                motor["user_disabled"] = True
+                motor["toggle_btn"].setText("Enable")
+                motor["status_lbl"].setText("OFF")
+                motor["status_lbl"].setStyleSheet("color: #c0392b;")
+                break
+            if self._emg_hold_angle is not None and dxl_id is not None:
+                self._emg_hold_status_lbl.setText(
+                    f"Captured ID {dxl_id} at {self._emg_hold_angle:+.2f} deg"
+                )
+                self._emg_hold_status_lbl.setStyleSheet("color: #27ae60;")
+            if hasattr(self, "_rebuild_direct_arming_checklist"):
+                self._rebuild_direct_arming_checklist()
+            if hasattr(self, "_update_position_hold_controls"):
+                self._update_position_hold_controls()
+
+    def _available_emg_finger_motors(self) -> list[tuple[str, int]]:
+        choices = []
+        target = self._emg_motor_combo.currentData()
+        for motor in self.motor_widgets:
+            dxl_id = motor.get("dxl_id")
+            name = str(motor.get("name", ""))
+            bare = str(motor.get("cmd_name", name)).removeprefix("L:").removeprefix("R:")
+            if bare in EMG_FINGER_MOTOR_NAMES and dxl_id in self._motor_dxl_id:
+                if target == "left_custom_fingers" and not name.startswith("L:"):
+                    continue
+                if target == "right_custom_fingers" and not name.startswith("R:"):
+                    continue
+                choices.append((name, int(dxl_id)))
+        return choices
+
+    def _configure_emg_custom_target(self):
+        choices = self._available_emg_finger_motors()
+        if not choices:
+            QMessageBox.warning(
+                self, "No Finger Motors", "No active thumb or digit motor IDs are available."
+            )
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Customize EMG Finger Group")
+        dialog.setMinimumWidth(430)
+        layout = QVBoxLayout(dialog)
+        note = QLabel(
+            "Check only the motors that should receive the open/close velocity command. "
+            "Unchecked motors receive no EMG command."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        checkboxes = []
+        default_ids = {
+            dxl_id for name, dxl_id in choices
+            if name.removeprefix("L:").removeprefix("R:") in EMG_FINGER_MOTOR_NAMES
+        }
+        target_key = str(self._emg_motor_combo.currentData())
+        selected_ids = self._emg_custom_motor_ids.get(target_key) or default_ids
+        for name, dxl_id in choices:
+            checkbox = QCheckBox(f"{name} (explicit ID {dxl_id})")
+            checkbox.setChecked(dxl_id in selected_ids)
+            layout.addWidget(checkbox)
+            checkboxes.append((checkbox, dxl_id))
+
+        preset_row = QHBoxLayout()
+        all_btn = QPushButton("All fingers")
+        power_btn = QPushButton("Power grasp")
+        clear_btn = QPushButton("Clear")
+        preset_row.addWidget(all_btn)
+        preset_row.addWidget(power_btn)
+        preset_row.addWidget(clear_btn)
+        layout.addLayout(preset_row)
+
+        def set_checked(allowed_names: set[str]):
+            by_id = {
+                dxl_id: name.removeprefix("L:").removeprefix("R:")
+                for name, dxl_id in choices
+            }
+            for checkbox, dxl_id in checkboxes:
+                checkbox.setChecked(by_id[dxl_id] in allowed_names)
+
+        all_btn.clicked.connect(lambda: set_checked(set(EMG_FINGER_MOTOR_NAMES)))
+        power_btn.clicked.connect(
+            lambda: set_checked({"thumbflex", "index", "middle", "ring", "pinky"})
+        )
+        clear_btn.clicked.connect(lambda: set_checked(set()))
+
+        button_row = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        save_btn = QPushButton("Use Selected Motors")
+        save_btn.setProperty("accent", True)
+        cancel_btn.clicked.connect(dialog.reject)
+        save_btn.clicked.connect(dialog.accept)
+        button_row.addStretch()
+        button_row.addWidget(cancel_btn)
+        button_row.addWidget(save_btn)
+        layout.addLayout(button_row)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        selected = {dxl_id for checkbox, dxl_id in checkboxes if checkbox.isChecked()}
+        if not selected:
+            QMessageBox.warning(
+                self, "Empty Finger Group", "Select at least one motor for the custom group."
+            )
+            return
+        if self._emg_live:
+            self._stop_emg_control("custom EMG target changed")
+        self._emg_custom_motor_ids[target_key] = selected
+        self._refresh_emg_custom_combo_text()
+        self._update_emg_custom_status()
+        self._update_emg_safety_status()
+        self._update_emg_arm_status()
+        self._log(f"[EMG] Custom finger group set to explicit IDs {sorted(selected)}.")
+
+    def _refresh_emg_custom_combo_text(self):
+        if not hasattr(self, "_emg_motor_combo"):
+            return
+        for index in range(self._emg_motor_combo.count()):
+            target = self._emg_motor_combo.itemData(index)
+            if target in {"custom_fingers", "left_custom_fingers", "right_custom_fingers"}:
+                active = set(int(dxl_id) for dxl_id in self._motor_dxl_id)
+                count = len(self._emg_custom_motor_ids.get(str(target), set()) & active)
+                self._emg_motor_combo.setItemText(
+                    index, f"Custom finger group ({count} motor{'s' if count != 1 else ''})"
+                )
+
+    def _update_emg_custom_status(self):
+        if not hasattr(self, "_emg_custom_status"):
+            return
+        if self._emg_motor_combo.currentData() not in {
+            "custom_fingers", "left_custom_fingers", "right_custom_fingers"
+        }:
+            self._emg_custom_status.setText("Select Custom finger group to edit its motors")
+            self._emg_custom_status.setStyleSheet("color: #888888;")
+            return
+        ids = self._emg_target_ids()
+        self._emg_custom_status.setText(f"Commands explicit IDs: {ids}" if ids else "No motors selected")
+        self._emg_custom_status.setStyleSheet("color: #27ae60;" if ids else "color: #c0392b;")
 
     def _has_calibration_for_emg_motor(self, dxl_id: int) -> bool:
         for motor in self.motor_widgets:
@@ -6391,26 +7741,409 @@ class HandExoGUI(QWidget):
             return bool(profile and profile.get("motors", {}).get(bare))
         return False
 
-    def _emg_ready_reason(self) -> str | None:
-        dxl_id = self._selected_emg_motor_id()
+    def _has_verified_firmware_limits_for_emg_motor(self, dxl_id: int) -> bool:
+        limits = self._firmware_limits_by_id.get(int(dxl_id))
+        if not limits or len(limits) != 2:
+            return False
+        lower, upper = limits
+        return math.isfinite(lower) and math.isfinite(upper) and lower < upper
+
+    def _refresh_validated_firmware_mode(self, info: dict | None = None):
+        """Authorize firmware-ROM EMG mode only for a reviewed device build."""
+        if info is None or not self.exo_connected:
+            self._validated_firmware_reason = "not connected"
+            validated = False
+        else:
+            version = parse_firmware_version(str(info.get("version", "")))
+            side = str(info.get("side", "")).strip().lower()
+            ids = set(self._firmware_limits_by_id)
+            missing = sorted(self.VALIDATED_RIGHT_IDS - ids)
+            invalid_limits = [
+                dxl_id
+                for dxl_id in self.VALIDATED_RIGHT_IDS
+                if not self._has_verified_firmware_limits_for_emg_motor(dxl_id)
+            ]
+            if version != self.VALIDATED_FIRMWARE_VERSION:
+                self._validated_firmware_reason = (
+                    f"firmware {info.get('version', 'unknown')} is not the validated "
+                    f"version {'.'.join(map(str, self.VALIDATED_FIRMWARE_VERSION))}"
+                )
+                validated = False
+            elif side not in self.VALIDATED_FIRMWARE_SIDES:
+                self._validated_firmware_reason = f"firmware build side '{side or 'unknown'}' is not validated"
+                validated = False
+            elif missing:
+                self._validated_firmware_reason = f"missing right-hand motor limits for IDs {missing}"
+                validated = False
+            elif invalid_limits:
+                self._validated_firmware_reason = f"invalid right-hand limits for IDs {invalid_limits}"
+                validated = False
+            else:
+                self._validated_firmware_reason = "validated firmware ROM available"
+                validated = True
+            self._firmware_version_text = str(info.get("version", "unknown"))
+            self._firmware_build_side = side or "unknown"
+
+        if hasattr(self, "_emg_firmware_fallback_cb"):
+            if not validated and self._emg_firmware_fallback_cb.isChecked():
+                self._emg_firmware_fallback_cb.blockSignals(True)
+                self._emg_firmware_fallback_cb.setChecked(False)
+                self._emg_firmware_fallback_cb.blockSignals(False)
+            self._emg_firmware_fallback_cb.setEnabled(validated)
+            self._emg_firmware_fallback_cb.setToolTip(
+                "Validated firmware ROM is available."
+                if validated
+                else f"Unavailable: {self._validated_firmware_reason}."
+            )
+        if hasattr(self, "_firmware_validation_lbl"):
+            self._firmware_validation_lbl.setText(
+                f"Firmware: {self._firmware_version_text} · build: "
+                f"{self._firmware_build_side} · {self._validated_firmware_reason}"
+            )
+        self._update_emg_safety_status()
+
+    def _emg_safety_source(self, dxl_id: int) -> str:
+        if self._has_calibration_for_emg_motor(dxl_id):
+            return "participant calibration"
+        if (
+            self._emg_firmware_fallback_cb.isEnabled()
+            and self._has_verified_firmware_limits_for_emg_motor(dxl_id)
+        ):
+            return "validated firmware ROM"
+        return "unverified"
+
+    def _emg_safety_ids(self) -> list[int]:
+        ids = set(self._emg_target_ids())
+        if (
+            hasattr(self, "_emg_hold_enable_cb")
+            and self._emg_hold_enable_cb.isChecked()
+        ):
+            hold_id = self._selected_emg_hold_motor_id()
+            if hold_id is not None:
+                ids.add(hold_id)
+        return sorted(ids)
+
+    def _update_emg_safety_status(self):
+        if not hasattr(self, "_emg_safety_lbl"):
+            return
+        safety_ids = self._emg_safety_ids()
+        sources = {self._emg_safety_source(dxl_id) for dxl_id in safety_ids}
+        source = sources.pop() if len(sources) == 1 else "unverified"
+        if source == "participant calibration":
+            text, color = (
+                f"Safety envelope: participant calibration for {len(safety_ids)} ID(s) ✓",
+                "#27ae60",
+            )
+        elif source == "validated firmware ROM":
+            suffix = "active" if self._emg_firmware_fallback_cb.isChecked() else "available; opt in below"
+            text, color = (
+                f"Safety envelope: validated firmware ROM for {len(safety_ids)} ID(s) ({suffix})",
+                "#f39c12",
+            )
+        else:
+            text, color = "Safety envelope: not verified for every target ID", "#c0392b"
+        self._emg_safety_lbl.setText(text)
+        self._emg_safety_lbl.setStyleSheet(f"color: {color};")
+        self._update_emg_preflight()
+        self._refresh_emg_readiness_message()
+
+    def _update_emg_preflight(self):
+        """Render a compact, non-color-only checklist for EMG run readiness."""
+        if not hasattr(self, "_emg_preflight_labels"):
+            return
+        target_ids = self._emg_target_ids()
+        safety_ids = self._emg_safety_ids()
+        full_group_complete = (
+            not self._emg_full_finger_group_selected()
+            or len(target_ids) == len(EMG_FINGER_MOTOR_NAMES)
+        )
+        mode_ok = self._direct_mode in {"velocity", "current"}
+        if self._emg_group_selected():
+            mode_ok = self._direct_mode == "velocity"
+        participant_limits = bool(safety_ids) and all(
+            self._has_calibration_for_emg_motor(dxl_id) for dxl_id in safety_ids
+        )
+        firmware_limits = (
+            bool(safety_ids)
+            and self._emg_firmware_fallback_cb.isChecked()
+            and all(
+                self._has_verified_firmware_limits_for_emg_motor(dxl_id)
+                for dxl_id in safety_ids
+            )
+        )
+        checks = {
+            "exo": bool(self.exo_connected),
+            "decoder": bool(self._emg_intent_worker.isRunning()),
+            "mode": mode_ok,
+            "target": bool(target_ids) and full_group_complete,
+            "safety": participant_limits or firmware_limits,
+            "armed": bool(target_ids)
+            and set(target_ids).issubset(self._direct_armed_ids),
+        }
+        descriptions = {
+            "exo": "Exoskeleton connected",
+            "decoder": "Intent decoder connected",
+            "mode": "Compatible direct-control mode applied",
+            "target": "Explicit motor target selected",
+            "safety": "Safety envelope verified",
+            "armed": "Every target motor armed",
+        }
+        short_names = {
+            "exo": "EXO",
+            "decoder": "LSL",
+            "mode": "MODE",
+            "target": "TARGET",
+            "safety": "LIMITS",
+            "armed": "ARMED",
+        }
+        for key, label in self._emg_preflight_labels.items():
+            passed = checks[key]
+            label.setText(
+                f"● {short_names[key]}" if passed else f"○ {short_names[key]}"
+            )
+            label.setStyleSheet(
+                "color: #ffffff; background-color: #166534; "
+                "border: 1px solid #27ae60; border-radius: 8px; "
+                "padding: 3px 8px; font-weight: bold;"
+                if passed
+                else
+                "color: #aaaaaa; background-color: #232323; "
+                "border: 1px solid #444444; border-radius: 8px; "
+                "padding: 3px 8px; font-weight: bold;"
+            )
+        complete = sum(checks.values())
+        if complete == len(checks):
+            self._emg_preflight_summary.setText("READY 6/6")
+            self._emg_preflight_summary.setToolTip("All run-readiness checks passed")
+            self._emg_preflight_summary.setStyleSheet(
+                "color: #27ae60; font-weight: bold;"
+            )
+        else:
+            first_wait = next(
+                descriptions[key].lower() for key, passed in checks.items() if not passed
+            )
+            self._emg_preflight_summary.setText(f"{complete}/6 READY")
+            self._emg_preflight_summary.setToolTip(f"Waiting for {first_wait}")
+            self._emg_preflight_summary.setStyleSheet(
+                "color: #f39c12; font-weight: bold;"
+            )
+
+    def _emg_ready_reason(self, *, refresh_safety: bool = True) -> str | None:
+        target_ids = self._emg_target_ids()
+        safety_ids = self._emg_safety_ids()
+        if refresh_safety:
+            self._update_emg_safety_status()
         if not self.exo_connected:
             return "HandExo is disconnected"
         if not self._emg_intent_worker.isRunning():
             return "LSL input is not connected"
-        if self._direct_mode != "velocity":
-            return "apply direct Velocity mode first"
-        if dxl_id is None or dxl_id not in self._motor_dxl_id:
-            return "select an active motor ID"
-        if dxl_id not in self._direct_armed_ids:
-            return f"motor ID {dxl_id} is not armed"
-        if not self._has_calibration_for_emg_motor(dxl_id):
-            return f"motor ID {dxl_id} has no active calibration"
-        return None
+        if self._direct_mode not in {"velocity", "current"}:
+            return "apply direct Velocity or Current / Torque mode first"
+        if not target_ids:
+            return "select an active motor or finger group"
+        if self._emg_full_finger_group_selected() and len(target_ids) != len(EMG_FINGER_MOTOR_NAMES):
+            return (
+                "all-fingers target is incomplete; expected 7 explicit IDs, "
+                f"found {target_ids}"
+            )
+        if self._emg_group_selected() and self._direct_mode != "velocity":
+            return "all-fingers EMG control requires Velocity mode"
+        unarmed = sorted(set(target_ids) - self._direct_armed_ids)
+        if unarmed:
+            return f"target motor IDs are not armed: {unarmed}"
+        hold_reason = self._emg_hold_ready_reason()
+        if hold_reason:
+            return hold_reason
+        if all(self._has_calibration_for_emg_motor(dxl_id) for dxl_id in safety_ids):
+            return None
+        if (
+            self._emg_firmware_fallback_cb.isChecked()
+            and all(
+                self._has_verified_firmware_limits_for_emg_motor(dxl_id)
+                for dxl_id in safety_ids
+            )
+        ):
+            return None
+        if not self._emg_firmware_fallback_cb.isEnabled():
+            return f"validated firmware ROM unavailable: {self._validated_firmware_reason}"
+        return "load a participant profile or enable validated firmware ROM"
+
+    def _refresh_emg_readiness_message(self):
+        """Keep the Start button and explanation synchronized with current state."""
+        if not hasattr(self, "_emg_readiness_lbl"):
+            return
+        if self._emg_live:
+            self._emg_readiness_lbl.setText("READY - EMG teleop is active")
+            self._emg_readiness_lbl.setStyleSheet(
+                "color: #27ae60; font-weight: bold;"
+            )
+            self._emg_start_btn.setEnabled(False)
+            return
+        reason = self._emg_ready_reason(refresh_safety=False)
+        if reason:
+            self._emg_readiness_lbl.setText(f"Not ready: {reason}")
+            self._emg_readiness_lbl.setStyleSheet(
+                "color: #f39c12; font-weight: bold;"
+            )
+            self._emg_start_btn.setEnabled(False)
+        else:
+            self._emg_readiness_lbl.setText(
+                "READY - press START EMG TELEOP to command the selected IDs"
+            )
+            self._emg_readiness_lbl.setStyleSheet(
+                "color: #27ae60; font-weight: bold;"
+            )
+            self._emg_start_btn.setEnabled(True)
+
+    def _on_emg_arm_toggled(self, checked: bool):
+        if self._set_emg_target_armed(checked):
+            return
+        self._emg_arm_btn.blockSignals(True)
+        self._emg_arm_btn.setChecked(not checked)
+        self._emg_arm_btn.blockSignals(False)
+        self._update_emg_arm_status()
+
+    def _set_emg_target_armed(self, armed: bool) -> bool:
+        target_ids = self._emg_target_ids()
+        if not self.exo_connected or self._direct_mode is None:
+            if armed:
+                QMessageBox.warning(
+                    self,
+                    "EMG Target Not Ready",
+                    "Apply direct Velocity mode before arming the EMG target.",
+                )
+            return False
+        if not target_ids:
+            return False
+        if self._emg_full_finger_group_selected() and len(target_ids) != len(EMG_FINGER_MOTOR_NAMES):
+            if armed:
+                QMessageBox.warning(
+                    self,
+                    "Incomplete Finger Group",
+                    f"Expected 7 explicit thumb/digit IDs but found {target_ids}.",
+                )
+            return False
+        if self._emg_group_selected() and self._direct_mode != "velocity":
+            if armed:
+                QMessageBox.warning(
+                    self,
+                    "Velocity Mode Required",
+                    "Coordinated all-fingers EMG control is available only in Velocity mode.",
+                )
+            return False
+        reserved_hold_id = self._configured_emg_hold_id()
+        if armed and reserved_hold_id in target_ids:
+            QMessageBox.warning(
+                self,
+                "Target Contains Held Motor",
+                f"Motor ID {reserved_hold_id} is reserved for position HOLD and "
+                "cannot also receive DIRECT EMG commands. Choose a custom finger "
+                "group that excludes it or release the hold.",
+            )
+            return False
+        blocked_ids = sorted(
+            int(motor["dxl_id"])
+            for motor in self.motor_widgets
+            if motor.get("dxl_id") in target_ids and motor.get("user_disabled", False)
+        )
+        if armed and blocked_ids:
+            QMessageBox.warning(
+                self,
+                "Target Contains Disabled Motors",
+                f"Explicitly user-disabled IDs will not be armed: {blocked_ids}.\n"
+                "Enable them individually or choose another EMG target.",
+            )
+            return False
+
+        if armed and self._direct_arm_confirm_cb.isChecked():
+            answer = QMessageBox.warning(
+                self,
+                "Arm EMG Target",
+                f"Enable direct {self._direct_mode} control for {self._emg_target_name()}?\n"
+                f"Explicit DXL IDs: {target_ids}\n\n"
+                "Keep the mechanism clear. Rest, stale input, and STOP TELEOP send zero to every ID.",
+                QMessageBox.Yes | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if answer != QMessageBox.Yes:
+                return False
+
+        changed = []
+        try:
+            for dxl_id in target_ids:
+                self.exo.stop_direct_control(dxl_id)
+                if armed:
+                    self.exo.enable_motor(dxl_id)
+                    self._direct_armed_ids.add(dxl_id)
+                else:
+                    self.exo.disable_motor(dxl_id)
+                    self._direct_armed_ids.discard(dxl_id)
+                changed.append(dxl_id)
+
+            for motor in self.motor_widgets:
+                if motor.get("dxl_id") not in target_ids:
+                    continue
+                motor["enabled"] = armed
+                motor["toggle_btn"].setText("Disable" if armed else "Enable")
+                motor["status_lbl"].setText("DIRECT" if armed else "OFF")
+                motor["status_lbl"].setStyleSheet(
+                    "color: #f39c12;" if armed else "color: #c0392b;"
+                )
+            self._update_direct_arm_status()
+            self._update_emg_arm_status()
+            self._log(
+                f"[EMG] {'Armed' if armed else 'Disarmed'} "
+                f"{self._emg_target_name()} using explicit IDs {target_ids}."
+            )
+            return True
+        except Exception as exc:
+            if armed:
+                for dxl_id in changed:
+                    try:
+                        self.exo.stop_direct_control(dxl_id)
+                        self.exo.disable_motor(dxl_id)
+                    except Exception:
+                        pass
+                    self._direct_armed_ids.discard(dxl_id)
+            self._log(f"[EMG] Could not update target arming: {exc}")
+            self._update_emg_arm_status()
+            return False
+
+    def _update_emg_arm_status(self):
+        if not hasattr(self, "_emg_arm_status"):
+            return
+        target_ids = self._emg_target_ids()
+        armed = bool(target_ids) and set(target_ids).issubset(self._direct_armed_ids)
+        self._emg_arm_btn.blockSignals(True)
+        self._emg_arm_btn.setChecked(armed)
+        self._emg_arm_btn.blockSignals(False)
+        self._emg_arm_btn.setText("DISARM EMG TARGET" if armed else "ARM EMG TARGET")
+        self._emg_arm_btn.setStyleSheet(
+            "background-color: #9a6700; color: white; font-weight: bold;"
+            if armed
+            else ""
+        )
+        if armed:
+            self._emg_arm_status.setText(f"Armed explicit IDs: {target_ids}")
+            self._emg_arm_status.setStyleSheet("color: #27ae60;")
+        else:
+            missing = sorted(set(target_ids) - self._direct_armed_ids)
+            self._emg_arm_status.setText(
+                f"Not armed: {missing}" if missing else "EMG target is not armed"
+            )
+            self._emg_arm_status.setStyleSheet("color: #888888;")
+        self._update_emg_preflight()
+        self._refresh_emg_readiness_message()
 
     def _on_emg_live_toggled(self, enabled: bool):
-        self._emg_live = enabled
         if not enabled:
+            self._emg_live = False
+            self._emg_deadman_active = False
             self._stop_emg_control("EMG teleop disabled", stop_timer=True, release_deadman=True)
+            if hasattr(self, "_emg_start_btn"):
+                self._emg_start_btn.setEnabled(True)
+                self._emg_stop_btn.setEnabled(False)
+            self._emg_live_status_lbl.setText("Monitor-only — teleop stopped")
             return
         reason = self._emg_ready_reason()
         if reason:
@@ -6418,9 +8151,56 @@ class HandExoGUI(QWidget):
             self._emg_live_cb.setChecked(False)
             self._emg_live_cb.blockSignals(False)
             self._emg_live = False
-            QMessageBox.warning(self, "EMG Teleop Not Ready", reason)
+            self._emg_deadman_active = False
+            self._emg_readiness_lbl.setText(f"Not ready: {reason}")
+            self._emg_live_status_lbl.setText(f"Not ready — {reason}")
             return
+        if not self._engage_emg_position_hold():
+            self._emg_live = False
+            self._emg_deadman_active = False
+            self._emg_readiness_lbl.setText(
+                "Not ready: auxiliary position hold could not be engaged"
+            )
+            self._emg_live_status_lbl.setText(
+                "Not ready - auxiliary position hold command failed"
+            )
+            return
+        self._emg_live = True
+        # Start/Stop is now the latched operator control. The hidden deadman
+        # state remains true for compatibility with the existing tick gate.
+        self._emg_deadman_active = True
+        self._serial_worker.set_realtime_control(
+            True, self._emg_safety_ids()
+        )
+        self._start_device_polling(force_refresh=True)
         self._emg_control_timer.start()
+        self._emg_start_btn.setEnabled(False)
+        self._emg_stop_btn.setEnabled(True)
+        self._emg_readiness_lbl.setText("READY — EMG teleop is active")
+        self._emg_readiness_lbl.setStyleSheet("color: #27ae60; font-weight: bold;")
+        self._emg_live_status_lbl.setText("Active — press STOP TELEOP to end")
+
+    def _limit_direct_command_for_motor(self, dxl_id: int, command: float) -> float:
+        """Clamp a GUI-issued direct command to the selected motor's row limit."""
+        limit = (
+            DIRECT_CURRENT_LIMIT_MA
+            if self._direct_mode == "current"
+            else DIRECT_VELOCITY_LIMIT_RPM
+        )
+        for motor in getattr(self, "motor_widgets", []):
+            if motor.get("dxl_id") != dxl_id:
+                continue
+            if self._direct_mode == "current":
+                spin = motor.get("current_limit_spin")
+                if spin is not None:
+                    limit = min(limit, float(spin.value()))
+            else:
+                limit = min(
+                    limit,
+                    float(motor.get("velocity_limit_rpm", limit)),
+                )
+            break
+        return max(-limit, min(limit, float(command)))
 
     def _on_emg_deadman_pressed(self):
         if self._emg_live and self._emg_ready_reason() is None:
@@ -6435,23 +8215,51 @@ class HandExoGUI(QWidget):
         *,
         stop_timer: bool = False,
         release_deadman: bool = False,
+        keep_live: bool = False,
     ):
+        if not keep_live:
+            self._emg_live = False
+            self._emg_deadman_active = False
         if release_deadman:
             self._emg_deadman_active = False
-        if stop_timer:
+        if (stop_timer or not keep_live) and hasattr(self, "_emg_control_timer"):
             self._emg_control_timer.stop()
         ids_to_stop = set(self._emg_commanded_ids)
         if self._emg_last_command_id is not None:
             ids_to_stop.add(self._emg_last_command_id)
         self._emg_commanded_ids.clear()
         self._emg_last_command_id = None
-        if self.exo_connected:
-            for dxl_id in ids_to_stop:
-                try:
-                    self.exo.stop_direct_control(dxl_id)
-                except Exception as exc:
-                    self._log(f"[EMG] stop failed for ID {dxl_id}: {exc}")
-        self._emg_live_status_lbl.setText(f"Stopped: {reason}")
+        if self.exo_connected and ids_to_stop:
+            try:
+                self._serial_worker.request_direct_actions(
+                    {dxl_id: ("stop", None) for dxl_id in ids_to_stop}
+                )
+            except Exception as exc:
+                self._log(f"[EMG] could not queue stop: {exc}")
+        if not keep_live and hasattr(self, "_serial_worker"):
+            self._serial_worker.set_realtime_control(False)
+        if not keep_live:
+            self._release_emg_position_hold()
+            self._start_device_polling()
+        if hasattr(self, "_emg_live_status_lbl"):
+            prefix = "Waiting" if keep_live else "Stopped"
+            self._emg_live_status_lbl.setText(f"{prefix}: {reason}")
+        if hasattr(self, "_emg_command_lbl"):
+            unit = "mA" if self._direct_mode == "current" else "rpm"
+            self._emg_command_lbl.setText(f"Commanded output: 0.00 {unit}")
+        if hasattr(self, "_emg_start_btn") and not keep_live:
+            self._emg_start_btn.setEnabled(True)
+            self._emg_stop_btn.setEnabled(False)
+            self._refresh_emg_readiness_message()
+
+    def _on_emg_direct_failed(self, error: str):
+        self._log(f"[EMG] background direct command failed: {error}")
+        if self._emg_live:
+            self._stop_emg_control(
+                f"serial command failed: {error}",
+                stop_timer=True,
+                release_deadman=True,
+            )
 
     def _emg_control_tick(self):
         if not self._emg_live or not self._emg_deadman_active:
@@ -6466,7 +8274,11 @@ class HandExoGUI(QWidget):
             or time.monotonic() - sample.get("received_monotonic", 0.0)
             > self._emg_stale_ms_spin.value() / 1000.0
         ):
-            self._stop_emg_control("intent sample is stale")
+            # A stalled/ended playback is a neutral-input condition, not an
+            # operator request to disarm teleop.  Zero any outstanding direct
+            # command, but remain armed so a fresh LSL sample resumes control
+            # without requiring START EMG TELEOP to be pressed again.
+            self._stop_emg_control("intent sample is stale", keep_live=True)
             return
         values = sample.get("values", [])
         if len(values) < 4:
@@ -6477,33 +8289,58 @@ class HandExoGUI(QWidget):
             self._stop_emg_control("non-finite intent value")
             return
         if state != 1.0 or confidence < self._emg_confidence_spin.value():
-            self._stop_emg_control("intent is inactive or low confidence")
+            self._stop_emg_control(
+                "waiting for active, confident intent", keep_live=True
+            )
             return
         if abs(signed) < self._emg_deadband_spin.value():
-            self._stop_emg_control("intent inside deadband")
+            self._stop_emg_control("intent inside deadband", keep_live=True)
             return
-        dxl_id = self._selected_emg_motor_id()
-        if self._emg_last_command_id not in (None, dxl_id):
-            try:
-                self.exo.stop_direct_control(self._emg_last_command_id)
-            except Exception as exc:
-                self._stop_emg_control(f"failed to stop previous motor: {exc}")
-                return
-        velocity = (
+        target_ids = self._emg_target_ids()
+        target_set = set(target_ids)
+        stale_ids = set(self._emg_commanded_ids) - target_set
+        if self._emg_last_command_id is not None and self._emg_last_command_id not in target_set:
+            stale_ids.add(self._emg_last_command_id)
+        actions: dict[int, tuple[str, float | None]] = {
+            stale_id: ("stop", None) for stale_id in stale_ids
+        }
+        self._emg_commanded_ids.difference_update(stale_ids)
+        command = (
             signed
             * float(self._emg_direction_combo.currentData())
-            * self._emg_max_rpm_spin.value()
+            * self._emg_max_command_spin.value()
         )
-        velocity = max(
-            -DIRECT_VELOCITY_LIMIT_RPM,
-            min(DIRECT_VELOCITY_LIMIT_RPM, velocity),
-        )
+        if self._direct_mode == "current":
+            command = max(-DIRECT_CURRENT_LIMIT_MA, min(DIRECT_CURRENT_LIMIT_MA, command))
+            unit = "mA"
+        else:
+            command = max(-DIRECT_VELOCITY_LIMIT_RPM, min(DIRECT_VELOCITY_LIMIT_RPM, command))
+            unit = "rpm"
         try:
-            self.exo.set_direct_velocity(dxl_id, velocity)
-            self._emg_last_command_id = dxl_id
-            self._emg_commanded_ids.add(dxl_id)
-            self._emg_live_status_lbl.setText(
-                f"Commanding ID {dxl_id}: {velocity:+.2f} rpm"
+            applied_commands = []
+            for dxl_id in target_ids:
+                motor_command = HandExoGUI._limit_direct_command_for_motor(
+                    self, dxl_id, command
+                )
+                actions[dxl_id] = (self._direct_mode, motor_command)
+                applied_commands.append(motor_command)
+                self._emg_commanded_ids.add(dxl_id)
+            self._serial_worker.request_direct_actions(actions)
+            self._emg_last_command_id = target_ids[0] if len(target_ids) == 1 else None
+            target_text = (
+                f"ID {target_ids[0]}"
+                if len(target_ids) == 1
+                else f"{self._emg_target_name()} — IDs {target_ids}"
+            )
+            low, high = min(applied_commands), max(applied_commands)
+            rendered = (
+                f"{low:+.2f} {unit}"
+                if math.isclose(low, high)
+                else f"{low:+.2f} to {high:+.2f} {unit}"
+            )
+            self._emg_live_status_lbl.setText(f"Commanding {target_text}: {rendered}")
+            self._emg_command_lbl.setText(
+                f"Commanded output ({target_text}): {rendered}"
             )
         except Exception as exc:
             self._stop_emg_control(f"command failed: {exc}")
@@ -6517,11 +8354,23 @@ class HandExoGUI(QWidget):
                 -DIRECT_VELOCITY_LIMIT_RPM, DIRECT_VELOCITY_LIMIT_RPM
             )
             self._direct_command_spin.setSuffix(" rpm")
+            if hasattr(self, "_emg_max_command_spin"):
+                self._emg_max_command_spin.setRange(0.1, DIRECT_VELOCITY_LIMIT_RPM)
+                self._emg_max_command_spin.setValue(
+                    min(self._emg_max_command_spin.value(), 2.0)
+                )
+                self._emg_max_command_spin.setSuffix(" rpm")
+                self._emg_max_command_label.setText("Max velocity:")
         else:
             self._direct_command_spin.setRange(
                 -DIRECT_CURRENT_LIMIT_MA, DIRECT_CURRENT_LIMIT_MA
             )
             self._direct_command_spin.setSuffix(" mA")
+            if hasattr(self, "_emg_max_command_spin"):
+                self._emg_max_command_spin.setRange(1.0, DIRECT_CURRENT_LIMIT_MA)
+                self._emg_max_command_spin.setValue(100.0)
+                self._emg_max_command_spin.setSuffix(" mA")
+                self._emg_max_command_label.setText("Max current:")
 
     def _rebuild_direct_motor_combo(self):
         self._direct_motor_combo.clear()
@@ -6529,15 +8378,244 @@ class HandExoGUI(QWidget):
         for name, dxl_id in zip(self.motor_names, self._motor_dxl_id):
             self._direct_motor_combo.addItem(f"{name} (ID {dxl_id})", dxl_id)
             self._emg_motor_combo.addItem(f"{name} (ID {dxl_id})", dxl_id)
+        if self.mode_combo.currentText() == "Dual":
+            self._emg_motor_combo.addItem(
+                "Left hand — all fingers", "left_fingers"
+            )
+            self._emg_motor_combo.addItem(
+                "Right hand — all fingers", "right_fingers"
+            )
+            self._emg_motor_combo.addItem(
+                "Left custom finger group", "left_custom_fingers"
+            )
+            self._emg_motor_combo.addItem(
+                "Right custom finger group", "right_custom_fingers"
+            )
+        else:
+            self._emg_motor_combo.addItem(
+                "All fingers (thumb + digits)", "all_fingers"
+            )
+            self._emg_motor_combo.addItem(
+                "Custom finger group", "custom_fingers"
+            )
+        self._refresh_emg_custom_combo_text()
+        self._rebuild_emg_hold_combo()
+        self._rebuild_direct_arming_checklist()
         self._update_direct_arm_status()
+        self._update_emg_arm_status()
+        self._update_emg_safety_status()
 
     def _selected_direct_motor_id(self) -> int | None:
         value = self._direct_motor_combo.currentData()
         return int(value) if value is not None else None
 
+    def _rebuild_direct_arming_checklist(self):
+        """Rebuild active-side, explicit-ID arming toggles after connection."""
+        if not hasattr(self, "_direct_arm_checks_layout"):
+            return
+        while self._direct_arm_checks_layout.count():
+            item = self._direct_arm_checks_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._direct_arm_checkboxes.clear()
+        reserved_hold_id = self._configured_emg_hold_id()
+        for index, (name, dxl_id) in enumerate(
+            zip(self.motor_names, self._motor_dxl_id)
+        ):
+            suffix = " · HOLD reserved" if dxl_id == reserved_hold_id else ""
+            checkbox = QCheckBox(f"{name}  [ID {dxl_id}]{suffix}")
+            checkbox.setChecked(
+                dxl_id in self._direct_armed_ids and dxl_id != reserved_hold_id
+            )
+            checkbox.setEnabled(
+                self.exo_connected and dxl_id != reserved_hold_id
+            )
+            if dxl_id == reserved_hold_id:
+                checkbox.setToolTip(
+                    "Release or change the configured position hold before arming this ID."
+                )
+            checkbox.toggled.connect(self._on_direct_arm_selection_changed)
+            self._direct_arm_checkboxes[int(dxl_id)] = checkbox
+            self._direct_arm_checks_layout.addWidget(
+                checkbox, index // 3, index % 3
+            )
+        self._direct_arm_selection_dirty = False
+        self._update_direct_arm_selection_status()
+
+    def _checked_direct_arm_ids(self) -> set[int]:
+        return {
+            dxl_id
+            for dxl_id, checkbox in self._direct_arm_checkboxes.items()
+            if checkbox.isChecked()
+        }
+
+    def _set_direct_arm_checkboxes(
+        self, selected_ids: set[int], *, dirty: bool
+    ):
+        selected_ids = {int(dxl_id) for dxl_id in selected_ids}
+        reserved_hold_id = self._configured_emg_hold_id()
+        if reserved_hold_id is not None:
+            selected_ids.discard(reserved_hold_id)
+        for dxl_id, checkbox in self._direct_arm_checkboxes.items():
+            checkbox.blockSignals(True)
+            checkbox.setChecked(dxl_id in selected_ids)
+            checkbox.setEnabled(
+                self.exo_connected and dxl_id != reserved_hold_id
+            )
+            checkbox.blockSignals(False)
+        self._direct_arm_selection_dirty = bool(dirty)
+        self._update_direct_arm_selection_status()
+
+    def _on_direct_arm_selection_changed(self, _checked: bool):
+        self._direct_arm_selection_dirty = True
+        self._update_direct_arm_selection_status()
+
+    def _select_direct_motor_preset(self, motor_names: set[str]):
+        reserved_hold_id = HandExoGUI._configured_emg_hold_id(self)
+        selected_ids = {
+            int(motor["dxl_id"])
+            for motor in self.motor_widgets
+            if str(motor.get("cmd_name", motor.get("name", ""))) in motor_names
+            and motor.get("dxl_id") in self._motor_dxl_id
+            and motor.get("dxl_id") != reserved_hold_id
+        }
+        self._set_direct_arm_checkboxes(selected_ids, dirty=True)
+
+    def _select_direct_finger_motors(self):
+        self._select_direct_motor_preset(set(EMG_FINGER_MOTOR_NAMES))
+
+    def _select_direct_power_grasp_motors(self):
+        # Thumb ab/adduction and rotation stay stationary for this preset.
+        self._select_direct_motor_preset(
+            {"thumbflex", "index", "middle", "ring", "pinky"}
+        )
+
+    def _update_direct_arm_selection_status(self):
+        if not hasattr(self, "_direct_arm_selection_status"):
+            return
+        selected = sorted(self._checked_direct_arm_ids())
+        armed = sorted(
+            set(self._direct_armed_ids) & set(self._direct_arm_checkboxes)
+        )
+        if self._direct_arm_selection_dirty:
+            self._direct_arm_selection_status.setText(
+                f"Pending IDs: {selected} - press Apply"
+            )
+            self._direct_arm_selection_status.setStyleSheet(
+                "color: #f39c12; font-weight: bold;"
+            )
+        elif armed:
+            self._direct_arm_selection_status.setText(f"Armed IDs: {armed}")
+            self._direct_arm_selection_status.setStyleSheet("color: #27ae60;")
+        else:
+            self._direct_arm_selection_status.setText("No motors armed")
+            self._direct_arm_selection_status.setStyleSheet("color: #888888;")
+
+    def _apply_direct_arming_selection(self) -> bool:
+        """Apply all toggle changes with one confirmation and explicit IDs."""
+        if not self.exo_connected:
+            QMessageBox.warning(
+                self, "Not Connected", "Connect to the exoskeleton first."
+            )
+            return False
+        selected = self._checked_direct_arm_ids()
+        active_ids = set(int(dxl_id) for dxl_id in self._motor_dxl_id)
+        selected &= active_ids
+        reserved_hold_id = HandExoGUI._configured_emg_hold_id(self)
+        if reserved_hold_id is not None:
+            selected.discard(reserved_hold_id)
+        currently_armed = set(self._direct_armed_ids) & active_ids
+        arm_ids = sorted(selected - currently_armed)
+        disarm_ids = sorted(currently_armed - selected)
+        if arm_ids and self._direct_mode is None:
+            QMessageBox.warning(
+                self,
+                "Direct Mode Not Ready",
+                "Apply Velocity or Current / Torque mode before arming motors.",
+            )
+            return False
+        if arm_ids and self._direct_arm_confirm_cb.isChecked():
+            answer = QMessageBox.warning(
+                self,
+                "Apply Motor Arming",
+                f"Enable direct {self._direct_mode} control for IDs {arm_ids}?\n"
+                f"IDs to disarm: {disarm_ids or 'none'}\n\n"
+                "Keep the mechanism clear. STOP ALL MOTION remains available.",
+                QMessageBox.Yes | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if answer != QMessageBox.Yes:
+                return False
+
+        newly_armed = []
+        try:
+            for dxl_id in disarm_ids:
+                self.exo.stop_direct_control(dxl_id)
+                self.exo.disable_motor(dxl_id)
+                self._direct_armed_ids.discard(dxl_id)
+            for dxl_id in arm_ids:
+                self.exo.stop_direct_control(dxl_id)
+                self.exo.enable_motor(dxl_id)
+                self._direct_armed_ids.add(dxl_id)
+                newly_armed.append(dxl_id)
+        except Exception as exc:
+            for dxl_id in newly_armed:
+                try:
+                    self.exo.stop_direct_control(dxl_id)
+                    self.exo.disable_motor(dxl_id)
+                except Exception:
+                    pass
+                self._direct_armed_ids.discard(dxl_id)
+            self._log(f"[Direct] Batch arming failed: {exc}")
+            self._set_direct_arm_checkboxes(
+                set(self._direct_armed_ids) & active_ids, dirty=False
+            )
+            self._update_direct_motor_armed_widgets()
+            return False
+
+        self._direct_arm_selection_dirty = False
+        self._set_direct_arm_checkboxes(
+            set(self._direct_armed_ids) & active_ids, dirty=False
+        )
+        self._update_direct_motor_armed_widgets()
+        self._update_direct_arm_status()
+        self._update_emg_arm_status()
+        self._sync_armed_finger_motors_to_emg_target(show_warning=False)
+        self._log(
+            f"[Direct] Applied batch arming: armed IDs {sorted(selected)}; "
+            f"disarmed IDs {disarm_ids}."
+        )
+        return True
+
+    def _update_direct_motor_armed_widgets(self):
+        for motor in self.motor_widgets:
+            dxl_id = motor.get("dxl_id")
+            if self._emg_hold_active and dxl_id == self._configured_emg_hold_id():
+                motor["enabled"] = True
+                motor["user_disabled"] = False
+                motor["toggle_btn"].setText("Disable")
+                motor["status_lbl"].setText(
+                    f"HOLD {self._emg_hold_angle:+.1f}°"
+                )
+                motor["status_lbl"].setStyleSheet("color: #27ae60;")
+                continue
+            armed = dxl_id in self._direct_armed_ids
+            motor["enabled"] = armed
+            motor["user_disabled"] = not armed
+            motor["toggle_btn"].setText("Disable" if armed else "Enable")
+            motor["status_lbl"].setText("DIRECT" if armed else "OFF")
+            motor["status_lbl"].setStyleSheet(
+                "color: #f39c12;" if armed else "color: #c0392b;"
+            )
+
     def _apply_direct_mode(self):
         if not self.exo_connected:
             return
+        if self._emg_live:
+            self._stop_emg_control("direct mode changed")
+        elif self._emg_hold_active:
+            self._release_emg_position_hold()
         self._stop_all_direct_control()
         mode = (
             "velocity"
@@ -6550,7 +8628,7 @@ class HandExoGUI(QWidget):
             self.exo.set_direct_command_timeout(self._direct_timeout_spin.value())
             self.exo.set_control_mode(mode)
             self._direct_mode = mode
-            self._angle_timer.stop()
+            self._start_device_polling(force_refresh=True)
             self._direct_armed_ids.clear()
             for motor in self.motor_widgets:
                 motor["enabled"] = False
@@ -6562,6 +8640,8 @@ class HandExoGUI(QWidget):
             )
             self._direct_mode_status.setStyleSheet("color: #f39c12;")
             self._update_direct_arm_status()
+            self._update_emg_arm_status()
+            self._update_position_hold_controls()
             self._log(
                 f"[Direct] Applied {mode} mode with "
                 f"{self._direct_timeout_spin.value()} ms watchdog."
@@ -6575,6 +8655,10 @@ class HandExoGUI(QWidget):
     def _restore_position_control(self) -> bool:
         if not self.exo_connected:
             return False
+        if self._emg_live:
+            self._stop_emg_control("position control restored")
+        elif self._emg_hold_active:
+            self._release_emg_position_hold()
         self._stop_all_direct_control()
         try:
             for dxl_id in self._motor_dxl_id:
@@ -6587,6 +8671,8 @@ class HandExoGUI(QWidget):
             )
             self._direct_mode_status.setStyleSheet("color: #27ae60;")
             self._update_direct_arm_status()
+            self._update_emg_arm_status()
+            self._update_position_hold_controls()
             self._log("[Direct] Returned to current-position control.")
             self._resume_normal_polling(force_refresh=True)
             return True
@@ -6623,6 +8709,14 @@ class HandExoGUI(QWidget):
         dxl_id = self._selected_direct_motor_id()
         if dxl_id is None:
             return False
+        if armed and dxl_id == self._configured_emg_hold_id():
+            QMessageBox.warning(
+                self,
+                "Motor Reserved for Position Hold",
+                f"Motor ID {dxl_id} is reserved for HOLD. Release or change "
+                "the hold in Setup before arming it for DIRECT control.",
+            )
+            return False
 
         if armed and self._direct_arm_confirm_cb.isChecked():
             answer = QMessageBox.warning(
@@ -6650,6 +8744,7 @@ class HandExoGUI(QWidget):
                 if motor.get("dxl_id") != dxl_id:
                     continue
                 motor["enabled"] = armed
+                motor["user_disabled"] = not armed
                 motor["toggle_btn"].setText("Disable" if armed else "Enable")
                 motor["status_lbl"].setText("DIRECT" if armed else "OFF")
                 motor["status_lbl"].setStyleSheet(
@@ -6658,6 +8753,7 @@ class HandExoGUI(QWidget):
                 break
 
             self._update_direct_arm_status()
+            self._update_emg_arm_status()
             self._log(
                 f"[Direct] {'Armed' if armed else 'Disarmed'} motor ID {dxl_id}."
             )
@@ -6681,12 +8777,29 @@ class HandExoGUI(QWidget):
             self._direct_arm_btn.blockSignals(True)
             self._direct_arm_btn.setChecked(armed)
             self._direct_arm_btn.blockSignals(False)
+            self._direct_arm_btn.setText(
+                f"DISARM ID {dxl_id}" if armed else "ARM ONLY THIS MOTOR"
+            )
+            self._direct_arm_btn.setStyleSheet(
+                "background-color: #9a6700; color: white; font-weight: bold;"
+                if armed
+                else ""
+            )
         if armed:
             self._direct_arm_status.setText(f"Motor ID {dxl_id} armed")
             self._direct_arm_status.setStyleSheet("color: #27ae60;")
         else:
             self._direct_arm_status.setText("Selected motor is not armed")
             self._direct_arm_status.setStyleSheet("color: #888888;")
+        if (
+            hasattr(self, "_direct_arm_checkboxes")
+            and not self._direct_arm_selection_dirty
+        ):
+            self._set_direct_arm_checkboxes(
+                set(self._direct_armed_ids) & set(self._direct_arm_checkboxes),
+                dirty=False,
+            )
+        self._update_emg_preflight()
 
     def _start_direct_command(self):
         dxl_id = self._selected_direct_motor_id()
@@ -6715,7 +8828,7 @@ class HandExoGUI(QWidget):
             self._direct_send_btn.setDown(False)
             return
         self._direct_command_active = True
-        self._angle_timer.stop()
+        self._start_device_polling(force_refresh=True)
         self._send_direct_command_tick()
         self._direct_command_timer.start()
 
@@ -6726,7 +8839,9 @@ class HandExoGUI(QWidget):
         if dxl_id is None or dxl_id not in self._direct_armed_ids:
             self._zero_direct_target()
             return
-        value = self._direct_command_spin.value()
+        value = self._limit_direct_command_for_motor(
+            dxl_id, self._direct_command_spin.value()
+        )
         try:
             if self._direct_mode == "velocity":
                 self.exo.set_direct_velocity(dxl_id, value)
@@ -6764,6 +8879,8 @@ class HandExoGUI(QWidget):
             except Exception as exc:
                 self._log(f"[Direct] Stop all failed: {exc}")
         self._direct_armed_ids.clear()
+        if hasattr(self, "_direct_arm_checkboxes"):
+            self._set_direct_arm_checkboxes(set(), dirty=False)
         self._update_direct_arm_status()
         if hasattr(self, "_direct_mode_status") and self._direct_mode is not None:
             self._direct_mode_status.setText(
@@ -6773,14 +8890,7 @@ class HandExoGUI(QWidget):
         self._resume_normal_polling()
 
     def _resume_normal_polling(self, force_refresh: bool = False):
-        if (
-            self.exo_connected
-            and not self._teleop_streaming
-            and self._direct_mode is None
-        ):
-            self._angle_timer.start(self._angle_timer.interval() or 50)
-            if force_refresh:
-                self._request_device_poll(force_telemetry=True)
+        self._start_device_polling(force_refresh=force_refresh)
 
     # -- Teleop tab handlers -----------------------------------------------
 
@@ -6925,7 +9035,7 @@ class HandExoGUI(QWidget):
 
         # Restart normal polling at the configured target if still connected.
         if self.exo_connected:
-            self._angle_timer.start(self._angle_timer.interval() or 50)
+            self._start_device_polling(force_refresh=True)
 
         self._teleop_start_btn.setEnabled(
             self.exo_connected and self._teleop_ws_connected

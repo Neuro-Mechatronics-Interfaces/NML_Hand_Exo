@@ -10,6 +10,11 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("gui", help="launch the NML Hand Exo PyQt GUI")
     subparsers.add_parser("emg-centroid", help="launch the EMG centroid decoder GUI")
+    subparsers.add_parser(
+        "emg-intent",
+        aliases=["emg-intent-decoder"],
+        help="launch participant intent discovery and orientation-aware decoder GUI",
+    )
 
     args = parser.parse_args(argv)
     if args.command == "gui":
@@ -27,6 +32,14 @@ def main(argv: list[str] | None = None) -> int:
         from nml_hand_exo.applications.emg_centroid_decoder_gui import main as emg_main
 
         emg_main()
+        return 0
+    if args.command in {"emg-intent", "emg-intent-decoder"}:
+        this_src = os.path.dirname(os.path.abspath(__file__))
+        if sys.path[0] != this_src:
+            sys.path.insert(0, this_src)
+        from nml_hand_exo.applications.emg_intent_decoder_gui import main as intent_main
+
+        intent_main()
         return 0
     parser.error(f"unknown command: {args.command}")
     return 2

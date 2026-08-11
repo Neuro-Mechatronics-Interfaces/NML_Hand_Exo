@@ -1,0 +1,179 @@
+<div id="mindrove-hierarchy-analysis">
+  <div class="viz-grid mh-summary" aria-label="Key results">
+    <div class="card viz-stat">
+      <div class="text-muted">Recommended control decoder</div>
+      <div class="viz-stat-value" id="mh-best-score"></div>
+      <div class="text-small">Rest / pinch open / pinch close</div>
+    </div>
+    <div class="card viz-stat">
+      <div class="text-muted">Five-class orientation hierarchy</div>
+      <div class="viz-stat-value" id="mh-full-score"></div>
+      <div class="text-small">Held-out complete gesture blocks</div>
+    </div>
+  </div>
+
+  <div class="mh-section-label">Held-out balanced accuracy</div>
+  <svg id="mh-bars" role="img" aria-label="Comparison of decoder balanced accuracy for five classes and the three-state pinch controller"></svg>
+
+  <div class="mh-section-label">Shared orientation-corrected latent projection</div>
+  <canvas id="mh-scatter" role="img" aria-label="PCA projection of rest and four gesture classes with LDA decision regions"></canvas>
+  <div class="viz-row mh-legend" id="mh-legend"></div>
+
+  <div class="mh-section-label">Recommended three-state confusion matrix</div>
+  <div class="table-responsive">
+    <table class="table table-sm" id="mh-confusion">
+      <caption class="sr-only">Rows are actual states and columns are predicted states.</caption>
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(() => {
+  const data = __PAYLOAD__;
+  const root = document.getElementById('mindrove-hierarchy-analysis');
+  const modelLabels = {
+    raw: 'Raw global LDA',
+    discrete_roll_experts: 'Discrete roll experts',
+    continuous_roll: 'Continuous roll',
+    continuous_roll_pitch: 'Continuous roll + pitch'
+  };
+  const modelOrder = ['raw', 'discrete_roll_experts', 'continuous_roll', 'continuous_roll_pitch'];
+  const classLabels = {
+    rest: 'Rest', index_extend: 'Index extend', index_flex: 'Index flex',
+    pinch_close: 'Pinch close', pinch_open: 'Pinch open'
+  };
+  const styles = getComputedStyle(root);
+  const series = [1, 2, 3, 4, 5].map(i => styles.getPropertyValue(`--viz-series-${i}`).trim());
+  const foreground = styles.getPropertyValue('--foreground').trim();
+  const muted = styles.getPropertyValue('--muted-foreground').trim();
+  const border = styles.getPropertyValue('--border').trim();
+
+  root.querySelector('#mh-best-score').textContent = `${(100 * data.pinch.continuous_roll_pitch.balanced_accuracy_mean).toFixed(1)}%`;
+  root.querySelector('#mh-full-score').textContent = `${(100 * data.full.discrete_roll_experts.balanced_accuracy_mean).toFixed(1)}%`;
+
+  const svg = root.querySelector('#mh-bars');
+  const width = Math.max(320, svg.clientWidth || 736);
+  const narrow = width < 620;
+  const panelGap = 42;
+  const panelWidth = narrow ? width : (width - panelGap) / 2;
+  const height = narrow ? 470 : 250;
+  const labelWidth = Math.min(150, panelWidth * 0.46);
+  const rightPad = 32;
+  const top = 34;
+  const rowHeight = 43;
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  const ns = 'http://www.w3.org/2000/svg';
+  function node(name, attrs, text) {
+    const el = document.createElementNS(ns, name);
+    Object.entries(attrs || {}).forEach(([key, value]) => el.setAttribute(key, value));
+    if (text !== undefined) el.textContent = text;
+    return el;
+  }
+  function drawPanel(x0, y0, title, values) {
+    svg.appendChild(node('text', {x: x0, y: y0 + 17, fill: foreground, 'font-weight': 500}, title));
+    [0, .25, .5, .75, 1].forEach(tick => {
+      const x = x0 + labelWidth + tick * (panelWidth - labelWidth - rightPad);
+      svg.appendChild(node('line', {x1: x, y1: y0 + 28, x2: x, y2: y0 + 196, stroke: border, 'stroke-width': 1}));
+      svg.appendChild(node('text', {x, y: y0 + 216, fill: muted, 'text-anchor': 'middle', class: 'text-small'}, `${tick * 100}%`));
+    });
+    modelOrder.forEach((model, index) => {
+      const y = y0 + top + index * rowHeight;
+      const score = values[model].balanced_accuracy_mean;
+      const std = values[model].balanced_accuracy_std;
+      const barWidth = score * (panelWidth - labelWidth - rightPad);
+      svg.appendChild(node('text', {x: x0, y: y + 15, fill: foreground, class: 'text-small'}, modelLabels[model]));
+      svg.appendChild(node('rect', {x: x0 + labelWidth, y, width: barWidth, height: 20, fill: series[index], opacity: .72, rx: 3}));
+      svg.appendChild(node('text', {x: x0 + labelWidth + barWidth + 5, y: y + 15, fill: foreground, class: 'text-small'}, `${(score * 100).toFixed(1)} ± ${(std * 100).toFixed(1)}`));
+    });
+  }
+  drawPanel(0, 0, 'Five classes', data.full);
+  drawPanel(narrow ? 0 : panelWidth + panelGap, narrow ? 235 : 0, 'Exo control: rest / open / close', data.pinch);
+
+  const canvas = root.querySelector('#mh-scatter');
+  const ctx = canvas.getContext('2d');
+  function drawScatter() {
+    const W = Math.max(320, canvas.clientWidth || 736);
+    const H = 430;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const pad = {left: 48, right: 18, top: 14, bottom: 38};
+    const [xmin, xmax] = data.projection.x_range;
+    const [ymin, ymax] = data.projection.y_range;
+    const sx = x => pad.left + (x - xmin) / (xmax - xmin) * (W - pad.left - pad.right);
+    const sy = y => H - pad.bottom - (y - ymin) / (ymax - ymin) * (H - pad.top - pad.bottom);
+    const [rows, cols] = data.projection.grid_shape;
+    const cellW = (W - pad.left - pad.right) / cols;
+    const cellH = (H - pad.top - pad.bottom) / rows;
+    data.projection.regions.forEach((classIndex, index) => {
+      const row = Math.floor(index / cols);
+      const col = index % cols;
+      ctx.globalAlpha = .09;
+      ctx.fillStyle = series[classIndex];
+      ctx.fillRect(pad.left + col * cellW, pad.top + row * cellH, cellW + .5, cellH + .5);
+    });
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = border;
+    ctx.strokeRect(pad.left, pad.top, W - pad.left - pad.right, H - pad.top - pad.bottom);
+    data.projection.points.forEach(point => {
+      const classIndex = data.classes.indexOf(point.class);
+      ctx.globalAlpha = point.class === 'rest' ? .28 : .62;
+      ctx.fillStyle = series[classIndex];
+      ctx.beginPath();
+      ctx.arc(sx(point.x), sy(point.y), point.class === 'rest' ? 2.2 : 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = muted;
+    ctx.font = '12px system-ui';
+    ctx.fillText('PCA 1', W / 2 - 18, H - 9);
+    ctx.save();
+    ctx.translate(13, H / 2 + 18);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('PCA 2', 0, 0);
+    ctx.restore();
+  }
+  new ResizeObserver(drawScatter).observe(canvas);
+  drawScatter();
+
+  const legend = root.querySelector('#mh-legend');
+  data.classes.forEach((label, index) => {
+    const item = document.createElement('span');
+    item.innerHTML = `<i style="background:${series[index]}"></i>${classLabels[label]}`;
+    legend.appendChild(item);
+  });
+
+  const confusion = data.pinch.continuous_roll_pitch.confusion_matrix;
+  const labels = data.pinchClasses;
+  const thead = root.querySelector('#mh-confusion thead');
+  const tbody = root.querySelector('#mh-confusion tbody');
+  const header = document.createElement('tr');
+  header.innerHTML = `<th scope="col">Actual ↓ / predicted →</th>${labels.map(label => `<th scope="col" class="text-end">${classLabels[label]}</th>`).join('')}`;
+  thead.appendChild(header);
+  confusion.forEach((row, rowIndex) => {
+    const tr = document.createElement('tr');
+    const total = row.reduce((sum, value) => sum + value, 0);
+    tr.innerHTML = `<th scope="row">${classLabels[labels[rowIndex]]}</th>${row.map((value, colIndex) => `<td class="text-end${rowIndex === colIndex ? ' mh-diagonal' : ''}">${value} <span class="text-muted">(${(100 * value / total).toFixed(1)}%)</span></td>`).join('')}`;
+    tbody.appendChild(tr);
+  });
+})();
+</script>
+
+<style>
+#mindrove-hierarchy-analysis { color: var(--foreground); }
+#mindrove-hierarchy-analysis .mh-summary { margin-bottom: 18px; }
+#mindrove-hierarchy-analysis .mh-section-label { margin: 18px 0 8px; font-weight: 500; }
+#mindrove-hierarchy-analysis #mh-bars { display: block; width: 100%; height: 250px; overflow: visible; }
+#mindrove-hierarchy-analysis #mh-scatter { display: block; width: 100%; height: 430px; }
+#mindrove-hierarchy-analysis .mh-legend { gap: 14px; color: var(--muted-foreground); }
+#mindrove-hierarchy-analysis .mh-legend span { display: inline-flex; align-items: center; gap: 5px; }
+#mindrove-hierarchy-analysis .mh-legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+#mindrove-hierarchy-analysis .mh-diagonal { font-weight: 500; }
+@media (max-width: 620px) {
+  #mindrove-hierarchy-analysis #mh-bars { height: 500px; }
+}
+</style>

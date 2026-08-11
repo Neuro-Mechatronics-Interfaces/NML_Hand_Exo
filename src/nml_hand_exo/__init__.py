@@ -3,51 +3,7 @@ nml_hand_exo: Python package for controlling the NML HandExo device.
 
 """
 
-from pathlib import Path
-from pkgutil import extend_path
-
-
-def _is_within(path: Path, root: Path) -> bool:
-    try:
-        path.resolve().relative_to(root.resolve())
-        return True
-    except ValueError:
-        return False
-
-
-def _trusted_namespace_paths(paths):
-    current_pkg = Path(__file__).resolve().parent
-    repo_root = current_pkg.parents[1]
-    trusted_roots = [
-        repo_root,
-        repo_root / "external" / "NeuroBridge",
-        repo_root.parent / "NeuroBridge",
-    ]
-
-    trusted = []
-    for raw_path in paths:
-        candidate = Path(raw_path).resolve()
-        if candidate == current_pkg or any(_is_within(candidate, root) for root in trusted_roots):
-            trusted.append(str(candidate))
-
-    # Include known NeuroBridge package paths explicitly so CI/test runs can
-    # resolve `nml_hand_exo.ai` without separately installing NeuroBridge.
-    explicit_pkg_candidates = [
-        repo_root / "external" / "NeuroBridge" / "src" / "nml_hand_exo",
-        repo_root.parent / "NeuroBridge" / "src" / "nml_hand_exo",
-    ]
-    for candidate in explicit_pkg_candidates:
-        if candidate.exists():
-            resolved = str(candidate.resolve())
-            if resolved not in trusted:
-                trusted.append(resolved)
-
-    return trusted
-
-
-__path__ = _trusted_namespace_paths(extend_path(__path__, __name__))
-
-__version__ = "0.0.7"
+__version__ = "0.2.17"
 __author__ = "Neuromechatronics Lab"
 __email__ = "neuromech@andrew.cmu.edu"
 __license__ = "MIT"

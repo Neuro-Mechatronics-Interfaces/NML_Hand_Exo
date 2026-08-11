@@ -1,6 +1,6 @@
 [project]
 name = "nml_hand_exo"
-version = "0.2.16"
+version = "0.2.17"
 description = "Python API for controlling the NML Hand Exoskeleton"
 authors = [
     { name="Jonathan Shulgach", email="jshulgac@andrew.cmu.edu" },
@@ -13,14 +13,16 @@ requires-python = ">=3.10"
 license = { file = "LICENSE" }
 keywords = ["exo", "neurotech", "biomedical", "rehabilitation"]
 dependencies = [
-    "numpy",
+    "numpy==1.26.4",
     "pyserial",
     "pyyaml",
     "PyQt5",
-    "pyqtgraph",
+    "pyqtgraph==0.12.4",
     "pylsl",
+    "pyxdf==1.16.8",
     "pandas",
-    "scipy"
+    "scipy",
+    "scikit-learn",
 ]
 
 [project.urls]
@@ -32,7 +34,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
-py-modules = ["handexo_cli"]
+py-modules = ["handexo_cli", "nml_task_cue_cli"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -59,5 +61,8 @@ docs = [
 ]
 
 [project.scripts]
-nml-exo-state-visualizer = "nml_hand_exo.applications.exo_state_visualizer:main"
+nml-task-cue = "nml_task_cue_cli:main"
 handexo = "handexo_cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["examples/tests", "tests"]

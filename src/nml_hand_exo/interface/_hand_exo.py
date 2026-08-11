@@ -30,6 +30,14 @@ FW_RAD_GESTURE = (0, 3, 1)
 #: firmware allocator owns GOAL_CURRENT under a fleet-wide cap.
 FW_CURRENT_BUDGET = (0, 4, 0)
 
+#: Firmware version that added an atomic per-ID current-position hold while
+#: the remaining motors stay in global velocity/current direct control.
+FW_AUX_POSITION_HOLD = (0, 6, 2)
+
+#: Firmware version that added an optional per-hold current request and
+#: reports the safety-clamped current in the hold acknowledgement.
+FW_AUX_POSITION_HOLD_CURRENT = (0, 6, 2)
+
 #: Firmware version that added ``get_gesture_angle`` and re-anchored every
 #: gesture percentage on a home -> flexion-endstop axis resolved per motor.
 #: Before this, joints whose home sat mid-window (the wrist and wrist2 axes)
@@ -236,6 +244,23 @@ def parse_gesture_angle_pairs(
     return {}
 
 
+class ProtocolResponseError(RuntimeError):
+    """A device reply did not match the response required by a command."""
+
+    def __init__(self, *, command: str, expected: str, raw_response: str):
+        self.command = str(command)
+        self.expected = str(expected)
+        self.raw_response = str(raw_response)
+        rendered = self.raw_response.strip() or "<empty response>"
+        if len(rendered) > 500:
+            rendered = rendered[:497] + "..."
+        super().__init__(
+            f"Command: {self.command}\n"
+            f"Expected: {self.expected}\n"
+            f"Received: {rendered}"
+        )
+
+
 class HandExo(object):
     """
     Class to control the NML Hand Exoskeleton via serial communication.
@@ -348,11 +373,43 @@ class HandExo(object):
         if not cmd.endswith(self.command_delimiter):
             cmd += self.command_delimiter
         try:
+            # Setters frequently emit acknowledgements that legacy callers do
+            # not consume. Start every new command at a clean frame boundary so
+            # the next query cannot parse an older command's ``OK:`` reply.
+            try:
+                self.device.flush_input()
+            except Exception:
+                pass
             self.device.send(cmd)
             self.logger(f"Sent: {cmd.strip()}")
             time.sleep(self.send_delay)  # Allow time for the command to be processed
         except Exception as e:
-            print(f"[ERROR] Failed to send command: {e}")
+            raise ConnectionError(
+                f"Failed to send command {cmd.strip()!r}: {e}"
+            ) from e
+
+    def _command_transaction(
+        self,
+        command: str,
+        *,
+        expected: str,
+        timeout: float = 0.75,
+    ) -> str:
+        """Send a low-rate safety command and validate its acknowledgement."""
+        self.send_command(command)
+        raw = self._receive(wait_until_return=True, timeout=timeout)
+        normalized = raw.strip()
+        if (
+            not normalized
+            or "ERROR:" in normalized.upper()
+            or expected.lower() not in normalized.lower()
+        ):
+            raise ProtocolResponseError(
+                command=command,
+                expected=expected,
+                raw_response=raw,
+            )
+        return normalized
 
     def _receive(
         self, wait_until_return: bool = False, timeout: float | None = None
@@ -471,7 +528,9 @@ class HandExo(object):
         Returns:
             Single value if a motor ID is given, or a dict of {motor_id: attr_value} if 'all'.
         """
-        self.send_command(f"{command or f'get_{attr}'}:{motor_id}")
+        command_name = command or f"get_{attr}"
+        command_text = f"{command_name}:{motor_id}"
+        self.send_command(command_text)
         raw = self._receive(wait_until_return=wait_until_return)
         if self.verbose:
             print(f"Raw return: {raw}")
@@ -486,7 +545,11 @@ class HandExo(object):
             if self.verbose:
                 print(f"Returning motor {motor_id}'s {attr} value")
             if motor_id not in parsed:
-                raise ValueError(f"Motor ID {motor_id} not found in response.")
+                raise ProtocolResponseError(
+                    command=command_text,
+                    expected=f"motor data containing ID {motor_id} and {attr!r}",
+                    raw_response=raw,
+                )
             return parsed[motor_id].get(attr)
         else:
             raise TypeError(f"motor_id must be 'all' or int, got {type(motor_id)}")
@@ -515,11 +578,14 @@ class HandExo(object):
 
             # Fallback if no ID in prefix: look inside the block for id
             motor_info = {}
-            for part in data_block.split(","):
-                key_val = part.strip().split(":", 1)
-                if len(key_val) != 2:
-                    continue
-                key, val = key_val[0].strip(), key_val[1].strip()
+            # Values such as ``limits: [-30, 45]`` contain commas, so a plain
+            # split would truncate the value. Match bracketed values atomically.
+            fields = re.finditer(
+                r"(?:^|,)\s*([A-Za-z_]+)\s*:\s*(\[[^\]]*\]|[^,]*)",
+                data_block,
+            )
+            for field in fields:
+                key, val = field.group(1).strip().lower(), field.group(2).strip()
 
                 if key == "id":
                     motor_info["id"] = int(val)
@@ -916,7 +982,9 @@ class HandExo(object):
             int: The current baud rate.
 
         """
-        return self._get_motor_attribute('baudrate', motor_id, wait_until_return=True)
+        return self._get_motor_attribute(
+            'baudrate', motor_id, wait_until_return=True, command="get_baud"
+        )
 
     def set_baudrate(self, motor_id: (int or str), baudrate: int):
         """
@@ -959,6 +1027,27 @@ class HandExo(object):
         """
         self.send_command(f"set_goal_velocity:{motor_id}:{velocity}")
 
+    def get_motor_velocity_limit(self, motor_id: (int or str) = 'all'):
+        """Read the position-profile velocity limit in rpm."""
+        raw = self._get_motor_attribute(
+            'velocity', motor_id, True, command='get_goal_velocity'
+        )
+        if isinstance(raw, dict):
+            return {
+                int(dxl_id): float(value) * 0.229
+                for dxl_id, value in raw.items()
+                if value is not None
+            }
+        return float(raw) * 0.229
+
+    def set_motor_velocity_limit(self, motor_id: int, velocity_rpm: float):
+        """Set one motor's position-profile limit from a value expressed in rpm."""
+        rpm = float(velocity_rpm)
+        if not math.isfinite(rpm) or rpm <= 0:
+            raise ValueError("velocity_rpm must be positive and finite")
+        raw = max(1, int(round(rpm / 0.229)))
+        self.send_command(f"set_goal_velocity:{int(motor_id)}:{raw}")
+
     def get_present_velocity(self, motor_id: (int or str) = 'all'):
         """Read signed present velocity in rpm."""
         return self._get_motor_attribute('velocity', motor_id, True, command='get_velocity')
@@ -978,7 +1067,9 @@ class HandExo(object):
             float: Current acceleration of the motor in degrees per second squared.
 
         """
-        return self._get_motor_attribute('acceleration', motor_id, True)
+        return self._get_motor_attribute(
+            'acceleration', motor_id, True, command="get_goal_acceleration"
+        )
 
     def set_motor_acceleration(self, motor_id: (int or str), acceleration: float):
         """
@@ -1119,7 +1210,9 @@ class HandExo(object):
             float: Current limit of the motor in Amperes.
 
         """
-        return self._get_motor_attribute('current_limit', motor_id, True)
+        return self._get_motor_attribute(
+            'current_limit', motor_id, True, command="get_current_lim"
+        )
 
     def set_current_limit(self, motor_id: (int or str), current_limit: float):
         """
@@ -1313,9 +1406,63 @@ class HandExo(object):
         target = motor_id if isinstance(motor_id, str) else int(motor_id)
         self.send_command(f"stop:{target}")
 
+    def hold_motor_position(
+        self,
+        motor_id: int,
+        relative_angle: float,
+        hold_current_mA: float | None = None,
+    ):
+        """Hold one explicit DXL ID at a limit-clamped relative angle."""
+        self._require_firmware(FW_AUX_POSITION_HOLD, "Auxiliary position hold")
+        dxl_id = int(motor_id)
+        angle = float(relative_angle)
+        if dxl_id <= 0:
+            raise ValueError("motor_id must be a positive explicit DXL ID")
+        if not math.isfinite(angle):
+            raise ValueError("relative_angle must be finite")
+        command = f"hold_position:{dxl_id}:{angle}"
+        if hold_current_mA is not None:
+            current = float(hold_current_mA)
+            if not math.isfinite(current) or current <= 0:
+                raise ValueError("hold_current_mA must be positive and finite")
+            self._require_firmware(
+                FW_AUX_POSITION_HOLD_CURRENT,
+                "Per-hold current control",
+            )
+            command += f":{current:g}"
+        response = self._command_transaction(
+            command, expected="OK: hold_position"
+        )
+        if hold_current_mA is not None and "current_mA=" not in response:
+            # An earlier 0.6.2 build accepts and ignores the extra argument.
+            # Release immediately rather than claim the requested effort was
+            # applied when the acknowledgement cannot prove it.
+            try:
+                self.release_motor_hold(dxl_id)
+            except Exception:
+                pass
+            raise ProtocolResponseError(
+                command=command,
+                expected="hold acknowledgement containing current_mA=<applied>",
+                raw_response=response,
+            )
+        return response
+
+    def release_motor_hold(self, motor_id: int):
+        """Disable one held DXL ID and restore the current global mode."""
+        self._require_firmware(FW_AUX_POSITION_HOLD, "Auxiliary position hold")
+        dxl_id = int(motor_id)
+        if dxl_id <= 0:
+            raise ValueError("motor_id must be a positive explicit DXL ID")
+        command = f"release_hold:{dxl_id}"
+        return self._command_transaction(command, expected="OK: release_hold")
+
     def set_direct_command_timeout(self, timeout_ms: int):
         """Set the firmware direct-control watchdog timeout."""
-        self.send_command(f"set_command_timeout:{int(timeout_ms)}")
+        command = f"set_command_timeout:{int(timeout_ms)}"
+        return self._command_transaction(
+            command, expected="Direct command timeout:"
+        )
 
     def set_control_mode(self, mode: str):
         """Set the global motor mode; firmware leaves torque disabled."""
@@ -1323,7 +1470,10 @@ class HandExo(object):
         allowed = {"position", "current_position", "velocity", "current"}
         if normalized not in allowed:
             raise ValueError(f"Unsupported control mode: {mode}")
-        self.send_command(f"set_control_mode:all:{normalized}")
+        command = f"set_control_mode:all:{normalized}"
+        return self._command_transaction(
+            command, expected=f"Motor control mode: {normalized}"
+        )
 
     def get_motor_limits(self, motor_id: (int or str) = 'all') -> tuple:
         """
@@ -1336,7 +1486,9 @@ class HandExo(object):
             tuple: A tuple containing the minimum and maximum angles of the motor.
 
         """
-        return self._get_motor_attribute('limits', motor_id, True)
+        return self._get_motor_attribute(
+            'limits', motor_id, True, command="get_motor_limits"
+        )
 
     def set_motor_upper_limit(self, motor_id: (int or str), upper_limit: float):
         """

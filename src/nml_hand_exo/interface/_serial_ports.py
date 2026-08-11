@@ -11,7 +11,11 @@ NML_EXO_USB_PID = 0x2202
 
 
 def format_port_label(port: Any) -> str:
-    """Build a readable label from a pyserial ``ListPortInfo`` object."""
+    """Build a compact operator-facing label from a pyserial port.
+
+    Detailed USB metadata remains available through port probing and logs; it
+    should not consume the connection row's usable width.
+    """
     description = port.description or ""
     hwid = getattr(port, "hwid", "") or ""
     desc_lower = description.lower()
@@ -28,16 +32,6 @@ def format_port_label(port: Any) -> str:
     parts = [port.device]
     if tags:
         parts.append(f"[{', '.join(tags)}]")
-    if description:
-        parts.append(description)
-    if getattr(port, "manufacturer", None):
-        parts.append(port.manufacturer)
-    if getattr(port, "serial_number", None):
-        parts.append(f"SN:{port.serial_number}")
-    if getattr(port, "vid", None) is not None and getattr(port, "pid", None) is not None:
-        parts.append(f"VID:{port.vid:04X} PID:{port.pid:04X}")
-    if hwid:
-        parts.append(hwid)
     return " - ".join(parts)
 
 

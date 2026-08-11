@@ -140,8 +140,9 @@ class SerialComm(BaseComm):
                 return ""  # Nothing available
 
         except Exception as e:
-            print(f"[Error] Failed to read from serial device: {e}")
-            return ""
+            raise ConnectionError(
+                f"Failed to read from serial device: {e}"
+            ) from e
 
 
     def is_connected(self) -> bool:
@@ -403,8 +404,9 @@ class DualSerialComm(BaseComm):
             except queue.Empty:
                 return ""
         except Exception as e:
-            print(f"[Error] Failed to read from telemetry serial port: {e}")
-            return ""
+            raise ConnectionError(
+                f"Failed to read from telemetry serial port: {e}"
+            ) from e
 
     def is_connected(self) -> bool:
         return bool(

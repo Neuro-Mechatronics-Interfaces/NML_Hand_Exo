@@ -6,24 +6,25 @@ from collections import deque
 
 import numpy as np
 from PyQt5.QtCore import QThread, pyqtSignal
-from pylsl import StreamInlet, resolve_byprop
+from pylsl import StreamInlet, resolve_byprop, resolve_streams
 
 from nml_hand_exo.processing._filters import bandpass_filter, notch_filter
 from nml_hand_exo.processing._features import rectify, window_rms, z_score_norm
 
 
 DARK_STYLE = """
-QWidget { background-color: #1a1a1a; color: #e0e0e0; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
-QGroupBox { background-color: #222222; border: 1px solid #333333; border-radius: 6px; margin-top: 1.2em; padding-top: 1.0em; font-weight: bold; }
+QWidget { background-color: #171717; color: #e0e0e0; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+QLabel { background: transparent; }
+QGroupBox { background-color: #202020; border: 1px solid #343434; border-radius: 10px; margin-top: 1.35em; padding-top: 1.15em; font-weight: bold; }
 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; color: #c0392b; }
-QPushButton { background-color: #2e2e2e; color: #e0e0e0; border: 1px solid #444444; border-radius: 4px; padding: 5px 14px; min-height: 1.4em; }
+QPushButton { background-color: #2b2b2b; color: #e0e0e0; border: 1px solid #484848; border-radius: 6px; padding: 7px 16px; min-height: 1.8em; }
 QPushButton:hover { background-color: #3a3a3a; border-color: #c0392b; }
 QPushButton:pressed { background-color: #c0392b; color: #ffffff; }
 QPushButton:disabled { background-color: #252525; color: #555555; border-color: #333333; }
 QPushButton[accent="true"] { background-color: #8b1a1a; color: #ffffff; border-color: #c0392b; }
 QPushButton[accent="true"]:hover { background-color: #a52222; }
 QPushButton[accent="true"]:pressed { background-color: #c0392b; }
-QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox { background-color: #2a2a2a; color: #e0e0e0; border: 1px solid #444444; border-radius: 4px; padding: 4px 8px; }
+QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox { background-color: #292929; color: #e0e0e0; border: 1px solid #444444; border-radius: 6px; padding: 6px 9px; }
 QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus { border-color: #c0392b; }
 QComboBox::drop-down { border: none; background: #333333; width: 20px; }
 QComboBox QAbstractItemView { background-color: #2a2a2a; color: #e0e0e0; selection-background-color: #c0392b; }
@@ -31,7 +32,7 @@ QTextEdit { background-color: #111111; color: #aaaaaa; border: 1px solid #333333
 QScrollArea { border: none; background-color: #1a1a1a; }
 QTabWidget::pane { border: 1px solid #252525; background-color: #1a1a1a; top: -1px; }
 QTabBar { background-color: #0d0d0d; }
-QTabBar::tab { background-color: #111111; color: #555555; border: 1px solid #1c1c1c; border-bottom: none; padding: 7px 20px; margin-right: 2px; border-top-left-radius: 4px; border-top-right-radius: 4px; font-weight: normal; min-width: 80px; }
+QTabBar::tab { background-color: #101010; color: #666666; border: 1px solid #1c1c1c; border-bottom: none; padding: 9px 22px; margin-right: 3px; border-top-left-radius: 6px; border-top-right-radius: 6px; font-weight: normal; min-width: 92px; }
 QTabBar::tab:selected { background-color: #1a1a1a; color: #e0e0e0; border-color: #2e2e2e; border-bottom: 2px solid #c0392b; font-weight: bold; }
 QTabBar::tab:hover:!selected { background-color: #161616; color: #999999; border-color: #2a2a2a; }
 """
@@ -126,6 +127,36 @@ class EmgStreamWorker(QThread):
             if chunk:
                 self.chunk_received.emit(np.asarray(chunk, dtype=np.float64).T, np.asarray(timestamps, dtype=np.float64))
         self.status_changed.emit("LSL stream stopped", "#888888")
+
+
+class LslScanWorker(QThread):
+    """Resolve available LSL streams without blocking the GUI thread."""
+
+    results_ready = pyqtSignal(object)
+    scan_failed = pyqtSignal(str)
+
+    def __init__(self, wait_time: float = 1.0):
+        super().__init__()
+        self._wait_time = max(0.1, float(wait_time))
+
+    def run(self):
+        try:
+            streams = resolve_streams(wait_time=self._wait_time)
+            records = [
+                {
+                    "name": stream.name(),
+                    "type": stream.type(),
+                    "channel_count": int(stream.channel_count()),
+                    "sample_rate": float(stream.nominal_srate()),
+                    "source_id": stream.source_id(),
+                    "hostname": stream.hostname(),
+                }
+                for stream in streams
+            ]
+            records.sort(key=lambda item: (str(item["type"]).lower(), str(item["name"]).lower()))
+            self.results_ready.emit(records)
+        except Exception as exc:
+            self.scan_failed.emit(str(exc))
 
 
 class ChunkBuffer:
