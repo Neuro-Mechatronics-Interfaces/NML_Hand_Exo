@@ -511,6 +511,116 @@ class HandExo(object):
             offset += record_len
         return records
 
+    def configure_shadow_telemetry(
+        self,
+        motor_ids: list[int] | tuple[int, ...],
+        *,
+        interval_ms: int = 2,
+    ) -> str:
+        """Configure read-only firmware sampling for explicit Dynamixel IDs.
+
+        This command does not enable torque, change a mode, or write a motor
+        register. Sampling remains stopped until :meth:`start_shadow_telemetry`.
+        """
+        ids = [int(mid) for mid in motor_ids]
+        if not ids or any(mid <= 0 or mid > 253 for mid in ids):
+            raise ValueError("motor_ids must contain positive explicit DXL IDs")
+        if len(ids) != len(set(ids)):
+            raise ValueError("motor_ids must be unique")
+        if len(ids) > 9:
+            raise ValueError("shadow telemetry supports at most 9 motor IDs")
+        interval = int(interval_ms)
+        if interval <= 0:
+            raise ValueError("interval_ms must be positive")
+        command = "shadow_config:" + ":".join(
+            [str(interval), *(str(mid) for mid in ids)]
+        )
+        return self._command_transaction(
+            command, expected="OK: shadow_config", timeout=1.0
+        )
+
+    def start_shadow_telemetry(self) -> str:
+        """Start read-only sampling; firmware accepts this in VELOCITY mode only."""
+        return self._command_transaction(
+            "shadow_start", expected="OK: shadow_start", timeout=1.0
+        )
+
+    def stop_shadow_telemetry(self) -> str:
+        """Stop read-only sampling without changing any motor state."""
+        return self._command_transaction(
+            "shadow_stop", expected="OK: shadow_stop", timeout=1.0
+        )
+
+    def get_shadow_telemetry(self) -> dict:
+        """Return the firmware's buffered Phase-1 shadow evidence snapshot."""
+        command = "shadow_status"
+        self.send_command(command)
+        raw = self._receive(wait_until_return=True, timeout=0.5)
+        if not raw.strip() or re.search(r"(?:^|\n)\s*ERROR:", raw, re.IGNORECASE):
+            raise ProtocolResponseError(
+                command=command,
+                expected="SHADOW header and per-motor records",
+                raw_response=raw,
+            )
+
+        header_match = re.search(r"SHADOW:\s*\{([^}]*)\}", raw, re.IGNORECASE)
+        if header_match is None:
+            raise ProtocolResponseError(
+                command=command,
+                expected="SHADOW header",
+                raw_response=raw,
+            )
+
+        header: dict[str, object] = {}
+        for item in header_match.group(1).split(","):
+            key, sep, value = item.partition(":")
+            if not sep:
+                continue
+            key = key.strip()
+            value = value.strip()
+            if value.lower() in {"true", "false"}:
+                header[key] = value.lower() == "true"
+            else:
+                try:
+                    header[key] = int(value)
+                except ValueError:
+                    header[key] = value
+
+        parsed = self._parse_motor_data_block(raw)
+        records: dict[int, dict[str, object]] = {}
+        numeric_fields = {
+            "current",
+            "position_ticks",
+            "absolute_angle",
+            "angle",
+            "velocity_deg_s",
+            "current_sample_ms",
+            "position_sample_ms",
+            "error",
+        }
+        for mid, values in parsed.items():
+            record = {"id": int(mid)}
+            for field in numeric_fields:
+                if field in values and values[field] is not None:
+                    value = values[field]
+                    if field in {
+                        "position_ticks",
+                        "current_sample_ms",
+                        "position_sample_ms",
+                        "error",
+                    }:
+                        record[field] = int(float(value))
+                    else:
+                        record[field] = float(value)
+            records[int(mid)] = record
+        if int(header.get("count", 0)) and not records:
+            raise ProtocolResponseError(
+                command=command,
+                expected="per-motor shadow records",
+                raw_response=raw,
+            )
+        return {"meta": header, "records": records, "raw": raw}
+
     def _get_motor_attribute(
         self,
         attr: str,

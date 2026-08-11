@@ -712,6 +712,17 @@ constexpr float DIRECT_VELOCITY_SOFT_ZONE_DEG = 10.0f;
 /// @brief Hard stop distance retained inside each calibrated joint limit.
 constexpr float DIRECT_LIMIT_MARGIN_DEG = 2.0f;
 
+/// @brief Phase-1, read-only contact instrumentation.
+///
+/// The sampler is disabled at boot and can run only while the global motor
+/// mode is VELOCITY. It performs one Dynamixel register read per service pass,
+/// alternating PRESENT_CURRENT and PRESENT_POSITION over explicit IDs. It
+/// never writes a motor register or changes a control decision.
+constexpr uint8_t SHADOW_TELEMETRY_MAX_MOTORS = 9;
+constexpr unsigned long SHADOW_TELEMETRY_DEFAULT_INTERVAL_MS = 2;
+constexpr unsigned long SHADOW_TELEMETRY_MIN_INTERVAL_MS = 2;
+constexpr unsigned long SHADOW_TELEMETRY_MAX_INTERVAL_MS = 100;
+
 /// @brief Debounce duration for mode switch button in milliseconds.
 constexpr int BUTTON_DEBOUNCE_DURATION = 50; // ms debounce for physical button
 

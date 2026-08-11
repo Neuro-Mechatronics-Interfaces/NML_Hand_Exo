@@ -155,6 +155,28 @@ Python parser handles lowercase `torque` with `float(val)` — no Python change 
 
 ---
 
+## Phase-1 shadow telemetry
+
+Normal fast telemetry deliberately reads position only because burst reads of
+multiple registers previously destabilized the Dynamixel bus. Phase-1 shadow
+telemetry uses a separate, opt-in scheduler:
+
+1. The GUI configures explicit target IDs and starts the sampler.
+2. Firmware reads one register per loop service interval, alternating current
+   and position across those IDs.
+3. Firmware derives velocity from successive position samples and buffers the
+   newest record per ID.
+4. The GUI polls `shadow_status` at up to 10 Hz. That command copies the buffer
+   and causes no additional DXL traffic.
+5. The GUI records raw evidence and a non-controlling contact estimate under
+   `logs/shadow_contact/`.
+
+The sampler runs only in velocity mode, is disabled at boot, and stops itself
+on a mode change. Its contact labels are explicitly not part of the control
+path.
+
+---
+
 ## Open tasks
 
 - [ ] Reflash OpenRB-150 with `utils.cpp` fix; verify Torque column populates

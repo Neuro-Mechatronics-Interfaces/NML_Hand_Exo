@@ -85,6 +85,7 @@ from nml_hand_exo.interface._telemetry_streaming import (
     NumericLSLTelemetryOutlet,
     UDPTelemetryPublisher,
 )
+from nml_hand_exo.decoding.shadow_contact import ShadowContactEstimator
 
 # websockets is optional; teleop tab gracefully degrades if missing.
 try:
@@ -110,6 +111,7 @@ HOME_GROUP_SETTLE_MS = 750
 TELEMETRY_DEFAULT_RATE_HZ = 50
 DIRECT_TELEMETRY_MAX_RATE_HZ = 10
 EMG_TELEMETRY_RATE_HZ = 2
+SHADOW_TELEMETRY_RATE_HZ = 10
 EMG_FAST_TELEMETRY_TIMEOUT_S = 0.15
 TELEMETRY_RENDER_INTERVAL_MS = 100
 TELEMETRY_BUFFER_SAMPLES = 5
@@ -1229,6 +1231,7 @@ class SerialWorker(QThread):
     line_received = pyqtSignal(str)
     pose_completed = pyqtSignal(int, str, int, object, str)
     direct_failed = pyqtSignal(str)
+    shadow_failed = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1241,6 +1244,7 @@ class SerialWorker(QThread):
         self._direct_actions: dict[int, tuple[str, float | None]] = {}
         self._realtime_control = False
         self._realtime_motor_ids: list[int] = []
+        self._shadow_telemetry = False
         self._last_poll_error_log = 0.0
         self._motor_ids: list[int] = []
         self._state_lock = threading.Lock()
@@ -1259,6 +1263,10 @@ class SerialWorker(QThread):
             self._realtime_motor_ids = sorted(
                 {int(mid) for mid in motor_ids if int(mid) > 0}
             )
+
+    def set_shadow_telemetry(self, enabled: bool):
+        with self._state_lock:
+            self._shadow_telemetry = bool(enabled)
 
     def request_poll(self, include_telemetry: bool = True):
         with self._state_lock:
@@ -1390,6 +1398,7 @@ class SerialWorker(QThread):
             "currents": None,
             "velocities": None,
             "telemetry_meta": None,
+            "shadow": None,
             "telemetry_requested": include_telemetry,
         }
         exo = self._exo
@@ -1398,11 +1407,58 @@ class SerialWorker(QThread):
             return
         with self._state_lock:
             realtime_control = self._realtime_control
+            shadow_telemetry = self._shadow_telemetry
             poll_ids = list(
                 self._realtime_motor_ids
                 if realtime_control
                 else self._motor_ids
             )
+        if include_telemetry and poll_ids and realtime_control and shadow_telemetry:
+            try:
+                shadow = self._get_shadow_telemetry()
+                records = shadow.get("records", {})
+                meta = shadow.get("meta", {})
+                if meta.get("enabled") and records:
+                    result["shadow"] = shadow
+                    result["relative"] = {
+                        mid: data.get("angle") for mid, data in records.items()
+                    }
+                    result["positions"] = {
+                        mid: data.get("absolute_angle") for mid, data in records.items()
+                    }
+                    result["currents"] = {
+                        mid: data.get("current") for mid, data in records.items()
+                    }
+                    result["velocities"] = {
+                        mid: (
+                            float(data.get("velocity_deg_s")) / 6.0
+                            if data.get("velocity_deg_s") is not None else None
+                        )
+                        for mid, data in records.items()
+                    }
+                    result["torques"] = {
+                        mid: (
+                            abs(float(data.get("current", 0.0)))
+                            * XC330_T288_TORQUE_CONSTANT
+                        )
+                        for mid, data in records.items()
+                    }
+                    result["telemetry_meta"] = {
+                        "method": "shadow_buffered",
+                        "firmware_timestamp_ms": meta.get("timestamp_ms"),
+                        "shadow_sequence": meta.get("sequence"),
+                        "shadow_read_errors": meta.get("read_errors"),
+                        "host_poll_completed_wall_s": time.time(),
+                        "host_poll_completed_monotonic_s": time.monotonic(),
+                    }
+                    self.completed.emit(result)
+                    return
+                raise RuntimeError("firmware shadow sampler is not active")
+            except Exception as exc:
+                self._log_poll_error(f"[poll] shadow telemetry failed: {exc}")
+                self.shadow_failed.emit(str(exc))
+                self.completed.emit(result)
+                return
         if include_telemetry and poll_ids:
             try:
                 fast = self._get_fast_telemetry(
@@ -1553,6 +1609,9 @@ class SerialWorker(QThread):
 
         return self._with_raw_exo(read_fast)
 
+    def _get_shadow_telemetry(self) -> dict:
+        return self._with_raw_exo(lambda raw_exo: raw_exo.get_shadow_telemetry())
+
     def _transact(self, command: str, timeout: float) -> str:
         def do_transact(raw_exo):
             delimiter = raw_exo.command_delimiter
@@ -1655,6 +1714,11 @@ class HandExoGUI(QWidget):
         self._emg_hold_angle: float | None = None
         self._emg_hold_active = False
         self._emg_hold_applied_current_mA: int | None = None
+        self._emg_shadow_estimators: dict[int, ShadowContactEstimator] = {}
+        self._emg_shadow_log_file = None
+        self._emg_shadow_log_writer = None
+        self._emg_shadow_active = False
+        self._emg_last_commands: dict[int, float] = {}
 
         self._udp_telemetry = UDPTelemetryPublisher()
         self._udp_telem_sent_count = 0
@@ -1749,6 +1813,7 @@ class HandExoGUI(QWidget):
         self._serial_worker.line_received.connect(self._log)
         self._serial_worker.pose_completed.connect(self._on_udp_pose_ack_ready)
         self._serial_worker.direct_failed.connect(self._on_emg_direct_failed)
+        self._serial_worker.shadow_failed.connect(self._on_emg_shadow_failed)
         self._serial_worker.start()
 
         self._build_ui()
@@ -2286,9 +2351,37 @@ class HandExoGUI(QWidget):
             confidence_label,
             self._emg_confidence_spin,
         ]
+        self._emg_shadow_cb = QCheckBox(
+            "Record read-only shadow contact evidence (Phase 1)"
+        )
+        self._emg_shadow_cb.setToolTip(
+            "Requires the Phase-1 firmware. Samples current and position without "
+            "changing any motor command, then records raw evidence and an offline-only "
+            "contact estimate to logs/shadow_contact."
+        )
+        self._emg_shadow_status = QLabel("Shadow monitor: off")
+        self._emg_shadow_status.setStyleSheet("color: #888888;")
+        map_layout.addWidget(self._emg_shadow_cb, 6, 0, 1, 2)
+        map_layout.addWidget(self._emg_shadow_status, 6, 2, 1, 2)
+        shadow_label = QLabel("Shadow session label:")
+        self._emg_shadow_label_edit = QLineEdit("bench")
+        self._emg_shadow_label_edit.setToolTip(
+            "Short label added to the CSV filename and every recorded row, "
+            "for example free_close, foam_block, or rigid_block."
+        )
+        map_layout.addWidget(shadow_label, 7, 0)
+        map_layout.addWidget(self._emg_shadow_label_edit, 7, 1, 1, 3)
+        self._emg_advanced_widgets.extend(
+            [
+                self._emg_shadow_cb,
+                self._emg_shadow_status,
+                shadow_label,
+                self._emg_shadow_label_edit,
+            ]
+        )
         self._emg_advanced_toggle = QCheckBox("Show advanced intent settings")
         self._emg_advanced_toggle.toggled.connect(self._set_emg_advanced_visible)
-        map_layout.addWidget(self._emg_advanced_toggle, 6, 0, 1, 4)
+        map_layout.addWidget(self._emg_advanced_toggle, 8, 0, 1, 4)
         self._set_emg_advanced_visible(False)
         layout.addWidget(map_box)
 
@@ -4703,6 +4796,13 @@ class HandExoGUI(QWidget):
         )
         interval_ms = max(10, round(1000 / max(1, rate_hz)))
         if getattr(self, "_emg_live", False):
+            if (
+                getattr(self, "_emg_shadow_active", False)
+            ):
+                return max(
+                    interval_ms,
+                    round(1000 / SHADOW_TELEMETRY_RATE_HZ),
+                )
             return max(
                 interval_ms,
                 round(1000 / EMG_TELEMETRY_RATE_HZ),
@@ -4749,6 +4849,9 @@ class HandExoGUI(QWidget):
             return
 
         telemetry_meta = result.get("telemetry_meta")
+        shadow = result.get("shadow")
+        if shadow:
+            self._record_emg_shadow_snapshot(shadow)
         self._record_telemetry_sample_rate()
         self._buffer_telemetry_field("relative", relative)
         self._buffer_telemetry_field("positions", positions)
@@ -8172,6 +8275,7 @@ class HandExoGUI(QWidget):
         self._serial_worker.set_realtime_control(
             True, self._emg_safety_ids()
         )
+        self._start_emg_shadow_monitor()
         self._start_device_polling(force_refresh=True)
         self._emg_control_timer.start()
         self._emg_start_btn.setEnabled(False)
@@ -8179,6 +8283,189 @@ class HandExoGUI(QWidget):
         self._emg_readiness_lbl.setText("READY — EMG teleop is active")
         self._emg_readiness_lbl.setStyleSheet("color: #27ae60; font-weight: bold;")
         self._emg_live_status_lbl.setText("Active — press STOP TELEOP to end")
+
+    def _start_emg_shadow_monitor(self):
+        """Start opt-in read-only evidence recording without gating teleop."""
+        enabled = (
+            hasattr(self, "_emg_shadow_cb")
+            and self._emg_shadow_cb.isChecked()
+        )
+        self._serial_worker.set_shadow_telemetry(False)
+        self._emg_shadow_active = False
+        if not enabled:
+            return
+        if self._direct_mode != "velocity":
+            self._emg_shadow_status.setText(
+                "Shadow monitor unavailable: velocity mode required"
+            )
+            self._emg_shadow_status.setStyleSheet("color: #f39c12;")
+            return
+        target_ids = self._emg_target_ids()
+        if not target_ids:
+            return
+
+        self._emg_shadow_estimators = {
+            int(mid): ShadowContactEstimator() for mid in target_ids
+        }
+        self._emg_last_commands = {int(mid): 0.0 for mid in target_ids}
+        try:
+            output_dir = os.path.join(os.getcwd(), "logs", "shadow_contact")
+            os.makedirs(output_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            session_label = self._emg_shadow_label_edit.text().strip() or "bench"
+            safe_label = re.sub(r"[^A-Za-z0-9_-]+", "_", session_label).strip("_")
+            safe_label = safe_label[:48] or "bench"
+            self._emg_shadow_session_label = session_label
+            path = os.path.join(
+                output_dir, f"shadow_contact_{timestamp}_{safe_label}.csv"
+            )
+            self._emg_shadow_log_file = open(
+                path, "w", newline="", encoding="utf-8", buffering=1
+            )
+            fields = [
+                "session_label", "host_wall_s", "host_monotonic_s",
+                "firmware_timestamp_ms",
+                "firmware_sequence", "firmware_read_errors", "motor_id",
+                "sample_error", "current_mA", "angle_deg", "velocity_deg_s",
+                "current_sample_ms", "position_sample_ms", "sample_age_ms",
+                "signed_intent", "confidence", "command_rpm",
+                "lower_limit_deg", "upper_limit_deg", "shadow_state",
+                "filtered_current_mA", "filtered_velocity_deg_s", "evidence",
+                "near_limit", "dwell_ms",
+            ]
+            self._emg_shadow_log_writer = csv.DictWriter(
+                self._emg_shadow_log_file, fieldnames=fields
+            )
+            self._emg_shadow_log_writer.writeheader()
+            ids = ":".join(str(int(mid)) for mid in target_ids)
+            self._serial_worker.enqueue(f"shadow_config:2:{ids}", timeout=1.0)
+            self._serial_worker.enqueue("shadow_start", timeout=1.0)
+            self._serial_worker.set_shadow_telemetry(True)
+            self._emg_shadow_active = True
+            self._emg_shadow_status.setText(
+                f"Shadow monitor: recording IDs {target_ids}"
+            )
+            self._emg_shadow_status.setStyleSheet("color: #27ae60;")
+            self._log(f"[EMG shadow] Recording read-only evidence to {path}")
+        except Exception as exc:
+            self._serial_worker.set_shadow_telemetry(False)
+            self._emg_shadow_active = False
+            self._close_emg_shadow_log()
+            self._emg_shadow_status.setText(f"Shadow monitor failed: {exc}")
+            self._emg_shadow_status.setStyleSheet("color: #c0392b;")
+            self._log(f"[EMG shadow] Could not start: {exc}")
+
+    def _close_emg_shadow_log(self):
+        handle = self._emg_shadow_log_file
+        self._emg_shadow_log_file = None
+        self._emg_shadow_log_writer = None
+        if handle is not None:
+            try:
+                handle.flush()
+                handle.close()
+            except Exception:
+                pass
+
+    def _stop_emg_shadow_monitor(self):
+        was_active = self._emg_shadow_log_file is not None
+        self._serial_worker.set_shadow_telemetry(False)
+        self._emg_shadow_active = False
+        if self.exo_connected and was_active:
+            self._serial_worker.enqueue("shadow_stop", timeout=1.0)
+        self._close_emg_shadow_log()
+        self._emg_shadow_estimators = {}
+        self._emg_last_commands = {}
+        if hasattr(self, "_emg_shadow_status"):
+            self._emg_shadow_status.setText("Shadow monitor: off")
+            self._emg_shadow_status.setStyleSheet("color: #888888;")
+
+    def _on_emg_shadow_failed(self, error: str):
+        """Disable instrumentation failure without interrupting motor control."""
+        self._serial_worker.set_shadow_telemetry(False)
+        self._emg_shadow_active = False
+        if self.exo_connected:
+            self._serial_worker.enqueue("shadow_stop", timeout=1.0)
+        self._close_emg_shadow_log()
+        self._emg_shadow_estimators = {}
+        self._emg_shadow_status.setText(f"Shadow monitor unavailable: {error}")
+        self._emg_shadow_status.setStyleSheet("color: #c0392b;")
+        self._log(
+            f"[EMG shadow] Instrumentation disabled; teleop remains active: {error}"
+        )
+        self._start_device_polling()
+
+    def _record_emg_shadow_snapshot(self, snapshot: dict):
+        writer = self._emg_shadow_log_writer
+        if writer is None:
+            return
+        meta = snapshot.get("meta", {})
+        records = snapshot.get("records", {})
+        now_ms = int(meta.get("timestamp_ms", 0) or 0)
+        latest = self._emg_latest or {}
+        values = latest.get("values", [])
+        signed = float(values[0]) if len(values) >= 1 else 0.0
+        confidence = float(values[2]) if len(values) >= 3 else 0.0
+        motion_sign = float(self._emg_direction_combo.currentData())
+        states = []
+        for mid, record in records.items():
+            motor_id = int(mid)
+            current_ms = int(record.get("current_sample_ms", 0) or 0)
+            position_ms = int(record.get("position_sample_ms", 0) or 0)
+            sample_ms = (
+                min(current_ms, position_ms)
+                if current_ms > 0 and position_ms > 0 else 0
+            )
+            age_ms = max(0, now_ms - sample_ms) if sample_ms else 2**31 - 1
+            lower, upper = self._relative_emg_hold_limits(motor_id)
+            estimator = self._emg_shadow_estimators.setdefault(
+                motor_id, ShadowContactEstimator()
+            )
+            result = estimator.update(
+                now_ms=now_ms,
+                sample_ms=sample_ms,
+                intent=signed,
+                current_mA=float(record.get("current", 0.0) or 0.0),
+                velocity_deg_s=float(record.get("velocity_deg_s", 0.0) or 0.0),
+                angle_deg=float(record.get("angle", 0.0) or 0.0),
+                lower_limit_deg=float(lower),
+                upper_limit_deg=float(upper),
+                closing_intent_sign=1.0,
+                closing_motion_sign=motion_sign,
+            )
+            states.append(f"{motor_id}:{result.state.value}")
+            writer.writerow({
+                "host_wall_s": time.time(),
+                "session_label": getattr(
+                    self, "_emg_shadow_session_label", "bench"
+                ),
+                "host_monotonic_s": time.monotonic(),
+                "firmware_timestamp_ms": now_ms,
+                "firmware_sequence": meta.get("sequence"),
+                "firmware_read_errors": meta.get("read_errors"),
+                "motor_id": motor_id,
+                "sample_error": int(record.get("error", 0) or 0),
+                "current_mA": record.get("current"),
+                "angle_deg": record.get("angle"),
+                "velocity_deg_s": record.get("velocity_deg_s"),
+                "current_sample_ms": current_ms,
+                "position_sample_ms": position_ms,
+                "sample_age_ms": age_ms,
+                "signed_intent": signed,
+                "confidence": confidence,
+                "command_rpm": self._emg_last_commands.get(motor_id, 0.0),
+                "lower_limit_deg": lower,
+                "upper_limit_deg": upper,
+                "shadow_state": result.state.value,
+                "filtered_current_mA": result.filtered_current_mA,
+                "filtered_velocity_deg_s": result.filtered_velocity_deg_s,
+                "evidence": int(result.evidence),
+                "near_limit": int(result.near_limit),
+                "dwell_ms": result.dwell_ms,
+            })
+        if states:
+            self._emg_shadow_status.setText(
+                "Shadow only — " + "  ".join(states)
+            )
 
     def _limit_direct_command_for_motor(self, dxl_id: int, command: float) -> float:
         """Clamp a GUI-issued direct command to the selected motor's row limit."""
@@ -8238,6 +8525,9 @@ class HandExoGUI(QWidget):
                 self._log(f"[EMG] could not queue stop: {exc}")
         if not keep_live and hasattr(self, "_serial_worker"):
             self._serial_worker.set_realtime_control(False)
+            stop_shadow = getattr(self, "_stop_emg_shadow_monitor", None)
+            if callable(stop_shadow):
+                stop_shadow()
         if not keep_live:
             self._release_emg_position_hold()
             self._start_device_polling()
@@ -8247,6 +8537,10 @@ class HandExoGUI(QWidget):
         if hasattr(self, "_emg_command_lbl"):
             unit = "mA" if self._direct_mode == "current" else "rpm"
             self._emg_command_lbl.setText(f"Commanded output: 0.00 {unit}")
+        last_commands = getattr(self, "_emg_last_commands", None)
+        if last_commands is not None:
+            for dxl_id in ids_to_stop:
+                last_commands[dxl_id] = 0.0
         if hasattr(self, "_emg_start_btn") and not keep_live:
             self._emg_start_btn.setEnabled(True)
             self._emg_stop_btn.setEnabled(False)
@@ -8324,6 +8618,9 @@ class HandExoGUI(QWidget):
                 )
                 actions[dxl_id] = (self._direct_mode, motor_command)
                 applied_commands.append(motor_command)
+                last_commands = getattr(self, "_emg_last_commands", None)
+                if last_commands is not None:
+                    last_commands[dxl_id] = motor_command
                 self._emg_commanded_ids.add(dxl_id)
             self._serial_worker.request_direct_actions(actions)
             self._emg_last_command_id = target_ids[0] if len(target_ids) == 1 else None

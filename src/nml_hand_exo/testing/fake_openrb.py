@@ -49,6 +49,7 @@ class FakeOpenRBComm:
         self.angles = {mid: 0.0 for mid in self.motor_ids}
         self.absolute_angles = {mid: 0.0 for mid in self.motor_ids}
         self.currents = {mid: 0.0 for mid in self.motor_ids}
+        self.velocities = {mid: 0.0 for mid in self.motor_ids}
         self.current_limits = {mid: 910 for mid in self.motor_ids}
         self.velocity_limits_raw = {mid: 44 for mid in self.motor_ids}
         self.total_current_budget_mA = 800
@@ -56,6 +57,11 @@ class FakeOpenRBComm:
         self.limits = {mid: (-90.0, 90.0) for mid in self.motor_ids}
         self.holds: dict[int, float] = {}
         self.control_mode = "position"
+        self.shadow_ids: tuple[int, ...] = ()
+        self.shadow_interval_ms = 2
+        self.shadow_enabled = False
+        self.shadow_sequence = 0
+        self.shadow_read_errors = 0
         self.sent: list[str] = []
         self._replies: deque[str] = deque()
         self._faults: deque[ReplyFault] = deque()
@@ -186,6 +192,55 @@ class FakeOpenRBComm:
                 f"Motor control mode: {self.control_mode} "
                 "(torque remains off until explicitly enabled)"
             )
+        if head == "shadow_config":
+            interval = int(parts[1])
+            ids = tuple(int(value) for value in parts[2:])
+            if (
+                interval <= 0 or not ids or len(ids) != len(set(ids))
+                or any(mid not in self.motor_ids for mid in ids)
+            ):
+                return "ERROR: shadow_config requires INTERVAL_MS and unique explicit IDs"
+            self.shadow_interval_ms = min(100, max(2, interval))
+            self.shadow_ids = ids
+            self.shadow_enabled = False
+            self.shadow_sequence = 0
+            self.shadow_read_errors = 0
+            return (
+                f"OK: shadow_config count={len(ids)} "
+                f"interval_ms={self.shadow_interval_ms}"
+            )
+        if head == "shadow_start":
+            if not self.shadow_ids or self.control_mode.lower() != "velocity":
+                return "ERROR: shadow_start requires a configuration and VELOCITY mode"
+            self.shadow_enabled = True
+            return "OK: shadow_start read-only instrumentation active"
+        if head == "shadow_stop":
+            self.shadow_enabled = False
+            return "OK: shadow_stop"
+        if head == "shadow_status":
+            now_ms = int(time.monotonic() * 1000)
+            if self.shadow_enabled:
+                self.shadow_sequence += len(self.shadow_ids)
+            header = (
+                f"SHADOW: {{enabled: {str(self.shadow_enabled).lower()}, "
+                f"mode: {self.control_mode.upper()}, count: {len(self.shadow_ids)}, "
+                f"interval_ms: {self.shadow_interval_ms}, "
+                f"timestamp_ms: {now_ms}, "
+                f"sequence: {self.shadow_sequence}, "
+                f"read_errors: {self.shadow_read_errors}}}"
+            )
+            rows = []
+            for index, mid in enumerate(self.shadow_ids):
+                rows.append(
+                    f"Motor {index}: {{id: {mid}, error: 0, "
+                    f"current: {self.currents[mid]}, position_ticks: 0, "
+                    f"absolute_angle: {self.absolute_angles[mid]}, "
+                    f"angle: {self.angles[mid]}, "
+                    f"velocity_deg_s: {self.velocities[mid]}, "
+                    f"current_sample_ms: {now_ms}, "
+                    f"position_sample_ms: {now_ms}}}"
+                )
+            return "\n".join([header, *rows])
         if head == "set_angle":
             mid, value = int(parts[1]), float(parts[2])
             low, high = self.limits[mid]

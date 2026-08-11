@@ -169,3 +169,13 @@ python examples\diagnostics\benchmark_fast_telemetry.py --port COM3 --ids 11 12 
 
 This script opens COM3 through pyserial, so it cannot run at the same time as
 Arduino Serial Monitor, the GUI, or any other serial terminal.
+
+## Phase-1 Shadow Contact Recorder
+
+The normal GUI now contains the supported live recorder. Expand advanced intent
+settings and enable **Record read-only shadow contact evidence (Phase 1)**
+before starting EMG teleoperation. The recorder uses the GUI's existing serial
+worker, so it does not contend with the GUI for a Windows COM port.
+
+See `docs/shadow_contact_phase1.md` for the full bench procedure and CSV field
+definitions.

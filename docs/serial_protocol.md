@@ -258,6 +258,37 @@ OK: hold_position id=14 angle=22.500 current_mA=80
 OK: release_hold id=14
 ```
 
+### Phase-1 shadow contact instrumentation
+
+The development firmware adds an opt-in, read-only sampler for characterizing
+contact evidence during direct velocity teleoperation:
+
+```text
+shadow_config:2:15:16:17:18:19
+shadow_start
+shadow_status
+shadow_stop
+```
+
+- `shadow_config` requires a sample interval followed by unique, explicit DXL
+  IDs. Bare names and `all` are intentionally unsupported.
+- The sampler is disabled at boot and `shadow_start` succeeds only in global
+  `VELOCITY` mode.
+- It performs one register read per service pass, alternating
+  `PRESENT_CURRENT` and `PRESENT_POSITION`. For five IDs at a 2 ms interval, a
+  complete current/position update per ID is nominally 20 ms (50 Hz), subject
+  to actual bus latency.
+- Velocity is derived from successive relative-position samples; no
+  `PRESENT_VELOCITY` read is required.
+- `shadow_status` returns buffered values only. It performs no Dynamixel read.
+- These commands never enable torque or write goal, mode, limit, current, or
+  position registers. Changing out of velocity mode automatically stops the
+  sampler.
+- Shadow estimates are observation-only and must never be treated as a motor
+  command or a validated contact detector.
+
+See [shadow_contact_phase1.md](shadow_contact_phase1.md) for the bench workflow.
+
 ---
 
 ## Baud rate map `[VERIFIED]`
@@ -308,6 +339,7 @@ breaks the corresponding Python code.
 | `GESTURE_SANG: <name>=<degrees> ...` | `_hand_exo.py:parse_gesture_signed_angles` | Rest-zeroed signed joint angles |
 | `GESTURE_ANGLES: <name>=<code>,<degrees> ...` | `_hand_exo.py:parse_gesture_angle_pairs`, `udp_gesture_receiver.py` | Combined joint positions / NGA2 pose acks |
 | `GESTURE_RESULT: reached=N ...` | `udp_gesture_receiver.py`, `udp_gesture_gui.py` | Asynchronous move verdicts |
+| `SHADOW: {enabled: ...}` plus `Motor N: {...}` | `_hand_exo.py:get_shadow_telemetry` | Buffered read-only current/position/contact evidence |
 
 Regex used: `re.search(r"name:\s*(\w+)", line)` and `line.split("absolute_angle:")`.
 

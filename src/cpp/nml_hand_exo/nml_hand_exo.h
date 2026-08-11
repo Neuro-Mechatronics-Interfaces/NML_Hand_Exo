@@ -53,6 +53,19 @@ struct __attribute__((packed)) FastTelemetryRecord {
   int32_t relative_cdeg;
 };
 
+/// @brief Buffered, read-only evidence used by the Phase-1 shadow estimator.
+struct ShadowTelemetryRecord {
+  uint8_t id = 0;
+  uint8_t error = 0;
+  int16_t current_mA = 0;
+  int32_t position_ticks = 0;
+  int32_t absolute_cdeg = 0;
+  int32_t relative_cdeg = 0;
+  int32_t velocity_cdeg_s = 0;
+  uint32_t current_sample_ms = 0;
+  uint32_t position_sample_ms = 0;
+};
+
 /// @brief Outcome of one commanded move, reported in GESTURE_RESULT lines.
 ///
 /// The command ack only says the firmware ACCEPTED a goal; these say what the
@@ -191,6 +204,23 @@ class NMLHandExo {
       uint8_t& methodOut,
       uint32_t timeoutMs = 10
     );
+
+    /// @brief Configure explicit IDs for read-only shadow instrumentation.
+    bool configureShadowTelemetry(
+      const uint8_t* ids, uint8_t count, unsigned long intervalMs
+    );
+    /// @brief Start shadow sampling. Requires VELOCITY mode and a configuration.
+    bool startShadowTelemetry();
+    /// @brief Stop sampling without changing any motor state.
+    void stopShadowTelemetry();
+    bool isShadowTelemetryEnabled() const;
+    uint8_t getShadowTelemetryCount() const;
+    unsigned long getShadowTelemetryIntervalMs() const;
+    uint32_t getShadowTelemetrySequence() const;
+    uint32_t getShadowTelemetryReadErrors() const;
+    uint8_t copyShadowTelemetryRecords(
+      ShadowTelemetryRecord* records, uint8_t capacity
+    ) const;
 
     /// @brief Reset zero offsets for all motors using their current positions.
     void resetAllZeros();
@@ -843,6 +873,22 @@ class NMLHandExo {
 
 
     bool* flipMotor_;
+
+    // Phase-1 shadow telemetry. Fixed storage keeps RAM use deterministic and
+    // makes it impossible for instrumentation to fragment the MCU heap.
+    ShadowTelemetryRecord shadowRecords_[SHADOW_TELEMETRY_MAX_MOTORS];
+    uint8_t shadowTelemetryCount_ = 0;
+    uint8_t shadowTelemetryCursor_ = 0;
+    bool shadowTelemetryReadCurrent_ = true;
+    bool shadowTelemetryEnabled_ = false;
+    unsigned long shadowTelemetryIntervalMs_ =
+      SHADOW_TELEMETRY_DEFAULT_INTERVAL_MS;
+    unsigned long shadowTelemetryLastReadMs_ = 0;
+    uint32_t shadowTelemetrySequence_ = 0;
+    uint32_t shadowTelemetryReadErrors_ = 0;
+
+    bool readPresentPositionTicks(uint8_t id, int32_t& ticks);
+    void serviceShadowTelemetry();
 
 };
 

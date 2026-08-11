@@ -472,6 +472,11 @@ void NMLHandExo::update() {
 
     serviceDirectControlSafety();
 
+    // Read-only Phase-1 instrumentation. This is disabled by default and
+    // self-pauses outside VELOCITY mode, so it cannot compete with the
+    // current-position governor or influence a motor command.
+    serviceShadowTelemetry();
+
     // Flush any allocation batched up by this pass's commands before the
     // governor gets a say, so the feed-forward clamp reaches the motors within
     // the same loop iteration that issued their goals.
@@ -1227,6 +1232,150 @@ int16_t NMLHandExo::readPresentCurrentMa(uint8_t id, bool& ok) {
     return 0;
   }
   return (int16_t)raw;
+}
+
+bool NMLHandExo::readPresentPositionTicks(uint8_t id, int32_t& ticks) {
+  while (DXL_SERIAL.available() > 0) {
+    DXL_SERIAL.read();
+  }
+  const uint8_t item = (uint8_t)PRESENT_POSITION;
+  const uint32_t timeout_ms = 10;
+  ticks = dxl_.readControlTableItem(item, id, timeout_ms);
+  return dxl_.getLastLibErrCode() == DXL_LIB_OK;
+}
+
+bool NMLHandExo::configureShadowTelemetry(
+  const uint8_t* ids, uint8_t count, unsigned long intervalMs
+) {
+  if (ids == nullptr || count == 0 || count > SHADOW_TELEMETRY_MAX_MOTORS) {
+    return false;
+  }
+  for (uint8_t i = 0; i < count; ++i) {
+    if (getIndexById(ids[i]) < 0) return false;
+    for (uint8_t j = 0; j < i; ++j) {
+      if (ids[j] == ids[i]) return false;
+    }
+  }
+
+  shadowTelemetryEnabled_ = false;
+  shadowTelemetryCount_ = count;
+  shadowTelemetryCursor_ = 0;
+  shadowTelemetryReadCurrent_ = true;
+  shadowTelemetryIntervalMs_ = constrain(
+    intervalMs,
+    SHADOW_TELEMETRY_MIN_INTERVAL_MS,
+    SHADOW_TELEMETRY_MAX_INTERVAL_MS
+  );
+  shadowTelemetryLastReadMs_ = 0;
+  shadowTelemetrySequence_ = 0;
+  shadowTelemetryReadErrors_ = 0;
+  for (uint8_t i = 0; i < SHADOW_TELEMETRY_MAX_MOTORS; ++i) {
+    shadowRecords_[i] = ShadowTelemetryRecord();
+    if (i < count) shadowRecords_[i].id = ids[i];
+  }
+  return true;
+}
+
+bool NMLHandExo::startShadowTelemetry() {
+  if (shadowTelemetryCount_ == 0 || motorControlMode_ != "VELOCITY") {
+    return false;
+  }
+  shadowTelemetryEnabled_ = true;
+  shadowTelemetryLastReadMs_ = 0;
+  return true;
+}
+
+void NMLHandExo::stopShadowTelemetry() {
+  shadowTelemetryEnabled_ = false;
+}
+
+bool NMLHandExo::isShadowTelemetryEnabled() const {
+  return shadowTelemetryEnabled_;
+}
+
+uint8_t NMLHandExo::getShadowTelemetryCount() const {
+  return shadowTelemetryCount_;
+}
+
+unsigned long NMLHandExo::getShadowTelemetryIntervalMs() const {
+  return shadowTelemetryIntervalMs_;
+}
+
+uint32_t NMLHandExo::getShadowTelemetrySequence() const {
+  return shadowTelemetrySequence_;
+}
+
+uint32_t NMLHandExo::getShadowTelemetryReadErrors() const {
+  return shadowTelemetryReadErrors_;
+}
+
+uint8_t NMLHandExo::copyShadowTelemetryRecords(
+  ShadowTelemetryRecord* records, uint8_t capacity
+) const {
+  if (records == nullptr) return 0;
+  uint8_t count = min(shadowTelemetryCount_, capacity);
+  for (uint8_t i = 0; i < count; ++i) records[i] = shadowRecords_[i];
+  return count;
+}
+
+void NMLHandExo::serviceShadowTelemetry() {
+  if (!shadowTelemetryEnabled_) return;
+  if (motorControlMode_ != "VELOCITY") {
+    // Preserve the configuration for diagnostics, but stop bus traffic if a
+    // mode change could activate the current-position governor.
+    shadowTelemetryEnabled_ = false;
+    return;
+  }
+  if (shadowTelemetryCount_ == 0) return;
+
+  unsigned long now = millis();
+  if (now - shadowTelemetryLastReadMs_ < shadowTelemetryIntervalMs_) return;
+  shadowTelemetryLastReadMs_ = now;
+
+  ShadowTelemetryRecord& record = shadowRecords_[shadowTelemetryCursor_];
+  bool ok = true;
+  if (shadowTelemetryReadCurrent_) {
+    record.current_mA = readPresentCurrentMa(record.id, ok);
+    if (ok) record.current_sample_ms = now;
+  } else {
+    int32_t ticks = 0;
+    ok = readPresentPositionTicks(record.id, ticks);
+    if (ok) {
+      int index = getIndexById(record.id);
+      float absoluteDeg = ticks * 360.0f / (float)PULSE_RESOLUTION;
+      float relativeDeg = absoluteDeg - zeroOffsets_[index];
+      if (flipMotor_[index]) relativeDeg *= -1.0f;
+      int32_t relativeCdeg = (int32_t)round(relativeDeg * 100.0f);
+      if (record.position_sample_ms != 0 && now > record.position_sample_ms) {
+        uint32_t dtMs = now - record.position_sample_ms;
+        int32_t deltaCdeg = relativeCdeg - record.relative_cdeg;
+        record.velocity_cdeg_s = (int32_t)(((int64_t)deltaCdeg * 1000) / dtMs);
+      } else {
+        record.velocity_cdeg_s = 0;
+      }
+      record.position_ticks = ticks;
+      record.absolute_cdeg = (int32_t)round(absoluteDeg * 100.0f);
+      record.relative_cdeg = relativeCdeg;
+      record.position_sample_ms = now;
+      shadowTelemetrySequence_++;
+    }
+  }
+
+  const uint8_t errorMask = shadowTelemetryReadCurrent_ ? 0x01 : 0x02;
+  if (!ok) {
+    record.error |= errorMask;
+    shadowTelemetryReadErrors_++;
+  } else {
+    record.error &= (uint8_t)~errorMask;
+  }
+
+  shadowTelemetryReadCurrent_ = !shadowTelemetryReadCurrent_;
+  if (shadowTelemetryReadCurrent_) {
+    shadowTelemetryCursor_++;
+    if (shadowTelemetryCursor_ >= shadowTelemetryCount_) {
+      shadowTelemetryCursor_ = 0;
+    }
+  }
 }
 void NMLHandExo::serviceCurrentGovernor() {
   if (!currentGovernorEnabled_) return;

@@ -401,6 +401,35 @@ void sendFastTelemetryDiag(NMLHandExo& exo, const String& token) {
   commandPrint(info);
 }
 
+void sendShadowTelemetryStatus(NMLHandExo& exo) {
+  ShadowTelemetryRecord records[SHADOW_TELEMETRY_MAX_MOTORS];
+  uint8_t count = exo.copyShadowTelemetryRecords(
+    records, SHADOW_TELEMETRY_MAX_MOTORS
+  );
+  String info = "SHADOW: {enabled: " +
+                String(exo.isShadowTelemetryEnabled() ? "true" : "false") +
+                ", mode: " + exo.getMotorControlMode() +
+                ", count: " + String(count) +
+                ", interval_ms: " + String(exo.getShadowTelemetryIntervalMs()) +
+                ", timestamp_ms: " + String(millis()) +
+                ", sequence: " + String(exo.getShadowTelemetrySequence()) +
+                ", read_errors: " + String(exo.getShadowTelemetryReadErrors()) +
+                "}\n";
+  for (uint8_t i = 0; i < count; ++i) {
+    info += "Motor " + String(i) + ": {id: " + String(records[i].id) +
+            ", error: " + String(records[i].error) +
+            ", current: " + String(records[i].current_mA) +
+            ", position_ticks: " + String(records[i].position_ticks) +
+            ", absolute_angle: " + String(records[i].absolute_cdeg / 100.0f, 2) +
+            ", angle: " + String(records[i].relative_cdeg / 100.0f, 2) +
+            ", velocity_deg_s: " + String(records[i].velocity_cdeg_s / 100.0f, 2) +
+            ", current_sample_ms: " + String(records[i].current_sample_ms) +
+            ", position_sample_ms: " + String(records[i].position_sample_ms) +
+            "}\n";
+  }
+  commandPrint(info);
+}
+
 void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token) {
 
   token.trim();        // Remove any trailing white space
@@ -416,6 +445,58 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
 
   } else if (cmd == "telemetry_diag") {
     sendFastTelemetryDiag(exo, token);
+
+  } else if (cmd == "shadow_config") {
+    String intervalArg = getArg(token, 1);
+    intervalArg.trim();
+    auto isUnsignedInteger = [](const String& value) -> bool {
+      if (value.length() == 0) return false;
+      for (unsigned int i = 0; i < value.length(); ++i) {
+        if (!isDigit(value.charAt(i))) return false;
+      }
+      return true;
+    };
+    long requestedInterval = intervalArg.toInt();
+    uint8_t ids[SHADOW_TELEMETRY_MAX_MOTORS];
+    uint8_t count = 0;
+    bool valid = isUnsignedInteger(intervalArg) && requestedInterval > 0;
+    for (int argIndex = 2; valid; ++argIndex) {
+      String idArg = getArg(token, argIndex);
+      idArg.trim();
+      if (idArg.length() == 0) break;
+      if (count >= SHADOW_TELEMETRY_MAX_MOTORS || !isUnsignedInteger(idArg)) {
+        valid = false;
+        break;
+      }
+      long explicitID = idArg.toInt();
+      if (explicitID <= 0 || explicitID > 253 ||
+          exo.getIndexById((uint8_t)explicitID) < 0) {
+        valid = false;
+        break;
+      }
+      ids[count++] = (uint8_t)explicitID;
+    }
+    if (!valid || count == 0 ||
+        !exo.configureShadowTelemetry(ids, count, (unsigned long)requestedInterval)) {
+      commandPrint(F("ERROR: shadow_config requires INTERVAL_MS and unique explicit IDs"));
+    } else {
+      commandPrint("OK: shadow_config count=" + String(count) +
+                   " interval_ms=" + String(exo.getShadowTelemetryIntervalMs()));
+    }
+
+  } else if (cmd == "shadow_start") {
+    if (exo.startShadowTelemetry()) {
+      commandPrint(F("OK: shadow_start read-only instrumentation active"));
+    } else {
+      commandPrint(F("ERROR: shadow_start requires a configuration and VELOCITY mode"));
+    }
+
+  } else if (cmd == "shadow_stop") {
+    exo.stopShadowTelemetry();
+    commandPrint(F("OK: shadow_stop"));
+
+  } else if (cmd == "shadow_status") {
+    sendShadowTelemetryStatus(exo);
 
   } else if (cmd == "enable") {
     String arg = getArg(token, 1);  // local copy
@@ -1448,6 +1529,10 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_command_timeout   |  MILLISECONDS        | // Set direct-control watchdog (50-5000 ms)"));
     commandPrint(F(" get_telemetry_fast    |  ID:ID:ID.../ALL     | // Binary current/velocity/position telemetry frame"));
     commandPrint(F(" telemetry_diag        |  ID:ID:ID.../ALL     | // Text diagnostics for fast telemetry reads"));
+    commandPrint(F(" shadow_config         |  INTERVAL:ID:ID...   | // Configure read-only contact evidence sampling"));
+    commandPrint(F(" shadow_start          |  None                 | // Start sampling (VELOCITY mode only)"));
+    commandPrint(F(" shadow_stop           |  None                 | // Stop sampling; no motor state changes"));
+    commandPrint(F(" shadow_status         |  None                 | // Buffered current/position/derived-velocity snapshot"));
     commandPrint(F(" get_motor_limits      |  ID/NAME             | // Get motor limits (upper and lower bounds)"));
     commandPrint(F(" set_motor_limits      |  ID/NAME:VAL:VAL     | // Set motor limits (upper and lower bounds)"));
     commandPrint(F(" set_upper_limit       |  ID/NAME:ANGLE       | // Set the absolute upper bound position limit for the motor"));
