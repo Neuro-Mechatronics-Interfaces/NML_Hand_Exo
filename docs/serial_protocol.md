@@ -213,6 +213,17 @@ release_hold:14
   rejects direct velocity commands for any ID that was not verified.
 - `set_current` uses signed mA and is clamped to `DIRECT_CURRENT_LIMIT_MA`
   (910 mA for XC330-T288 in this firmware build).
+- The GUI permits explicit-ID multi-finger EMG control in Current / Torque mode.
+  It first applies each motor row's current ceiling, then proportionally scales
+  the complete group to the configured combined-current budget. Any active
+  auxiliary position-hold current is reserved before that group budget is
+  calculated. This aggregate governor is host-side; firmware independently
+  retains its per-ID current clamp, calibrated joint-limit stop, and direct
+  command watchdog. Other simultaneous command sources are not included in the
+  GUI's aggregate calculation and must not be used during EMG torque control.
+- EMG Current / Torque mode is a continuous signed-current controller, not a
+  position latch: neutral, low-confidence, or stale intent commands zero current.
+  Phase-1 shadow contact recording remains available only in Velocity mode.
 - `enable_ids` / `disable_ids` accept colon-separated explicit DXL IDs and
    toggle torque for the provided list in one parser command.
 - Mode changes turn torque off. Motors must be explicitly enabled afterward.

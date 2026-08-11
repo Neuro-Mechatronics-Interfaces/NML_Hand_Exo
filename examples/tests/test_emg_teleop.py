@@ -340,6 +340,30 @@ def test_serial_worker_writes_multi_motor_direct_set_as_one_payload():
     ]
 
 
+def test_serial_worker_writes_multi_motor_current_set_as_one_payload():
+    payloads = []
+    worker = SerialWorker()
+    worker.set_exo(
+        SimpleNamespace(
+            command_delimiter="\r\n",
+            device=SimpleNamespace(send=payloads.append),
+        )
+    )
+    worker.request_direct_actions(
+        {
+            15: ("current", 60.0),
+            16: ("current", -60.0),
+        }
+    )
+
+    worker._handle_direct_actions()
+
+    assert payloads == [
+        "set_current:15:60.0\r\n"
+        "set_current:16:-60.0\r\n"
+    ]
+
+
 def test_custom_finger_subset_is_ready_when_explicit_ids_are_safe_and_armed():
     target_ids = [15, 16, 17, 18, 19]
     gui = SimpleNamespace(
@@ -357,6 +381,85 @@ def test_custom_finger_subset_is_ready_when_explicit_ids_are_safe_and_armed():
     )
 
     assert HandExoGUI._emg_ready_reason(gui) is None
+
+
+def test_custom_finger_subset_is_ready_in_current_mode():
+    target_ids = [15, 16, 17, 18, 19]
+    gui = SimpleNamespace(
+        _emg_target_ids=lambda: target_ids,
+        _emg_safety_ids=lambda: target_ids,
+        _update_emg_safety_status=lambda: None,
+        exo_connected=True,
+        _emg_intent_worker=SimpleNamespace(isRunning=lambda: True),
+        _direct_mode="current",
+        _emg_full_finger_group_selected=lambda: False,
+        _emg_group_selected=lambda: True,
+        _direct_armed_ids=set(target_ids),
+        _emg_hold_ready_reason=lambda: None,
+        _has_calibration_for_emg_motor=lambda _dxl_id: True,
+    )
+
+    assert HandExoGUI._emg_ready_reason(gui) is None
+
+
+def test_current_group_commands_are_scaled_to_combined_budget():
+    worker = _DirectWorker()
+    status = _Label()
+    command_label = _Label()
+    target_ids = [15, 16, 17, 18, 19]
+    gui = SimpleNamespace(
+        _emg_live=True,
+        _emg_deadman_active=True,
+        _emg_ready_reason=lambda: None,
+        _emg_latest={
+            "received_monotonic": time.monotonic(),
+            "values": [1.0, 1.0, 0.95, 1.0],
+        },
+        _emg_stale_ms_spin=_SpinValue(200),
+        _emg_confidence_spin=_SpinValue(0.7),
+        _emg_deadband_spin=_SpinValue(0.15),
+        _emg_target_ids=lambda: target_ids,
+        _emg_safety_ids=lambda: target_ids,
+        _emg_target_name=lambda: "Power grasp",
+        _emg_direction_combo=_Combo(1.0),
+        _emg_max_command_spin=_SpinValue(100.0),
+        _total_current_spin=_SpinValue(300.0),
+        _direct_mode="current",
+        _emg_hold_active=False,
+        _emg_commanded_ids=set(),
+        _emg_last_command_id=None,
+        _serial_worker=worker,
+        _emg_live_status_lbl=status,
+        _emg_command_lbl=command_label,
+        motor_widgets=[],
+        _stop_emg_control=lambda *_args, **_kwargs: None,
+    )
+
+    HandExoGUI._emg_control_tick(gui)
+
+    assert worker.requests == [
+        {dxl_id: ("current", 60.0) for dxl_id in target_ids}
+    ]
+    assert "aggregate 300/300 mA" in command_label.text
+    assert "scaled 0.60" in command_label.text
+
+
+def test_current_group_budget_reserves_auxiliary_hold_current():
+    gui = SimpleNamespace(
+        _total_current_spin=_SpinValue(500.0),
+        _emg_hold_active=True,
+        _emg_hold_applied_current_mA=100.0,
+        _configured_emg_hold_id=lambda: 14,
+    )
+    requested = {dxl_id: 100.0 for dxl_id in range(15, 20)}
+
+    commands, available, scale = HandExoGUI._budget_emg_current_commands(
+        gui, requested
+    )
+
+    assert available == 400.0
+    assert scale == 0.8
+    assert commands == {dxl_id: 80.0 for dxl_id in range(15, 20)}
 
 
 def test_global_stop_composes_existing_stop_paths_and_disables_active_ids():

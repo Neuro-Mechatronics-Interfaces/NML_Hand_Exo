@@ -62,6 +62,15 @@ register is not used in Velocity Control Mode. Firmware independently clamps
 direct commands to 50 rpm and verifies each motor's hardware `VELOCITY_LIMIT`
 register before entering Velocity mode.
 
+For EMG teleoperation, **Current / Torque** can also drive an explicit motor or
+custom finger group. The signed decoder effort scales the configured maximum
+current for every target. Per-row current limits are applied first; if the sum
+of absolute target currents exceeds the combined-current budget, every target
+is reduced by the same proportion so the grasp pattern is preserved. An active
+auxiliary hold is reserved from that budget. This is continuous current control:
+zero or stale intent releases commanded current rather than holding position.
+The read-only Phase-1 shadow recorder is intentionally Velocity-only.
+
 ---
 
 ## CalibrationDialog `[VERIFIED]`

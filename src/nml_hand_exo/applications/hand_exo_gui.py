@@ -7961,8 +7961,6 @@ class HandExoGUI(QWidget):
             or len(target_ids) == len(EMG_FINGER_MOTOR_NAMES)
         )
         mode_ok = self._direct_mode in {"velocity", "current"}
-        if self._emg_group_selected():
-            mode_ok = self._direct_mode == "velocity"
         participant_limits = bool(safety_ids) and all(
             self._has_calibration_for_emg_motor(dxl_id) for dxl_id in safety_ids
         )
@@ -8049,8 +8047,6 @@ class HandExoGUI(QWidget):
                 "all-fingers target is incomplete; expected 7 explicit IDs, "
                 f"found {target_ids}"
             )
-        if self._emg_group_selected() and self._direct_mode != "velocity":
-            return "all-fingers EMG control requires Velocity mode"
         unarmed = sorted(set(target_ids) - self._direct_armed_ids)
         if unarmed:
             return f"target motor IDs are not armed: {unarmed}"
@@ -8113,7 +8109,8 @@ class HandExoGUI(QWidget):
                 QMessageBox.warning(
                     self,
                     "EMG Target Not Ready",
-                    "Apply direct Velocity mode before arming the EMG target.",
+                    "Apply direct Velocity or Current / Torque mode before "
+                    "arming the EMG target.",
                 )
             return False
         if not target_ids:
@@ -8124,14 +8121,6 @@ class HandExoGUI(QWidget):
                     self,
                     "Incomplete Finger Group",
                     f"Expected 7 explicit thumb/digit IDs but found {target_ids}.",
-                )
-            return False
-        if self._emg_group_selected() and self._direct_mode != "velocity":
-            if armed:
-                QMessageBox.warning(
-                    self,
-                    "Velocity Mode Required",
-                    "Coordinated all-fingers EMG control is available only in Velocity mode.",
                 )
             return False
         reserved_hold_id = self._configured_emg_hold_id()
@@ -8489,6 +8478,48 @@ class HandExoGUI(QWidget):
             break
         return max(-limit, min(limit, float(command)))
 
+    def _available_emg_current_budget_ma(self, target_ids) -> float:
+        """Return the GUI fleet budget left for direct-current EMG targets."""
+        budget_spin = getattr(self, "_total_current_spin", None)
+        budget = (
+            float(budget_spin.value())
+            if budget_spin is not None else 800.0
+        )
+        hold_id = (
+            self._configured_emg_hold_id()
+            if hasattr(self, "_configured_emg_hold_id") else None
+        )
+        hold_reserve = 0.0
+        if (
+            getattr(self, "_emg_hold_active", False)
+            and hold_id not in set(int(mid) for mid in target_ids)
+        ):
+            applied_hold_current = getattr(
+                self, "_emg_hold_applied_current_mA", None
+            )
+            if applied_hold_current is None:
+                hold_spin = getattr(self, "_emg_hold_effort_spin", None)
+                applied_hold_current = (
+                    hold_spin.value() if hold_spin is not None else 0
+                )
+            hold_reserve = abs(float(applied_hold_current or 0))
+        return max(0.0, budget - hold_reserve)
+
+    def _budget_emg_current_commands(
+        self, commands: dict[int, float]
+    ) -> tuple[dict[int, float], float, float]:
+        """Scale signed per-ID currents to the configured aggregate budget."""
+        available = HandExoGUI._available_emg_current_budget_ma(self, commands)
+        requested = sum(abs(float(value)) for value in commands.values())
+        if requested <= 0.0 or requested <= available:
+            return commands, available, 1.0
+        scale = available / requested
+        return (
+            {mid: float(value) * scale for mid, value in commands.items()},
+            available,
+            scale,
+        )
+
     def _on_emg_deadman_pressed(self):
         if self._emg_live and self._emg_ready_reason() is None:
             self._emg_deadman_active = True
@@ -8611,11 +8642,22 @@ class HandExoGUI(QWidget):
             command = max(-DIRECT_VELOCITY_LIMIT_RPM, min(DIRECT_VELOCITY_LIMIT_RPM, command))
             unit = "rpm"
         try:
-            applied_commands = []
-            for dxl_id in target_ids:
-                motor_command = HandExoGUI._limit_direct_command_for_motor(
+            motor_commands = {
+                dxl_id: HandExoGUI._limit_direct_command_for_motor(
                     self, dxl_id, command
                 )
+                for dxl_id in target_ids
+            }
+            current_budget = None
+            current_scale = 1.0
+            if self._direct_mode == "current":
+                motor_commands, current_budget, current_scale = (
+                    HandExoGUI._budget_emg_current_commands(
+                        self, motor_commands
+                    )
+                )
+            applied_commands = []
+            for dxl_id, motor_command in motor_commands.items():
                 actions[dxl_id] = (self._direct_mode, motor_command)
                 applied_commands.append(motor_command)
                 last_commands = getattr(self, "_emg_last_commands", None)
@@ -8638,6 +8680,12 @@ class HandExoGUI(QWidget):
             self._emg_live_status_lbl.setText(f"Commanding {target_text}: {rendered}")
             self._emg_command_lbl.setText(
                 f"Commanded output ({target_text}): {rendered}"
+                + (
+                    f" · aggregate {sum(abs(value) for value in applied_commands):.0f}/"
+                    f"{current_budget:.0f} mA"
+                    + (f" · scaled {current_scale:.2f}×" if current_scale < 1.0 else "")
+                    if current_budget is not None else ""
+                )
             )
         except Exception as exc:
             self._stop_emg_control(f"command failed: {exc}")
@@ -8657,6 +8705,10 @@ class HandExoGUI(QWidget):
                     min(self._emg_max_command_spin.value(), 2.0)
                 )
                 self._emg_max_command_spin.setSuffix(" rpm")
+                self._emg_max_command_spin.setToolTip(
+                    "Continuous signed velocity command. Each target is capped "
+                    "by its Setup-row velocity limit."
+                )
                 self._emg_max_command_label.setText("Max velocity:")
         else:
             self._direct_command_spin.setRange(
@@ -8667,6 +8719,12 @@ class HandExoGUI(QWidget):
                 self._emg_max_command_spin.setRange(1.0, DIRECT_CURRENT_LIMIT_MA)
                 self._emg_max_command_spin.setValue(100.0)
                 self._emg_max_command_spin.setSuffix(" mA")
+                self._emg_max_command_spin.setToolTip(
+                    "Continuous signed motor current. Each target is capped by "
+                    "its Setup-row current limit, then all EMG targets are "
+                    "proportionally scaled to the combined-current budget. "
+                    "Neutral or stale intent sends zero current."
+                )
                 self._emg_max_command_label.setText("Max current:")
 
     def _rebuild_direct_motor_combo(self):
