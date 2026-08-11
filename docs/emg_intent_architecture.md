@@ -38,8 +38,9 @@ run only one decoder publisher at a time.
 ## Participant workflow
 
 1. Connect EMG and verify channel quality.
-2. Optionally connect the forearm IMU. Captures without IMU use a global rest
-   baseline; models trained with IMU require fresh orientation at runtime.
+2. Optionally connect the forearm IMU. Fresh IMU samples select the learned
+   orientation-conditioned rest baseline. With no IMU, or when IMU samples are
+   stale, decoding continues with the fitted global EMG rest baseline.
 3. Record repeated rest segments and comfortable voluntary attempts with the
    Task GUI markers and LabRecorder, then build or load the decoder NPZ on the
    **Session Data** tab.
@@ -127,7 +128,9 @@ required by a research protocol.
 ## Runtime fail-safe behavior
 
 - Low-confidence or directionally ambiguous predictions resolve to rest and zero signed intent.
-- A model trained with orientation rejects samples if orientation is missing.
-- Stale EMG or required IMU input forces a zero-intent output.
+- A model trained with orientation uses compensation while fresh orientation is
+  available and otherwise uses its fitted global rest baseline.
+- Stale EMG forces a zero-intent output. Missing or stale IMU falls back to the
+  global EMG baseline and does not stop decoding.
 - Stopping or disconnecting destroys the LSL outlet.
 - The decoder does not bypass exo-side arming or command watchdogs.

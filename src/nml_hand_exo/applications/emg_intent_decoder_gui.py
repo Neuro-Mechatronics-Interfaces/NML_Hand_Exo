@@ -167,6 +167,8 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QToolTip { background: #eef3f8; color: #111419; border: 0; padding: 6px; }
 """
 
+IMU_FRESHNESS_TIMEOUT_S = 0.5
+
 
 class XdfSessionImportWorker(QThread):
     progress_changed = pyqtSignal(int, int, str)
@@ -796,7 +798,9 @@ class EmgIntentDecoderWindow(QMainWindow):
         publish_row.addWidget(self.stop_btn)
         layout.addLayout(publish_row)
         safety = QLabel(
-            "Uncertain predictions, missing orientation, stale streams, and explicit stop all publish zero intent. Exo-side arming and watchdogs remain independent."
+            "Missing or stale IMU uses the global EMG baseline. Uncertain "
+            "predictions, stale EMG, and explicit stop publish zero intent. "
+            "Exo-side arming and watchdogs remain independent."
         )
         safety.setWordWrap(True)
         safety.setStyleSheet(
@@ -1025,6 +1029,8 @@ class EmgIntentDecoderWindow(QMainWindow):
             self._last_imu_chunk_monotonic = time.monotonic()
 
     def _latest_orientation(self):
+        if not EmgIntentDecoderWindow._imu_is_fresh(self):
+            return orientation_from_accel(np.full(3, np.nan))
         snapshot = self._imu_buffer.snapshot()
         if snapshot is None or not self._imu_meta:
             return orientation_from_accel(np.full(3, np.nan))
@@ -1034,6 +1040,16 @@ class EmgIntentDecoderWindow(QMainWindow):
         accel = np.mean(snapshot[list(accel_indices), -20:], axis=1)
         gyro = np.mean(snapshot[list(gyro_indices), -20:], axis=1) if gyro_indices else None
         return orientation_from_accel(accel, gyro)
+
+    def _imu_is_fresh(self, now: float | None = None) -> bool:
+        """Return whether a live IMU sample is available for optional adaptation."""
+        if self._imu_worker is None or not self._imu_meta:
+            return False
+        last_sample = float(self._last_imu_chunk_monotonic)
+        if last_sample <= 0.0:
+            return False
+        current = time.monotonic() if now is None else float(now)
+        return 0.0 <= current - last_sample <= IMU_FRESHNESS_TIMEOUT_S
 
     def _latest_feature(self):
         snapshot = self._buffer.snapshot()
@@ -1064,18 +1080,6 @@ class EmgIntentDecoderWindow(QMainWindow):
             self._show_zero_state("stale input stream")
             self._publish_zero()
             return
-        if (
-            self._pipeline is not None
-            and self._pipeline.require_orientation
-            and (
-                self._last_imu_chunk_monotonic <= 0.0
-                or time.monotonic() - self._last_imu_chunk_monotonic > 0.5
-            )
-        ):
-            self.quality_status.setText("IMU stale - intent forced to zero")
-            self._show_zero_state("stale required orientation stream")
-            self._publish_zero()
-            return
         try:
             latest = self._latest_feature()
         except Exception as exc:
@@ -1089,7 +1093,11 @@ class EmgIntentDecoderWindow(QMainWindow):
         self.quality_status.setText(
             f"Signal quality: {quality.usable_fraction * 100:.0f}% usable | "
             f"{emg.shape[0]} EMG channels | bad candidates: {bad if bad else 'none'} | "
-            f"roll={orientation.roll_deg if orientation.roll_deg is not None else '--'}"
+            + (
+                f"roll={orientation.roll_deg:.1f} deg (IMU adapted)"
+                if orientation.roll_deg is not None
+                else "orientation=global EMG baseline"
+            )
         )
         if self._pipeline is not None:
             decision = self._pipeline.predict(feature, orientation)
@@ -1288,10 +1296,8 @@ class EmgIntentDecoderWindow(QMainWindow):
         del groups
         keep = np.isin(y, ["rest", "reject", open_label, close_label])
         try:
-            self._pipeline = IntentDecoderPipeline(
-                open_label=open_label,
-                close_label=close_label,
-                require_orientation=bool(np.any(np.isfinite(roll[keep]) & np.isfinite(pitch[keep]))),
+            self._pipeline = EmgIntentDecoderWindow._make_runtime_pipeline(
+                open_label, close_label
             ).fit(X[keep], y[keep], roll[keep], pitch[keep])
         except Exception as exc:
             QMessageBox.warning(self, "Fit failed", str(exc))
@@ -1307,7 +1313,19 @@ class EmgIntentDecoderWindow(QMainWindow):
         )
         self._log(
             f"Fitted continuous rest-to-MVC LDA decoder: "
-            f"open={open_label}, close={close_label}"
+            f"open={open_label}, close={close_label}; "
+            "live IMU optional with global-baseline fallback"
+        )
+
+    @staticmethod
+    def _make_runtime_pipeline(
+        open_label: str, close_label: str
+    ) -> IntentDecoderPipeline:
+        """Build a decoder that benefits from IMU but never depends on it."""
+        return IntentDecoderPipeline(
+            open_label=open_label,
+            close_label=close_label,
+            require_orientation=False,
         )
 
     def _update_projection_training_plot(self):

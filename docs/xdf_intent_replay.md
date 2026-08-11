@@ -46,7 +46,8 @@ $env:PYTHONPATH = (Resolve-Path .\src).Path
 In the decoder GUI:
 
 1. Select **MindRove XDF playback**.
-2. Connect EMG and IMU.
+2. Connect EMG. Connecting IMU is optional; when it is unavailable the decoder
+   uses its global EMG baseline.
 3. Open **Session Data** and load
    `data\intent_sessions\jonathan_exp001_without_handclose_2.npz`.
 4. Open **Select and Validate**, rank the pairs, and select
@@ -55,8 +56,8 @@ In the decoder GUI:
 6. Monitor the complete replay before enabling output.
 7. Start publishing `NMLIntentV1` only after the monitor behavior is correct.
 
-The decoder publishes zero intent for rest, low confidence, stale input, or a
-missing required IMU stream.
+The decoder publishes zero intent for rest, low confidence, or stale EMG input.
+Missing or stale IMU uses the global EMG baseline instead of stopping output.
 
 ## 3. Connect the HandExo GUI in monitor-only mode
 
