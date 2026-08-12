@@ -16,6 +16,7 @@ from PyQt5.QtCore import QThread, QTimer, Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -47,6 +48,7 @@ from nml_hand_exo.decoding import (
     FeatureConfig,
     IntentCaptureSession,
     IntentDecoderPipeline,
+    IntentOutputStabilizer,
     PreprocessConfig,
     StreamLayout,
     assess_signal_quality,
@@ -169,6 +171,21 @@ QToolTip { background: #eef3f8; color: #111419; border: 0; padding: 6px; }
 
 IMU_FRESHNESS_TIMEOUT_S = 0.5
 
+DEVICE_PRESETS = {
+    # The combined MindRove stream begins with a constant package/status
+    # channel. Its eight EMG channels are columns 1-8; columns 9-14 are IMU.
+    "MindRove 8 + IMU": (
+        "1-8", "9-11", "12-14", "EEG", "MindRoveStream", "EEG", "MindRoveStream"
+    ),
+    # The playback application publishes already-split streams whose channel
+    # numbering starts at zero within each outlet.
+    "MindRove XDF playback": (
+        "0-7", "0-2", "3-5", "EMG", "MindRove_EMG", "IMU", "MindRove_IMU"
+    ),
+    "8-channel EMG": ("0-7", "", "", "EMG", "", "IMU", ""),
+    "128-channel HD-EMG": ("0-127", "", "", "EMG", "", "IMU", ""),
+}
+
 
 class XdfSessionImportWorker(QThread):
     progress_changed = pyqtSignal(int, int, str)
@@ -219,6 +236,7 @@ class EmgIntentDecoderWindow(QMainWindow):
         self._session = IntentCaptureSession()
         self._rankings = []
         self._pipeline: IntentDecoderPipeline | None = None
+        self._output_stabilizer = IntentOutputStabilizer()
         self._outlet = None
         self._test_signal_active = False
         self._test_signal_started_monotonic = 0.0
@@ -375,9 +393,9 @@ class EmgIntentDecoderWindow(QMainWindow):
             "Custom",
         ])
         self.device_combo.currentTextChanged.connect(self._apply_device_preset)
-        self.emg_channels_edit = QLineEdit("0-7")
-        self.accel_channels_edit = QLineEdit("0-2")
-        self.gyro_channels_edit = QLineEdit("3-5")
+        self.emg_channels_edit = QLineEdit("1-8")
+        self.accel_channels_edit = QLineEdit("9-11")
+        self.gyro_channels_edit = QLineEdit("12-14")
         grid.addWidget(QLabel("Participant"), 0, 0)
         grid.addWidget(self.participant_edit, 0, 1, 1, 3)
         grid.addWidget(QLabel("Device"), 1, 0)
@@ -458,12 +476,22 @@ class EmgIntentDecoderWindow(QMainWindow):
         self.imu_connection_status = QLabel("Not connected - using global baseline")
         self.imu_connection_status.setWordWrap(True)
         self.imu_connection_status.setMinimumWidth(0)
+        self.use_orientation_cb = QCheckBox(
+            "Use live IMU orientation compensation"
+        )
+        self.use_orientation_cb.setChecked(False)
+        self.use_orientation_cb.setToolTip(
+            "Off (recommended without a live IMU): fit and run the decoder "
+            "with a global EMG baseline. On: fit the orientation adapter and "
+            "require fresh live IMU samples while decoding."
+        )
         orientation_grid.addWidget(QLabel("Stream type"), 0, 0)
         orientation_grid.addWidget(QLabel("Stream name"), 0, 1)
         orientation_grid.addWidget(self.imu_stream_type_edit, 1, 0)
         orientation_grid.addWidget(self.imu_stream_name_edit, 1, 1)
         orientation_grid.addWidget(self.imu_connect_btn, 2, 0, Qt.AlignLeft)
         orientation_grid.addWidget(self.imu_connection_status, 2, 1)
+        orientation_grid.addWidget(self.use_orientation_cb, 3, 0, 1, 2)
         sources_row.addWidget(orientation, 1)
         layout.addLayout(sources_row)
 
@@ -603,7 +631,9 @@ class EmgIntentDecoderWindow(QMainWindow):
         layout = self._tab("3. Select and Validate")
         intro = QLabel("Choose the most reliable control pair")
         intro.setStyleSheet("font-size:25px;font-weight:600;margin-top:6px;")
-        helper = QLabel("Ranking rewards held-out accuracy and penalizes unintended activation.")
+        helper = QLabel(
+            "Ranking holds out complete recordings and penalizes unintended activation."
+        )
         helper.setStyleSheet("color:#a5adb8;font-size:16px;")
         layout.addWidget(intro)
         layout.addWidget(helper)
@@ -615,7 +645,7 @@ class EmgIntentDecoderWindow(QMainWindow):
         self.folds_spin.setRange(2, 10)
         self.folds_spin.setValue(5)
         controls.addWidget(self.rank_btn)
-        controls.addWidget(QLabel("Held-out folds"))
+        controls.addWidget(QLabel("Recording folds"))
         controls.addWidget(self.folds_spin)
         controls.addStretch()
         layout.addLayout(controls)
@@ -639,6 +669,9 @@ class EmgIntentDecoderWindow(QMainWindow):
         mapping_grid.setVerticalSpacing(14)
         self.open_combo = QComboBox()
         self.close_combo = QComboBox()
+        self.mapping_confirm_cb = QCheckBox(
+            "I verified that these gestures mean physical hand OPEN and CLOSE"
+        )
         self.open_combo.setToolTip(
             "Any captured intent may be assigned to the decoder's -1 / OPEN output."
         )
@@ -650,11 +683,14 @@ class EmgIntentDecoderWindow(QMainWindow):
         self.fit_btn.setMaximumWidth(330)
         self.fit_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.fit_btn.clicked.connect(self._fit_selected)
+        self.open_combo.currentIndexChanged.connect(self._mapping_changed)
+        self.close_combo.currentIndexChanged.connect(self._mapping_changed)
         mapping_grid.addWidget(QLabel("Intent mapped to OPEN (-1)"), 0, 0)
         mapping_grid.addWidget(self.open_combo, 0, 1)
         mapping_grid.addWidget(QLabel("Intent mapped to CLOSE (+1)"), 0, 2)
         mapping_grid.addWidget(self.close_combo, 0, 3)
-        mapping_grid.addWidget(self.fit_btn, 1, 0, 1, 4, Qt.AlignRight)
+        mapping_grid.addWidget(self.mapping_confirm_cb, 1, 0, 1, 3)
+        mapping_grid.addWidget(self.fit_btn, 1, 3, Qt.AlignRight)
         layout.addWidget(mapping)
 
     def _build_run_tab(self):
@@ -798,9 +834,10 @@ class EmgIntentDecoderWindow(QMainWindow):
         publish_row.addWidget(self.stop_btn)
         layout.addLayout(publish_row)
         safety = QLabel(
-            "Missing or stale IMU uses the global EMG baseline. Uncertain "
-            "predictions, stale EMG, and explicit stop publish zero intent. "
-            "Exo-side arming and watchdogs remain independent."
+            "Global-baseline mode needs only EMG. If orientation compensation "
+            "is explicitly enabled, fresh IMU is required and missing IMU "
+            "publishes zero. Uncertain predictions, stale EMG, and explicit "
+            "stop also publish zero. Exo-side safety remains independent."
         )
         safety.setWordWrap(True)
         safety.setStyleSheet(
@@ -811,16 +848,8 @@ class EmgIntentDecoderWindow(QMainWindow):
         layout.addStretch()
 
     def _apply_device_preset(self, name: str):
-        presets = {
-            "MindRove 8 + IMU": ("0-7", "0-2", "3-5", "EEG", "MindRoveStream", "IMU", ""),
-            "MindRove XDF playback": (
-                "0-7", "0-2", "3-5", "EMG", "MindRove_EMG", "IMU", "MindRove_IMU",
-            ),
-            "8-channel EMG": ("0-7", "", "", "EMG", "", "IMU", ""),
-            "128-channel HD-EMG": ("0-127", "", "", "EMG", "", "IMU", ""),
-        }
-        if name in presets:
-            emg, accel, gyro, stream_type, stream_name, imu_type, imu_name = presets[name]
+        if name in DEVICE_PRESETS:
+            emg, accel, gyro, stream_type, stream_name, imu_type, imu_name = DEVICE_PRESETS[name]
             self.emg_channels_edit.setText(emg)
             self.accel_channels_edit.setText(accel)
             self.gyro_channels_edit.setText(gyro)
@@ -945,6 +974,7 @@ class EmgIntentDecoderWindow(QMainWindow):
         self.connection_status.setText("Not connected")
         self._stream_meta = {}
         self._last_chunk_monotonic = 0.0
+        self._output_stabilizer.reset()
         self._stop_publish()
 
     def _toggle_imu_connection(self):
@@ -1077,7 +1107,20 @@ class EmgIntentDecoderWindow(QMainWindow):
             and time.monotonic() - self._last_chunk_monotonic > 0.5
         ):
             self.quality_status.setText("Signal stale - intent forced to zero")
+            self._output_stabilizer.reset()
             self._show_zero_state("stale input stream")
+            self._publish_zero()
+            return
+        if (
+            self._pipeline is not None
+            and self._pipeline.require_orientation
+            and not EmgIntentDecoderWindow._imu_is_fresh(self)
+        ):
+            self.quality_status.setText(
+                "IMU compensation enabled but IMU is unavailable - intent forced to zero"
+            )
+            self._output_stabilizer.reset()
+            self._show_zero_state("fresh IMU required by selected decoder mode")
             self._publish_zero()
             return
         try:
@@ -1101,6 +1144,12 @@ class EmgIntentDecoderWindow(QMainWindow):
         )
         if self._pipeline is not None:
             decision = self._pipeline.predict(feature, orientation)
+            decision = self._output_stabilizer.update(
+                decision,
+                open_label=self._pipeline.open_label,
+                close_label=self._pipeline.close_label,
+                rest_label=self._pipeline.rest_label,
+            )
             self._show_decision(decision)
             if self._outlet is not None:
                 try:
@@ -1226,7 +1275,13 @@ class EmgIntentDecoderWindow(QMainWindow):
         X, y, groups, roll, pitch = self._session.arrays()
         try:
             self._rankings = rank_intent_pairs(
-                X, y, groups, roll, pitch, folds=int(self.folds_spin.value())
+                X,
+                y,
+                groups,
+                roll,
+                pitch,
+                folds=int(self.folds_spin.value()),
+                use_orientation=self.use_orientation_cb.isChecked(),
             )
         except Exception as exc:
             QMessageBox.warning(self, "Cannot rank intents", str(exc))
@@ -1253,14 +1308,36 @@ class EmgIntentDecoderWindow(QMainWindow):
             for column, value in enumerate(values):
                 self.ranking_table.setItem(row, column, QTableWidgetItem(value))
         self.ranking_table.selectRow(0)
-        self._log(f"Ranked {len(self._rankings)} candidate pairs")
+        mode = "orientation compensated" if self.use_orientation_cb.isChecked() else "global EMG baseline"
+        self._log(
+            f"Ranked {len(self._rankings)} candidate pairs by held-out recording [{mode}]"
+        )
 
     def _ranking_selected(self):
         row = self.ranking_table.currentRow()
         if row < 0 or row >= len(self._rankings):
             return
         result = self._rankings[row]
-        self._refresh_mapping_choices(result.open_label, result.close_label)
+        suggested_open, suggested_close = self._semantic_mapping_suggestion(
+            result.open_label, result.close_label
+        )
+        self._refresh_mapping_choices(suggested_open, suggested_close)
+
+    @staticmethod
+    def _semantic_mapping_suggestion(
+        first: str, second: str
+    ) -> tuple[str | None, str | None]:
+        """Suggest physical semantics only when labels explicitly say open/close."""
+        pair = (str(first), str(second))
+        open_matches = [label for label in pair if "open" in label.lower()]
+        close_matches = [label for label in pair if "close" in label.lower()]
+        if len(open_matches) == 1 and len(close_matches) == 1:
+            return open_matches[0], close_matches[0]
+        return None, None
+
+    def _mapping_changed(self, *_args):
+        if hasattr(self, "mapping_confirm_cb"):
+            self.mapping_confirm_cb.setChecked(False)
 
     def _refresh_mapping_choices(
         self,
@@ -1271,8 +1348,14 @@ class EmgIntentDecoderWindow(QMainWindow):
         labels = sorted(set(self._session.labels) - {"rest", "reject"})
         if not labels:
             return
-        current_open = preferred_open or self.open_combo.currentText()
-        current_close = preferred_close or self.close_combo.currentText()
+        inferred_open = next(
+            (label for label in labels if "open" in label.lower()), None
+        )
+        inferred_close = next(
+            (label for label in labels if "close" in label.lower()), None
+        )
+        current_open = preferred_open or inferred_open or self.open_combo.currentText()
+        current_close = preferred_close or inferred_close or self.close_combo.currentText()
         for combo, selected in (
             (self.open_combo, current_open),
             (self.close_combo, current_close),
@@ -1285,6 +1368,8 @@ class EmgIntentDecoderWindow(QMainWindow):
             combo.blockSignals(False)
         if self.open_combo.currentText() == self.close_combo.currentText() and len(labels) > 1:
             self.close_combo.setCurrentIndex(1)
+        if hasattr(self, "mapping_confirm_cb"):
+            self.mapping_confirm_cb.setChecked(False)
 
     def _fit_selected(self):
         open_label = self.open_combo.currentText()
@@ -1292,17 +1377,40 @@ class EmgIntentDecoderWindow(QMainWindow):
         if not open_label or not close_label or open_label == close_label:
             QMessageBox.warning(self, "Invalid mapping", "Open and close must use different intents.")
             return
+        if not self.mapping_confirm_cb.isChecked():
+            QMessageBox.warning(
+                self,
+                "Confirm physical mapping",
+                "Verify which recorded gesture physically opens and closes the hand, "
+                "then check the confirmation box before fitting.",
+            )
+            return
         X, y, groups, roll, pitch = self._session.arrays()
         del groups
         keep = np.isin(y, ["rest", "reject", open_label, close_label])
+        use_orientation = self.use_orientation_cb.isChecked()
+        if use_orientation and not np.any(
+            np.isfinite(roll[keep]) & np.isfinite(pitch[keep])
+        ):
+            QMessageBox.warning(
+                self,
+                "No recorded orientation",
+                "Orientation compensation was selected, but this session has no "
+                "usable IMU orientation samples.",
+            )
+            return
+        fit_roll, fit_pitch = EmgIntentDecoderWindow._decoder_orientation_arrays(
+            roll[keep], pitch[keep], use_orientation
+        )
         try:
             self._pipeline = EmgIntentDecoderWindow._make_runtime_pipeline(
-                open_label, close_label
-            ).fit(X[keep], y[keep], roll[keep], pitch[keep])
+                open_label, close_label, use_orientation
+            ).fit(X[keep], y[keep], fit_roll, fit_pitch)
         except Exception as exc:
             QMessageBox.warning(self, "Fit failed", str(exc))
             return
         self._update_projection_training_plot()
+        self._output_stabilizer.reset()
         self.publish_btn.setEnabled(True)
         self.test_signal_btn.setEnabled(True)
         self.tabs.setCurrentIndex(3)
@@ -1314,18 +1422,38 @@ class EmgIntentDecoderWindow(QMainWindow):
         self._log(
             f"Fitted continuous rest-to-MVC LDA decoder: "
             f"open={open_label}, close={close_label}; "
-            "live IMU optional with global-baseline fallback"
+            + (
+                "fresh live IMU required"
+                if use_orientation
+                else "global EMG baseline; no live IMU required"
+            )
         )
 
     @staticmethod
     def _make_runtime_pipeline(
-        open_label: str, close_label: str
+        open_label: str,
+        close_label: str,
+        use_orientation: bool = False,
     ) -> IntentDecoderPipeline:
-        """Build a decoder that benefits from IMU but never depends on it."""
+        """Build a decoder whose train/runtime orientation modes match."""
         return IntentDecoderPipeline(
             open_label=open_label,
             close_label=close_label,
-            require_orientation=False,
+            require_orientation=bool(use_orientation),
+        )
+
+    @staticmethod
+    def _decoder_orientation_arrays(
+        roll: np.ndarray, pitch: np.ndarray, use_orientation: bool
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if use_orientation:
+            return (
+                np.asarray(roll, dtype=np.float64),
+                np.asarray(pitch, dtype=np.float64),
+            )
+        return (
+            np.full(np.asarray(roll).shape, np.nan, dtype=np.float64),
+            np.full(np.asarray(pitch).shape, np.nan, dtype=np.float64),
         )
 
     def _update_projection_training_plot(self):
@@ -1341,8 +1469,11 @@ class EmgIntentDecoderWindow(QMainWindow):
         keep = np.isin(y, list(labels_by_role.values()))
         if not np.any(keep):
             return
+        plot_roll, plot_pitch = EmgIntentDecoderWindow._decoder_orientation_arrays(
+            roll[keep], pitch[keep], self._pipeline.require_orientation
+        )
         projected = self._pipeline.project_continuous(
-            X[keep], roll[keep], pitch[keep]
+            X[keep], plot_roll, plot_pitch
         )["signed_intent"]
         plotted_labels = y[keep]
         rng = np.random.default_rng(0)
@@ -1479,6 +1610,7 @@ class EmgIntentDecoderWindow(QMainWindow):
 
     def _stop_publish(self):
         self._stop_test_signal(send_zero=True)
+        self._output_stabilizer.reset()
         self._outlet = None
         if hasattr(self, "publish_btn"):
             self.publish_btn.setText("Start Publishing NMLIntentV1")

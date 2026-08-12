@@ -4,9 +4,11 @@ from types import SimpleNamespace
 import numpy as np
 
 from nml_hand_exo.applications.emg_intent_decoder_gui import (
+    DEVICE_PRESETS,
     EmgIntentDecoderWindow,
     IMU_FRESHNESS_TIMEOUT_S,
 )
+from nml_hand_exo.decoding import DecoderDecision, IntentOutputStabilizer
 
 
 class _UnexpectedBuffer:
@@ -22,7 +24,7 @@ class _Label:
         self.text = text
 
 
-def test_runtime_pipeline_never_requires_live_imu():
+def test_runtime_pipeline_defaults_to_global_emg_baseline():
     pipeline = EmgIntentDecoderWindow._make_runtime_pipeline(
         "hand_open", "hand_close"
     )
@@ -30,6 +32,22 @@ def test_runtime_pipeline_never_requires_live_imu():
     assert pipeline.open_label == "hand_open"
     assert pipeline.close_label == "hand_close"
     assert pipeline.require_orientation is False
+
+
+def test_runtime_pipeline_can_explicitly_require_orientation():
+    pipeline = EmgIntentDecoderWindow._make_runtime_pipeline(
+        "hand_open", "hand_close", use_orientation=True
+    )
+
+    assert pipeline.require_orientation is True
+
+
+def test_mindrove_presets_keep_combined_and_split_channel_indices_distinct():
+    combined = DEVICE_PRESETS["MindRove 8 + IMU"]
+    playback = DEVICE_PRESETS["MindRove XDF playback"]
+
+    assert combined[:3] == ("1-8", "9-11", "12-14")
+    assert playback[:3] == ("0-7", "0-2", "3-5")
 
 
 def test_imu_freshness_requires_worker_metadata_and_recent_sample():
@@ -68,7 +86,12 @@ def test_decoder_tick_continues_when_imu_is_unavailable():
     decisions = []
     published_zeros = []
     orientation = SimpleNamespace(roll_deg=None)
-    decision = SimpleNamespace(signed_intent=0.5, rejected=False)
+    decision = DecoderDecision(
+        state="hand_close",
+        signed_intent=0.5,
+        confidence=1.0,
+        rejected=False,
+    )
     gui = SimpleNamespace(
         _test_signal_active=False,
         _worker=object(),
@@ -80,10 +103,15 @@ def test_decoder_tick_continues_when_imu_is_unavailable():
         ),
         quality_status=_Label(),
         _pipeline=SimpleNamespace(
+            require_orientation=False,
+            open_label="hand_open",
+            close_label="hand_close",
+            rest_label="rest",
             predict=lambda feature, sample_orientation: (
                 decisions.append((feature, sample_orientation)) or decision
             )
         ),
+        _output_stabilizer=IntentOutputStabilizer(),
         _show_decision=lambda value: decisions.append(value),
         _publish_zero=lambda: published_zeros.append(True),
         _outlet=None,
@@ -91,6 +119,6 @@ def test_decoder_tick_continues_when_imu_is_unavailable():
 
     EmgIntentDecoderWindow._tick(gui)
 
-    assert decisions[-1] is decision
+    assert decisions[-1].signed_intent > 0.0
     assert published_zeros == []
     assert "orientation=global EMG baseline" in gui.quality_status.text

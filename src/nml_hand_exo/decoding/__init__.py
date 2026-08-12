@@ -13,6 +13,7 @@ from .orientation import ContinuousRestAdapter, orientation_from_accel
 from .pipeline import IntentDecoderPipeline
 from .preprocessing import PreprocessConfig, preprocess_emg
 from .selection import rank_intent_pairs
+from .stabilization import IntentOutputStabilizer
 from .session import IntentCaptureSession
 from .xdf_session import canonical_intent_label, import_xdf_file, import_xdf_session
 
@@ -37,4 +38,5 @@ __all__ = [
     "parse_channel_spec",
     "preprocess_emg",
     "rank_intent_pairs",
+    "IntentOutputStabilizer",
 ]

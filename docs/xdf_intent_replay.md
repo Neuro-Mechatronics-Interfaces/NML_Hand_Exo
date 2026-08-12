@@ -46,8 +46,8 @@ $env:PYTHONPATH = (Resolve-Path .\src).Path
 In the decoder GUI:
 
 1. Select **MindRove XDF playback**.
-2. Connect EMG. Connecting IMU is optional; when it is unavailable the decoder
-   uses its global EMG baseline.
+2. Connect EMG. Leave orientation compensation off for EMG-only operation. To
+   test orientation compensation, enable it before fitting and connect IMU.
 3. Open **Session Data** and load
    `data\intent_sessions\jonathan_exp001_without_handclose_2.npz`.
 4. Open **Select and Validate**, rank the pairs, and select
@@ -56,8 +56,13 @@ In the decoder GUI:
 6. Monitor the complete replay before enabling output.
 7. Start publishing `NMLIntentV1` only after the monitor behavior is correct.
 
+The playback preset uses EMG channels `0-7` because `MindRove_EMG` is already a
+split eight-channel outlet. Do not copy that mapping to the live combined
+`MindRoveStream`; its EMG channels are `1-8` after the leading status channel.
+
 The decoder publishes zero intent for rest, low confidence, or stale EMG input.
-Missing or stale IMU uses the global EMG baseline instead of stopping output.
+Global-baseline mode does not require IMU. Orientation-compensated mode requires
+fresh IMU and publishes zero when that stream is missing or stale.
 
 ## 3. Connect the HandExo GUI in monitor-only mode
 

@@ -9,18 +9,33 @@ from .models import ShrinkageLDAIntentModel
 from .orientation import ContinuousRestAdapter
 
 
-def _balanced_group_folds(labels: np.ndarray, groups: np.ndarray, folds: int):
-    unique = np.unique(groups)
-    group_labels = {group: str(labels[np.flatnonzero(groups == group)[0]]) for group in unique}
+def recording_id(group: object) -> str:
+    """Return the source recording prefix stored in an imported trial group."""
+    return str(group).split(":", 1)[0]
+
+
+def _balanced_recording_folds(labels: np.ndarray, groups: np.ndarray, folds: int):
+    """Yield folds that never split windows or trials from one recording."""
+    recordings = np.asarray([recording_id(group) for group in groups], dtype=object)
+    unique = np.unique(recordings)
+    recording_labels = {}
+    for recording in unique:
+        present = sorted(
+            set(str(value) for value in labels[recordings == recording]) - {"rest"}
+        )
+        recording_labels[recording] = "+".join(present) if present else "rest_only"
     assignment = {}
     rng = np.random.default_rng(17)
-    for label in sorted(set(group_labels.values())):
-        candidates = np.asarray([g for g in unique if group_labels[g] == label], dtype=object)
+    for label in sorted(set(recording_labels.values())):
+        candidates = np.asarray(
+            [recording for recording in unique if recording_labels[recording] == label],
+            dtype=object,
+        )
         rng.shuffle(candidates)
-        for index, group in enumerate(candidates):
-            assignment[group] = index % folds
+        for index, recording in enumerate(candidates):
+            assignment[recording] = index % folds
     for fold in range(folds):
-        test = np.asarray([assignment[group] == fold for group in groups])
+        test = np.asarray([assignment[recording] == fold for recording in recordings])
         yield np.flatnonzero(~test), np.flatnonzero(test)
 
 
@@ -41,12 +56,16 @@ def rank_intent_pairs(
     rest_label: str = "rest",
     reject_label: str = "reject",
     folds: int = 5,
+    use_orientation: bool = True,
 ) -> list[PairEvaluation]:
     X = np.asarray(features, dtype=np.float64)
     y = np.asarray(labels, dtype=object)
     group_values = np.asarray(groups, dtype=object)
     roll = np.asarray(roll_deg, dtype=np.float64)
     pitch = np.asarray(pitch_deg, dtype=np.float64)
+    if not use_orientation:
+        roll = np.full(roll.shape, np.nan, dtype=np.float64)
+        pitch = np.full(pitch.shape, np.nan, dtype=np.float64)
     candidates = sorted(set(str(value) for value in y) - {rest_label, reject_label})
     results = []
     for first, second in combinations(candidates, 2):
@@ -56,12 +75,15 @@ def rank_intent_pairs(
         keep = np.isin(y, evaluated_classes)
         Xsub, ysub = X[keep], y[keep]
         gsub, rsub, psub = group_values[keep], roll[keep], pitch[keep]
-        class_group_counts = [len(set(gsub[ysub == label])) for label in evaluated_classes]
-        usable_folds = min(int(folds), *class_group_counts)
+        class_recording_counts = [
+            len({recording_id(group) for group in gsub[ysub == label]})
+            for label in evaluated_classes
+        ]
+        usable_folds = min(int(folds), *class_recording_counts)
         if usable_folds < 2:
             continue
         accuracy, rest_false, reject_false, direction_error = [], [], [], []
-        for train, test in _balanced_group_folds(ysub, gsub, usable_folds):
+        for train, test in _balanced_recording_folds(ysub, gsub, usable_folds):
             adapter = ContinuousRestAdapter().fit(
                 Xsub[train], ysub[train], rsub[train], psub[train], rest_label
             )

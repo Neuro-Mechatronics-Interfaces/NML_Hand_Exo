@@ -35,17 +35,28 @@ arming, current/velocity limits, telemetry, watchdog behavior, and stopping.
 The new and legacy decoders use the same source ID expected by the hand-exo GUI;
 run only one decoder publisher at a time.
 
+### MindRove channel contracts
+
+The live combined `MindRoveStream` begins with a package/status channel. Its
+EMG channels are `1-8`, accelerometer channels are `9-11`, and gyroscope
+channels are `12-14`. The XDF playback application publishes already-split
+`MindRove_EMG` and `MindRove_IMU` streams, so those mappings start at zero
+(`0-7`, `0-2`, and `3-5`). Training and live decoding must use the same eight
+EMG channels in the same order.
+
 ## Participant workflow
 
 1. Connect EMG and verify channel quality.
-2. Optionally connect the forearm IMU. Fresh IMU samples select the learned
-   orientation-conditioned rest baseline. With no IMU, or when IMU samples are
-   stale, decoding continues with the fitted global EMG rest baseline.
+2. Choose the orientation mode before ranking and fitting. The default global
+   EMG baseline needs no IMU. Orientation compensation is opt-in; when selected,
+   fitting uses recorded orientation and runtime requires fresh live IMU.
 3. Record repeated rest segments and comfortable voluntary attempts with the
    Task GUI markers and LabRecorder, then build or load the decoder NPZ on the
    **Session Data** tab.
-4. Rank candidate pairs with repetition-held-out cross-validation.
-5. Choose which candidate maps to open and close, then fit the final decoder.
+4. Rank candidate pairs with complete-recording-held-out cross-validation.
+5. Choose which candidate physically maps to open and close, confirm that
+   semantic mapping explicitly, then fit the final decoder. Pair ranking does
+   not assign actuator meaning by itself.
 6. Monitor predictions before explicitly starting `NMLIntentV1` publishing.
 
 ## Continuous rest-to-MVC output
@@ -79,6 +90,15 @@ the normalized -1 to +1 axis, diamond markers show their medians, and a yellow
 line/marker shows the live value. The computation readout reports LDA open/close
 probabilities, both normalized rest-to-MVC activations, the selected direction,
 and the exact signed value published through LSL.
+
+Live output passes through a causal stabilizer with exponential smoothing, a
+per-update slew limit, separate enter/release thresholds, and a three-sample
+direction-switch confirmation. This suppresses isolated opposite-direction
+windows without turning the continuous command into a discrete classifier.
+
+Validation holds out complete source recordings rather than individual trials
+or overlapping windows. Adjacent windows and rest segments from one XDF file
+therefore cannot appear in both training and validation folds.
 
 ### Synthetic sine test
 
@@ -128,9 +148,9 @@ required by a research protocol.
 ## Runtime fail-safe behavior
 
 - Low-confidence or directionally ambiguous predictions resolve to rest and zero signed intent.
-- A model trained with orientation uses compensation while fresh orientation is
-  available and otherwise uses its fitted global rest baseline.
-- Stale EMG forces a zero-intent output. Missing or stale IMU falls back to the
-  global EMG baseline and does not stop decoding.
+- Global-baseline models decode without IMU. Orientation-compensated models
+  require fresh IMU and publish zero if it becomes unavailable.
+- Stale EMG forces a zero-intent output. Missing or stale IMU matters only when
+  the operator explicitly selected orientation compensation.
 - Stopping or disconnecting destroys the LSL outlet.
 - The decoder does not bypass exo-side arming or command watchdogs.
