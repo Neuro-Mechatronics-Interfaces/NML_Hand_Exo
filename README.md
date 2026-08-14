@@ -1,5 +1,9 @@
 # NML Hand Exoskeleton
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/refs/heads/dev/shadow-contact-phase1/docs/assets/nml-hand-exo.png" alt="Rendered NML Hand Exoskeleton and controller" width="900">
+</p>
+
 [![Python 3.10–3.12](https://img.shields.io/badge/python-3.10--3.12-blue.svg)](https://www.python.org/)
 [![CI](https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/actions/workflows/python-ci.yml/badge.svg)](https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/actions/workflows/python-ci.yml)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-b31b34.svg)](https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/)

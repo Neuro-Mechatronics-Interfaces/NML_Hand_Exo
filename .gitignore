@@ -31,6 +31,7 @@ output_data/
 gesture_classifier/*.png
 *.png
 !docs/website_jekyll/assets/images/**
+!docs/assets/*.png
 
 # PyTorch models
 gesture_classifier/*.pth

@@ -27,3 +27,13 @@ def test_console_entry_points_target_maintained_modules():
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert 'handexo = "nml_hand_exo.cli:main"' in pyproject
     assert 'nml-task-cue = "nml_task_cue_cli:main"' in pyproject
+
+
+def test_readme_uses_a_publishable_project_image():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    image = ROOT / "docs" / "assets" / "nml-hand-exo.png"
+
+    assert image.is_file()
+    assert image.stat().st_size > 0
+    assert "https://raw.githubusercontent.com/" in readme
+    assert "/docs/assets/nml-hand-exo.png" in readme

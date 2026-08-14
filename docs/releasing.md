@@ -40,7 +40,7 @@ needed because project dependencies generally come from production PyPI:
 py -3.11 -m venv .venv-testpypi
 .\.venv-testpypi\Scripts\Activate.ps1
 python -m pip install --index-url https://test.pypi.org/simple/ `
-  --extra-index-url https://pypi.org/simple/ nml-hand-exo==0.2.17
+  --extra-index-url https://pypi.org/simple/ nml-hand-exo==0.2.17.1
 python -c "import nml_hand_exo; print(nml_hand_exo.__version__)"
 handexo --help
 nml-task-cue --help
@@ -51,8 +51,8 @@ nml-task-cue --help
 Only after TestPyPI installation and hardware-independent smoke tests pass:
 
 ```powershell
-git tag -a v0.2.17 -m "NML Hand Exoskeleton 0.2.17"
-git push origin v0.2.17
+git tag -a v0.2.17.1 -m "NML Hand Exoskeleton 0.2.17.1"
+git push origin v0.2.17.1
 python -m twine upload dist/*
 ```
 
@@ -64,7 +64,7 @@ increment it and rebuild if any artifact must change.
 ```powershell
 py -3.11 -m venv .venv-pypi
 .\.venv-pypi\Scripts\Activate.ps1
-python -m pip install nml-hand-exo==0.2.17
+python -m pip install nml-hand-exo==0.2.17.1
 python -c "import nml_hand_exo; print(nml_hand_exo.__version__)"
 handexo --help
 nml-task-cue --help
