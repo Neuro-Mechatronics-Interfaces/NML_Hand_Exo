@@ -14,17 +14,7 @@ __description__ = "Python package for controlling the NML HandExo device."
 # Users should prefer: from nml_hand_exo.interface import HandExo, SerialComm
 from .interface import HandExo, SerialComm, DualSerialComm, TCPComm, FakeHandExo
 
-submodules = [
-    'applications',
-    'calibration',
-    'interface',
-    'processing',
-    'plotting',
-    'control',
-    'ml',
-]
-
-__all__ = submodules + [
+__all__ = [
     '__version__',
     'HandExo',
     'SerialComm',
@@ -34,5 +24,5 @@ __all__ = submodules + [
 ]
 
 def __dir__():
-    return __all__
+    return sorted(__all__)
 

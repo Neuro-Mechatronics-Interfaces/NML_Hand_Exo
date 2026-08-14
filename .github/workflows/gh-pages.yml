@@ -1,52 +1,31 @@
-name: Build and Deploy Jekyll Docs
+name: Documentation
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+
+permissions:
+  contents: write
 
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: '3.1'
-        bundler-cache: false
-
-    - name: Install Jekyll dependencies
-      working-directory: docs/website_jekyll
-      run: |
-        gem install bundler
-        bundle install
-
-    - name: Install Doxygen
-      run: sudo apt-get update && sudo apt-get install -y doxygen
-
-    - name: Create Doxygen output directory
-      run: mkdir -p docs/build/doxygen
-
-    - name: Run Doxygen
-      working-directory: docs
-      run: doxygen Doxyfile
-
-    - name: Copy Doxygen output to Jekyll
-      run: |
-        mkdir -p docs/website_jekyll/cpp_api_doxygen
-        cp -r docs/build/doxygen/html/* docs/website_jekyll/cpp_api_doxygen/
-
-    - name: Build Jekyll site
-      working-directory: docs/website_jekyll
-      run: bundle exec jekyll build
-
-    - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v4
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: docs/website_jekyll/_site
-        publish_branch: gh-pages
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[docs]"
+      - name: Build documentation
+        run: |
+          python -m sphinx -W --keep-going docs/source docs/build/html
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs/build/html
+          publish_branch: gh-pages

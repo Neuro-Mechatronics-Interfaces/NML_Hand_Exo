@@ -1510,10 +1510,13 @@ class SerialWorker(QThread):
                 return
             except Exception as exc:
                 self._log_poll_error(f"[poll] fast telemetry failed: {exc}")
-        if realtime_control:
+        if realtime_control or self._uses_dual_serial_transport():
             # Text fallback can block for several sequential 500 ms reads.
-            # During EMG control, missing telemetry is safer than delaying the
-            # next direct-command refresh beyond the firmware watchdog.
+            # During EMG control, or whenever dual CDC is active, missing
+            # telemetry is safer than delaying the next command behind a set
+            # of text transactions. Compact telemetry is the supported
+            # decoupled path for dual CDC; a failed frame is retried by the
+            # next de-duplicated poll.
             self.completed.emit(result)
             return
         try:
@@ -1610,7 +1613,16 @@ class SerialWorker(QThread):
         return self._with_raw_exo(read_fast)
 
     def _get_shadow_telemetry(self) -> dict:
-        return self._with_raw_exo(lambda raw_exo: raw_exo.get_shadow_telemetry())
+        return self._with_raw_exo(
+            lambda raw_exo: raw_exo.get_shadow_telemetry(
+                timeout=EMG_FAST_TELEMETRY_TIMEOUT_S
+            )
+        )
+
+    def _uses_dual_serial_transport(self) -> bool:
+        return self._with_raw_exo(
+            lambda raw_exo: isinstance(raw_exo.device, DualSerialComm)
+        )
 
     def _transact(self, command: str, timeout: float) -> str:
         def do_transact(raw_exo):
@@ -1625,7 +1637,16 @@ class SerialWorker(QThread):
             except Exception:
                 pass
             comm.send(full)
-            return comm.receive(wait_until_return=True, timeout=timeout)
+            try:
+                return comm.receive(
+                    wait_until_return=True,
+                    timeout=timeout,
+                    warn_on_timeout=False,
+                )
+            except TypeError:
+                # Third-party/custom BaseComm implementations may not yet
+                # expose the optional quiet-timeout keyword.
+                return comm.receive(wait_until_return=True, timeout=timeout)
 
         return self._with_raw_exo(do_transact)
 
@@ -6134,6 +6155,29 @@ class HandExoGUI(QWidget):
 
     # -- Actions -----------------------------------------------------------
 
+    @staticmethod
+    def _run_with_gui_events(callback):
+        """Run blocking device I/O off the Qt thread while processing events."""
+        completed = threading.Event()
+        outcome = {}
+
+        def run():
+            try:
+                outcome["value"] = callback()
+            except BaseException as exc:
+                outcome["error"] = exc
+            finally:
+                completed.set()
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        while not completed.wait(0.01):
+            QApplication.processEvents()
+        QApplication.processEvents()
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome.get("value")
+
     def _connect(self):
         if self.exo_connected:
             return
@@ -6156,55 +6200,69 @@ class HandExoGUI(QWidget):
             # Both hands share the same OpenRB-150 board and Dynamixel bus.
             side = "left" if mode == "Left Only" else ("right" if mode == "Right Only" else None)
 
-            if self.dual_cdc_cb.isChecked():
-                # Dual USB-CDC: split commands and telemetry across the device's
-                # two COM ports. Pair the selected port with its sibling; the
-                # comm layer probes to fix command/telemetry direction.
-                pair = find_cdc_sibling(port)
-                if pair is None:
-                    raise ConnectionError(
-                        f"Dual USB CDC is selected but no sibling COM port was found "
-                        f"for {port}. Ensure the dual-CDC firmware is flashed and that "
-                        "both of the device's COM ports are present, then pick either one."
+            dual_requested = self.dual_cdc_cb.isChecked()
+
+            def _open_and_handshake():
+                if dual_requested:
+                    # Dual USB-CDC: split commands and telemetry across the device's
+                    # two COM ports. Pair the selected port with its sibling; the
+                    # comm layer probes to fix command/telemetry direction.
+                    pair = find_cdc_sibling(port)
+                    if pair is None:
+                        raise ConnectionError(
+                            f"Dual USB CDC is selected but no sibling COM port was found "
+                            f"for {port}. Ensure the dual-CDC firmware is flashed and that "
+                            "both of the device's COM ports are present, then pick either one."
+                        )
+                    cmd_dev, telem_dev = pair
+                    comm = DualSerialComm(
+                        cmd_port=cmd_dev, telem_port=telem_dev, baudrate=baud,
+                        response_timeout=0.5,
                     )
-                cmd_dev, telem_dev = pair
-                comm = DualSerialComm(
-                    cmd_port=cmd_dev, telem_port=telem_dev, baudrate=baud,
-                    response_timeout=0.5,
+                    dual_active = True
+                    conn_desc = f"cmd={cmd_dev} telem={telem_dev} @ {baud} [{mode}]"
+                else:
+                    comm = SerialComm(port=port, baudrate=baud, response_timeout=0.5)
+                    dual_active = False
+                    conn_desc = f"{port} @ {baud} [{mode}]"
+
+                exo = SynchronizedHandExo(
+                    HandExo(comm, side=side, auto_connect=True,
+                            verbose=False, command_delimiter='\r\n')
                 )
-                self._dual_cdc_active = True
-                conn_desc = f"cmd={cmd_dev} telem={telem_dev} @ {baud} [{mode}]"
-            else:
-                comm = SerialComm(port=port, baudrate=baud, response_timeout=0.5)
-                self._dual_cdc_active = False
-                conn_desc = f"{port} @ {baud} [{mode}]"
+                try:
+                    if not dual_active:
+                        # Firmware reply routing persists across host reconnects.
+                        exo.send_command("set_reply_route:both")
+                        time.sleep(0.1)
+                        comm.flush_input()
+                    exo.send_command("debug:off")
+                    time.sleep(0.1)
+                    comm.flush_input()
+                    info = exo.info(timeout=5.0)
+                    return exo, info, dual_active, conn_desc
+                except Exception:
+                    exo.close()
+                    raise
 
-            self.exo = SynchronizedHandExo(
-                HandExo(comm, side=side, auto_connect=True,
-                        verbose=False, command_delimiter='\r\n')
+            self._log(
+                f"Connecting: mode={mode}, port={port} @ {baud}, "
+                f"expected_side={side or 'all'}"
             )
+            (
+                self.exo,
+                info,
+                self._dual_cdc_active,
+                conn_desc,
+            ) = self._run_with_gui_events(_open_and_handshake)
 
-            self._log(f"Connecting: mode={mode}, {conn_desc}, "
-                      f"expected_side={side or 'all'}")
-
-            if not self._dual_cdc_active:
-                # gReplyRoute lives in firmware RAM and survives host reconnects,
-                # so a previous dual-CDC session can leave replies bound to the
-                # telemetry port. Single-port mode must claim the route back or
-                # every read times out until the board is power-cycled.
-                self.exo.send_command("set_reply_route:both")
-                time.sleep(0.1)
-                comm.flush_input()
+            # The port open, reply-route setup, and info transaction above all
+            # ran off the Qt thread, so missing DXL IDs cannot freeze the GUI.
 
             # Firmware VERBOSE emits a blocking USB-CDC write per debug line —
             # including one per motor on every gesture — which dominates command
             # round-trip latency. The GUI does not consume those lines, so turn
             # them off rather than pay for them on every transaction.
-            self.exo.send_command("debug:off")
-            time.sleep(0.1)
-            comm.flush_input()
-
-            info = self.exo.info(timeout=5.0)
             motors_dict = info.get("motors", {})  # keyed by Dynamixel ID
             self._firmware_limits_by_id = {
                 int(dxl_id): (float(md["limits"][0]), float(md["limits"][1]))
@@ -6525,7 +6583,9 @@ class HandExoGUI(QWidget):
         if not self.exo_connected or not self.motor_widgets:
             return
         try:
-            enabled_by_id = self.exo.run_locked(lambda exo: exo.is_enabled("all"))
+            enabled_by_id = HandExoGUI._run_with_gui_events(
+                lambda: self.exo.run_locked(lambda exo: exo.is_enabled("all"))
+            )
         except Exception as exc:
             self._log(f"Warning: could not read initial motor enabled states: {exc}")
             return
@@ -6579,7 +6639,9 @@ class HandExoGUI(QWidget):
             def _read(raw_exo):
                 return raw_exo.get_motor_current_limit("all")
 
-            current_by_id = self.exo.run_locked(_read)
+            current_by_id = HandExoGUI._run_with_gui_events(
+                lambda: self.exo.run_locked(_read)
+            )
         except Exception as exc:
             self._log(f"Warning: could not read initial motor limits: {exc}")
             return

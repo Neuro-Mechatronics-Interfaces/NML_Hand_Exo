@@ -9,7 +9,6 @@ authors:
   - family-names: Kacker
     given-names: Kriti
     affiliation: Carnegie Mellon University
-date-released: "2025-05-31"
-version: "0.0.2"
+version: "0.2.17"
 license: MIT
 repository-code: https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo

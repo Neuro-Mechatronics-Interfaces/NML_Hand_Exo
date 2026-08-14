@@ -1,52 +1,47 @@
-Quickstart Guide
-================
-
-Welcome to the **NML Hand Exoskeleton Quickstart Guide**! This guide will help
-you get the system up and running in just a few steps.
+Quickstart
+==========
 
 Prerequisites
-----------------
+-------------
 
-- A compatible microcontroller (e.g. OpenRB-150) flashed with the firmware.
-- The NML Hand Exoskeleton hardware (properly assembled).
-- A USB cable to connect the device to your computer.
-- Python 3.x (optional, for higher-level scripting).
-- A serial terminal program (e.g. PuTTY, Arduino Serial Monitor) or the provided Python API.
+* Python 3.10–3.12 (Python 3.11 recommended).
+* An OpenRB-150 flashed with matching NML Hand Exo firmware.
+* A validated calibration profile for the connected side.
+* A supervised bench setup with immediate access to power and emergency stop.
 
-Step 1. Assemble Exoskeleton
-----------------------------
+Install
+-------
 
-Follow the assembly instructions in the project hardware documentation to put together the exoskeleton.
+.. code-block:: powershell
 
-Step 2. Connect the Device
---------------------------
+   py -3.11 -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   python -m pip install -e .
 
-1. Plug the exoskeleton’s control board into your computer’s USB port.
-2. Ensure that the device is recognized by your operating system (typically shows up as a COM port on Windows or `/dev/ttyUSBx` on Linux).
+Check the applications without opening hardware
+-----------------------------------------------
 
-Step 3. Launch Serial Terminal
-------------------------------
+.. code-block:: powershell
 
-1. Open your preferred serial terminal program.
-2. Set the USB baud rate to **1000000** (default).
-3. Select the correct serial port (COMx on Windows, `/dev/ttyUSBx` on Linux, or 'dev.usbmodemxxx' on MacOS).
-4. Connect and open the terminal.
+   handexo --version
+   handexo --help
+   nml-task-cue --help
 
-Step 4. Send a Test Command
----------------------------
+Connect
+-------
 
-Once connected, try sending a simple command to make sure you can communicate with the dynamixel motors. See if the led can turn on:
+Launch ``handexo gui``, select the active side, scan for the OpenRB serial
+port, and connect. Dual-CDC firmware exposes two COM ports on one USB cable;
+select either member and allow the GUI to pair its sibling interface.
 
-   .. code-block:: text
+Before motion
+-------------
 
-       led:1:on
+#. Confirm every expected integer Dynamixel ID is present.
+#. Apply and inspect the correct side-specific calibration profile.
+#. Confirm current and velocity limits.
+#. Arm only the motors required by the experiment.
+#. Test stop behavior before placing the exoskeleton on a participant.
 
-If it turns on, you are good to go! If not, check your connections and ensure the device is powered on.
-
-
-Next Steps
-----------
-
-- Check out the :doc:`usage` guide for more detailed instructions on wearing
-  and operating the exoskeleton safely.
-- Dive into the :doc:`cpp_api` or :doc:`python_api` documentation for deeper integration.
+See :doc:`usage` for the Python API and the repository architecture documents
+for dual-side and telemetry details.

@@ -29,20 +29,17 @@ handexo gui
 python -m build --wheel
 
 # Common diagnostics
-python test_bluetooth_ports.py
-python test_hc05_data_mode.py
-python test_gui_threading.py
-python test_hc05_wiring.py
+python examples/diagnostics/benchmark_fast_telemetry.py --help
+python tools/pre_session_check.py --help
 
 # Basic connectivity check
-python examples/01_basic/hand_exo_cli.py --list-ports
-python examples/01_basic/hand_exo_cli.py --connect COM5 --info
+python examples/01_basic/example_bluetooth_exo.py --list
+python examples/01_basic/example_serial_exo.py --port COM5
 ```
 
 Notes:
-- Unit tests live in `examples/tests/`: `python -m pytest examples/tests -q`. There is no
-  other repo-wide lint/typecheck gate; otherwise use targeted scripts relevant to your change.
-- If you build `src/nml_wtf_exo`, clean `build/`, `dist/`, and `*.egg-info/` first to avoid recursive artifacts.
+- Unit tests live in `examples/tests/` and `tests/`: `python -m pytest -q`.
+- Distribution artifacts under `build/`, `dist/`, and `*.egg-info/` are generated; do not commit them.
 
 ---
 
@@ -63,25 +60,23 @@ src/nml_hand_exo/interface/
   _interfaces.py           SerialComm / DualSerialComm / TCPComm
 
 src/nml_hand_exo/applications/
-  hand_exo_gui.py          PyQt5 main GUI window. Calibration and ROM are modal QDialogs
-                           launched from it, not tabs. The QTabWidget holds Controls and
-                           Telemetry only.
+  hand_exo_gui.py          PyQt5 operator GUI. Calibration and ROM workflows are
+                           modal dialogs launched from this window.
 
 examples/calibration/
   calibrate_exo.py         CLI calibration wizard (also updates config.h)
   rom_assessment.py        ROM protocol → output_data/<name>_rom_<date>_<run>.csv
   profiles/<name>.json     Per-user calibration profiles (include "side" metadata field)
 
-examples/scripts/
+examples/08_udp/
   udp_gesture_receiver.py  UDP integer → serial gesture forwarder (no Qt). Source of
                            truth for the integer→command map and the pose-ack frame.
   udp_gesture_gui.py       Tkinter panel that drives the receiver by hand
   diagnostics/             Port scans, CDC latency, pose capture
 
 examples/tests/
-  test_*.py                Unit tests. Run with `python -m pytest examples/tests -q`;
-                           the UDP tests import the receiver from ../scripts, so both
-                           directories must stay siblings under examples/.
+  test_*.py                Hardware-independent regression tests. Run the complete
+                           suite with `python -m pytest -q`.
 ```
 
 ---

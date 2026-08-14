@@ -1,7 +1,3 @@
-# Install this checkout plus the runtime dependencies declared in pyproject.toml.
--e .
-
-# Decoder and analysis integrations used by the bundled workflows and examples.
-nml-wtf-mindrove
-scikit-learn
-matplotlib
+# Contributor convenience file. Runtime dependencies are declared once in
+# pyproject.toml; analysis and release tooling are installed through extras.
+-e .[analysis,dev]

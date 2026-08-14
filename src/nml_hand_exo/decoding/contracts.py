@@ -25,6 +25,7 @@ class DecoderDecision:
     probabilities: dict[str, float] = field(default_factory=dict)
     open_activation: float = 0.0
     close_activation: float = 0.0
+    raw_signed_projection: float | None = None
 
 
 @dataclass(frozen=True)

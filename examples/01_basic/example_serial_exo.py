@@ -1,25 +1,36 @@
+"""Connect to an NML Hand Exo over USB serial and print device status."""
+
+from __future__ import annotations
+
+import argparse
+
 from nml_hand_exo.interface import HandExo, SerialComm
 
-# Serial usage
-port = "COM12"
-baudrate = 1000000
 
-comm = SerialComm(port=port, baudrate=baudrate)
-exo = HandExo(comm, verbose=False)
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--port", required=True, help="serial port, for example COM12")
+    parser.add_argument("--baudrate", type=int, default=1_000_000)
+    parser.add_argument("--verbose", action="store_true")
+    return parser
 
-try:
-    exo.connect()
-    print(exo.version())
-    print(exo.get_exo_mode())
-    print(exo.get_home())
-    print(exo.info())
-    print(exo.get_absolute_motor_angle())
-    print(exo.get_motor_angle())
-    print(exo.get_motor_velocity())
-    print(exo.get_gesture())
-    print(exo.get_gesture_state())
-    print(exo.get_motor_torque())
-except Exception as e:
-    print(f"Error: {e}")
-finally:
-    exo.close()
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    exo = HandExo(
+        SerialComm(port=args.port, baudrate=args.baudrate),
+        verbose=args.verbose,
+    )
+    try:
+        exo.connect()
+        print(f"Firmware: {exo.version()}")
+        print(f"Mode: {exo.get_exo_mode()}")
+        print(f"Device: {exo.info()}")
+        print(f"Motor angles: {exo.get_motor_angle('all')}")
+    finally:
+        exo.close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

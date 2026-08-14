@@ -3,6 +3,7 @@
 .handexo
 .idea
 .ipynb_checkpoints/
+.worktrees/
 
 # Byte-compiled, chache directories
 intan_utilities/__pycache__
@@ -17,9 +18,14 @@ __pycache__/
 # models made with keras or pytorch
 *.keras
 
-# New data files
+# Local recordings and generated analysis artifacts
 *.csv
 *.txt
+data/
+external/
+analysis_outputs/
+aim3_analysis/outputs/
+output_data/
 
 # Images (exclude from data folders, but allow docs)
 gesture_classifier/*.png
@@ -106,8 +112,10 @@ docs/website_jekyll/cpp_api_doxygen/
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Max WTF logs
-exo_logs
+# Runtime logs
+exo_logs/
+logs/
+shadow_contact_logs/
 
 # Local secrets
 .env

@@ -1,7 +1,7 @@
 [project]
 name = "nml_hand_exo"
 version = "0.2.17"
-description = "Python API for controlling the NML Hand Exoskeleton"
+description = "Control, calibrate, and decode intent for the NML Hand Exoskeleton"
 authors = [
     { name="Jonathan Shulgach", email="jshulgac@andrew.cmu.edu" },
     { name="Kriti Kacker", email="kkacker@andrew.cmu.edu" }, 
@@ -10,26 +10,39 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
-keywords = ["exo", "neurotech", "biomedical", "rehabilitation"]
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["exoskeleton", "neurotechnology", "biomechatronics", "rehabilitation", "emg"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Human Machine Interfaces",
+]
 dependencies = [
-    "numpy==1.26.4",
+    "numpy>=1.26,<3",
     "pyserial",
-    "pyyaml",
     "PyQt5",
     "pyqtgraph==0.12.4",
     "pylsl",
-    "pyxdf==1.16.8",
-    "pandas",
+    "pyxdf>=1.16.8,<2",
     "scipy",
     "scikit-learn",
 ]
 
 [project.urls]
 Homepage = "https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo"
+Documentation = "https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/"
+Source = "https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo"
+Issues = "https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/issues"
+Changelog = "https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/releases"
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
@@ -44,25 +57,35 @@ include = ["nml_hand_exo*"]
 "nml_hand_exo.applications" = ["favicon-32x32.svg"]
 
 [project.optional-dependencies]
-ai = [
-    "faster-whisper",
-    "elevenlabs",
-    "sounddevice",
+analysis = [
+    "matplotlib",
+    "pandas",
+    "pyyaml",
+]
+integrations = [
+    "mindrove",
+    "pygame",
+    "websockets",
+]
+ml = [
+    "torch",
+]
+dev = [
+    "build",
+    "pytest",
+    "twine",
 ]
 
 docs = [
     "sphinx",
-    "sphinx-autodoc-typehints",
     "myst-parser",
-    "breathe",
     "sphinx-copybutton",
-    "m2r2",
     "sphinx_rtd_theme",
 ]
 
 [project.scripts]
 nml-task-cue = "nml_task_cue_cli:main"
-handexo = "handexo_cli:main"
+handexo = "nml_hand_exo.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["examples/tests", "tests"]

@@ -29,8 +29,9 @@ The HandExo GUI is already the correct actuator boundary. `UDPCommandWorker` (`h
 
 **Continuous two-direction status (2026-08-10).** The separate `handexo
 emg-intent` workflow now publishes a continuous signed open/close value using
-rest-to-MVC shrinkage-LDA projections. Rest noise is anchored at its directional
-95th percentile and the median recorded gesture anchors MVC. This implements the
+rest-to-active-reference shrinkage-LDA projections. Rest noise is anchored at its
+directional 95th percentile and the 90th percentile of recorded comfortable
+gesture effort anchors the control reference. This implements the
 bounded two-direction subset of the architecture below; multi-prototype mixture
 output and graded-effort validation remain future work.
 
@@ -125,7 +126,7 @@ Live control is opt-in and must require all of: connected actuator GUI, matching
 
 ## Calibration and validation
 
-Retain rest, close, and open recordings, but capture multiple comfortable effort levels and repetitions. Add optional prototype recordings only for actions that have a reviewed actuator synergy: e.g. index-dominant close, thumb/index pinch, and whole-hand close. Record rest before/after every block; record the same posture/orientation coverage for every class when orientation gating is enabled. For a later DOF decoder, add synchronized target level or reference kinematics for each controllable groupÃ¢â‚¬â€class names alone are not continuous labels.
+Retain rest, close, and open recordings, but capture multiple comfortable effort levels and repetitions. Add optional prototype recordings only for actions that have a reviewed actuator synergy: e.g. index-dominant close, thumb/index pinch, and whole-hand close. Record rest before/after every block; record the same posture/orientation coverage for every class when orientation gating is enabled. For a later DOF decoder, add synchronized target level or reference kinematics for each controllable group—class names alone are not continuous labels.
 
 Split repetitions, not adjacent windows, into train/test sets. Report per-class confusion, probability calibration, rest false-activation rate, time to active, mixture plausibility, orientation-bin coverage, and every safety-gate rejection. Do not enable a prototype for live use unless its held-out confidence and its safe joint mapping are reviewed.
 

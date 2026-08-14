@@ -1,10 +1,29 @@
-Python API Reference
+Python API reference
 ====================
 
-This section documents the full Python API.
+Package version
+---------------
 
-.. automodule:: nml_hand_exo.hand_exo
-    :members:
-    :undoc-members:
-    :show-inheritance:
-    :special-members: __init__
+.. autodata:: nml_hand_exo.__version__
+
+Device and transport API
+------------------------
+
+.. automodule:: nml_hand_exo.interface
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Calibration
+-----------
+
+.. automodule:: nml_hand_exo.calibration
+   :members:
+   :undoc-members:
+
+Intent decoding
+---------------
+
+.. automodule:: nml_hand_exo.decoding
+   :members:
+   :undoc-members:

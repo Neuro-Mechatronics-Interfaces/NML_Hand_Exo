@@ -397,7 +397,11 @@ class HandExo(object):
     ) -> str:
         """Send a low-rate safety command and validate its acknowledgement."""
         self.send_command(command)
-        raw = self._receive(wait_until_return=True, timeout=timeout)
+        raw = self._receive(
+            wait_until_return=True,
+            timeout=timeout,
+            warn_on_timeout=False,
+        )
         normalized = raw.strip()
         if (
             not normalized
@@ -412,7 +416,11 @@ class HandExo(object):
         return normalized
 
     def _receive(
-        self, wait_until_return: bool = False, timeout: float | None = None
+        self,
+        wait_until_return: bool = False,
+        timeout: float | None = None,
+        *,
+        warn_on_timeout: bool = True,
     ) -> str:
         """
         Reads a response from the exoskeleton over the serial connection.
@@ -421,11 +429,16 @@ class HandExo(object):
             str: The response from the exoskeleton, or an empty string if no response.
 
         """
-        if timeout is None:
-            return self.device.receive(wait_until_return=wait_until_return)
-        return self.device.receive(
-            wait_until_return=wait_until_return, timeout=timeout
-        )
+        kwargs = {"wait_until_return": wait_until_return}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        try:
+            return self.device.receive(
+                **kwargs, warn_on_timeout=warn_on_timeout
+            )
+        except TypeError:
+            # Preserve compatibility with custom BaseComm implementations.
+            return self.device.receive(**kwargs)
 
     def get_fast_telemetry(
         self,
@@ -551,11 +564,15 @@ class HandExo(object):
             "shadow_stop", expected="OK: shadow_stop", timeout=1.0
         )
 
-    def get_shadow_telemetry(self) -> dict:
+    def get_shadow_telemetry(self, timeout: float = 0.5) -> dict:
         """Return the firmware's buffered Phase-1 shadow evidence snapshot."""
         command = "shadow_status"
         self.send_command(command)
-        raw = self._receive(wait_until_return=True, timeout=0.5)
+        raw = self._receive(
+            wait_until_return=True,
+            timeout=timeout,
+            warn_on_timeout=False,
+        )
         if not raw.strip() or re.search(r"(?:^|\n)\s*ERROR:", raw, re.IGNORECASE):
             raise ProtocolResponseError(
                 command=command,

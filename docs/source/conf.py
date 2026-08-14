@@ -1,82 +1,51 @@
-# Configuration file for the Sphinx documentation builder.
-#
-# For the full list of built-in configuration values, see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
+"""Sphinx configuration for the NML Hand Exoskeleton documentation."""
 
-import os
+from __future__ import annotations
+
 import sys
+from pathlib import Path
 
-# Make sure Python can find your Python module
-sys.path.insert(0, os.path.abspath('../../src'))
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
-# -- Project information -----------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+from nml_hand_exo import __version__
 
-
-project = 'NML Hand Exoskeleton'
-copyright = '2025, Neuromechatronics Lab'
-author = 'Neuromechatronics Lab'
-release = '0.0.2'
-
-# -- General configuration ---------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
+project = "NML Hand Exoskeleton"
+copyright = "2026, Neuromechatronics Lab"
+author = "Neuromechatronics Lab"
+version = release = __version__
 
 extensions = [
-    "breathe",
-    "sphinx.ext.autodoc",
-    "sphinx.ext.napoleon",
-    "sphinx_rtd_theme",
+    "myst_parser",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
-    "sphinx_autodoc_typehints",
     "sphinx_copybutton",
-    "m2r2",
 ]
 
-templates_path = ['_templates']
-exclude_patterns = []
-autodoc_typehints = 'description'
-autodoc_member_order = 'bysource'
+templates_path = ["_templates"]
+exclude_patterns: list[str] = []
+source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
+autodoc_typehints = "description"
+autodoc_member_order = "bysource"
 add_module_names = False
 
-
-# -- Options for HTML output -------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
-
 html_theme = "sphinx_rtd_theme"
-html_static_path = ['_static']
+html_static_path = ["_static"]
 html_logo = "_static/LabLogoRedSquare.png"
-
-# Theme options for Read the Docs (dark mode and customization)
+html_css_files = ["custom.css"]
 html_theme_options = {
-    'style_nav_header_background': '#252526',  # VS Code sidebar color
-    'navigation_depth': 4,
-    'collapse_navigation': False,
-    'sticky_navigation': True,
-    'includehidden': True,
-    'titles_only': False,
+    "style_nav_header_background": "#252526",
+    "navigation_depth": 4,
+    "collapse_navigation": False,
+    "sticky_navigation": True,
+    "includehidden": True,
+    "titles_only": False,
 }
-
-# Custom CSS for VS Code dark theme styling
-html_css_files = [
-    'custom.css',
-]
-
-# Additional context for templates
 html_context = {
-    'display_github': True,
-    'github_user': 'Neuro-Mechatronics-Interfaces',
-    'github_repo': 'NML_Hand_Exo',
-    'github_version': 'main',
-    'conf_py_path': '/docs/source/',
+    "display_github": True,
+    "github_user": "Neuro-Mechatronics-Interfaces",
+    "github_repo": "NML_Hand_Exo",
+    "github_version": "main",
+    "conf_py_path": "/docs/source/",
 }
-
-# Breathe configuration
-breathe_projects = {
-    "NMLHandExo": "../build/doxygen/xml"
-}
-breathe_default_project = "NMLHandExo"
-
-# For Markdown support:
-source_suffix = ['.rst', '.md']

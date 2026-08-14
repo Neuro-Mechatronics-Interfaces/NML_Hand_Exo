@@ -1,7 +1,7 @@
 """Build one continuous open/close playback recording from marked XDF files.
 
-The output is the recording-NPZ format consumed by mindrove_lsl_streamer.py;
-it is intentionally not an intent-session NPZ.  Original signal samples are
+The output is a generic recording-NPZ format for a compatible MindRove LSL
+player; it is intentionally not an intent-session NPZ. Original signal samples are
 copied without filtering or feature extraction.  Only their order and playback
 timestamps change.
 """

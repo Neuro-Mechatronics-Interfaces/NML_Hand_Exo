@@ -100,14 +100,12 @@ class LSLMarkerSubscriber:
     # --- callback API ---
     def set_callback(self, func: Optional[Callable[..., Any]], *args, only_on_change: bool = False, **kwargs) -> None:
         """
-        Register a callback invoked as: func(text: str, ts: float, *args, **kwargs)
+        Register a callback invoked as ``func(text, timestamp, *args, **kwargs)``.
 
-        Examples:
-            sub.set_callback(on_marker)  # func(text, ts)
-            sub.set_callback(on_marker, exo, only_on_change=True)  # func(text, ts, exo=...)
-            sub.set_callback(on_marker, exo=exo)  # func(text, ts, exo=exo)
+        ``only_on_change=True`` suppresses repeated marker text. Positional and
+        keyword arguments supplied here are forwarded to the callback.
 
-        Pass None to clear the callback.
+        Pass ``None`` to clear the callback.
         """
         with self._lock:
             self._cb = func
@@ -194,9 +192,9 @@ class LSLMarkerSubscriber:
 class LSLNumericSubscriber:
     """
     Subscribe to a continuous numeric stream (e.g., EMG/EEG).
-    Typical usage:
-        with LSLNumericSubscriber(stream_name="MyEMG").start() as sub:
-            X = sub.get_latest_window(200)  # last 200 ms -> (C, N) float32
+
+    Use :meth:`get_latest_window` to retrieve a channel-by-sample ``float32``
+    array from the rolling buffer.
     """
     def __init__(
         self,

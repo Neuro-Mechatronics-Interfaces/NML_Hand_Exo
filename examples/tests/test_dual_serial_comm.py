@@ -9,6 +9,7 @@ stall the caller beyond its own timeout or leave a backlog behind.
 import threading
 import time
 import unittest
+from unittest import mock
 
 from nml_hand_exo import DualSerialComm
 
@@ -114,6 +115,19 @@ class DualSerialCommReaderTests(unittest.TestCase):
         # The command port is still immediately writable after a missed reply.
         comm.send("version\r\n")
         self.assertIn(b"version", bytes(comm._cmd.written))
+
+    def test_expected_timeout_can_be_silent(self):
+        comm = self._make()
+        with mock.patch("builtins.print") as printed:
+            self.assertEqual(
+                comm.receive(
+                    wait_until_return=True,
+                    timeout=0.05,
+                    warn_on_timeout=False,
+                ),
+                "",
+            )
+        printed.assert_not_called()
 
     def test_queued_reply_returns_without_waiting(self):
         comm = self._make()

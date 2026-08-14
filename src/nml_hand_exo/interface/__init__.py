@@ -14,3 +14,19 @@ except Exception:
 	LSLMessagePublisher = None
 	LSLMarkerSubscriber = None
 	LSLNumericSubscriber = None
+
+__all__ = [
+	"BaseComm",
+	"DualHandExo",
+	"DualSerialComm",
+	"FakeHandExo",
+	"GestureController",
+	"HandExo",
+	"LSLClient",
+	"LSLMarkerSubscriber",
+	"LSLMessagePublisher",
+	"LSLNumericSubscriber",
+	"ProtocolResponseError",
+	"SerialComm",
+	"TCPComm",
+]

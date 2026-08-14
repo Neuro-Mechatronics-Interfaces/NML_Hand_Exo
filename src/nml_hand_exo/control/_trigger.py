@@ -73,11 +73,11 @@ class StateTriggerRMS:
 
     def load_baseline(self, path):
         """Loads a saved baseline RMS dictionary from file."""
-        self.rest_means = np.load(path, allow_pickle=True).item()
+        self.baseline_rms = np.load(path, allow_pickle=True).item()
 
     def save_baseline(self, path):
         """Saves current baseline RMS values to file."""
-        if not self.rest_means:
+        if not self.baseline_rms:
             raise RuntimeError("No rest means available to save. Please calibrate first.")
         if not path.endswith('.npy'):
             raise ValueError("Path must end with '.npy' extension.")
@@ -192,17 +192,13 @@ class EMGClassifierTrigger:
                 if window is None or window.shape[1] == 0:
                     continue
 
-                # Preprocess and scale the EMG features
-                emg_features = self.scaler.transform(window.T)  # Transpose to match model input shape
-                emg_features_tensor = torch.tensor(emg_features, dtype=torch.float32)
-
-                # Predict gesture using the classifier model
-                with torch.no_grad():
-                    predictions = self.model(emg_features_tensor).numpy()
-
-                # Determine the predicted gesture based on the highest score
-                predicted_gesture_index = np.argmax(predictions)
-                predicted_gesture = self.exo.gesture_names[predicted_gesture_index]
+                # Use one RMS feature per channel. The caller supplies a fitted
+                # scaler and any estimator implementing scikit-learn's
+                # ``predict`` protocol; no undeclared deep-learning runtime is
+                # required by this compatibility controller.
+                features = compute_rms(window).reshape(1, -1)
+                scaled = self.scaler.transform(features)
+                predicted_gesture = str(self.model.predict(scaled)[0])
 
                 if predicted_gesture != self.last_state:
                     print(f"[ClassifierTrigger] Detected gesture: {predicted_gesture}")

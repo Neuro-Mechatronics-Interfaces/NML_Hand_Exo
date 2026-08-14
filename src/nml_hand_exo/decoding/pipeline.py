@@ -16,15 +16,16 @@ class IntentDecoderPipeline:
     close_label: str = "close"
     confidence_threshold: float = 0.60
     effort_deadband: float = 0.05
+    active_reference_quantile: float = 0.90
     require_orientation: bool = False
     adapter: ContinuousRestAdapter = field(default_factory=ContinuousRestAdapter)
     model: ShrinkageLDAIntentModel = field(default_factory=ShrinkageLDAIntentModel)
     _open_effort_axis: np.ndarray | None = field(default=None, init=False, repr=False)
     _close_effort_axis: np.ndarray | None = field(default=None, init=False, repr=False)
     _open_rest_anchor: float = field(default=0.0, init=False, repr=False)
-    _open_mvc_anchor: float = field(default=1.0, init=False, repr=False)
+    _open_active_anchor: float = field(default=1.0, init=False, repr=False)
     _close_rest_anchor: float = field(default=0.0, init=False, repr=False)
-    _close_mvc_anchor: float = field(default=1.0, init=False, repr=False)
+    _close_active_anchor: float = field(default=1.0, init=False, repr=False)
 
     def fit(
         self,
@@ -45,11 +46,11 @@ class IntentDecoderPipeline:
     def _fit_continuous_effort(
         self, corrected_features: np.ndarray, labels: np.ndarray
     ) -> None:
-        """Anchor two one-vs-rest LDA projections at rest=0 and MVC=1.
+        """Anchor two one-vs-rest LDA projections at rest=0 and reference=1.
 
-        The rest anchor is the 95th percentile in the MVC direction rather
-        than the median. This makes ordinary resting variation exactly zero;
-        the selected gesture's median recorded contraction remains 1.0.
+        The rest anchor is the 95th percentile in the active direction. The
+        configurable upper quantile of the participant's recorded comfortable
+        gesture effort maps to 1.0. This is a control reference, not MVC.
         """
         if self.model.scaler is None or self.model.classifier is None:
             raise RuntimeError("Intent model has not been fit")
@@ -66,35 +67,40 @@ class IntentDecoderPipeline:
             axis = coefficients[class_index] - coefficients[rest_index]
             norm = float(np.linalg.norm(axis))
             if not np.isfinite(norm) or norm <= 1e-12:
-                raise ValueError(f"Cannot construct a rest-to-MVC LDA axis for {label}")
+                raise ValueError(
+                    f"Cannot construct a rest-to-active-reference LDA axis for {label}"
+                )
             axis = axis / norm
             projection = scaled @ axis
             rest_values = projection[y == self.rest_label]
-            mvc_values = projection[y == label]
-            if float(np.median(mvc_values)) < float(np.median(rest_values)):
+            active_values = projection[y == label]
+            if float(np.median(active_values)) < float(np.median(rest_values)):
                 axis = -axis
                 projection = -projection
                 rest_values = projection[y == self.rest_label]
-                mvc_values = projection[y == label]
+                active_values = projection[y == label]
             rest_anchor = float(np.quantile(rest_values, 0.95))
-            mvc_anchor = float(np.median(mvc_values))
-            if not np.isfinite(rest_anchor) or not np.isfinite(mvc_anchor):
+            reference_quantile = float(self.active_reference_quantile)
+            if not 0.5 <= reference_quantile <= 1.0:
+                raise ValueError("active_reference_quantile must be between 0.5 and 1.0")
+            active_anchor = float(np.quantile(active_values, reference_quantile))
+            if not np.isfinite(rest_anchor) or not np.isfinite(active_anchor):
                 raise ValueError(f"Invalid continuous-effort anchors for {label}")
-            if mvc_anchor <= rest_anchor + 1e-9:
+            if active_anchor <= rest_anchor + 1e-9:
                 raise ValueError(
-                    f"Rest variation overlaps the recorded MVC anchor for {label}"
+                    f"Rest variation overlaps the recorded active reference for {label}"
                 )
-            return axis, rest_anchor, mvc_anchor
+            return axis, rest_anchor, active_anchor
 
         (
             self._open_effort_axis,
             self._open_rest_anchor,
-            self._open_mvc_anchor,
+            self._open_active_anchor,
         ) = fit_direction(self.open_label)
         (
             self._close_effort_axis,
             self._close_rest_anchor,
-            self._close_mvc_anchor,
+            self._close_active_anchor,
         ) = fit_direction(self.close_label)
 
     def project_continuous(
@@ -119,37 +125,41 @@ class IntentDecoderPipeline:
         labels = list(self.model.classes)
         scaled = self.model.scaler.transform(corrected)
 
-        def activation(axis, rest_anchor, mvc_anchor):
+        def activation(axis, rest_anchor, active_anchor):
             if axis is None:
                 raise RuntimeError("Continuous-effort calibration has not been fit")
             projection = scaled @ axis
-            return np.clip(
-                (projection - rest_anchor) / (mvc_anchor - rest_anchor),
-                0.0,
-                1.0,
-            )
+            return (projection - rest_anchor) / (active_anchor - rest_anchor)
 
-        open_activation = activation(
+        raw_open_activation = activation(
             self._open_effort_axis,
             self._open_rest_anchor,
-            self._open_mvc_anchor,
+            self._open_active_anchor,
         )
-        close_activation = activation(
+        raw_close_activation = activation(
             self._close_effort_axis,
             self._close_rest_anchor,
-            self._close_mvc_anchor,
+            self._close_active_anchor,
         )
+        open_activation = np.clip(raw_open_activation, 0.0, 1.0)
+        close_activation = np.clip(raw_close_activation, 0.0, 1.0)
         rest_probability = probabilities[:, labels.index(self.rest_label)]
         open_probability = probabilities[:, labels.index(self.open_label)]
         close_probability = probabilities[:, labels.index(self.close_label)]
         close_direction = close_probability >= open_probability
-        effort = np.where(close_direction, close_activation, open_activation)
-        signed = np.where(close_direction, effort, -effort)
+        raw_effort = np.where(
+            close_direction, raw_close_activation, raw_open_activation
+        )
+        raw_effort = np.maximum(raw_effort, 0.0)
+        raw_signed = np.where(close_direction, raw_effort, -raw_effort)
+        effort = np.clip(raw_effort, 0.0, 1.0)
+        signed = np.clip(raw_signed, -1.0, 1.0)
         confidence = rest_probability + np.maximum(open_probability, close_probability)
         rejected = confidence < self.confidence_threshold
-        signed[(effort <= self.effort_deadband) | rejected] = 0.0
+        signed[(raw_effort <= self.effort_deadband) | rejected] = 0.0
         return {
             "signed_intent": signed.astype(np.float64, copy=False),
+            "raw_signed_projection": raw_signed.astype(np.float64, copy=False),
             "open_activation": open_activation.astype(np.float64, copy=False),
             "close_activation": close_activation.astype(np.float64, copy=False),
             "confidence": confidence.astype(np.float64, copy=False),
@@ -176,9 +186,10 @@ class IntentDecoderPipeline:
         probability_map = {label: float(probabilities[index]) for index, label in enumerate(labels)}
         # Confidence measures support for the calibrated control manifold:
         # rest plus the stronger directional class. This stays high through a
-        # legitimate rest-to-MVC transition while falling for reject samples
+        # legitimate rest-to-reference transition while falling for reject samples
         # and simultaneous open/close ambiguity.
         confidence = float(projected["confidence"][0])
+        raw_signed = float(projected["raw_signed_projection"][0])
         if bool(projected["rejected"][0]):
             return DecoderDecision(
                 state=self.rest_label,
@@ -187,6 +198,7 @@ class IntentDecoderPipeline:
                 rejected=True,
                 reason="low confidence",
                 probabilities=probability_map,
+                raw_signed_projection=raw_signed,
             )
         open_activation = float(projected["open_activation"][0])
         close_activation = float(projected["close_activation"][0])
@@ -203,4 +215,5 @@ class IntentDecoderPipeline:
             probabilities=probability_map,
             open_activation=open_activation,
             close_activation=close_activation,
+            raw_signed_projection=raw_signed,
         )

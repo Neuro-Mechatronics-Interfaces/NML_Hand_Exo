@@ -1,11 +1,46 @@
 import time
+import threading
 from types import SimpleNamespace
+
+import pytest
 
 from nml_hand_exo.applications.hand_exo_gui import (
     EMG_FAST_TELEMETRY_TIMEOUT_S,
     HandExoGUI,
     SerialWorker,
 )
+
+
+def test_blocking_connect_helper_processes_gui_events(monkeypatch):
+    processed = []
+    release = threading.Event()
+
+    monkeypatch.setattr(
+        "nml_hand_exo.applications.hand_exo_gui.QApplication.processEvents",
+        lambda: processed.append(True),
+    )
+
+    def delayed_result():
+        release.wait(0.05)
+        return "connected"
+
+    timer = threading.Timer(0.03, release.set)
+    timer.start()
+    try:
+        result = HandExoGUI._run_with_gui_events(delayed_result)
+    finally:
+        timer.cancel()
+
+    assert result == "connected"
+    assert processed
+
+
+def test_blocking_connect_helper_propagates_worker_error():
+    def fail():
+        raise ConnectionError("missing motors")
+
+    with pytest.raises(ConnectionError, match="missing motors"):
+        HandExoGUI._run_with_gui_events(fail)
 
 
 class _SpinValue:
@@ -226,6 +261,22 @@ def test_realtime_telemetry_failure_never_enters_text_fallback():
     ]
     assert fallback_calls == []
     assert EMG_FAST_TELEMETRY_TIMEOUT_S < 0.250
+
+
+def test_dual_cdc_telemetry_failure_never_enters_text_fallback():
+    fallback_calls = []
+    worker = SerialWorker()
+    worker.set_exo(object())
+    worker.set_motor_ids([15, 16, 17, 18, 19])
+    worker._uses_dual_serial_transport = lambda: True
+    worker._get_fast_telemetry = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        TimeoutError("synthetic compact telemetry timeout")
+    )
+    worker._get_motor_attribute = lambda *args: fallback_calls.append(args)
+
+    worker._handle_poll(include_telemetry=True)
+
+    assert fallback_calls == []
 
 
 def test_all_fingers_target_uses_only_thumb_and_digit_ids():

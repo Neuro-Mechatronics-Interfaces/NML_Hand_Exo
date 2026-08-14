@@ -97,7 +97,9 @@ class SerialComm(BaseComm):
     def send(self, message: str):
         self.device.write(message.encode())
 
-    def receive(self, wait_until_return=False, timeout=None) -> str:
+    def receive(
+        self, wait_until_return=False, timeout=None, *, warn_on_timeout=True
+    ) -> str:
         """
             Reads data from the serial device. If `wait_until_return` is True,
             waits for a command delimiter until the timeout is reached.
@@ -122,7 +124,10 @@ class SerialComm(BaseComm):
                     self.device, self.command_delimiter.encode(), timeout
                 )
 
-                if not response.endswith(self.command_delimiter.encode()):
+                if (
+                    warn_on_timeout
+                    and not response.endswith(self.command_delimiter.encode())
+                ):
                     print(f"[Warning] Incomplete response or timeout after {timeout} seconds")
 
                 # Decode and clean up
@@ -370,7 +375,9 @@ class DualSerialComm(BaseComm):
         # up by the reader thread, so this never waits on return traffic.
         self._cmd.write(message.encode())
 
-    def receive(self, wait_until_return=False, timeout=None) -> str:
+    def receive(
+        self, wait_until_return=False, timeout=None, *, warn_on_timeout=True
+    ) -> str:
         """Return the next reply frame collected by the reader thread.
 
         This never touches the serial port: the reader thread owns it. Waiting
@@ -393,7 +400,7 @@ class DualSerialComm(BaseComm):
                     elif not self.reader_alive():
                         print("[Error] Telemetry reader is not running; no "
                               "replies can be received.")
-                    else:
+                    elif warn_on_timeout:
                         print(f"[Warning] No delimited reply within "
                               f"{timeout} seconds")
                     return ""

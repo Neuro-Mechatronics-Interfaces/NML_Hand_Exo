@@ -710,6 +710,79 @@ class EmgIntentDecoderWindow(QMainWindow):
         self.detail_label.setWordWrap(True)
         layout.addWidget(self.detail_label)
 
+        tuning_box = QGroupBox("Output behavior")
+        tuning_layout = QGridLayout(tuning_box)
+        tuning_layout.setContentsMargins(20, 28, 20, 20)
+        self.open_deadband_spin = QDoubleSpinBox()
+        self.open_deadband_spin.setRange(0.05, 0.50)
+        self.open_deadband_spin.setDecimals(2)
+        self.open_deadband_spin.setSingleStep(0.01)
+        self.open_deadband_spin.setValue(0.08)
+        self.open_deadband_spin.setToolTip(
+            "Open begins when raw intent is below the negative of this value."
+        )
+        self.close_deadband_spin = QDoubleSpinBox()
+        self.close_deadband_spin.setRange(0.05, 0.50)
+        self.close_deadband_spin.setDecimals(2)
+        self.close_deadband_spin.setSingleStep(0.01)
+        self.close_deadband_spin.setValue(0.08)
+        self.close_deadband_spin.setToolTip(
+            "Close begins when raw intent is above this value."
+        )
+        self.smoothing_alpha_spin = QDoubleSpinBox()
+        self.smoothing_alpha_spin.setRange(0.05, 1.00)
+        self.smoothing_alpha_spin.setDecimals(2)
+        self.smoothing_alpha_spin.setSingleStep(0.05)
+        self.smoothing_alpha_spin.setValue(0.25)
+        self.smoothing_alpha_spin.setToolTip(
+            "EMA weight given to the newest decoder sample. Lower values are smoother; "
+            "higher values respond faster."
+        )
+        self.output_gain_spin = QDoubleSpinBox()
+        self.output_gain_spin.setRange(0.10, 3.00)
+        self.output_gain_spin.setDecimals(2)
+        self.output_gain_spin.setSingleStep(0.10)
+        self.output_gain_spin.setValue(1.00)
+        self.output_gain_spin.setToolTip(
+            "Scales the projection before the final [-1, +1] command limit."
+        )
+        self.response_exponent_spin = QDoubleSpinBox()
+        self.response_exponent_spin.setRange(0.25, 3.00)
+        self.response_exponent_spin.setDecimals(2)
+        self.response_exponent_spin.setSingleStep(0.10)
+        self.response_exponent_spin.setValue(1.00)
+        self.response_exponent_spin.setToolTip(
+            "Response curve exponent. Above 1 gives finer low-effort control; "
+            "below 1 makes low effort more responsive."
+        )
+        tuning_note = QLabel(
+            "The center deadband outputs rest. EMA alpha controls averaging: "
+            "lower is smoother, higher is faster. Gain and curve shape the bounded command; "
+            "the diagnostic LDA projection remains unbounded. Changes apply immediately."
+        )
+        tuning_note.setWordWrap(True)
+        tuning_note.setStyleSheet("color:#aeb6c1;")
+        tuning_layout.addWidget(QLabel("Open deadband (-):"), 0, 0)
+        tuning_layout.addWidget(self.open_deadband_spin, 0, 1)
+        tuning_layout.addWidget(QLabel("Close deadband (+):"), 0, 2)
+        tuning_layout.addWidget(self.close_deadband_spin, 0, 3)
+        tuning_layout.addWidget(QLabel("EMA alpha:"), 0, 4)
+        tuning_layout.addWidget(self.smoothing_alpha_spin, 0, 5)
+        tuning_layout.addWidget(QLabel("Output gain:"), 1, 0)
+        tuning_layout.addWidget(self.output_gain_spin, 1, 1)
+        tuning_layout.addWidget(QLabel("Response exponent:"), 1, 2)
+        tuning_layout.addWidget(self.response_exponent_spin, 1, 3)
+        tuning_layout.addWidget(tuning_note, 2, 0, 1, 6)
+        for column in (1, 3, 5):
+            tuning_layout.setColumnStretch(column, 1)
+        self.open_deadband_spin.valueChanged.connect(self._apply_output_tuning)
+        self.close_deadband_spin.valueChanged.connect(self._apply_output_tuning)
+        self.smoothing_alpha_spin.valueChanged.connect(self._apply_output_tuning)
+        self.output_gain_spin.valueChanged.connect(self._apply_output_tuning)
+        self.response_exponent_spin.valueChanged.connect(self._apply_output_tuning)
+        self._apply_output_tuning()
+        layout.addWidget(tuning_box)
+
         projection_box = QGroupBox("Continuous LDA projection")
         projection_layout = QVBoxLayout(projection_box)
         projection_layout.setContentsMargins(20, 28, 20, 20)
@@ -717,7 +790,7 @@ class EmgIntentDecoderWindow(QMainWindow):
         self.projection_plot.setBackground("#0d1014")
         self.projection_plot.showGrid(x=True, y=False, alpha=0.22)
         self.projection_plot.setLabel(
-            "bottom", "Normalized intent axis (-open MVC ... rest ... +close MVC)"
+            "bottom", "Normalized intent axis (-open reference ... rest ... +close reference)"
         )
         self.projection_plot.setXRange(-1.08, 1.08, padding=0.0)
         self.projection_plot.setYRange(-1.55, 1.55, padding=0.0)
@@ -846,6 +919,28 @@ class EmgIntentDecoderWindow(QMainWindow):
         )
         layout.addWidget(safety)
         layout.addStretch()
+
+    def _apply_output_tuning(self, *_args):
+        """Apply participant-specific output behavior without refitting LDA."""
+        if not hasattr(self, "open_deadband_spin"):
+            return
+        open_threshold = float(self.open_deadband_spin.value())
+        close_threshold = float(self.close_deadband_spin.value())
+        self._output_stabilizer.open_enter_threshold = open_threshold
+        self._output_stabilizer.close_enter_threshold = close_threshold
+        self._output_stabilizer.release_threshold = 0.5 * min(
+            open_threshold, close_threshold
+        )
+        self._output_stabilizer.ema_alpha = float(
+            self.smoothing_alpha_spin.value()
+        )
+        self._output_stabilizer.output_gain = float(self.output_gain_spin.value())
+        self._output_stabilizer.response_exponent = float(
+            self.response_exponent_spin.value()
+        )
+        self._output_stabilizer.reset()
+        if self._outlet is not None:
+            self._publish_zero()
 
     def _apply_device_preset(self, name: str):
         if name in DEVICE_PRESETS:
@@ -1420,7 +1515,7 @@ class EmgIntentDecoderWindow(QMainWindow):
             f"Open: {open_label} | Close: {close_label} | Publishing remains off"
         )
         self._log(
-            f"Fitted continuous rest-to-MVC LDA decoder: "
+            f"Fitted continuous rest-to-active-reference LDA decoder: "
             f"open={open_label}, close={close_label}; "
             + (
                 "fresh live IMU required"
@@ -1474,7 +1569,7 @@ class EmgIntentDecoderWindow(QMainWindow):
         )
         projected = self._pipeline.project_continuous(
             X[keep], plot_roll, plot_pitch
-        )["signed_intent"]
+        )["raw_signed_projection"]
         plotted_labels = y[keep]
         rng = np.random.default_rng(0)
         summaries = []
@@ -1498,23 +1593,35 @@ class EmgIntentDecoderWindow(QMainWindow):
             median = float(np.median(values))
             self._projection_medians[role].setData(x=[median], y=[y_center])
             summaries.append(f"{role} median {median:+.3f}")
+        finite_projected = projected[np.isfinite(projected)]
+        extent = (
+            max(1.08, float(np.quantile(np.abs(finite_projected), 0.99)) * 1.10)
+            if finite_projected.size
+            else 1.08
+        )
+        self.projection_plot.setXRange(-extent, extent, padding=0.0)
         self._projection_live_line.setValue(0.0)
         self._projection_live_marker.setData(x=[0.0], y=[0.0])
         self.projection_value_label.setText(
             "Fitted distributions: " + "  |  ".join(summaries)
-            + ". Yellow shows the live signed projection."
+            + ". Yellow shows the live unbounded projection; published command remains bounded."
         )
 
     def _update_live_projection(self, decision):
         if not hasattr(self, "_projection_live_line"):
             return
         value = 0.0 if decision.rejected else float(decision.signed_intent)
+        raw_projection = (
+            value
+            if decision.raw_signed_projection is None
+            else float(decision.raw_signed_projection)
+        )
         role = (
             "close" if value > 0.0 else "open" if value < 0.0 else "rest"
         )
-        self._projection_live_line.setValue(value)
+        self._projection_live_line.setValue(raw_projection)
         self._projection_live_marker.setData(
-            x=[value], y=[self._projection_y[role]]
+            x=[raw_projection], y=[self._projection_y[role]]
         )
         open_probability = decision.probabilities.get(
             self._pipeline.open_label, 0.0
@@ -1528,7 +1635,7 @@ class EmgIntentDecoderWindow(QMainWindow):
             f"P(open)={open_probability:.3f}, P(close)={close_probability:.3f}  |  "
             f"open activation={decision.open_activation:.3f}, "
             f"close activation={decision.close_activation:.3f}  |  "
-            f"signed output={value:+.3f}"
+            f"raw projection={raw_projection:+.3f}  |  bounded output={value:+.3f}"
         )
 
     def _show_decision(self, decision):

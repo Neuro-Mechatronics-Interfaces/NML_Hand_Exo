@@ -1,180 +1,20 @@
-# NML Hand Exo - Documentation Guide
+# Documentation
 
-This folder contains the **Sphinx documentation** for the NML Hand Exoskeleton project.
+The maintained documentation has two parts:
 
-## 📚 What's Inside
+- Architecture and protocol notes in this directory (`*.md`).
+- The Sphinx reference under `docs/source/`, published to GitHub Pages.
 
-- `source/` - Documentation source files (RST format)
-  - `index.rst` - Main documentation page
-  - `quickstart.rst` - Getting started guide
-  - `python_api.rst` - Python API reference
-  - `cpp_api.rst` - C++ firmware API reference
-  - `usage.rst` - Usage examples
-  - `faq.rst` - Frequently asked questions
-  - `conf.py` - Sphinx configuration
-  
-- `build/` - Generated documentation (HTML)
-  - `html/` - Built website files
-  - `doxygen/` - C++ API docs from Doxygen
-
-- `Doxyfile` - Doxygen configuration for C++ docs
-- `Makefile` / `make.bat` - Build commands
-
-## 🛡️ Safety and Architecture Docs
-
-- `SAFETY_REQUIREMENTS.md` - Lightweight requirements-to-tests safety trace for robotics runtime behavior
-- `ROBOTICS_ARCHITECTURE.md` - Why the robotics submodule is layered and how responsibilities are split
-
-## 🛠️ Building Documentation Locally
-
-### Quick Start
-
-**Manual Build**
-```powershell
-cd docs
-.\make.bat html
-Start-Process "build\html\index.html"
-```
-
-### Prerequisites
-
-Install documentation tools:
-```powershell
-# Python packages
-pip install sphinx sphinx-rtd-theme breathe sphinx-autodoc-typehints myst-parser sphinx-copybutton m2r2
-
-# Doxygen (for C++ API docs) - Optional
-# Download from: https://www.doxygen.nl/download.html
-# Or install with: choco install doxygen
-```
-
-### Live Development Server
-
-For automatic rebuilding when you edit docs:
+Build the reference from the repository root:
 
 ```powershell
-cd docs
-pip install sphinx-autobuild
-sphinx-autobuild source build/html --open-browser
+python -m pip install -e ".[docs]"
+python -m sphinx -W --keep-going docs/source docs/build/html
 ```
 
-This will:
-- Start a local web server at http://127.0.0.1:8000
-- Open your browser automatically
-- Watch for file changes
-- Rebuild and refresh automatically
+Sphinx writes generated output under `docs/build/`, which is intentionally
+ignored by git.
 
-## 📝 Editing Documentation
-
-Documentation is written in **reStructuredText (RST)** format.
-
-### Common RST Syntax
-
-**Headings:**
-```rst
-Main Title
-==========
-
-Section
--------
-
-Subsection
-^^^^^^^^^^
-```
-
-**Code Blocks:**
-```rst
-.. code-block:: python
-
-   from nml_hand_exo.interface import HandExo
-   exo = HandExo()
-```
-
-**Links:**
-```rst
-`Link text <https://example.com>`_
-```
-
-**Lists:**
-```rst
-* Item 1
-* Item 2
-  
-1. Numbered item
-2. Another item
-```
-
-**Notes/Warnings:**
-```rst
-.. note::
-   This is a note.
-
-.. warning::
-   This is a warning.
-```
-
-### Adding New Pages
-
-1. Create a new `.rst` file in `source/`
-2. Add it to the table of contents in `index.rst`:
-
-```rst
-.. toctree::
-   :maxdepth: 2
-   
-   quickstart
-   your_new_page
-   python_api
-```
-
-## 🌐 Online Documentation
-
-Docs are automatically built and deployed to GitHub Pages when you push to `main`.
-
-View at: https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/
-
-## 📖 Sphinx Resources
-
-- [Sphinx Documentation](https://www.sphinx-doc.org/)
-- [RST Primer](https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html)
-- [Read the Docs Theme](https://sphinx-rtd-theme.readthedocs.io/)
-- [Doxygen Manual](https://www.doxygen.nl/manual/)
-
-## 🐛 Troubleshooting
-
-**Build fails with import errors:**
-- Make sure the package is installed: `pip install -e .` from project root
-- Check `sys.path` in `source/conf.py`
-
-**Doxygen not found:**
-- Optional for Python-only docs
-- Required for C++ API documentation
-- Install from https://www.doxygen.nl/download.html
-
-**Changes not showing:**
-- Clean build: `.\make.bat clean` then `.\make.bat html`
-- Check for syntax errors in RST files
-- Restart live server if using `sphinx-autobuild`
-
-**Theme looks wrong:**
-- Install theme: `pip install sphinx-rtd-theme`
-- Check `html_theme` in `source/conf.py`
-
-## 🚀 Quick Commands
-
-```powershell
-# Build HTML docs
-.\make.bat html
-
-# Clean build directory
-.\make.bat clean
-
-# Build and serve with live reload
-sphinx-autobuild source build/html --open-browser
-
-# Check for broken links
-.\make.bat linkcheck
-
-# View built docs
-Start-Process "build\html\index.html"
-```
+When changing firmware commands, update `serial_protocol.md`, the Python
+parser, relevant examples, and regression tests together. When changing GUI
+workflows, update `gui_workflow.md` and any linked architecture note.

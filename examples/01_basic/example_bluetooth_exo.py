@@ -9,9 +9,9 @@ Hardware setup
    Default PIN: 1234
 2. After pairing, a virtual COM port is assigned (e.g. COM8 on Windows,
    /dev/rfcomm0 on Linux).  Check Device Manager → Ports (COM & LPT).
-3. Make sure the HC-05 baud rate matches HC05_BAUD_RATE in config.h (57600).
+3. Make sure the HC-05 baud rate matches HC05_BAUD_RATE in config.h (115200).
    If you have not configured the module yet, use AT commands:
-       AT+UART=57600,0,0
+       AT+UART=115200,0,0
 
 Usage
 ~~~~~
@@ -22,14 +22,26 @@ Usage
     python example_bluetooth_exo.py --port COM8
 
     # Explicit baud rate (must match HC-05 AT+UART setting)
-    python example_bluetooth_exo.py --port COM8 --baud 57600
+    python example_bluetooth_exo.py --port COM8 --baud 115200
 """
 from __future__ import annotations
 
 import argparse
 import sys
 
-from nml_hand_exo.interface import BluetoothSerialComm, HandExo
+from serial.tools import list_ports
+
+from nml_hand_exo.interface import HandExo, SerialComm
+
+
+def bluetooth_ports() -> list[str]:
+    """Return serial ports whose OS metadata identifies Bluetooth."""
+    matches = []
+    for port in list_ports.comports():
+        text = f"{port.description} {port.hwid}".lower()
+        if "bluetooth" in text or "bthenum" in text or "rfcomm" in text:
+            matches.append(port.device)
+    return matches
 
 
 def main(argv=None):
@@ -39,14 +51,14 @@ def main(argv=None):
     )
     parser.add_argument("--port", metavar="PORT",
                         help="Bluetooth virtual COM port (e.g. COM8 or /dev/rfcomm0)")
-    parser.add_argument("--baud", type=int, default=57600,
+    parser.add_argument("--baud", type=int, default=115200,
                         help="Baud rate (must match HC-05 AT+UART setting)")
     parser.add_argument("--list", action="store_true",
                         help="List detected Bluetooth COM ports and exit")
     args = parser.parse_args(argv)
 
     if args.list:
-        bt_ports = BluetoothSerialComm.list_bluetooth_ports()
+        bt_ports = bluetooth_ports()
         if bt_ports:
             print("Detected Bluetooth COM ports:")
             for p in bt_ports:
@@ -60,7 +72,7 @@ def main(argv=None):
               file=sys.stderr)
         return 1
 
-    comm = BluetoothSerialComm(port=args.port, baudrate=args.baud)
+    comm = SerialComm(port=args.port, baudrate=args.baud)
     exo = HandExo(comm, verbose=True)
 
     try:

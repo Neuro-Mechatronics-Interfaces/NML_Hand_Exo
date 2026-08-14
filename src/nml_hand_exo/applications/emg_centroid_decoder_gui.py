@@ -48,7 +48,7 @@ N_BINS = int(360 / BIN_SIZE_DEG)  # 72 bins
 
 
 def _angle_to_bin(angle_deg: float) -> int:
-    """Map any angle (âˆ’180 â€¦ +180 or 0 â€¦ 360) to a bin index 0 â€¦ N_BINSâˆ’1."""
+    """Map any angle (-180 ... +180 or 0 ... 360) to a bin index 0 ... N_BINS-1."""
     return int(angle_deg % 360.0 / BIN_SIZE_DEG) % N_BINS
 
 
@@ -59,7 +59,7 @@ def _bin_center_deg(bin_idx: int) -> float:
 def _compute_roll_deg(accel_xyz: np.ndarray) -> float:
     """Roll around the forearm long axis from a 3-element accelerometer vector.
 
-    Returns angle in [âˆ’180, +180] degrees representing supination/pronation.
+    Returns angle in [-180, +180] degrees representing supination/pronation.
     Works even during slow movement because gravity dominates.
     """
     ax, ay, az = float(accel_xyz[0]), float(accel_xyz[1]), float(accel_xyz[2])
@@ -117,7 +117,7 @@ def _common_mode_remove(x: np.ndarray) -> np.ndarray:
     return x - float(np.mean(x))
 
 
-# â”€â”€ Riemannian geometry helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Riemannian geometry helpers
 
 def _compute_covariance(window: np.ndarray, eps: float = 1e-6) -> np.ndarray:
     """Regularized spatial covariance from (n_channels, n_samples) window."""
@@ -132,7 +132,7 @@ def _compute_covariance(window: np.ndarray, eps: float = 1e-6) -> np.ndarray:
 
 
 def _riemann_mean(covs: list[np.ndarray], max_iter: int = 50, tol: float = 1e-8) -> np.ndarray:
-    """FrÃ©chet (Riemannian) mean of SPD matrices via gradient descent on the manifold."""
+    """Frechet (Riemannian) mean of SPD matrices via gradient descent on the manifold."""
     from scipy.linalg import expm, logm, sqrtm, inv as la_inv  # lazy import
     M = np.mean(covs, axis=0)
     for _ in range(max_iter):
@@ -151,8 +151,8 @@ def _tangent_project(C: np.ndarray, ref: np.ndarray) -> np.ndarray:
     """Project SPD matrix C to tangent space at ref, return vectorized upper triangle.
 
     Uses the map: S = ref^{1/2} log(ref^{-1/2} C ref^{-1/2}) ref^{1/2}
-    Off-diagonal elements scaled by âˆš2 so the inner product is preserved.
-    For 8 channels â†’ 36-dimensional feature vector.
+    Off-diagonal elements are scaled by sqrt(2) so the inner product is preserved.
+    For 8 channels, this produces a 36-dimensional feature vector.
     """
     from scipy.linalg import logm, sqrtm, inv as la_inv
     ref_sqrt = np.real(sqrtm(ref))
@@ -987,7 +987,7 @@ class EmgCentroidDecoderGUI(QWidget):
         box = QGroupBox("Intent geometry (rest / close / open)")
         outer = QVBoxLayout(box)
 
-        # â”€â”€ Top row: 2-column grid (scatter | feature) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Top row: 2-column grid (scatter | feature)
         top_row = QHBoxLayout()
 
         # Left: PCA scatter
@@ -1037,7 +1037,7 @@ class EmgCentroidDecoderGUI(QWidget):
 
         outer.addLayout(top_row)
 
-        # â”€â”€ Bottom row: 2-column grid (separation | coverage) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Bottom row: 2-column grid (separation | coverage)
         bot_row = QHBoxLayout()
 
         sep_col = QVBoxLayout()
@@ -1128,7 +1128,7 @@ class EmgCentroidDecoderGUI(QWidget):
             )
             self.strip_plot.addItem(item)
             self.strip_mean_items[name] = item
-        # Â±1 std error bar items (drawn as thin vertical line segments)
+        # +/- 1 standard-deviation error bars (thin vertical line segments)
         self.strip_std_items: dict[str, pg.PlotDataItem] = {}
         for name in CLASS_ORDER:
             color = CLASS_COLORS[name]
@@ -1219,7 +1219,7 @@ class EmgCentroidDecoderGUI(QWidget):
         parent.addWidget(box)
 
     def _build_user_intent_box(self, parent: QVBoxLayout):
-        # â”€â”€ LSL outlet config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # LSL outlet configuration
         stream_box = QGroupBox("LSL Output Stream")
         sgrid = QGridLayout(stream_box)
 
@@ -1252,7 +1252,7 @@ class EmgCentroidDecoderGUI(QWidget):
         )
         parent.addWidget(stream_box)
 
-        # â”€â”€ Live gauge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Live gauge
         gauge_box = QGroupBox("Live User Intent")
         gauge_layout = QVBoxLayout(gauge_box)
 
@@ -1286,7 +1286,7 @@ class EmgCentroidDecoderGUI(QWidget):
         # zero line
         self.intent_gauge.addLine(x=0.0, pen=pg.mkPen("#444444", width=1))
 
-        # Filled bar from 0 â†’ value (two items, one each side, only one visible at a time)
+        # Filled bar from zero to value (one item per side; only one is visible)
         self._gauge_pos_bar = pg.BarGraphItem(
             x=[0], height=[0.44], width=[0.001],
             brush=pg.mkBrush("#27ae60"), pen=pg.mkPen(None), y0=[0.28]
@@ -2327,7 +2327,7 @@ class EmgCentroidDecoderGUI(QWidget):
             self._gauge_pos_bar.setOpts(x=[0], width=[0.001])
             color = "#c0392b"
 
-        # Big readout â€” colour shifts with sign
+        # Big readout; color shifts with sign.
         sign_str = f"{value:+.3f}"
         self.intent_big_label.setText(sign_str)
         self.intent_big_label.setStyleSheet(
@@ -2503,7 +2503,7 @@ class EmgCentroidDecoderGUI(QWidget):
                         self._adaptive_rest_idle_since = now
                     idle_duration = now - self._adaptive_rest_idle_since
                     if idle_duration > 2.0:
-                        # EMA update: Î± per tick â‰ˆ PLOT_TICK_SEC / Ï„
+                        # EMA update: alpha per tick is approximately PLOT_TICK_SEC / tau.
                         alpha = PLOT_TICK_SEC / max(tau, 0.1)
                         alpha = min(alpha, 0.05)  # cap to avoid instability
                         # Update rest centroid in all fitted decoders (global + bins)

@@ -25,7 +25,7 @@ serial commands or enable motor torque.
 | `models.py` | Shrinkage-LDA classification behind a small model interface |
 | `selection.py` | Group-held-out candidate-pair ranking and false-activation metrics |
 | `session.py` | Capture records and atomic, reloadable session files |
-| `pipeline.py` | Confidence rejection and continuous rest-to-MVC open/close mapping |
+| `pipeline.py` | Confidence rejection and continuous rest-to-active-reference mapping |
 | `contracts.py` | Stable decisions, orientation samples, and evaluation records |
 
 The GUI orchestrates those functions, receives EMG and optional IMU through
@@ -59,28 +59,31 @@ EMG channels in the same order.
    not assign actuator meaning by itself.
 6. Monitor predictions before explicitly starting `NMLIntentV1` publishing.
 
-## Continuous rest-to-MVC output
+## Continuous rest-to-active-reference output
 
-The selected open and close recordings are treated as participant-specific MVC
-references. The shrinkage-LDA model still chooses direction, while two
+The selected open and close recordings are treated as participant-specific,
+comfortable-effort control references. They are not assumed to be maximum
+voluntary contractions. The shrinkage-LDA model still chooses direction, while two
 one-vs-rest Fisher/LDA projections estimate normalized magnitude. For each
 direction, the 95th percentile of resting projection noise maps to 0 and the
-median recorded MVC projection maps to 1. Values are clamped before publishing:
+90th percentile of the recorded active projection maps to 1. Values are shaped
+by the operator-selected gain and response exponent, then clamped before publishing:
 
 ```text
-maximum open MVC = -1     rest = 0     maximum close MVC = +1
+open effort reference = -1     rest = 0     close effort reference = +1
 ```
 
 Direction comes from the relative open/close LDA probabilities; magnitude comes
-from the matching rest-to-MVC projection. Activations are not subtracted because
+from the matching rest-to-reference projection. Activations are not subtracted because
 related forearm gestures can cross-activate both one-vs-rest axes. Confidence is
 the probability support for rest plus the stronger direction, so legitimate
-partial contractions can pass through the rest-to-MVC transition while reject
+partial contractions can pass through the rest-to-reference transition while reject
 or opposing-direction ambiguity resolves to zero.
 
 `NMLIntentV1` remains four channels: continuous `signed_intent`, its absolute
-`effort`, confidence, and active state. This is normalized EMG activation, not a
-force estimate. The present recordings validate rest and MVC endpoints; a later
+`effort`, confidence, and active state. This is a normalized control signal, not
+a force estimate or percentage MVC. The present recordings validate rest and
+comfortable-effort endpoints; a later
 graded-effort protocol is required to test physiological linearity at 25%, 50%,
 and 75% voluntary effort.
 
@@ -88,7 +91,7 @@ The **Monitor and Run** tab reuses the older decoder's PyQtGraph number-line
 visualization. Fitted rest/open/close windows appear as jittered class rows on
 the normalized -1 to +1 axis, diamond markers show their medians, and a yellow
 line/marker shows the live value. The computation readout reports LDA open/close
-probabilities, both normalized rest-to-MVC activations, the selected direction,
+probabilities, both normalized rest-to-reference activations, the selected direction,
 and the exact signed value published through LSL.
 
 Live output passes through a causal stabilizer with exponential smoothing, a

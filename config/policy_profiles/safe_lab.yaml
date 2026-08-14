@@ -1,8 +1,0 @@
-profile_version: 1
-profile_id: safe_lab
-description: Conservative defaults for lab operation and early integration testing.
-defaults:
-  confirmation_mode: strict
-  default_safe_confidence: strict
-  max_relative_angle: 90.0
-  dry_run: true
