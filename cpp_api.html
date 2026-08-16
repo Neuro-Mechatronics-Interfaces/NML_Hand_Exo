@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NML Hand Exoskeleton documentation &mdash; NML Hand Exoskeleton 0.2.17.1 documentation</title>
+  <title>C++ firmware API &mdash; NML Hand Exoskeleton 0.2.17.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -23,7 +23,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Quickstart" href="quickstart.html" /> 
+    <link rel="prev" title="Python API reference" href="python_api.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -34,7 +34,7 @@
 
           
           
-          <a href="#" class="icon icon-home">
+          <a href="index.html" class="icon icon-home">
             NML Hand Exoskeleton
               <img src="_static/LabLogoRedSquare.png" class="logo" alt="Logo"/>
           </a>
@@ -88,7 +88,7 @@
 </li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API reference</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="python_api.html">Python API reference</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="python_api.html#package-version">Package version</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="python_api.html#nml_hand_exo.__version__"><code class="docutils literal notranslate"><span class="pre">__version__</span></code></a></li>
@@ -475,7 +475,7 @@
 </li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="cpp_api.html">C++ firmware API</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">C++ firmware API</a></li>
 </ul>
 
         </div>
@@ -484,17 +484,17 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu"  style="background: #252526" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="#">NML Hand Exoskeleton</a>
+          <a href="index.html">NML Hand Exoskeleton</a>
       </nav>
 
       <div class="wy-nav-content">
         <div class="rst-content">
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
-      <li><a href="#" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">NML Hand Exoskeleton documentation</li>
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">C++ firmware API</li>
       <li class="wy-breadcrumbs-aside">
-              <a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/blob/main/docs/source/index.rst" class="fa fa-github"> Edit on GitHub</a>
+              <a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/blob/main/docs/source/cpp_api.rst" class="fa fa-github"> Edit on GitHub</a>
       </li>
   </ul>
   <hr/>
@@ -502,81 +502,30 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="nml-hand-exoskeleton-documentation">
-<h1>NML Hand Exoskeleton documentation<a class="headerlink" href="#nml-hand-exoskeleton-documentation" title="Link to this heading"></a></h1>
-<p>The NML Hand Exoskeleton repository contains the Python SDK, operator and EMG
-applications, OpenRB-150 firmware, and optional CircuitPython TCP bridge.</p>
-<div class="admonition warning">
-<p class="admonition-title">Warning</p>
-<p>This is research software for supervised laboratory use. Confirm the active
-calibration profile, current limits, joint limits, motor IDs, and emergency
-stop before participant use.</p>
-</div>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#prerequisites">Prerequisites</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#install">Install</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#check-the-applications-without-opening-hardware">Check the applications without opening hardware</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#connect">Connect</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#before-motion">Before motion</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Python usage</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#install-the-package">Install the package</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#usb-serial">USB serial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#tcp-bridge">TCP bridge</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#motor-commands">Motor commands</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#applications">Applications</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions (FAQ)</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#general-questions">General Questions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#safety">Safety</a></li>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#troubleshooting">Troubleshooting</a></li>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#more-information">More Information</a></li>
-</ul>
-</li>
-</ul>
-</div>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">Integration</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="wifi_server.html">CircuitPython Wi-Fi Server</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="wifi_server.html#software-setup">Software Setup</a></li>
-<li class="toctree-l2"><a class="reference internal" href="wifi_server.html#hardware-setup">Hardware Setup</a></li>
-<li class="toctree-l2"><a class="reference internal" href="wifi_server.html#http-webpage">HTTP Webpage</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="button_state_machine.html">Manual Button State Machine</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#overview">Overview</a></li>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#hardware-setup">Hardware Setup</a></li>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#interaction-logic">Interaction Logic</a></li>
-</ul>
-</li>
-</ul>
-</div>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">API reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="python_api.html">Python API reference</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#package-version">Package version</a></li>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#module-nml_hand_exo.interface">Device and transport API</a></li>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#module-nml_hand_exo.calibration">Calibration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#module-nml_hand_exo.decoding">Intent decoding</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="cpp_api.html">C++ firmware API</a></li>
-</ul>
-</div>
+  <section id="c-firmware-api">
+<h1>C++ firmware API<a class="headerlink" href="#c-firmware-api" title="Link to this heading"></a></h1>
+<p>The OpenRB-150 firmware is maintained under <code class="docutils literal notranslate"><span class="pre">src/cpp/nml_hand_exo</span></code>.</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">config.h</span></code></dt><dd><p>Hardware constants, motor IDs and names, baud rates, joint limits, and the
+single/dual-side build selection.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">nml_hand_exo.h</span></code> and <code class="docutils literal notranslate"><span class="pre">nml_hand_exo.cpp</span></code></dt><dd><p>The <code class="docutils literal notranslate"><span class="pre">NMLHandExo</span></code> device-control class and Dynamixel operations.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">utils.cpp</span></code></dt><dd><p>The source of truth for host-visible serial command names and parsing.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">gesture_controller.cpp</span></code> and <code class="docutils literal notranslate"><span class="pre">gesture_library.cpp</span></code></dt><dd><p>Sparse normalized gesture definitions and execution.</p>
+</dd>
+</dl>
+<p>See <code class="docutils literal notranslate"><span class="pre">docs/serial_protocol.md</span></code> for the host contract. Protocol changes must be
+updated in firmware, the Python response parser, documentation, and tests in the
+same change.</p>
 </section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="quickstart.html" class="btn btn-neutral float-right" title="Quickstart" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="python_api.html" class="btn btn-neutral float-left" title="Python API reference" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
 
   <hr/>

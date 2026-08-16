@@ -1,0 +1,236 @@
+/* VS Code Dark Theme for Sphinx Documentation */
+
+/* Main background */
+.wy-nav-content-wrap {
+    background: #1e1e1e;
+}
+
+.wy-nav-content {
+    background: #1e1e1e;
+    color: #d4d4d4;
+}
+
+/* Sidebar */
+.wy-side-nav-search {
+    background-color: #252526 !important;
+}
+
+.wy-nav-side {
+    background: #252526;
+}
+
+/* Navigation links */
+.wy-menu-vertical a {
+    color: #d4d4d4;
+}
+
+.wy-menu-vertical a:hover {
+    background-color: #2a2d2e;
+    color: #569cd6;
+}
+
+.wy-menu-vertical li.current > a {
+    background: #1e1e1e;
+    border-right: 3px solid #569cd6;
+    color: #569cd6;
+}
+
+.wy-menu-vertical li.current a {
+    border: none;
+}
+
+/* Code blocks */
+.highlight {
+    background: #1e1e1e !important;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+}
+
+.highlight pre {
+    background: #1e1e1e;
+    color: #d4d4d4;
+}
+
+code {
+    background: #2d2d30 !important;
+    color: #ce9178 !important;
+    border: 1px solid #3e3e42;
+    padding: 2px 5px;
+    border-radius: 3px;
+}
+
+/* Inline code in paragraphs */
+p code, li code, td code {
+    background: #2d2d30 !important;
+    color: #ce9178 !important;
+}
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 {
+    color: #569cd6 !important;
+}
+
+/* Links */
+a {
+    color: #569cd6;
+}
+
+a:hover {
+    color: #7fb3e0;
+}
+
+a:visited {
+    color: #9b82c4;
+}
+
+/* Tables */
+.wy-table-bordered-all {
+    border-color: #3e3e42;
+}
+
+.wy-table-bordered-all td {
+    border-color: #3e3e42;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+}
+
+.wy-table thead th {
+    background-color: #252526;
+    color: #d4d4d4;
+    border-color: #3e3e42;
+}
+
+/* Admonitions (notes, warnings, etc.) */
+.admonition {
+    background-color: #252526;
+    border-left: 4px solid #569cd6;
+    color: #d4d4d4;
+}
+
+.admonition.warning {
+    border-left-color: #dcdcaa;
+    background-color: rgba(220, 220, 170, 0.1);
+}
+
+.admonition.danger, .admonition.error {
+    border-left-color: #f48771;
+    background-color: rgba(244, 135, 113, 0.1);
+}
+
+.admonition.note, .admonition.tip {
+    border-left-color: #4ec9b0;
+    background-color: rgba(78, 201, 176, 0.1);
+}
+
+.admonition-title {
+    background-color: transparent;
+    color: #569cd6;
+    font-weight: 600;
+}
+
+/* Search box */
+.wy-side-nav-search input[type="text"] {
+    background-color: #1e1e1e;
+    border: 1px solid #3e3e42;
+    color: #d4d4d4;
+}
+
+.wy-side-nav-search input[type="text"]:focus {
+    border-color: #569cd6;
+}
+
+/* Footer */
+.rst-footer-buttons {
+    border-top: 1px solid #3e3e42;
+}
+
+.btn {
+    background-color: #0e639c !important;
+    border-color: #007acc !important;
+    color: white !important;
+}
+
+.btn:hover {
+    background-color: #1177bb !important;
+}
+
+/* Breadcrumbs */
+.wy-breadcrumbs {
+    color: #858585;
+}
+
+.wy-breadcrumbs li a {
+    color: #569cd6;
+}
+
+/* Method/Function signatures */
+.sig {
+    background-color: #252526;
+    border: 1px solid #3e3e42;
+    color: #d4d4d4;
+}
+
+.sig-name {
+    color: #dcdcaa;
+}
+
+.sig-param {
+    color: #9cdcfe;
+}
+
+/* Class/Function definitions */
+dt {
+    background-color: #252526;
+    border-top: 3px solid #569cd6;
+    color: #d4d4d4;
+}
+
+dd {
+    background-color: #1e1e1e;
+}
+
+/* Version/copyright footer */
+.rst-content .footer {
+    color: #858585;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #4e4e4e;
+}
+
+/* Add "Back to Main Site" button at top */
+.wy-nav-top {
+    background: #252526;
+    color: #d4d4d4;
+}
+
+/* Custom banner for navigation back */
+.wy-nav-content-wrap::before {
+    content: "← Back to Main Site";
+    display: block;
+    background: #0e639c;
+    color: white;
+    padding: 10px 20px;
+    text-align: center;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.wy-nav-content-wrap::before:hover {
+    background: #1177bb;
+}

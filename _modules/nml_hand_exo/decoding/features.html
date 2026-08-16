@@ -1,0 +1,620 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nml_hand_exo.decoding.features &mdash; NML Hand Exoskeleton 0.2.17.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=e7574b45" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=6b2294c0"></script>
+      <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search"  style="background: #252526" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            NML Hand Exoskeleton
+              <img src="../../../_static/LabLogoRedSquare.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../quickstart.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../quickstart.html#install">Install</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../quickstart.html#check-the-applications-without-opening-hardware">Check the applications without opening hardware</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../quickstart.html#connect">Connect</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../quickstart.html#before-motion">Before motion</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../usage.html">Python usage</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../usage.html#install-the-package">Install the package</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../usage.html#usb-serial">USB serial</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../usage.html#tcp-bridge">TCP bridge</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../usage.html#motor-commands">Motor commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../usage.html#applications">Applications</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../faq.html">Frequently Asked Questions (FAQ)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../faq.html#general-questions">General Questions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../faq.html#safety">Safety</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../faq.html#troubleshooting">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../faq.html#more-information">More Information</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Integration</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../wifi_server.html">CircuitPython Wi-Fi Server</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../wifi_server.html#software-setup">Software Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../wifi_server.html#hardware-setup">Hardware Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../wifi_server.html#http-webpage">HTTP Webpage</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../button_state_machine.html">Manual Button State Machine</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../button_state_machine.html#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../button_state_machine.html#hardware-setup">Hardware Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../button_state_machine.html#interaction-logic">Interaction Logic</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../python_api.html">Python API reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../python_api.html#package-version">Package version</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.__version__"><code class="docutils literal notranslate"><span class="pre">__version__</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../../python_api.html#module-nml_hand_exo.interface">Device and transport API</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.BaseComm"><code class="docutils literal notranslate"><span class="pre">BaseComm</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.BaseComm.connect"><code class="docutils literal notranslate"><span class="pre">BaseComm.connect()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.BaseComm.disconnect"><code class="docutils literal notranslate"><span class="pre">BaseComm.disconnect()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.BaseComm.send"><code class="docutils literal notranslate"><span class="pre">BaseComm.send()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.BaseComm.receive"><code class="docutils literal notranslate"><span class="pre">BaseComm.receive()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.BaseComm.is_connected"><code class="docutils literal notranslate"><span class="pre">BaseComm.is_connected()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.BaseComm.flush_input"><code class="docutils literal notranslate"><span class="pre">BaseComm.flush_input()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.BaseComm.fast_telemetry_device"><code class="docutils literal notranslate"><span class="pre">BaseComm.fast_telemetry_device()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo"><code class="docutils literal notranslate"><span class="pre">DualHandExo</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.close"><code class="docutils literal notranslate"><span class="pre">DualHandExo.close()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.info"><code class="docutils literal notranslate"><span class="pre">DualHandExo.info()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.send_command"><code class="docutils literal notranslate"><span class="pre">DualHandExo.send_command()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.get_motor_angle"><code class="docutils literal notranslate"><span class="pre">DualHandExo.get_motor_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_motor_angle"><code class="docutils literal notranslate"><span class="pre">DualHandExo.set_motor_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.get_absolute_motor_angle"><code class="docutils literal notranslate"><span class="pre">DualHandExo.get_absolute_motor_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_absolute_motor_angle"><code class="docutils literal notranslate"><span class="pre">DualHandExo.set_absolute_motor_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.get_motor_torque"><code class="docutils literal notranslate"><span class="pre">DualHandExo.get_motor_torque()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.get_motor_current"><code class="docutils literal notranslate"><span class="pre">DualHandExo.get_motor_current()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.enable_motor"><code class="docutils literal notranslate"><span class="pre">DualHandExo.enable_motor()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.disable_motor"><code class="docutils literal notranslate"><span class="pre">DualHandExo.disable_motor()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.home"><code class="docutils literal notranslate"><span class="pre">DualHandExo.home()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.apply_calibration"><code class="docutils literal notranslate"><span class="pre">DualHandExo.apply_calibration()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_zero_offset"><code class="docutils literal notranslate"><span class="pre">DualHandExo.set_zero_offset()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_flip"><code class="docutils literal notranslate"><span class="pre">DualHandExo.set_flip()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_motor_limits"><code class="docutils literal notranslate"><span class="pre">DualHandExo.set_motor_limits()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_debug"><code class="docutils literal notranslate"><span class="pre">DualHandExo.set_debug()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_exo_mode"><code class="docutils literal notranslate"><span class="pre">DualHandExo.set_exo_mode()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm"><code class="docutils literal notranslate"><span class="pre">DualSerialComm</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm.MAX_TELEMETRY_LINES"><code class="docutils literal notranslate"><span class="pre">DualSerialComm.MAX_TELEMETRY_LINES</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm.MAX_QUEUED_REPLIES"><code class="docutils literal notranslate"><span class="pre">DualSerialComm.MAX_QUEUED_REPLIES</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm.connect"><code class="docutils literal notranslate"><span class="pre">DualSerialComm.connect()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm.telemetry_lines"><code class="docutils literal notranslate"><span class="pre">DualSerialComm.telemetry_lines()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm.reader_alive"><code class="docutils literal notranslate"><span class="pre">DualSerialComm.reader_alive()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm.close"><code class="docutils literal notranslate"><span class="pre">DualSerialComm.close()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm.send"><code class="docutils literal notranslate"><span class="pre">DualSerialComm.send()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm.receive"><code class="docutils literal notranslate"><span class="pre">DualSerialComm.receive()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm.is_connected"><code class="docutils literal notranslate"><span class="pre">DualSerialComm.is_connected()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm.flush_input"><code class="docutils literal notranslate"><span class="pre">DualSerialComm.flush_input()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.DualSerialComm.fast_telemetry_device"><code class="docutils literal notranslate"><span class="pre">DualSerialComm.fast_telemetry_device()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo"><code class="docutils literal notranslate"><span class="pre">FakeHandExo</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.logger"><code class="docutils literal notranslate"><span class="pre">FakeHandExo.logger()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.set_comm"><code class="docutils literal notranslate"><span class="pre">FakeHandExo.set_comm()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.connect"><code class="docutils literal notranslate"><span class="pre">FakeHandExo.connect()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.close"><code class="docutils literal notranslate"><span class="pre">FakeHandExo.close()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.get_imu_angles"><code class="docutils literal notranslate"><span class="pre">FakeHandExo.get_imu_angles()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.set_imu_angles"><code class="docutils literal notranslate"><span class="pre">FakeHandExo.set_imu_angles()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.get_motor_angles"><code class="docutils literal notranslate"><span class="pre">FakeHandExo.get_motor_angles()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.set_motor_angles"><code class="docutils literal notranslate"><span class="pre">FakeHandExo.set_motor_angles()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.home"><code class="docutils literal notranslate"><span class="pre">FakeHandExo.home()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.set_gesture_state"><code class="docutils literal notranslate"><span class="pre">FakeHandExo.set_gesture_state()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.GestureController"><code class="docutils literal notranslate"><span class="pre">GestureController</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.GestureController.POSTURE_STATES"><code class="docutils literal notranslate"><span class="pre">GestureController.POSTURE_STATES</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.GestureController.JOINT_STATES"><code class="docutils literal notranslate"><span class="pre">GestureController.JOINT_STATES</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.GestureController.set_gesture"><code class="docutils literal notranslate"><span class="pre">GestureController.set_gesture()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.GestureController.get_current_gesture"><code class="docutils literal notranslate"><span class="pre">GestureController.get_current_gesture()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo"><code class="docutils literal notranslate"><span class="pre">HandExo</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.logger"><code class="docutils literal notranslate"><span class="pre">HandExo.logger()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.detect_side"><code class="docutils literal notranslate"><span class="pre">HandExo.detect_side()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_comm"><code class="docutils literal notranslate"><span class="pre">HandExo.set_comm()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.connect"><code class="docutils literal notranslate"><span class="pre">HandExo.connect()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.send_command"><code class="docutils literal notranslate"><span class="pre">HandExo.send_command()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_fast_telemetry"><code class="docutils literal notranslate"><span class="pre">HandExo.get_fast_telemetry()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.configure_shadow_telemetry"><code class="docutils literal notranslate"><span class="pre">HandExo.configure_shadow_telemetry()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.start_shadow_telemetry"><code class="docutils literal notranslate"><span class="pre">HandExo.start_shadow_telemetry()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.stop_shadow_telemetry"><code class="docutils literal notranslate"><span class="pre">HandExo.stop_shadow_telemetry()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_shadow_telemetry"><code class="docutils literal notranslate"><span class="pre">HandExo.get_shadow_telemetry()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.enable_motor"><code class="docutils literal notranslate"><span class="pre">HandExo.enable_motor()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.enable_motors_by_id"><code class="docutils literal notranslate"><span class="pre">HandExo.enable_motors_by_id()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.is_enabled"><code class="docutils literal notranslate"><span class="pre">HandExo.is_enabled()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.disable_motor"><code class="docutils literal notranslate"><span class="pre">HandExo.disable_motor()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.disable_motors_by_id"><code class="docutils literal notranslate"><span class="pre">HandExo.disable_motors_by_id()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.enable_led"><code class="docutils literal notranslate"><span class="pre">HandExo.enable_led()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.disable_led"><code class="docutils literal notranslate"><span class="pre">HandExo.disable_led()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.help"><code class="docutils literal notranslate"><span class="pre">HandExo.help()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_debug"><code class="docutils literal notranslate"><span class="pre">HandExo.set_debug()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.version"><code class="docutils literal notranslate"><span class="pre">HandExo.version()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.firmware_version"><code class="docutils literal notranslate"><span class="pre">HandExo.firmware_version()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.firmware_at_least"><code class="docutils literal notranslate"><span class="pre">HandExo.firmware_at_least()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.require_gesture_angle_support"><code class="docutils literal notranslate"><span class="pre">HandExo.require_gesture_angle_support()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.home"><code class="docutils literal notranslate"><span class="pre">HandExo.home()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.info"><code class="docutils literal notranslate"><span class="pre">HandExo.info()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_baudrate"><code class="docutils literal notranslate"><span class="pre">HandExo.get_baudrate()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_baudrate"><code class="docutils literal notranslate"><span class="pre">HandExo.set_baudrate()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_motor_velocity"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_velocity()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_motor_velocity"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_velocity()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_motor_velocity_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_velocity_limit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_motor_velocity_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_velocity_limit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_present_velocity"><code class="docutils literal notranslate"><span class="pre">HandExo.get_present_velocity()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_direct_velocity"><code class="docutils literal notranslate"><span class="pre">HandExo.set_direct_velocity()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_motor_acceleration"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_acceleration()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_motor_acceleration"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_acceleration()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_absolute_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.get_absolute_motor_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_absolute_motor_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.set_absolute_motor_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_home"><code class="docutils literal notranslate"><span class="pre">HandExo.get_home()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_home"><code class="docutils literal notranslate"><span class="pre">HandExo.set_home()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_motor_torque"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_torque()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_motor_current"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_current()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_motor_current_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_current_limit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_current_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.set_current_limit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_total_current_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.set_total_current_limit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_total_current_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.get_total_current_limit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_hold_current"><code class="docutils literal notranslate"><span class="pre">HandExo.set_hold_current()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_current_governor"><code class="docutils literal notranslate"><span class="pre">HandExo.set_current_governor()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.current_status"><code class="docutils literal notranslate"><span class="pre">HandExo.current_status()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_goal_current"><code class="docutils literal notranslate"><span class="pre">HandExo.get_goal_current()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_direct_current"><code class="docutils literal notranslate"><span class="pre">HandExo.set_direct_current()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.stop_direct_control"><code class="docutils literal notranslate"><span class="pre">HandExo.stop_direct_control()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.hold_motor_position"><code class="docutils literal notranslate"><span class="pre">HandExo.hold_motor_position()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.release_motor_hold"><code class="docutils literal notranslate"><span class="pre">HandExo.release_motor_hold()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_direct_command_timeout"><code class="docutils literal notranslate"><span class="pre">HandExo.set_direct_command_timeout()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_control_mode"><code class="docutils literal notranslate"><span class="pre">HandExo.set_control_mode()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_motor_limits"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_limits()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_motor_upper_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_upper_limit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_motor_lower_limit"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_lower_limit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_motor_limits"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_limits()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.reboot_motor"><code class="docutils literal notranslate"><span class="pre">HandExo.reboot_motor()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_motor_mode"><code class="docutils literal notranslate"><span class="pre">HandExo.get_motor_mode()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_motor_mode"><code class="docutils literal notranslate"><span class="pre">HandExo.set_motor_mode()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_exo_mode"><code class="docutils literal notranslate"><span class="pre">HandExo.get_exo_mode()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_exo_mode"><code class="docutils literal notranslate"><span class="pre">HandExo.set_exo_mode()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_gesture"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_gesture"><code class="docutils literal notranslate"><span class="pre">HandExo.set_gesture()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_gesture_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.set_gesture_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_gesture_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_gesture_sang"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_sang()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_gesture_angles"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_angles()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_gesture_state"><code class="docutils literal notranslate"><span class="pre">HandExo.set_gesture_state()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_gesture_list"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_list()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.cycle_gesture"><code class="docutils literal notranslate"><span class="pre">HandExo.cycle_gesture()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.cycle_gesture_state"><code class="docutils literal notranslate"><span class="pre">HandExo.cycle_gesture_state()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_zero_offset"><code class="docutils literal notranslate"><span class="pre">HandExo.set_zero_offset()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_flip"><code class="docutils literal notranslate"><span class="pre">HandExo.set_flip()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.apply_calibration"><code class="docutils literal notranslate"><span class="pre">HandExo.apply_calibration()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.calibrate_exo"><code class="docutils literal notranslate"><span class="pre">HandExo.calibrate_exo()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.enable_oled"><code class="docutils literal notranslate"><span class="pre">HandExo.enable_oled()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.disable_oled"><code class="docutils literal notranslate"><span class="pre">HandExo.disable_oled()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_oled_status"><code class="docutils literal notranslate"><span class="pre">HandExo.get_oled_status()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.close"><code class="docutils literal notranslate"><span class="pre">HandExo.close()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_imu_data"><code class="docutils literal notranslate"><span class="pre">HandExo.get_imu_data()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_imu_angles"><code class="docutils literal notranslate"><span class="pre">HandExo.get_imu_angles()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_imu_heading"><code class="docutils literal notranslate"><span class="pre">HandExo.get_imu_heading()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_imu_roll"><code class="docutils literal notranslate"><span class="pre">HandExo.get_imu_roll()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_imu_pitch"><code class="docutils literal notranslate"><span class="pre">HandExo.get_imu_pitch()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_yaw_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.set_yaw_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_gesture_state"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_state()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLClient"><code class="docutils literal notranslate"><span class="pre">LSLClient</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLClient.start_streaming"><code class="docutils literal notranslate"><span class="pre">LSLClient.start_streaming()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLClient.stop_streaming"><code class="docutils literal notranslate"><span class="pre">LSLClient.stop_streaming()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLClient.get_latest_window"><code class="docutils literal notranslate"><span class="pre">LSLClient.get_latest_window()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLClient.get_connection_status"><code class="docutils literal notranslate"><span class="pre">LSLClient.get_connection_status()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLClient.get_metadata"><code class="docutils literal notranslate"><span class="pre">LSLClient.get_metadata()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber"><code class="docutils literal notranslate"><span class="pre">LSLMarkerSubscriber</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.start"><code class="docutils literal notranslate"><span class="pre">LSLMarkerSubscriber.start()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.stop"><code class="docutils literal notranslate"><span class="pre">LSLMarkerSubscriber.stop()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.set_callback"><code class="docutils literal notranslate"><span class="pre">LSLMarkerSubscriber.set_callback()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.get_recent_markers"><code class="docutils literal notranslate"><span class="pre">LSLMarkerSubscriber.get_recent_markers()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.get_markers_since"><code class="docutils literal notranslate"><span class="pre">LSLMarkerSubscriber.get_markers_since()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.poll_latest"><code class="docutils literal notranslate"><span class="pre">LSLMarkerSubscriber.poll_latest()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.pull"><code class="docutils literal notranslate"><span class="pre">LSLMarkerSubscriber.pull()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.metadata"><code class="docutils literal notranslate"><span class="pre">LSLMarkerSubscriber.metadata()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMessagePublisher"><code class="docutils literal notranslate"><span class="pre">LSLMessagePublisher</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMessagePublisher.publish"><code class="docutils literal notranslate"><span class="pre">LSLMessagePublisher.publish()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLMessagePublisher.close"><code class="docutils literal notranslate"><span class="pre">LSLMessagePublisher.close()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLNumericSubscriber"><code class="docutils literal notranslate"><span class="pre">LSLNumericSubscriber</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLNumericSubscriber.start"><code class="docutils literal notranslate"><span class="pre">LSLNumericSubscriber.start()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLNumericSubscriber.stop"><code class="docutils literal notranslate"><span class="pre">LSLNumericSubscriber.stop()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLNumericSubscriber.get_latest_window"><code class="docutils literal notranslate"><span class="pre">LSLNumericSubscriber.get_latest_window()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.LSLNumericSubscriber.metadata"><code class="docutils literal notranslate"><span class="pre">LSLNumericSubscriber.metadata()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.ProtocolResponseError"><code class="docutils literal notranslate"><span class="pre">ProtocolResponseError</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.SerialComm"><code class="docutils literal notranslate"><span class="pre">SerialComm</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.SerialComm.connect"><code class="docutils literal notranslate"><span class="pre">SerialComm.connect()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.SerialComm.close"><code class="docutils literal notranslate"><span class="pre">SerialComm.close()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.SerialComm.send"><code class="docutils literal notranslate"><span class="pre">SerialComm.send()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.SerialComm.receive"><code class="docutils literal notranslate"><span class="pre">SerialComm.receive()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.SerialComm.is_connected"><code class="docutils literal notranslate"><span class="pre">SerialComm.is_connected()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.SerialComm.flush_input"><code class="docutils literal notranslate"><span class="pre">SerialComm.flush_input()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.SerialComm.fast_telemetry_device"><code class="docutils literal notranslate"><span class="pre">SerialComm.fast_telemetry_device()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.TCPComm"><code class="docutils literal notranslate"><span class="pre">TCPComm</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.TCPComm.connect"><code class="docutils literal notranslate"><span class="pre">TCPComm.connect()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.TCPComm.close"><code class="docutils literal notranslate"><span class="pre">TCPComm.close()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.TCPComm.send"><code class="docutils literal notranslate"><span class="pre">TCPComm.send()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.TCPComm.receive"><code class="docutils literal notranslate"><span class="pre">TCPComm.receive()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.TCPComm.is_connected"><code class="docutils literal notranslate"><span class="pre">TCPComm.is_connected()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../../python_api.html#module-nml_hand_exo.calibration">Calibration</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.CalibrationProfileStore"><code class="docutils literal notranslate"><span class="pre">CalibrationProfileStore</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.CalibrationProfileStore.profile_path"><code class="docutils literal notranslate"><span class="pre">CalibrationProfileStore.profile_path()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.CalibrationProfileStore.list_profiles"><code class="docutils literal notranslate"><span class="pre">CalibrationProfileStore.list_profiles()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.CalibrationProfileStore.load_profile"><code class="docutils literal notranslate"><span class="pre">CalibrationProfileStore.load_profile()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.CalibrationProfileStore.get_default_profile_name"><code class="docutils literal notranslate"><span class="pre">CalibrationProfileStore.get_default_profile_name()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.CalibrationProfileStore.save_profile"><code class="docutils literal notranslate"><span class="pre">CalibrationProfileStore.save_profile()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.CalibrationProfileStore.set_default_profile"><code class="docutils literal notranslate"><span class="pre">CalibrationProfileStore.set_default_profile()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.build_motor_orientation"><code class="docutils literal notranslate"><span class="pre">build_motor_orientation()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.determine_run_number"><code class="docutils literal notranslate"><span class="pre">determine_run_number()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.get_default_profile_name"><code class="docutils literal notranslate"><span class="pre">get_default_profile_name()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.list_profiles"><code class="docutils literal notranslate"><span class="pre">list_profiles()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.load_profile"><code class="docutils literal notranslate"><span class="pre">load_profile()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.normalize_angle"><code class="docutils literal notranslate"><span class="pre">normalize_angle()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.profile_path"><code class="docutils literal notranslate"><span class="pre">profile_path()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.save_profile"><code class="docutils literal notranslate"><span class="pre">save_profile()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.calibration.set_default_profile"><code class="docutils literal notranslate"><span class="pre">set_default_profile()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../../python_api.html#module-nml_hand_exo.decoding">Intent decoding</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ContinuousRestAdapter"><code class="docutils literal notranslate"><span class="pre">ContinuousRestAdapter</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ContinuousRestAdapter.coefficients"><code class="docutils literal notranslate"><span class="pre">ContinuousRestAdapter.coefficients</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ContinuousRestAdapter.scale"><code class="docutils literal notranslate"><span class="pre">ContinuousRestAdapter.scale</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ContinuousRestAdapter.global_baseline"><code class="docutils literal notranslate"><span class="pre">ContinuousRestAdapter.global_baseline</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ContinuousRestAdapter.ridge"><code class="docutils literal notranslate"><span class="pre">ContinuousRestAdapter.ridge</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ContinuousRestAdapter.fit"><code class="docutils literal notranslate"><span class="pre">ContinuousRestAdapter.fit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ContinuousRestAdapter.baseline"><code class="docutils literal notranslate"><span class="pre">ContinuousRestAdapter.baseline()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ContinuousRestAdapter.transform"><code class="docutils literal notranslate"><span class="pre">ContinuousRestAdapter.transform()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.DecoderDecision"><code class="docutils literal notranslate"><span class="pre">DecoderDecision</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.DecoderDecision.state"><code class="docutils literal notranslate"><span class="pre">DecoderDecision.state</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.DecoderDecision.signed_intent"><code class="docutils literal notranslate"><span class="pre">DecoderDecision.signed_intent</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.DecoderDecision.confidence"><code class="docutils literal notranslate"><span class="pre">DecoderDecision.confidence</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.DecoderDecision.rejected"><code class="docutils literal notranslate"><span class="pre">DecoderDecision.rejected</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.DecoderDecision.reason"><code class="docutils literal notranslate"><span class="pre">DecoderDecision.reason</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.DecoderDecision.probabilities"><code class="docutils literal notranslate"><span class="pre">DecoderDecision.probabilities</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.DecoderDecision.open_activation"><code class="docutils literal notranslate"><span class="pre">DecoderDecision.open_activation</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.DecoderDecision.close_activation"><code class="docutils literal notranslate"><span class="pre">DecoderDecision.close_activation</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.DecoderDecision.raw_signed_projection"><code class="docutils literal notranslate"><span class="pre">DecoderDecision.raw_signed_projection</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.FeatureConfig"><code class="docutils literal notranslate"><span class="pre">FeatureConfig</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.FeatureConfig.common_mode"><code class="docutils literal notranslate"><span class="pre">FeatureConfig.common_mode</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.FeatureConfig.log_compress"><code class="docutils literal notranslate"><span class="pre">FeatureConfig.log_compress</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.FeatureConfig.include_waveform_length"><code class="docutils literal notranslate"><span class="pre">FeatureConfig.include_waveform_length</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.participant_id"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.participant_id</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.device_name"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.device_name</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.channel_count"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.channel_count</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.features"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.features</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.labels"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.labels</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.groups"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.groups</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.roll_deg"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.roll_deg</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.pitch_deg"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.pitch_deg</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.emg_windows"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.emg_windows</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.comfort"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.comfort</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.add"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.add()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.arrays"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.arrays()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.class_counts"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.class_counts()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.save"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.save()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentCaptureSession.load"><code class="docutils literal notranslate"><span class="pre">IntentCaptureSession.load()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.rest_label"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.rest_label</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.open_label"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.open_label</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.close_label"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.close_label</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.confidence_threshold"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.confidence_threshold</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.effort_deadband"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.effort_deadband</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.active_reference_quantile"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.active_reference_quantile</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.require_orientation"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.require_orientation</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.adapter"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.adapter</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.model"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.model</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.fit"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.fit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.project_continuous"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.project_continuous()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentDecoderPipeline.predict"><code class="docutils literal notranslate"><span class="pre">IntentDecoderPipeline.predict()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.OrientationSample"><code class="docutils literal notranslate"><span class="pre">OrientationSample</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.OrientationSample.roll_deg"><code class="docutils literal notranslate"><span class="pre">OrientationSample.roll_deg</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.OrientationSample.pitch_deg"><code class="docutils literal notranslate"><span class="pre">OrientationSample.pitch_deg</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.OrientationSample.gyro_norm"><code class="docutils literal notranslate"><span class="pre">OrientationSample.gyro_norm</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.OrientationSample.accel_norm"><code class="docutils literal notranslate"><span class="pre">OrientationSample.accel_norm</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.OrientationSample.is_available"><code class="docutils literal notranslate"><span class="pre">OrientationSample.is_available</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PairEvaluation"><code class="docutils literal notranslate"><span class="pre">PairEvaluation</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PairEvaluation.open_label"><code class="docutils literal notranslate"><span class="pre">PairEvaluation.open_label</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PairEvaluation.close_label"><code class="docutils literal notranslate"><span class="pre">PairEvaluation.close_label</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PairEvaluation.balanced_accuracy"><code class="docutils literal notranslate"><span class="pre">PairEvaluation.balanced_accuracy</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PairEvaluation.balanced_accuracy_std"><code class="docutils literal notranslate"><span class="pre">PairEvaluation.balanced_accuracy_std</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PairEvaluation.rest_false_activation_rate"><code class="docutils literal notranslate"><span class="pre">PairEvaluation.rest_false_activation_rate</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PairEvaluation.reject_false_activation_rate"><code class="docutils literal notranslate"><span class="pre">PairEvaluation.reject_false_activation_rate</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PairEvaluation.direction_confusion_rate"><code class="docutils literal notranslate"><span class="pre">PairEvaluation.direction_confusion_rate</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PairEvaluation.composite_score"><code class="docutils literal notranslate"><span class="pre">PairEvaluation.composite_score</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PairEvaluation.folds"><code class="docutils literal notranslate"><span class="pre">PairEvaluation.folds</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PreprocessConfig"><code class="docutils literal notranslate"><span class="pre">PreprocessConfig</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PreprocessConfig.sample_rate_hz"><code class="docutils literal notranslate"><span class="pre">PreprocessConfig.sample_rate_hz</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PreprocessConfig.highpass_hz"><code class="docutils literal notranslate"><span class="pre">PreprocessConfig.highpass_hz</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PreprocessConfig.lowpass_hz"><code class="docutils literal notranslate"><span class="pre">PreprocessConfig.lowpass_hz</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PreprocessConfig.notch_hz"><code class="docutils literal notranslate"><span class="pre">PreprocessConfig.notch_hz</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.PreprocessConfig.notch_quality"><code class="docutils literal notranslate"><span class="pre">PreprocessConfig.notch_quality</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ShrinkageLDAIntentModel"><code class="docutils literal notranslate"><span class="pre">ShrinkageLDAIntentModel</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ShrinkageLDAIntentModel.scaler"><code class="docutils literal notranslate"><span class="pre">ShrinkageLDAIntentModel.scaler</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ShrinkageLDAIntentModel.classifier"><code class="docutils literal notranslate"><span class="pre">ShrinkageLDAIntentModel.classifier</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ShrinkageLDAIntentModel.fit"><code class="docutils literal notranslate"><span class="pre">ShrinkageLDAIntentModel.fit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ShrinkageLDAIntentModel.classes"><code class="docutils literal notranslate"><span class="pre">ShrinkageLDAIntentModel.classes</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ShrinkageLDAIntentModel.predict"><code class="docutils literal notranslate"><span class="pre">ShrinkageLDAIntentModel.predict()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.ShrinkageLDAIntentModel.predict_proba"><code class="docutils literal notranslate"><span class="pre">ShrinkageLDAIntentModel.predict_proba()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.StreamLayout"><code class="docutils literal notranslate"><span class="pre">StreamLayout</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.StreamLayout.emg_channels"><code class="docutils literal notranslate"><span class="pre">StreamLayout.emg_channels</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.StreamLayout.accel_channels"><code class="docutils literal notranslate"><span class="pre">StreamLayout.accel_channels</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.StreamLayout.gyro_channels"><code class="docutils literal notranslate"><span class="pre">StreamLayout.gyro_channels</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.StreamLayout.from_specs"><code class="docutils literal notranslate"><span class="pre">StreamLayout.from_specs()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.StreamLayout.select_emg"><code class="docutils literal notranslate"><span class="pre">StreamLayout.select_emg()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.StreamLayout.mean_accel"><code class="docutils literal notranslate"><span class="pre">StreamLayout.mean_accel()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.StreamLayout.mean_gyro"><code class="docutils literal notranslate"><span class="pre">StreamLayout.mean_gyro()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.SignalQuality"><code class="docutils literal notranslate"><span class="pre">SignalQuality</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.SignalQuality.channel_rms"><code class="docutils literal notranslate"><span class="pre">SignalQuality.channel_rms</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.SignalQuality.flat_channels"><code class="docutils literal notranslate"><span class="pre">SignalQuality.flat_channels</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.SignalQuality.saturated_channels"><code class="docutils literal notranslate"><span class="pre">SignalQuality.saturated_channels</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.SignalQuality.noisy_channels"><code class="docutils literal notranslate"><span class="pre">SignalQuality.noisy_channels</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.SignalQuality.usable_fraction"><code class="docutils literal notranslate"><span class="pre">SignalQuality.usable_fraction</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.assess_signal_quality"><code class="docutils literal notranslate"><span class="pre">assess_signal_quality()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.canonical_intent_label"><code class="docutils literal notranslate"><span class="pre">canonical_intent_label()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.extract_emg_features"><code class="docutils literal notranslate"><span class="pre">extract_emg_features()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.import_xdf_file"><code class="docutils literal notranslate"><span class="pre">import_xdf_file()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.import_xdf_session"><code class="docutils literal notranslate"><span class="pre">import_xdf_session()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.orientation_from_accel"><code class="docutils literal notranslate"><span class="pre">orientation_from_accel()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.parse_channel_spec"><code class="docutils literal notranslate"><span class="pre">parse_channel_spec()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.preprocess_emg"><code class="docutils literal notranslate"><span class="pre">preprocess_emg()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.rank_intent_pairs"><code class="docutils literal notranslate"><span class="pre">rank_intent_pairs()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.ema_alpha"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.ema_alpha</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.max_step"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.max_step</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.enter_threshold"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.enter_threshold</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.open_enter_threshold"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.open_enter_threshold</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.close_enter_threshold"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.close_enter_threshold</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.release_threshold"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.release_threshold</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.switch_samples"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.switch_samples</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.output_gain"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.output_gain</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.response_exponent"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.response_exponent</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.value"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.value</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.direction"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.direction</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.pending_direction"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.pending_direction</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.pending_count"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.pending_count</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.reset"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.reset()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer.update"><code class="docutils literal notranslate"><span class="pre">IntentOutputStabilizer.update()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../cpp_api.html">C++ firmware API</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu"  style="background: #252526" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NML Hand Exoskeleton</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">nml_hand_exo.decoding.features</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nml_hand_exo.decoding.features</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+
+<div class="viewcode-block" id="FeatureConfig">
+<a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.decoding.FeatureConfig">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">FeatureConfig</span><span class="p">:</span>
+    <span class="n">common_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;median&quot;</span>
+    <span class="n">log_compress</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">include_waveform_length</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+
+
+<div class="viewcode-block" id="SignalQuality">
+<a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.decoding.SignalQuality">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SignalQuality</span><span class="p">:</span>
+    <span class="n">channel_rms</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">flat_channels</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">saturated_channels</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">noisy_channels</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">usable_fraction</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">channel_rms</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="n">bad</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">flat_channels</span><span class="p">)</span> <span class="o">|</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">saturated_channels</span><span class="p">)</span> <span class="o">|</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">noisy_channels</span><span class="p">)</span>
+        <span class="k">return</span> <span class="mf">0.0</span> <span class="k">if</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">(</span><span class="n">count</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">bad</span><span class="p">))</span> <span class="o">/</span> <span class="n">count</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_channels_by_samples</span><span class="p">(</span><span class="n">emg</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">emg</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">values</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;EMG window must have shape (channels, samples)&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;EMG window must contain at least one channel and two samples&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">values</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;EMG window contains non-finite values&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">values</span>
+
+
+<div class="viewcode-block" id="extract_emg_features">
+<a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.decoding.extract_emg_features">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">extract_emg_features</span><span class="p">(</span><span class="n">emg</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">FeatureConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a compact feature vector for 8-channel or HD-EMG windows.&quot;&quot;&quot;</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">FeatureConfig</span><span class="p">()</span>
+    <span class="n">values</span> <span class="o">=</span> <span class="n">_channels_by_samples</span><span class="p">(</span><span class="n">emg</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">common_mode</span> <span class="o">==</span> <span class="s2">&quot;median&quot;</span><span class="p">:</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="n">values</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">config</span><span class="o">.</span><span class="n">common_mode</span> <span class="o">==</span> <span class="s2">&quot;mean&quot;</span><span class="p">:</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="n">values</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">config</span><span class="o">.</span><span class="n">common_mode</span> <span class="o">!=</span> <span class="s2">&quot;none&quot;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown common-mode method: </span><span class="si">{</span><span class="n">config</span><span class="o">.</span><span class="n">common_mode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">rms</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">values</span> <span class="o">*</span> <span class="n">values</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="mf">1e-12</span><span class="p">)</span>
+    <span class="n">output</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log1p</span><span class="p">(</span><span class="n">rms</span><span class="p">)</span> <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">log_compress</span> <span class="k">else</span> <span class="n">rms</span>
+    <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">include_waveform_length</span><span class="p">:</span>
+        <span class="n">waveform_length</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">log_compress</span><span class="p">:</span>
+            <span class="n">waveform_length</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log1p</span><span class="p">(</span><span class="n">waveform_length</span><span class="p">)</span>
+        <span class="n">output</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">output</span><span class="p">,</span> <span class="n">waveform_length</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">output</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="assess_signal_quality">
+<a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.decoding.assess_signal_quality">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">assess_signal_quality</span><span class="p">(</span><span class="n">emg</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SignalQuality</span><span class="p">:</span>
+    <span class="n">values</span> <span class="o">=</span> <span class="n">_channels_by_samples</span><span class="p">(</span><span class="n">emg</span><span class="p">)</span>
+    <span class="n">rms</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">values</span> <span class="o">*</span> <span class="n">values</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="mf">1e-12</span><span class="p">)</span>
+    <span class="n">spread</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">peak</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">values</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">median_rms</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">rms</span><span class="p">)),</span> <span class="mf">1e-12</span><span class="p">)</span>
+    <span class="n">flat</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">spread</span> <span class="o">&lt;</span> <span class="nb">max</span><span class="p">(</span><span class="mf">1e-9</span><span class="p">,</span> <span class="n">median_rms</span> <span class="o">*</span> <span class="mf">1e-4</span><span class="p">))</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+    <span class="n">noisy</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">rms</span> <span class="o">&gt;</span> <span class="n">median_rms</span> <span class="o">*</span> <span class="mf">8.0</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+    <span class="c1"># Repeated extrema are a device-independent clipping proxy; an ADC-specific</span>
+    <span class="c1"># threshold can be added by a stream adapter when its scale is known.</span>
+    <span class="n">saturated</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">channel</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+        <span class="n">at_peak</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">values</span><span class="p">[</span><span class="n">channel</span><span class="p">]),</span> <span class="n">peak</span><span class="p">[</span><span class="n">channel</span><span class="p">],</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-12</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">peak</span><span class="p">[</span><span class="n">channel</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">at_peak</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mf">0.02</span><span class="p">:</span>
+            <span class="n">saturated</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">SignalQuality</span><span class="p">(</span><span class="n">rms</span><span class="p">,</span> <span class="n">flat</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">saturated</span><span class="p">),</span> <span class="n">noisy</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Neuromechatronics Lab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

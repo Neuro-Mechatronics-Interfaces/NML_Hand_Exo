@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NML Hand Exoskeleton documentation &mdash; NML Hand Exoskeleton 0.2.17.1 documentation</title>
+  <title>Python usage &mdash; NML Hand Exoskeleton 0.2.17.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -23,7 +23,8 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Quickstart" href="quickstart.html" /> 
+    <link rel="next" title="Frequently Asked Questions (FAQ)" href="faq.html" />
+    <link rel="prev" title="Quickstart" href="quickstart.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -34,7 +35,7 @@
 
           
           
-          <a href="#" class="icon icon-home">
+          <a href="index.html" class="icon icon-home">
             NML Hand Exoskeleton
               <img src="_static/LabLogoRedSquare.png" class="logo" alt="Logo"/>
           </a>
@@ -47,7 +48,7 @@
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="quickstart.html#prerequisites">Prerequisites</a></li>
 <li class="toctree-l2"><a class="reference internal" href="quickstart.html#install">Install</a></li>
@@ -56,12 +57,12 @@
 <li class="toctree-l2"><a class="reference internal" href="quickstart.html#before-motion">Before motion</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Python usage</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#install-the-package">Install the package</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#usb-serial">USB serial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#tcp-bridge">TCP bridge</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#motor-commands">Motor commands</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#applications">Applications</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Python usage</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#install-the-package">Install the package</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#usb-serial">USB serial</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#tcp-bridge">TCP bridge</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#motor-commands">Motor commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#applications">Applications</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions (FAQ)</a><ul>
@@ -484,17 +485,17 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu"  style="background: #252526" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="#">NML Hand Exoskeleton</a>
+          <a href="index.html">NML Hand Exoskeleton</a>
       </nav>
 
       <div class="wy-nav-content">
         <div class="rst-content">
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
-      <li><a href="#" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">NML Hand Exoskeleton documentation</li>
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Python usage</li>
       <li class="wy-breadcrumbs-aside">
-              <a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/blob/main/docs/source/index.rst" class="fa fa-github"> Edit on GitHub</a>
+              <a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/blob/main/docs/source/usage.rst" class="fa fa-github"> Edit on GitHub</a>
       </li>
   </ul>
   <hr/>
@@ -502,81 +503,76 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="nml-hand-exoskeleton-documentation">
-<h1>NML Hand Exoskeleton documentation<a class="headerlink" href="#nml-hand-exoskeleton-documentation" title="Link to this heading"></a></h1>
-<p>The NML Hand Exoskeleton repository contains the Python SDK, operator and EMG
-applications, OpenRB-150 firmware, and optional CircuitPython TCP bridge.</p>
-<div class="admonition warning">
-<p class="admonition-title">Warning</p>
-<p>This is research software for supervised laboratory use. Confirm the active
-calibration profile, current limits, joint limits, motor IDs, and emergency
-stop before participant use.</p>
+  <section id="python-usage">
+<h1>Python usage<a class="headerlink" href="#python-usage" title="Link to this heading"></a></h1>
+<section id="install-the-package">
+<h2>Install the package<a class="headerlink" href="#install-the-package" title="Link to this heading"></a></h2>
+<p>For development from a repository checkout:</p>
+<div class="highlight-powershell notranslate"><div class="highlight"><pre><span></span><span class="n">py</span> <span class="p">-</span><span class="n">3</span><span class="p">.</span><span class="n">11</span> <span class="n">-m</span> <span class="n">venv</span> <span class="p">.</span><span class="n">venv</span>
+<span class="p">.\.</span><span class="n">venv</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">Activate</span><span class="p">.</span><span class="n">ps1</span>
+<span class="n">python</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">-e</span> <span class="p">.</span>
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#prerequisites">Prerequisites</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#install">Install</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#check-the-applications-without-opening-hardware">Check the applications without opening hardware</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#connect">Connect</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#before-motion">Before motion</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Python usage</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#install-the-package">Install the package</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#usb-serial">USB serial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#tcp-bridge">TCP bridge</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#motor-commands">Motor commands</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#applications">Applications</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions (FAQ)</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#general-questions">General Questions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#safety">Safety</a></li>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#troubleshooting">Troubleshooting</a></li>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#more-information">More Information</a></li>
-</ul>
-</li>
-</ul>
+</section>
+<section id="usb-serial">
+<h2>USB serial<a class="headerlink" href="#usb-serial" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">nml_hand_exo</span><span class="w"> </span><span class="kn">import</span> <span class="n">HandExo</span><span class="p">,</span> <span class="n">SerialComm</span>
+
+<span class="n">exo</span> <span class="o">=</span> <span class="n">HandExo</span><span class="p">(</span><span class="n">SerialComm</span><span class="p">(</span><span class="n">port</span><span class="o">=</span><span class="s2">&quot;COM12&quot;</span><span class="p">,</span> <span class="n">baudrate</span><span class="o">=</span><span class="mi">1_000_000</span><span class="p">))</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">exo</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+    <span class="n">info</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">info</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;motors&quot;</span><span class="p">])</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">exo</span><span class="o">.</span><span class="n">get_motor_angle</span><span class="p">(</span><span class="s2">&quot;all&quot;</span><span class="p">))</span>
+<span class="k">finally</span><span class="p">:</span>
+    <span class="n">exo</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">Integration</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="wifi_server.html">CircuitPython Wi-Fi Server</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="wifi_server.html#software-setup">Software Setup</a></li>
-<li class="toctree-l2"><a class="reference internal" href="wifi_server.html#hardware-setup">Hardware Setup</a></li>
-<li class="toctree-l2"><a class="reference internal" href="wifi_server.html#http-webpage">HTTP Webpage</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="button_state_machine.html">Manual Button State Machine</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#overview">Overview</a></li>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#hardware-setup">Hardware Setup</a></li>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#interaction-logic">Interaction Logic</a></li>
-</ul>
-</li>
-</ul>
+</section>
+<section id="tcp-bridge">
+<h2>TCP bridge<a class="headerlink" href="#tcp-bridge" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">nml_hand_exo</span><span class="w"> </span><span class="kn">import</span> <span class="n">HandExo</span><span class="p">,</span> <span class="n">TCPComm</span>
+
+<span class="n">exo</span> <span class="o">=</span> <span class="n">HandExo</span><span class="p">(</span><span class="n">TCPComm</span><span class="p">(</span><span class="n">ip</span><span class="o">=</span><span class="s2">&quot;192.168.1.200&quot;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">5001</span><span class="p">))</span>
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">API reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="python_api.html">Python API reference</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#package-version">Package version</a></li>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#module-nml_hand_exo.interface">Device and transport API</a></li>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#module-nml_hand_exo.calibration">Calibration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#module-nml_hand_exo.decoding">Intent decoding</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="cpp_api.html">C++ firmware API</a></li>
-</ul>
+</section>
+<section id="motor-commands">
+<h2>Motor commands<a class="headerlink" href="#motor-commands" title="Link to this heading"></a></h2>
+<p>Use integer IDs returned by <code class="docutils literal notranslate"><span class="pre">exo.info()</span></code>. This is mandatory for calibration
+and strongly recommended for every motor command because left and right motors
+share names in dual firmware.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">motor_id</span> <span class="o">=</span> <span class="mi">15</span>
+<span class="n">lower</span><span class="p">,</span> <span class="n">upper</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_motor_limits</span><span class="p">(</span><span class="n">motor_id</span><span class="p">)</span>
+<span class="n">angle</span> <span class="o">=</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_motor_angle</span><span class="p">(</span><span class="n">motor_id</span><span class="p">)</span>
+
+<span class="n">exo</span><span class="o">.</span><span class="n">enable_motor</span><span class="p">(</span><span class="n">motor_id</span><span class="p">)</span>
+<span class="n">exo</span><span class="o">.</span><span class="n">set_motor_angle</span><span class="p">(</span><span class="n">motor_id</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">upper</span><span class="p">,</span> <span class="n">angle</span> <span class="o">+</span> <span class="mf">5.0</span><span class="p">))</span>
+<span class="n">exo</span><span class="o">.</span><span class="n">disable_motor</span><span class="p">(</span><span class="n">motor_id</span><span class="p">)</span>
+</pre></div>
 </div>
+<p>Do not change joint or current limits without validating the participant,
+hardware assembly, firmware configuration, and calibration profile.</p>
+</section>
+<section id="applications">
+<h2>Applications<a class="headerlink" href="#applications" title="Link to this heading"></a></h2>
+<div class="highlight-powershell notranslate"><div class="highlight"><pre><span></span><span class="n">handexo</span> <span class="p">-</span><span class="n">-help</span>
+<span class="n">handexo</span> <span class="n">gui</span>
+<span class="n">handexo</span> <span class="n">emg-intent</span>
+<span class="n">nml-task-cue</span>
+</pre></div>
+</div>
+<p>See the repository <code class="docutils literal notranslate"><span class="pre">docs/serial_protocol.md</span></code> for the firmware contract and
+<code class="docutils literal notranslate"><span class="pre">examples/README.md</span></code> for hardware-specific scripts.</p>
+</section>
 </section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="quickstart.html" class="btn btn-neutral float-right" title="Quickstart" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="quickstart.html" class="btn btn-neutral float-left" title="Quickstart" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="faq.html" class="btn btn-neutral float-right" title="Frequently Asked Questions (FAQ)" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

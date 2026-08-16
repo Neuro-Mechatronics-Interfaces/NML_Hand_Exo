@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NML Hand Exoskeleton documentation &mdash; NML Hand Exoskeleton 0.2.17.1 documentation</title>
+  <title>Manual Button State Machine &mdash; NML Hand Exoskeleton 0.2.17.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -23,7 +23,8 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Quickstart" href="quickstart.html" /> 
+    <link rel="next" title="Python API reference" href="python_api.html" />
+    <link rel="prev" title="CircuitPython Wi-Fi Server" href="wifi_server.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -34,7 +35,7 @@
 
           
           
-          <a href="#" class="icon icon-home">
+          <a href="index.html" class="icon icon-home">
             NML Hand Exoskeleton
               <img src="_static/LabLogoRedSquare.png" class="logo" alt="Logo"/>
           </a>
@@ -73,17 +74,17 @@
 </li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Integration</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="wifi_server.html">CircuitPython Wi-Fi Server</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="wifi_server.html#software-setup">Software Setup</a></li>
 <li class="toctree-l2"><a class="reference internal" href="wifi_server.html#hardware-setup">Hardware Setup</a></li>
 <li class="toctree-l2"><a class="reference internal" href="wifi_server.html#http-webpage">HTTP Webpage</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="button_state_machine.html">Manual Button State Machine</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#overview">Overview</a></li>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#hardware-setup">Hardware Setup</a></li>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#interaction-logic">Interaction Logic</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Manual Button State Machine</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hardware-setup">Hardware Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#interaction-logic">Interaction Logic</a></li>
 </ul>
 </li>
 </ul>
@@ -484,17 +485,17 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu"  style="background: #252526" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="#">NML Hand Exoskeleton</a>
+          <a href="index.html">NML Hand Exoskeleton</a>
       </nav>
 
       <div class="wy-nav-content">
         <div class="rst-content">
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
-      <li><a href="#" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">NML Hand Exoskeleton documentation</li>
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Manual Button State Machine</li>
       <li class="wy-breadcrumbs-aside">
-              <a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/blob/main/docs/source/index.rst" class="fa fa-github"> Edit on GitHub</a>
+              <a href="https://github.com/Neuro-Mechatronics-Interfaces/NML_Hand_Exo/blob/main/docs/source/button_state_machine.rst" class="fa fa-github"> Edit on GitHub</a>
       </li>
   </ul>
   <hr/>
@@ -502,81 +503,70 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="nml-hand-exoskeleton-documentation">
-<h1>NML Hand Exoskeleton documentation<a class="headerlink" href="#nml-hand-exoskeleton-documentation" title="Link to this heading"></a></h1>
-<p>The NML Hand Exoskeleton repository contains the Python SDK, operator and EMG
-applications, OpenRB-150 firmware, and optional CircuitPython TCP bridge.</p>
-<div class="admonition warning">
-<p class="admonition-title">Warning</p>
-<p>This is research software for supervised laboratory use. Confirm the active
-calibration profile, current limits, joint limits, motor IDs, and emergency
-stop before participant use.</p>
-</div>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
+  <section id="manual-button-state-machine">
+<h1>Manual Button State Machine<a class="headerlink" href="#manual-button-state-machine" title="Link to this heading"></a></h1>
+<p>This document describes the button-based state machine for manually controlling the <strong>NML Hand Exoskeleton</strong>. The system includes two physical buttons, routed through extension wires, allowing the user to cycle gestures and states in real time without a host PC or BLE device.</p>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading"></a></h2>
+<p>The exoskeleton supports gesture-based motion, where each gesture (e.g., grasp, pinch, point) can have multiple <strong>states</strong> (e.g., “open”, “closed”). The system is equipped with two physical buttons:</p>
+<ul class="simple">
+<li><p><strong>Cycle Gesture Button</strong>: Switches between predefined gestures.</p></li>
+<li><p><strong>Cycle Gesture State Button</strong>: Advances to the next state of the currently selected gesture.</p></li>
+</ul>
+<p>These buttons provide tactile, hands-free switching and are especially useful during wearable operation and rehabilitation trials.</p>
+</section>
+<section id="hardware-setup">
+<h2>Hardware Setup<a class="headerlink" href="#hardware-setup" title="Link to this heading"></a></h2>
+<a class="reference internal image-reference" href="_images/button_placement.jpg"><img alt="_images/button_placement.jpg" src="_images/button_placement.jpg" style="width: 300px;" />
+</a>
+<ol class="arabic">
+<li><p><strong>Attach the Button Harness</strong>
+Drape the harness over the user’s shoulder, ensuring the buttons rest comfortably within thumb or index finger reach on the opposite side.</p></li>
+<li><p><strong>Connect Extension Wires</strong>
+The buttons are connected to the <strong>gesture controller board</strong> via female jumper wires. Refer to the following pin assignments defined in <cite>config.h</cite>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">CYCLE_GESTURE_PIN</span> <span class="pre">=</span> <span class="pre">10</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GESTURE_STATE_PIN</span> <span class="pre">=</span> <span class="pre">11</span></code></p></li>
+</ul>
+<p>Insert the extension wires into the respective <strong>digital input pins</strong> on the microcontroller.</p>
+</li>
+<li><p><strong>Power Connection</strong>
+The exoskeleton now includes an in-line <strong>power switch</strong> between the microcontroller and battery pack. To power on:</p>
+<ul class="simple">
+<li><p>Ensure all servo connectors are firmly attached.</p></li>
+<li><p>Flip the switch to the <strong>ON</strong> position.</p></li>
+<li><p>A status LED (pin <code class="docutils literal notranslate"><span class="pre">STATUS_LED_PIN</span></code>) will blink once to confirm startup.</p></li>
+</ul>
+</li>
+<li><p><strong>System Boot-Up</strong>
+After powering on, the system initializes to the default operating mode:
+- <strong>Default Mode</strong>: <code class="docutils literal notranslate"><span class="pre">gesture_fixed</span></code> (see <code class="docutils literal notranslate"><span class="pre">DEFAULT_EXO_MODE</span></code> in <cite>config.h</cite>)
+- <strong>Verbose Logging</strong>: Enabled by default for debugging (see <code class="docutils literal notranslate"><span class="pre">DEFAULT_VERBOSE</span></code>)</p></li>
+</ol>
+</section>
+<section id="interaction-logic">
+<h2>Interaction Logic<a class="headerlink" href="#interaction-logic" title="Link to this heading"></a></h2>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#prerequisites">Prerequisites</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#install">Install</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#check-the-applications-without-opening-hardware">Check the applications without opening hardware</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#connect">Connect</a></li>
-<li class="toctree-l2"><a class="reference internal" href="quickstart.html#before-motion">Before motion</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Python usage</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#install-the-package">Install the package</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#usb-serial">USB serial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#tcp-bridge">TCP bridge</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#motor-commands">Motor commands</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#applications">Applications</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions (FAQ)</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#general-questions">General Questions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#safety">Safety</a></li>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#troubleshooting">Troubleshooting</a></li>
-<li class="toctree-l2"><a class="reference internal" href="faq.html#more-information">More Information</a></li>
-</ul>
-</li>
-</ul>
+<li><p><strong>Short Press on Gesture Button (Pin 10)</strong>
+Cycles to the next gesture in the gesture library. If the last gesture is active, it wraps around to the first.</p></li>
+<li><p><strong>Short Press on State Button (Pin 11)</strong>
+Cycles through the internal states of the current gesture (e.g., open → closed).</p></li>
+<li><p><strong>Debounce Time</strong>
+Both buttons have a software debounce of <code class="docutils literal notranslate"><span class="pre">50ms</span></code> to prevent unintended double-presses. This is set using:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">constexpr</span> <span class="nb">int</span> <span class="n">BUTTON_DEBOUNCE_DURATION</span> <span class="o">=</span> <span class="mi">50</span><span class="p">;</span>
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">Integration</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="wifi_server.html">CircuitPython Wi-Fi Server</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="wifi_server.html#software-setup">Software Setup</a></li>
-<li class="toctree-l2"><a class="reference internal" href="wifi_server.html#hardware-setup">Hardware Setup</a></li>
-<li class="toctree-l2"><a class="reference internal" href="wifi_server.html#http-webpage">HTTP Webpage</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="button_state_machine.html">Manual Button State Machine</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#overview">Overview</a></li>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#hardware-setup">Hardware Setup</a></li>
-<li class="toctree-l2"><a class="reference internal" href="button_state_machine.html#interaction-logic">Interaction Logic</a></li>
-</ul>
 </li>
 </ul>
-</div>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">API reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="python_api.html">Python API reference</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#package-version">Package version</a></li>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#module-nml_hand_exo.interface">Device and transport API</a></li>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#module-nml_hand_exo.calibration">Calibration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="python_api.html#module-nml_hand_exo.decoding">Intent decoding</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="cpp_api.html">C++ firmware API</a></li>
-</ul>
-</div>
+</section>
 </section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="quickstart.html" class="btn btn-neutral float-right" title="Quickstart" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="wifi_server.html" class="btn btn-neutral float-left" title="CircuitPython Wi-Fi Server" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="python_api.html" class="btn btn-neutral float-right" title="Python API reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
