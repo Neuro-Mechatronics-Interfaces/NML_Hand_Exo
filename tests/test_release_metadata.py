@@ -35,5 +35,7 @@ def test_readme_uses_a_publishable_project_image():
 
     assert image.is_file()
     assert image.stat().st_size > 0
-    assert "https://raw.githubusercontent.com/" in readme
-    assert "/docs/assets/nml-hand-exo.png" in readme
+    assert (
+        "https://raw.githubusercontent.com/Neuro-Mechatronics-Interfaces/"
+        "NML_Hand_Exo/refs/heads/main/docs/assets/nml-hand-exo.png"
+    ) in readme
