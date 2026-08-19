@@ -139,16 +139,21 @@ def build_command_map():
     """
     command_map = {0: "set_gesture:grasp:open"}
     for index, joint in enumerate(JOINTS, start=1):
-        # command_map[index] = f"set_gesture_angle:{joint}:{FLEX_PERCENT[joint]}"
-        # command_map[-index] = f"set_gesture_angle:{joint}:{EXTEND_PERCENT}"
-        # command_map[index + REST_VALUE_OFFSET] = (
-        #     f"set_gesture_angle:{joint}:{REST_PERCENT[joint]}"
-        # )
-        command_map[index] = f"set_gesture:{joint}:flex"
-        command_map[-index] = f"set_gesture:{joint}:extend"
+        # Calibrated positions: each integer code maps to a set_gesture_angle at
+        # this joint's FLEX_PERCENT / EXTEND_PERCENT / REST_PERCENT below, so the
+        # discrete FLEX/EXTEND/REST endstops are set HERE (tune the percent dicts)
+        # rather than by the firmware's compile-time postures. 0 and 100 still
+        # reproduce the firmware's extend/flex exactly, so these interpolate them.
+        command_map[index] = f"set_gesture_angle:{joint}:{FLEX_PERCENT[joint]}"
+        command_map[-index] = f"set_gesture_angle:{joint}:{EXTEND_PERCENT}"
         command_map[index + REST_VALUE_OFFSET] = (
-            f"set_gesture:{joint}:rest"
+            f"set_gesture_angle:{joint}:{REST_PERCENT[joint]}"
         )
+        # Fixed-posture form (uncomment, and comment the three above, to drive
+        # the firmware's compile-time extend/flex/rest instead of the percents):
+        # command_map[index] = f"set_gesture:{joint}:flex"
+        # command_map[-index] = f"set_gesture:{joint}:extend"
+        # command_map[index + REST_VALUE_OFFSET] = f"set_gesture:{joint}:rest"
     return command_map
 
 
