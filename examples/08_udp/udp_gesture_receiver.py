@@ -112,11 +112,13 @@ FLEX_PERCENT = {
     "wrist": 75,
 }
 REST_PERCENT = {
-    "thumb": 15, "index": 15, "middle": 15, "ring": 15, "pinky": 15,
+    "thumb": 50, "index": 35, "middle": 35, "ring": 35, "pinky": 35,
+    "wrist": 50,
+}
+EXTEND_PERCENT = {
+    "thumb": 30, "index": 15, "middle": 15, "ring": 15, "pinky": 15,
     "wrist": 25,
 }
-EXTEND_PERCENT = 0   # 0% == the extend posture (NOT home, unless EXTEND_* is 0)
-
 
 def build_command_map():
     """Integer payload -> serial command(s).
@@ -208,7 +210,7 @@ def parse_passthrough_command(payload):
 # survive with every joint pushing at once, which is why it kept drifting lower.
 # From 0.4.0 the combined budget below bounds the fleet, so this can be set to
 # what a single joint actually needs to move reliably.
-DEFAULT_CURRENT_MA = 150
+DEFAULT_CURRENT_MA = 250
 
 # Combined budget across ALL motors, in mA (--total-current-ma). This is the
 # number the power supply cares about: per-motor limits do not bound what the
@@ -219,7 +221,7 @@ DEFAULT_TOTAL_CURRENT_MA = 800
 
 # Commands sent once at startup when arming, and the release sent on exit.
 # ARM_COMMANDS = ("reboot:all", "set_exo_mode:gesture_fixed", "enable:all")
-ARM_COMMANDS = ("reboot:all", "enable:all", "home:all")
+ARM_COMMANDS = ("reboot:all", "enable:all")
 DISARM_COMMANDS = ("disable:all",)
 
 # Sent after arming (--no-home to skip). Homing drives every motor to its zero
@@ -228,7 +230,7 @@ DISARM_COMMANDS = ("disable:all",)
 # HOME_COMMANDS = ("home:1","home:2","home:3","home:4","home:5","home:6","home:7","home:8","home:9", 
 #                  "home:11","home:12","home:13","home:14","home:15","home:16", "home:17", "home:18", "home:19")
 # HOME_COMMANDS = ("home:all")
-HOME_COMMANDS = ("home:11", "home:12")
+HOME_COMMANDS = ("set_gesture:wrist:50", "set_gesture:thumb:35", "set_gesture:index:35", "set_gesture:middle:35", "set_gesture:ring:35", "set_gesture:pinky:35")
 
 # Homing is a physical move, not just a register write, so give it time to
 # finish before commands start arriving.
