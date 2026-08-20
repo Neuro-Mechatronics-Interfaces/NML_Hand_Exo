@@ -508,7 +508,7 @@
 <div class="viewcode-block" id="GestureController">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.GestureController">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">GestureController</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    A simple gesture controller for the Hand Exoskeleton.</span>
 
 <span class="sd">    It allows setting gestures and states (open/close) on the exoskeleton.</span>
@@ -516,51 +516,51 @@
 <span class="sd">    Args:</span>
 <span class="sd">        exo: An instance of HandExo or FakeHandExo.</span>
 <span class="sd">        verbose: If True, prints verbose output.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exo</span><span class="p">:</span> <span class="n">HandExo</span> <span class="o">|</span> <span class="n">FakeHandExo</span><span class="p">,</span> <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">exo</span> <span class="o">=</span> <span class="n">exo</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span> <span class="o">=</span> <span class="n">verbose</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_gesture</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Rest&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_state</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Open&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_gesture</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"Rest"</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_state</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"Open"</span>
 
     <span class="c1">#: Multi-joint postures (grasp, keygrip, pinch_*, peace) use these.</span>
-    <span class="n">POSTURE_STATES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;open&quot;</span><span class="p">,</span> <span class="s2">&quot;close&quot;</span><span class="p">)</span>
+    <span class="n">POSTURE_STATES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"open"</span><span class="p">,</span> <span class="s2">"close"</span><span class="p">)</span>
 
     <span class="c1">#: Per-joint gestures (thumb/index/middle/ring/pinky/wrist) use these.</span>
     <span class="c1">#: ``rest`` needs firmware &gt;= 0.3.0; HandExo.set_gesture enforces that.</span>
-    <span class="n">JOINT_STATES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;extend&quot;</span><span class="p">,</span> <span class="s2">&quot;rest&quot;</span><span class="p">,</span> <span class="s2">&quot;flex&quot;</span><span class="p">)</span>
+    <span class="n">JOINT_STATES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"extend"</span><span class="p">,</span> <span class="s2">"rest"</span><span class="p">,</span> <span class="s2">"flex"</span><span class="p">)</span>
 
 <div class="viewcode-block" id="GestureController.set_gesture">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.GestureController.set_gesture">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_gesture</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gesture</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Set the gesture and state on the exoskeleton.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            gesture: The gesture name (e.g., &quot;pinch_index&quot;, &quot;index&quot;, &quot;wrist&quot;).</span>
-<span class="sd">            state: &quot;open&quot;/&quot;close&quot; for postures, or &quot;extend&quot;/&quot;rest&quot;/&quot;flex&quot; for</span>
+<span class="sd">            gesture: The gesture name (e.g., "pinch_index", "index", "wrist").</span>
+<span class="sd">            state: "open"/"close" for postures, or "extend"/"rest"/"flex" for</span>
 <span class="sd">                per-joint gestures.</span>
 
 <span class="sd">        Raises:</span>
 <span class="sd">            ValueError: If the state is not one of the accepted values.</span>
 <span class="sd">            RuntimeError: If the state needs newer firmware than is connected.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">valid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">POSTURE_STATES</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">JOINT_STATES</span>
         <span class="k">if</span> <span class="n">state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">valid</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Invalid state: </span><span class="si">{</span><span class="n">state</span><span class="si">}</span><span class="s2">. Must be one of </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span>
+                <span class="sa">f</span><span class="s2">"Invalid state: </span><span class="si">{</span><span class="n">state</span><span class="si">}</span><span class="s2">. Must be one of </span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span><span class="si">}</span><span class="s2">."</span>
             <span class="p">)</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[GestureController] Setting gesture &#39;</span><span class="si">{</span><span class="n">gesture</span><span class="si">}</span><span class="s2">&#39; to state &#39;</span><span class="si">{</span><span class="n">state</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[GestureController] Setting gesture '</span><span class="si">{</span><span class="n">gesture</span><span class="si">}</span><span class="s2">' to state '</span><span class="si">{</span><span class="n">state</span><span class="si">}</span><span class="s2">'"</span><span class="p">)</span>
 
         <span class="c1"># Prefer HandExo.set_gesture so its firmware feature gate applies; fall</span>
         <span class="c1"># back to the raw command for exo objects that do not implement it.</span>
-        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exo</span><span class="p">,</span> <span class="s2">&quot;set_gesture&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exo</span><span class="p">,</span> <span class="s2">"set_gesture"</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">exo</span><span class="o">.</span><span class="n">set_gesture</span><span class="p">(</span><span class="n">gesture</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">exo</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;set_gesture:</span><span class="si">{</span><span class="n">gesture</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">state</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">exo</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">"set_gesture:</span><span class="si">{</span><span class="n">gesture</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">state</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">current_gesture</span> <span class="o">=</span> <span class="n">gesture</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">current_state</span> <span class="o">=</span> <span class="n">state</span></div>
@@ -569,12 +569,12 @@
 <div class="viewcode-block" id="GestureController.get_current_gesture">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.GestureController.get_current_gesture">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_current_gesture</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Get the current gesture and state.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            A tuple of (gesture, state).</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_gesture</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_state</span></div>
 </div>
 

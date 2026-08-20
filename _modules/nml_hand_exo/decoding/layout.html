@@ -511,19 +511,19 @@
 <div class="viewcode-block" id="parse_channel_spec">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.decoding.parse_channel_spec">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">parse_channel_spec</span><span class="p">(</span><span class="n">specification</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">channel_count</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parse comma-separated indices and inclusive ranges such as ``1-8,12``.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Parse comma-separated indices and inclusive ranges such as ``1-8,12``."""</span>
     <span class="n">text</span> <span class="o">=</span> <span class="n">specification</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span> <span class="ow">or</span> <span class="n">text</span> <span class="o">==</span> <span class="s2">&quot;none&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span> <span class="ow">or</span> <span class="n">text</span> <span class="o">==</span> <span class="s2">"none"</span><span class="p">:</span>
         <span class="k">return</span> <span class="p">()</span>
-    <span class="k">if</span> <span class="n">text</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">text</span> <span class="o">==</span> <span class="s2">"all"</span><span class="p">:</span>
         <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">channel_count</span><span class="p">))</span>
     <span class="n">selected</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">","</span><span class="p">):</span>
         <span class="n">token</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">token</span><span class="p">:</span>
             <span class="k">continue</span>
-        <span class="k">if</span> <span class="s2">&quot;-&quot;</span> <span class="ow">in</span> <span class="n">token</span><span class="p">:</span>
-            <span class="n">start_text</span><span class="p">,</span> <span class="n">end_text</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">"-"</span> <span class="ow">in</span> <span class="n">token</span><span class="p">:</span>
+            <span class="n">start_text</span><span class="p">,</span> <span class="n">end_text</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"-"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
             <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">start_text</span><span class="p">),</span> <span class="nb">int</span><span class="p">(</span><span class="n">end_text</span><span class="p">)</span>
             <span class="n">step</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">end</span> <span class="o">&gt;=</span> <span class="n">start</span> <span class="k">else</span> <span class="o">-</span><span class="mi">1</span>
             <span class="n">selected</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">+</span> <span class="n">step</span><span class="p">,</span> <span class="n">step</span><span class="p">))</span>
@@ -532,7 +532,7 @@
     <span class="n">unique</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">selected</span><span class="p">))</span>
     <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">index</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">index</span> <span class="o">&gt;=</span> <span class="n">channel_count</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">unique</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Channel specification &#39;</span><span class="si">{</span><span class="n">specification</span><span class="si">}</span><span class="s2">&#39; is outside 0-</span><span class="si">{</span><span class="n">channel_count</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">"Channel specification '</span><span class="si">{</span><span class="n">specification</span><span class="si">}</span><span class="s2">' is outside 0-</span><span class="si">{</span><span class="n">channel_count</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
     <span class="k">return</span> <span class="n">unique</span></div>
 
@@ -553,20 +553,20 @@
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">channel_count</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">emg</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-        <span class="n">accel</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
-        <span class="n">gyro</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;StreamLayout&quot;</span><span class="p">:</span>
+        <span class="n">accel</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+        <span class="n">gyro</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"StreamLayout"</span><span class="p">:</span>
         <span class="n">layout</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span>
             <span class="n">parse_channel_spec</span><span class="p">(</span><span class="n">emg</span><span class="p">,</span> <span class="n">channel_count</span><span class="p">),</span>
             <span class="n">parse_channel_spec</span><span class="p">(</span><span class="n">accel</span><span class="p">,</span> <span class="n">channel_count</span><span class="p">),</span>
             <span class="n">parse_channel_spec</span><span class="p">(</span><span class="n">gyro</span><span class="p">,</span> <span class="n">channel_count</span><span class="p">),</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">layout</span><span class="o">.</span><span class="n">emg_channels</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;At least one EMG channel is required&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"At least one EMG channel is required"</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">layout</span><span class="o">.</span><span class="n">accel_channels</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">accel_channels</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Accelerometer layout must contain exactly three channels&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Accelerometer layout must contain exactly three channels"</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">layout</span><span class="o">.</span><span class="n">gyro_channels</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">gyro_channels</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Gyroscope layout must contain exactly three channels&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Gyroscope layout must contain exactly three channels"</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">layout</span></div>
 
 

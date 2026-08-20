@@ -501,7 +501,7 @@
            <div itemprop="articleBody">
              
   <h1>Source code for nml_hand_exo.interface._dual_hand_exo</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span></span><span class="sd">"""</span>
 <span class="sd">DualHandExo — manages left and right HandExo instances simultaneously.</span>
 
 <span class="sd">Design</span>
@@ -524,9 +524,9 @@
 
 <span class="sd">Command routing</span>
 <span class="sd">---------------</span>
-<span class="sd">  * ``motor_id = &#39;all&#39;``       → broadcast to both exos.</span>
-<span class="sd">  * ``motor_id = &#39;L:wrist&#39;``   → left exo, bare name ``wrist``.</span>
-<span class="sd">  * ``motor_id = &#39;R:index&#39;``   → right exo, bare name ``index``.</span>
+<span class="sd">  * ``motor_id = 'all'``       → broadcast to both exos.</span>
+<span class="sd">  * ``motor_id = 'L:wrist'``   → left exo, bare name ``wrist``.</span>
+<span class="sd">  * ``motor_id = 'R:index'``   → right exo, bare name ``index``.</span>
 <span class="sd">  * Bare name (no prefix)       → broadcast to both (best-effort).</span>
 
 <span class="sd">Index ordering in aggregated results</span>
@@ -534,7 +534,7 @@
 <span class="sd">Left motors occupy indices 0 … N_L-1; right motors N_L … N_L+N_R-1.</span>
 <span class="sd">This ordering matches the ``info()`` motor dict and the motor widget list</span>
 <span class="sd">built by the GUI.</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">._hand_exo</span><span class="w"> </span><span class="kn">import</span> <span class="n">HandExo</span>
@@ -543,7 +543,7 @@
 <div class="viewcode-block" id="DualHandExo">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">DualHandExo</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Unified controller for a left and/or right HandExo.</span>
 
 <span class="sd">    Either ``left`` or ``right`` may be ``None`` if that side is not</span>
@@ -555,10 +555,10 @@
 <span class="sd">        Left-hand exoskeleton instance (already connected).</span>
 <span class="sd">    right : HandExo or None</span>
 <span class="sd">        Right-hand exoskeleton instance (already connected).</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
-    <span class="n">_L_PREFIX</span> <span class="o">=</span> <span class="s2">&quot;L:&quot;</span>
-    <span class="n">_R_PREFIX</span> <span class="o">=</span> <span class="s2">&quot;R:&quot;</span>
+    <span class="n">_L_PREFIX</span> <span class="o">=</span> <span class="s2">"L:"</span>
+    <span class="n">_R_PREFIX</span> <span class="o">=</span> <span class="s2">"R:"</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">left</span><span class="p">:</span> <span class="n">HandExo</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">right</span><span class="p">:</span> <span class="n">HandExo</span> <span class="o">|</span> <span class="kc">None</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">left</span>  <span class="o">=</span> <span class="n">left</span>
@@ -572,27 +572,27 @@
     <span class="c1"># ------------------------------------------------------------------</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_active</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">HandExo</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return (side, exo) pairs for every connected side.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Return (side, exo) pairs for every connected side."""</span>
         <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">left</span>  <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span> <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;left&quot;</span><span class="p">,</span>  <span class="bp">self</span><span class="o">.</span><span class="n">left</span><span class="p">))</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">right</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span> <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;right&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">right</span><span class="p">))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">left</span>  <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span> <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">"left"</span><span class="p">,</span>  <span class="bp">self</span><span class="o">.</span><span class="n">left</span><span class="p">))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">right</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span> <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">"right"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">right</span><span class="p">))</span>
         <span class="k">return</span> <span class="n">out</span>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_prefix</span><span class="p">(</span><span class="n">side</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-        <span class="k">return</span> <span class="s2">&quot;L:&quot;</span> <span class="k">if</span> <span class="n">side</span> <span class="o">==</span> <span class="s2">&quot;left&quot;</span> <span class="k">else</span> <span class="s2">&quot;R:&quot;</span>
+        <span class="k">return</span> <span class="s2">"L:"</span> <span class="k">if</span> <span class="n">side</span> <span class="o">==</span> <span class="s2">"left"</span> <span class="k">else</span> <span class="s2">"R:"</span>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_parse_prefix</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Split ``&#39;L:wrist&#39;`` → ``(&#39;left&#39;, &#39;wrist&#39;)``.  No prefix → ``(None, name)``.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;L:&quot;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
-        <span class="k">if</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;R:&quot;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="s2">&quot;right&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+<span class="w">        </span><span class="sd">"""Split ``'L:wrist'`` → ``('left', 'wrist')``.  No prefix → ``(None, name)``."""</span>
+        <span class="k">if</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"L:"</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">"left"</span><span class="p">,</span> <span class="n">name</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+        <span class="k">if</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"R:"</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">"right"</span><span class="p">,</span> <span class="n">name</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
         <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">name</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_exo</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">side</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HandExo</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">left</span> <span class="k">if</span> <span class="n">side</span> <span class="o">==</span> <span class="s2">&quot;left&quot;</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">right</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">left</span> <span class="k">if</span> <span class="n">side</span> <span class="o">==</span> <span class="s2">"left"</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">right</span>
 
     <span class="c1"># ------------------------------------------------------------------</span>
     <span class="c1"># Lifecycle</span>
@@ -601,7 +601,7 @@
 <div class="viewcode-block" id="DualHandExo.close">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.close">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Close both serial connections.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Close both serial connections."""</span>
         <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">exo</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="p">():</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">exo</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
@@ -616,14 +616,14 @@
 <div class="viewcode-block" id="DualHandExo.info">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.info">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">info</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Return merged device info with side-qualified motor names.</span>
 
 <span class="sd">        Left motors occupy indices 0 … N_L-1; right motors follow.</span>
-<span class="sd">        Each motor dict has an extra ``&#39;side&#39;`` key (``&#39;left&#39;`` or ``&#39;right&#39;``).</span>
-<span class="sd">        The ``&#39;name&#39;`` key contains the qualified name (e.g. ``&#39;L:wrist&#39;``).</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;motors&quot;</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">&quot;n_motors&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;DualHandExo&quot;</span><span class="p">}</span>
+<span class="sd">        Each motor dict has an extra ``'side'`` key (``'left'`` or ``'right'``).</span>
+<span class="sd">        The ``'name'`` key contains the qualified name (e.g. ``'L:wrist'``).</span>
+<span class="sd">        """</span>
+        <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"motors"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"n_motors"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"name"</span><span class="p">:</span> <span class="s2">"DualHandExo"</span><span class="p">}</span>
         <span class="n">idx</span> <span class="o">=</span> <span class="mi">0</span>
 
         <span class="k">for</span> <span class="n">side</span><span class="p">,</span> <span class="n">exo</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="p">():</span>
@@ -633,22 +633,22 @@
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                 <span class="k">continue</span>
 
-            <span class="n">side_motors</span> <span class="o">=</span> <span class="n">side_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;motors&quot;</span><span class="p">,</span> <span class="p">{})</span>
+            <span class="n">side_motors</span> <span class="o">=</span> <span class="n">side_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"motors"</span><span class="p">,</span> <span class="p">{})</span>
             <span class="n">n_side</span> <span class="o">=</span> <span class="mi">0</span>
             <span class="k">for</span> <span class="n">local_key</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">side_motors</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
                 <span class="n">m</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">side_motors</span><span class="p">[</span><span class="n">local_key</span><span class="p">])</span>   <span class="c1"># shallow copy</span>
-                <span class="n">bare_name</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;motor_</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-                <span class="n">m</span><span class="p">[</span><span class="s2">&quot;side&quot;</span><span class="p">]</span>           <span class="o">=</span> <span class="n">side</span>
-                <span class="n">m</span><span class="p">[</span><span class="s2">&quot;bare_name&quot;</span><span class="p">]</span>      <span class="o">=</span> <span class="n">bare_name</span>
-                <span class="n">m</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>           <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="n">bare_name</span>
-                <span class="n">m</span><span class="p">[</span><span class="s2">&quot;qualified_name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="n">bare_name</span>
-                <span class="n">result</span><span class="p">[</span><span class="s2">&quot;motors&quot;</span><span class="p">][</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">m</span>
+                <span class="n">bare_name</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"motor_</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+                <span class="n">m</span><span class="p">[</span><span class="s2">"side"</span><span class="p">]</span>           <span class="o">=</span> <span class="n">side</span>
+                <span class="n">m</span><span class="p">[</span><span class="s2">"bare_name"</span><span class="p">]</span>      <span class="o">=</span> <span class="n">bare_name</span>
+                <span class="n">m</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]</span>           <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="n">bare_name</span>
+                <span class="n">m</span><span class="p">[</span><span class="s2">"qualified_name"</span><span class="p">]</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="n">bare_name</span>
+                <span class="n">result</span><span class="p">[</span><span class="s2">"motors"</span><span class="p">][</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">m</span>
                 <span class="n">idx</span> <span class="o">+=</span> <span class="mi">1</span>
                 <span class="n">n_side</span> <span class="o">+=</span> <span class="mi">1</span>
 
             <span class="bp">self</span><span class="o">.</span><span class="n">_n_motors</span><span class="p">[</span><span class="n">side</span><span class="p">]</span> <span class="o">=</span> <span class="n">n_side</span>
 
-        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;n_motors&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">idx</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">"n_motors"</span><span class="p">]</span> <span class="o">=</span> <span class="n">idx</span>
         <span class="k">return</span> <span class="n">result</span></div>
 
 
@@ -659,7 +659,7 @@
 <div class="viewcode-block" id="DualHandExo.send_command">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.send_command">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">send_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmd</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Broadcast a raw serial command to all connected exos.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Broadcast a raw serial command to all connected exos."""</span>
         <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">exo</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="p">():</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">exo</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
@@ -668,23 +668,23 @@
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_route</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Route a method call to the correct exo.</span>
 
-<span class="sd">        ``motor_id=&#39;all&#39;``      → call on every connected exo.</span>
-<span class="sd">        ``motor_id=&#39;L:name&#39;``   → left exo with bare name.</span>
-<span class="sd">        ``motor_id=&#39;R:name&#39;``   → right exo with bare name.</span>
+<span class="sd">        ``motor_id='all'``      → call on every connected exo.</span>
+<span class="sd">        ``motor_id='L:name'``   → left exo with bare name.</span>
+<span class="sd">        ``motor_id='R:name'``   → right exo with bare name.</span>
 <span class="sd">        Bare or int motor_id    → broadcast to both.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">motor_id</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">motor_id</span> <span class="o">==</span> <span class="s2">"all"</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">exo</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="p">():</span>
                 <span class="k">try</span><span class="p">:</span>
-                    <span class="nb">getattr</span><span class="p">(</span><span class="n">exo</span><span class="p">,</span> <span class="n">method</span><span class="p">)(</span><span class="s2">&quot;all&quot;</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                    <span class="nb">getattr</span><span class="p">(</span><span class="n">exo</span><span class="p">,</span> <span class="n">method</span><span class="p">)(</span><span class="s2">"all"</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
                 <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                     <span class="k">pass</span>
             <span class="k">return</span>
 
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">motor_id</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="s2">&quot;:&quot;</span> <span class="ow">in</span> <span class="n">motor_id</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">motor_id</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="s2">":"</span> <span class="ow">in</span> <span class="n">motor_id</span><span class="p">):</span>
             <span class="n">side</span><span class="p">,</span> <span class="n">bare</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_prefix</span><span class="p">(</span><span class="n">motor_id</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">side</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">exo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exo</span><span class="p">(</span><span class="n">side</span><span class="p">)</span>
@@ -703,14 +703,14 @@
                 <span class="k">pass</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_collect</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Call a method on all exos and merge results into a unified index dict.</span>
 
 <span class="sd">        Assumes the method returns ``{local_int_key: value}`` keyed by the</span>
-<span class="sd">        motor&#39;s local index within that exo.  Remaps to the global index space</span>
+<span class="sd">        motor's local index within that exo.  Remaps to the global index space</span>
 <span class="sd">        (left first, then right) so the returned dict matches the ``info()``</span>
 <span class="sd">        ordering.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">global_offset</span> <span class="o">=</span> <span class="mi">0</span>
 
@@ -733,34 +733,34 @@
 
 <div class="viewcode-block" id="DualHandExo.get_motor_angle">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.get_motor_angle">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_angle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">motor_id</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="s2">&quot;get_motor_angle&quot;</span><span class="p">,</span> <span class="s2">&quot;all&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_angle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">"all"</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">motor_id</span> <span class="o">==</span> <span class="s2">"all"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="s2">"get_motor_angle"</span><span class="p">,</span> <span class="s2">"all"</span><span class="p">)</span>
         <span class="n">side</span><span class="p">,</span> <span class="n">bare</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_prefix</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">motor_id</span><span class="p">))</span>
-        <span class="n">exo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exo</span><span class="p">(</span><span class="n">side</span> <span class="ow">or</span> <span class="s2">&quot;right&quot;</span><span class="p">)</span>
+        <span class="n">exo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exo</span><span class="p">(</span><span class="n">side</span> <span class="ow">or</span> <span class="s2">"right"</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_motor_angle</span><span class="p">(</span><span class="n">bare</span><span class="p">)</span> <span class="k">if</span> <span class="n">exo</span> <span class="k">else</span> <span class="kc">None</span></div>
 
 
 <div class="viewcode-block" id="DualHandExo.set_motor_angle">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_motor_angle">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_motor_angle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">angle</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">&quot;set_motor_angle&quot;</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">angle</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">"set_motor_angle"</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">angle</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="DualHandExo.get_absolute_motor_angle">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.get_absolute_motor_angle">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_absolute_motor_angle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">motor_id</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="s2">&quot;get_absolute_motor_angle&quot;</span><span class="p">,</span> <span class="s2">&quot;all&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_absolute_motor_angle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">"all"</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">motor_id</span> <span class="o">==</span> <span class="s2">"all"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="s2">"get_absolute_motor_angle"</span><span class="p">,</span> <span class="s2">"all"</span><span class="p">)</span>
         <span class="n">side</span><span class="p">,</span> <span class="n">bare</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_prefix</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">motor_id</span><span class="p">))</span>
-        <span class="n">exo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exo</span><span class="p">(</span><span class="n">side</span> <span class="ow">or</span> <span class="s2">&quot;right&quot;</span><span class="p">)</span>
+        <span class="n">exo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exo</span><span class="p">(</span><span class="n">side</span> <span class="ow">or</span> <span class="s2">"right"</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_absolute_motor_angle</span><span class="p">(</span><span class="n">bare</span><span class="p">)</span> <span class="k">if</span> <span class="n">exo</span> <span class="k">else</span> <span class="kc">None</span></div>
 
 
 <div class="viewcode-block" id="DualHandExo.set_absolute_motor_angle">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_absolute_motor_angle">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_absolute_motor_angle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">angle</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">&quot;set_absolute_motor_angle&quot;</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">angle</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">"set_absolute_motor_angle"</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">angle</span><span class="p">)</span></div>
 
 
     <span class="c1"># ------------------------------------------------------------------</span>
@@ -769,21 +769,21 @@
 
 <div class="viewcode-block" id="DualHandExo.get_motor_torque">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.get_motor_torque">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_torque</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">motor_id</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="s2">&quot;get_motor_torque&quot;</span><span class="p">,</span> <span class="s2">&quot;all&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_torque</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">"all"</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">motor_id</span> <span class="o">==</span> <span class="s2">"all"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="s2">"get_motor_torque"</span><span class="p">,</span> <span class="s2">"all"</span><span class="p">)</span>
         <span class="n">side</span><span class="p">,</span> <span class="n">bare</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_prefix</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">motor_id</span><span class="p">))</span>
-        <span class="n">exo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exo</span><span class="p">(</span><span class="n">side</span> <span class="ow">or</span> <span class="s2">&quot;right&quot;</span><span class="p">)</span>
+        <span class="n">exo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exo</span><span class="p">(</span><span class="n">side</span> <span class="ow">or</span> <span class="s2">"right"</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_motor_torque</span><span class="p">(</span><span class="n">bare</span><span class="p">)</span> <span class="k">if</span> <span class="n">exo</span> <span class="k">else</span> <span class="kc">None</span></div>
 
 
 <div class="viewcode-block" id="DualHandExo.get_motor_current">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.get_motor_current">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_current</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">motor_id</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="s2">&quot;get_motor_current&quot;</span><span class="p">,</span> <span class="s2">&quot;all&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_current</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">"all"</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">motor_id</span> <span class="o">==</span> <span class="s2">"all"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="s2">"get_motor_current"</span><span class="p">,</span> <span class="s2">"all"</span><span class="p">)</span>
         <span class="n">side</span><span class="p">,</span> <span class="n">bare</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_prefix</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">motor_id</span><span class="p">))</span>
-        <span class="n">exo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exo</span><span class="p">(</span><span class="n">side</span> <span class="ow">or</span> <span class="s2">&quot;right&quot;</span><span class="p">)</span>
+        <span class="n">exo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exo</span><span class="p">(</span><span class="n">side</span> <span class="ow">or</span> <span class="s2">"right"</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">exo</span><span class="o">.</span><span class="n">get_motor_current</span><span class="p">(</span><span class="n">bare</span><span class="p">)</span> <span class="k">if</span> <span class="n">exo</span> <span class="k">else</span> <span class="kc">None</span></div>
 
 
@@ -793,20 +793,20 @@
 
 <div class="viewcode-block" id="DualHandExo.enable_motor">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.enable_motor">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">enable_motor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">&quot;enable_motor&quot;</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">)</span></div>
+    <span class="k">def</span><span class="w"> </span><span class="nf">enable_motor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">"all"</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">"enable_motor"</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="DualHandExo.disable_motor">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.disable_motor">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">disable_motor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">&quot;disable_motor&quot;</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">)</span></div>
+    <span class="k">def</span><span class="w"> </span><span class="nf">disable_motor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">"all"</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">"disable_motor"</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="DualHandExo.home">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.home">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">home</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">&quot;home&quot;</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">)</span></div>
+    <span class="k">def</span><span class="w"> </span><span class="nf">home</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="o">=</span><span class="s2">"all"</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">"home"</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">)</span></div>
 
 
     <span class="c1"># ------------------------------------------------------------------</span>
@@ -821,65 +821,65 @@
         <span class="n">profiles_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">side</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Apply a calibration profile to one or both exos.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        profile_or_path : str or None</span>
-<span class="sd">            Profile name (e.g. ``&quot;zach left new&quot;``) or full file path.</span>
+<span class="sd">            Profile name (e.g. ``"zach left new"``) or full file path.</span>
 <span class="sd">            ``None`` → load the side-specific default from ``config.json``.</span>
 <span class="sd">        profiles_dir : str or None</span>
 <span class="sd">            Directory containing profile JSON files.  Defaults to the</span>
-<span class="sd">            repo&#39;s ``examples/calibration/profiles/`` directory.</span>
-<span class="sd">        side : &#39;left&#39;, &#39;right&#39;, or None</span>
+<span class="sd">            repo's ``examples/calibration/profiles/`` directory.</span>
+<span class="sd">        side : 'left', 'right', or None</span>
 <span class="sd">            Which exo to apply the profile to.  When ``None``, the method</span>
-<span class="sd">            reads the profile&#39;s ``side`` field; if absent, defaults to</span>
-<span class="sd">            ``&#39;right&#39;``.</span>
+<span class="sd">            reads the profile's ``side`` field; if absent, defaults to</span>
+<span class="sd">            ``'right'``.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
 <span class="sd">        RuntimeError</span>
 <span class="sd">            If the target exo is not connected.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">json</span><span class="o">,</span><span class="w"> </span><span class="nn">os</span>
 
         <span class="k">if</span> <span class="n">profiles_dir</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">repo_root</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span>
                 <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)))))</span>
             <span class="n">profiles_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
-                <span class="n">repo_root</span><span class="p">,</span> <span class="s2">&quot;examples&quot;</span><span class="p">,</span> <span class="s2">&quot;calibration&quot;</span><span class="p">,</span> <span class="s2">&quot;profiles&quot;</span>
+                <span class="n">repo_root</span><span class="p">,</span> <span class="s2">"examples"</span><span class="p">,</span> <span class="s2">"calibration"</span><span class="p">,</span> <span class="s2">"profiles"</span>
             <span class="p">)</span>
 
         <span class="c1"># Resolve filepath</span>
         <span class="k">if</span> <span class="n">profile_or_path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">config_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">profiles_dir</span><span class="p">,</span> <span class="s2">&quot;config.json&quot;</span><span class="p">)</span>
+            <span class="n">config_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">profiles_dir</span><span class="p">,</span> <span class="s2">"config.json"</span><span class="p">)</span>
             <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">config_path</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
                 <span class="n">cfg</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
-            <span class="c1"># Side-specific default, then legacy &quot;default&quot;</span>
-            <span class="n">key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;default_</span><span class="si">{</span><span class="n">side</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">side</span> <span class="k">else</span> <span class="kc">None</span>
-            <span class="n">profile_name</span> <span class="o">=</span> <span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">if</span> <span class="n">key</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="n">cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;default&quot;</span><span class="p">)</span>
+            <span class="c1"># Side-specific default, then legacy "default"</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"default_</span><span class="si">{</span><span class="n">side</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">side</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="n">profile_name</span> <span class="o">=</span> <span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">if</span> <span class="n">key</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="n">cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"default"</span><span class="p">)</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">profile_name</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;No default profile found for side=&#39;</span><span class="si">{</span><span class="n">side</span><span class="si">}</span><span class="s2">&#39;. &quot;</span>
-                    <span class="s2">&quot;Set one with calibrate_exo.py --set-default.&quot;</span>
+                    <span class="sa">f</span><span class="s2">"No default profile found for side='</span><span class="si">{</span><span class="n">side</span><span class="si">}</span><span class="s2">'. "</span>
+                    <span class="s2">"Set one with calibrate_exo.py --set-default."</span>
                 <span class="p">)</span>
-            <span class="n">filepath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">profiles_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">profile_name</span><span class="si">}</span><span class="s2">.json&quot;</span><span class="p">)</span>
+            <span class="n">filepath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">profiles_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">profile_name</span><span class="si">}</span><span class="s2">.json"</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">profile_or_path</span><span class="p">):</span>
             <span class="n">filepath</span> <span class="o">=</span> <span class="n">profile_or_path</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">filepath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">profiles_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">profile_or_path</span><span class="si">}</span><span class="s2">.json&quot;</span><span class="p">)</span>
+            <span class="n">filepath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">profiles_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">profile_or_path</span><span class="si">}</span><span class="s2">.json"</span><span class="p">)</span>
 
         <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">filepath</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
             <span class="n">cal</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 
         <span class="c1"># Determine target side</span>
-        <span class="n">target_side</span> <span class="o">=</span> <span class="n">side</span> <span class="ow">or</span> <span class="n">cal</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;side&quot;</span><span class="p">,</span> <span class="s2">&quot;right&quot;</span><span class="p">)</span>
+        <span class="n">target_side</span> <span class="o">=</span> <span class="n">side</span> <span class="ow">or</span> <span class="n">cal</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"side"</span><span class="p">,</span> <span class="s2">"right"</span><span class="p">)</span>
         <span class="n">exo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exo</span><span class="p">(</span><span class="n">target_side</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">exo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;No &#39;</span><span class="si">{</span><span class="n">target_side</span><span class="si">}</span><span class="s2">&#39; exo is connected. &quot;</span>
-                <span class="s2">&quot;Check the port configuration in dual mode.&quot;</span>
+                <span class="sa">f</span><span class="s2">"No '</span><span class="si">{</span><span class="n">target_side</span><span class="si">}</span><span class="s2">' exo is connected. "</span>
+                <span class="s2">"Check the port configuration in dual mode."</span>
             <span class="p">)</span>
 
         <span class="n">exo</span><span class="o">.</span><span class="n">apply_calibration</span><span class="p">(</span><span class="n">filepath</span><span class="p">,</span> <span class="n">profiles_dir</span><span class="p">)</span></div>
@@ -892,19 +892,19 @@
 <div class="viewcode-block" id="DualHandExo.set_zero_offset">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_zero_offset">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_zero_offset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">&quot;set_zero_offset&quot;</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">offset</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">"set_zero_offset"</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">offset</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="DualHandExo.set_flip">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_flip">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_flip</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">flip</span><span class="p">:</span> <span class="nb">bool</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">&quot;set_flip&quot;</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">flip</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">"set_flip"</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">flip</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="DualHandExo.set_motor_limits">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.DualHandExo.set_motor_limits">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_motor_limits</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">lo</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">hi</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">&quot;set_motor_limits&quot;</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_route</span><span class="p">(</span><span class="s2">"set_motor_limits"</span><span class="p">,</span> <span class="n">motor_id</span><span class="p">,</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span></div>
 
 
     <span class="c1"># ------------------------------------------------------------------</span>

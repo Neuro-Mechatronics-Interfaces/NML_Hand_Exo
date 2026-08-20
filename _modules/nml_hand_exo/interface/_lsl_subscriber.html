@@ -515,30 +515,30 @@
 <div class="viewcode-block" id="LSLMarkerSubscriber">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">LSLMarkerSubscriber</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Subscribe to a string-valued marker stream (e.g., type=&quot;Markers&quot;).</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Subscribe to a string-valued marker stream (e.g., type="Markers").</span>
 
 <span class="sd">    Usage</span>
 <span class="sd">    -----</span>
 <span class="sd">        def on_marker(text: str, ts: float, exo):</span>
 <span class="sd">            exo.set_gesture(text)</span>
 
-<span class="sd">        with LSLMarkerSubscriber(stream_type=&quot;Markers&quot;, verbose=True) as sub:</span>
+<span class="sd">        with LSLMarkerSubscriber(stream_type="Markers", verbose=True) as sub:</span>
 <span class="sd">            sub.set_callback(on_marker, exo, only_on_change=True)</span>
 <span class="sd">            # ... do other work; callbacks run in the background thread</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">stream_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">stream_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Markers&quot;</span><span class="p">,</span>
+        <span class="n">stream_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"Markers"</span><span class="p">,</span>
         <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.0</span><span class="p">,</span>
         <span class="n">buf_events</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2000</span><span class="p">,</span>   <span class="c1"># keep last N events</span>
         <span class="n">recover</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">stream_name</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">stream_type</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Provide stream_name or stream_type.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Provide stream_name or stream_type."</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">stream_name</span> <span class="o">=</span> <span class="n">stream_name</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">stream_type</span> <span class="o">=</span> <span class="n">stream_type</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">timeout</span><span class="p">)</span>
@@ -547,11 +547,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span> <span class="o">=</span> <span class="n">verbose</span>
 
         <span class="c1"># resolve &amp; connect</span>
-        <span class="n">qkey</span> <span class="o">=</span> <span class="s2">&quot;name&quot;</span> <span class="k">if</span> <span class="n">stream_name</span> <span class="k">else</span> <span class="s2">&quot;type&quot;</span>
+        <span class="n">qkey</span> <span class="o">=</span> <span class="s2">"name"</span> <span class="k">if</span> <span class="n">stream_name</span> <span class="k">else</span> <span class="s2">"type"</span>
         <span class="n">qval</span> <span class="o">=</span> <span class="n">stream_name</span> <span class="ow">or</span> <span class="n">stream_type</span>
         <span class="n">streams</span> <span class="o">=</span> <span class="n">resolve_byprop</span><span class="p">(</span><span class="n">qkey</span><span class="p">,</span> <span class="n">qval</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">streams</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No LSL stream with </span><span class="si">{</span><span class="n">qkey</span><span class="si">}</span><span class="s2">=&#39;</span><span class="si">{</span><span class="n">qval</span><span class="si">}</span><span class="s2">&#39; found within </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"No LSL stream with </span><span class="si">{</span><span class="n">qkey</span><span class="si">}</span><span class="s2">='</span><span class="si">{</span><span class="n">qval</span><span class="si">}</span><span class="s2">' found within </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s."</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">inlet</span> <span class="o">=</span> <span class="n">StreamInlet</span><span class="p">(</span><span class="n">streams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">recover</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">recover</span><span class="p">)</span>
         <span class="n">info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">inlet</span><span class="o">.</span><span class="n">info</span><span class="p">()</span>
@@ -561,7 +561,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">fs</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">info</span><span class="o">.</span><span class="n">nominal_srate</span><span class="p">())</span>  <span class="c1"># usually 0 for markers</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[LSLMarkerSubscriber] connected to &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; (type=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[LSLMarkerSubscriber] connected to '</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">' (type=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="si">}</span><span class="s2">)"</span><span class="p">)</span>
 
         <span class="c1"># state</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
@@ -612,14 +612,14 @@
 <div class="viewcode-block" id="LSLMarkerSubscriber.set_callback">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.set_callback">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_callback</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">only_on_change</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Register a callback invoked as ``func(text, timestamp, *args, **kwargs)``.</span>
 
 <span class="sd">        ``only_on_change=True`` suppresses repeated marker text. Positional and</span>
 <span class="sd">        keyword arguments supplied here are forwarded to the callback.</span>
 
 <span class="sd">        Pass ``None`` to clear the callback.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_cb</span> <span class="o">=</span> <span class="n">func</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_cb_args</span> <span class="o">=</span> <span class="n">args</span>
@@ -636,7 +636,7 @@
                 <span class="k">continue</span>
 
             <span class="c1"># Concatenate multi-field markers (rare) into one string</span>
-            <span class="n">text</span> <span class="o">=</span> <span class="n">sample</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sample</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="s2">&quot;|&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">sample</span><span class="p">))</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">sample</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sample</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="s2">"|"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">sample</span><span class="p">))</span>
             <span class="n">text</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
 
             <span class="c1"># store &amp; compute if we should fire</span>
@@ -659,13 +659,13 @@
                     <span class="n">cb</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">ts</span><span class="p">),</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
                 <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
-                        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[LSLMarkerSubscriber] callback error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[LSLMarkerSubscriber] callback error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
     <span class="c1"># --- polling helpers ---</span>
 <div class="viewcode-block" id="LSLMarkerSubscriber.get_recent_markers">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.get_recent_markers">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_recent_markers</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the last k markers as (timestamp, text).&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Return the last k markers as (timestamp, text)."""</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
             <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_markers</span><span class="p">)[</span><span class="o">-</span><span class="n">k</span><span class="p">:]</span></div>
 
@@ -680,7 +680,7 @@
 <div class="viewcode-block" id="LSLMarkerSubscriber.poll_latest">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.poll_latest">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">poll_latest</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Non-blocking: return the most recent (ts, text) or None.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Non-blocking: return the most recent (ts, text) or None."""</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_markers</span><span class="p">:</span>
                 <span class="k">return</span> <span class="kc">None</span>
@@ -690,10 +690,10 @@
 <div class="viewcode-block" id="LSLMarkerSubscriber.pull">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.pull">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">pull</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Wait up to `timeout` seconds for a new marker (compares against the last one).</span>
 <span class="sd">        Returns (ts, text) or None if nothing new appears.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">deadline</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span> <span class="o">+</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">timeout</span><span class="p">))</span>
         <span class="n">before</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">poll_latest</span><span class="p">()</span>
         <span class="k">while</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">deadline</span><span class="p">:</span>
@@ -709,10 +709,10 @@
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLMarkerSubscriber.metadata">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
         <span class="k">return</span> <span class="p">{</span>
-            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="p">,</span>
-            <span class="s2">&quot;fs&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">fs</span><span class="p">,</span>
-            <span class="s2">&quot;n_channels&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_channels</span><span class="p">,</span>
+            <span class="s2">"name"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s2">"type"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="p">,</span>
+            <span class="s2">"fs"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">fs</span><span class="p">,</span>
+            <span class="s2">"n_channels"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_channels</span><span class="p">,</span>
         <span class="p">}</span></div>
 </div>
 
@@ -722,12 +722,12 @@
 <div class="viewcode-block" id="LSLNumericSubscriber">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLNumericSubscriber">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">LSLNumericSubscriber</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Subscribe to a continuous numeric stream (e.g., EMG/EEG).</span>
 
 <span class="sd">    Use :meth:`get_latest_window` to retrieve a channel-by-sample ``float32``</span>
 <span class="sd">    array from the rolling buffer.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">stream_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -739,7 +739,7 @@
         <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">stream_name</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">stream_type</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Provide stream_name or stream_type.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Provide stream_name or stream_type."</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">stream_name</span> <span class="o">=</span> <span class="n">stream_name</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">stream_type</span> <span class="o">=</span> <span class="n">stream_type</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">timeout</span><span class="p">)</span>
@@ -749,11 +749,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span> <span class="o">=</span> <span class="n">verbose</span>
 
         <span class="c1"># resolve &amp; connect</span>
-        <span class="n">qkey</span> <span class="o">=</span> <span class="s2">&quot;name&quot;</span> <span class="k">if</span> <span class="n">stream_name</span> <span class="k">else</span> <span class="s2">&quot;type&quot;</span>
+        <span class="n">qkey</span> <span class="o">=</span> <span class="s2">"name"</span> <span class="k">if</span> <span class="n">stream_name</span> <span class="k">else</span> <span class="s2">"type"</span>
         <span class="n">qval</span> <span class="o">=</span> <span class="n">stream_name</span> <span class="ow">or</span> <span class="n">stream_type</span>
         <span class="n">streams</span> <span class="o">=</span> <span class="n">resolve_byprop</span><span class="p">(</span><span class="n">qkey</span><span class="p">,</span> <span class="n">qval</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">streams</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No LSL stream with </span><span class="si">{</span><span class="n">qkey</span><span class="si">}</span><span class="s2">=&#39;</span><span class="si">{</span><span class="n">qval</span><span class="si">}</span><span class="s2">&#39; found within </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"No LSL stream with </span><span class="si">{</span><span class="n">qkey</span><span class="si">}</span><span class="s2">='</span><span class="si">{</span><span class="n">qval</span><span class="si">}</span><span class="s2">' found within </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s."</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">inlet</span> <span class="o">=</span> <span class="n">StreamInlet</span><span class="p">(</span><span class="n">streams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">recover</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">recover</span><span class="p">)</span>
         <span class="n">info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">inlet</span><span class="o">.</span><span class="n">info</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">info</span><span class="o">.</span><span class="n">name</span><span class="p">()</span>
@@ -761,22 +761,22 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">n_channels</span> <span class="o">=</span> <span class="n">info</span><span class="o">.</span><span class="n">channel_count</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">fs</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">info</span><span class="o">.</span><span class="n">nominal_srate</span><span class="p">())</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">fs</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Stream &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; nominal_srate=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">fs</span><span class="si">}</span><span class="s2">; expected continuous numeric.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Stream '</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">' nominal_srate=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">fs</span><span class="si">}</span><span class="s2">; expected continuous numeric."</span><span class="p">)</span>
 
         <span class="c1"># channel labels (best effort)</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">ch</span> <span class="o">=</span> <span class="n">info</span><span class="o">.</span><span class="n">desc</span><span class="p">()</span><span class="o">.</span><span class="n">child</span><span class="p">(</span><span class="s2">&quot;channels&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">child</span><span class="p">(</span><span class="s2">&quot;channel&quot;</span><span class="p">)</span>
+            <span class="n">ch</span> <span class="o">=</span> <span class="n">info</span><span class="o">.</span><span class="n">desc</span><span class="p">()</span><span class="o">.</span><span class="n">child</span><span class="p">(</span><span class="s2">"channels"</span><span class="p">)</span><span class="o">.</span><span class="n">child</span><span class="p">(</span><span class="s2">"channel"</span><span class="p">)</span>
             <span class="n">labels</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_channels</span><span class="p">):</span>
-                <span class="n">labels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ch</span><span class="o">.</span><span class="n">child_value</span><span class="p">(</span><span class="s2">&quot;label&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="sa">f</span><span class="s2">&quot;Ch</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">labels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ch</span><span class="o">.</span><span class="n">child_value</span><span class="p">(</span><span class="s2">"label"</span><span class="p">)</span> <span class="ow">or</span> <span class="sa">f</span><span class="s2">"Ch</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
                 <span class="n">ch</span> <span class="o">=</span> <span class="n">ch</span><span class="o">.</span><span class="n">next_sibling</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">channel_labels</span> <span class="o">=</span> <span class="n">labels</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">channel_labels</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;Ch</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_channels</span><span class="p">)]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">channel_labels</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">"Ch</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_channels</span><span class="p">)]</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[LSLNumericSubscriber] connected to &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; (type=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="si">}</span><span class="s2">) &quot;</span>
-                  <span class="sa">f</span><span class="s2">&quot;fs=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">fs</span><span class="si">}</span><span class="s2">, C=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">n_channels</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[LSLNumericSubscriber] connected to '</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">' (type=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="si">}</span><span class="s2">) "</span>
+                  <span class="sa">f</span><span class="s2">"fs=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">fs</span><span class="si">}</span><span class="s2">, C=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">n_channels</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
         <span class="c1"># state</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
@@ -830,7 +830,7 @@
 <div class="viewcode-block" id="LSLNumericSubscriber.get_latest_window">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLNumericSubscriber.get_latest_window">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_latest_window</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">window_ms</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return last window_ms of data as (C, N) float32 (zero-padded if not enough).&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Return last window_ms of data as (C, N) float32 (zero-padded if not enough)."""</span>
         <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fs</span> <span class="o">*</span> <span class="n">window_ms</span> <span class="o">/</span> <span class="mf">1000.0</span><span class="p">))</span>
         <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">n_channels</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
@@ -852,11 +852,11 @@
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLNumericSubscriber.metadata">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
         <span class="k">return</span> <span class="p">{</span>
-            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="p">,</span>
-            <span class="s2">&quot;fs&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">fs</span><span class="p">,</span>
-            <span class="s2">&quot;n_channels&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_channels</span><span class="p">,</span>
-            <span class="s2">&quot;channel_labels&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel_labels</span><span class="p">,</span>
+            <span class="s2">"name"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s2">"type"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="p">,</span>
+            <span class="s2">"fs"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">fs</span><span class="p">,</span>
+            <span class="s2">"n_channels"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_channels</span><span class="p">,</span>
+            <span class="s2">"channel_labels"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel_labels</span><span class="p">,</span>
         <span class="p">}</span></div>
 </div>
 

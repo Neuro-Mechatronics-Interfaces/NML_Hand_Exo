@@ -510,132 +510,132 @@
 <div class="viewcode-block" id="FakeHandExo">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">FakeHandExo</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Fake HandExo class for testing purposes.</span>
 <span class="sd">    This class simulates the behavior of the real HandExo device.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">comm</span><span class="p">:</span> <span class="n">BaseComm</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;FakeHandExo&quot;</span><span class="p">,</span> <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">comm</span><span class="p">:</span> <span class="n">BaseComm</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"FakeHandExo"</span><span class="p">,</span> <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">comm</span> <span class="o">=</span> <span class="n">comm</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span> <span class="o">=</span> <span class="n">verbose</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">connected</span> <span class="o">=</span> <span class="kc">True</span>  <span class="c1"># Simulate a successful connection</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_imu_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>  <span class="c1"># Simulated IMU data (roll, pitch, yaw)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">motor_names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;wrist&#39;</span><span class="p">,</span> <span class="s1">&#39;wrist2&#39;</span><span class="p">,</span> <span class="s1">&#39;thumbadd&#39;</span><span class="p">,</span> <span class="s1">&#39;thumbrot&#39;</span><span class="p">,</span> <span class="s1">&#39;thumbflex&#39;</span><span class="p">,</span> <span class="s1">&#39;index&#39;</span><span class="p">,</span> <span class="s1">&#39;middle&#39;</span><span class="p">,</span> <span class="s1">&#39;ring&#39;</span><span class="p">,</span> <span class="s1">&#39;pinky&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">motor_names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'wrist'</span><span class="p">,</span> <span class="s1">'wrist2'</span><span class="p">,</span> <span class="s1">'thumbadd'</span><span class="p">,</span> <span class="s1">'thumbrot'</span><span class="p">,</span> <span class="s1">'thumbflex'</span><span class="p">,</span> <span class="s1">'index'</span><span class="p">,</span> <span class="s1">'middle'</span><span class="p">,</span> <span class="s1">'ring'</span><span class="p">,</span> <span class="s1">'pinky'</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">motor_ids</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">motor_names</span><span class="p">)}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">home_position</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">motor_names</span><span class="p">))</span>  <span class="c1"># Simulated home position</span>
 
 <div class="viewcode-block" id="FakeHandExo.logger">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.logger">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">logger</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">argv</span><span class="p">,</span> <span class="n">warning</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Robust debugging print function</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            *argv             : (str) Messages to log.</span>
 <span class="sd">            warning           : (bool) If True, prints the message in yellow.</span>
 
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
-            <span class="n">msg</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">argv</span><span class="p">)</span>
-            <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">][</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">msg</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s1">''</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">argv</span><span class="p">)</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"[</span><span class="si">{</span><span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">][</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">msg</span><span class="si">}</span><span class="s2">"</span>
 
             <span class="c1"># If a warning, print the text in yellow</span>
-            <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="se">\033</span><span class="s2">[93m</span><span class="si">{</span><span class="n">msg</span><span class="si">}</span><span class="se">\033</span><span class="s2">[0m&quot;</span> <span class="k">if</span> <span class="n">warning</span> <span class="k">else</span> <span class="n">msg</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="se">\033</span><span class="s2">[93m</span><span class="si">{</span><span class="n">msg</span><span class="si">}</span><span class="se">\033</span><span class="s2">[0m"</span> <span class="k">if</span> <span class="n">warning</span> <span class="k">else</span> <span class="n">msg</span>
             <span class="nb">print</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="FakeHandExo.set_comm">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.set_comm">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_comm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">comm</span><span class="p">:</span> <span class="n">BaseComm</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Sets the communication interface for the exoskeleton.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            comm (BaseComm): The communication interface to use.</span>
 
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">comm</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Communication interface set to </span><span class="si">{</span><span class="n">comm</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Communication interface set to </span><span class="si">{</span><span class="n">comm</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="FakeHandExo.connect">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.connect">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">connect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Simulate connecting to the HandExo device.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="s2">&quot;Connected to HandExo device.&quot;</span><span class="p">)</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="s2">"Connected to HandExo device."</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="FakeHandExo.close">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.close">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Simulate closing the connection to the HandExo device.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">connected</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="s2">&quot;Connection to HandExo device closed.&quot;</span><span class="p">)</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="s2">"Connection to HandExo device closed."</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="FakeHandExo.get_imu_angles">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.get_imu_angles">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_imu_angles</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulate reading IMU angles.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Simulate reading IMU angles."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_imu_data</span></div>
 
 
 <div class="viewcode-block" id="FakeHandExo.set_imu_angles">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.set_imu_angles">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_imu_angles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">roll</span><span class="p">,</span> <span class="n">pitch</span><span class="p">,</span> <span class="n">yaw</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulate setting IMU angles.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Simulate setting IMU angles."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_imu_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">roll</span><span class="p">,</span> <span class="n">pitch</span><span class="p">,</span> <span class="n">yaw</span><span class="p">])</span></div>
 
 
 <div class="viewcode-block" id="FakeHandExo.get_motor_angles">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.get_motor_angles">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_motor_angles</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulate reading motor angles.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Simulate reading motor angles."""</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">180</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">motor_names</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="FakeHandExo.set_motor_angles">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.set_motor_angles">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_motor_angles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">angles</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulate setting motor angles.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Simulate setting motor angles."""</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">angles</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">motor_names</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Angles must match the number of motors.&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Setting motor angles: </span><span class="si">{</span><span class="n">angles</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Angles must match the number of motors."</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Setting motor angles: </span><span class="si">{</span><span class="n">angles</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="FakeHandExo.home">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.home">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">home</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulate homing the device.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Simulate homing the device."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">set_motor_angles</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">home_position</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="s2">&quot;Homing the device to the home position.&quot;</span><span class="p">)</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="s2">"Homing the device to the home position."</span><span class="p">)</span></div>
 
 
 
 <div class="viewcode-block" id="FakeHandExo.set_gesture_state">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.FakeHandExo.set_gesture_state">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_gesture_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gesture_state</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Simulate setting the gesture state.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            gesture_state (str): The gesture state to set.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">gesture_state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;rest&#39;</span><span class="p">,</span> <span class="s1">&#39;open&#39;</span><span class="p">,</span> <span class="s1">&#39;close&#39;</span><span class="p">]:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid gesture state: </span><span class="si">{</span><span class="n">gesture_state</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">warning</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">gesture_state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'rest'</span><span class="p">,</span> <span class="s1">'open'</span><span class="p">,</span> <span class="s1">'close'</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Invalid gesture state: </span><span class="si">{</span><span class="n">gesture_state</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">warning</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
                 <span class="k">return</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Setting gesture state to: </span><span class="si">{</span><span class="n">gesture_state</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Setting gesture state to: </span><span class="si">{</span><span class="n">gesture_state</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></div>
 </div>
 
 </pre></div>

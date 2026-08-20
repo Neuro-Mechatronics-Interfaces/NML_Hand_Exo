@@ -510,50 +510,50 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">pylsl</span><span class="w"> </span><span class="kn">import</span> <span class="n">StreamInfo</span><span class="p">,</span> <span class="n">StreamOutlet</span><span class="p">,</span> <span class="n">local_clock</span><span class="p">,</span> <span class="n">cf_string</span>
 <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
     <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span>
-        <span class="s2">&quot;pylsl is not installed. Install it with:</span><span class="se">\n\n</span><span class="s2">    pip install pylsl</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="s2">"pylsl is not installed. Install it with:</span><span class="se">\n\n</span><span class="s2">    pip install pylsl</span><span class="se">\n</span><span class="s2">"</span>
     <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
 
 
 <div class="viewcode-block" id="LSLMessagePublisher">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLMessagePublisher">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">LSLMessagePublisher</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Publish messages over Lab Streaming Layer (LSL) as a string Marker stream.</span>
 
-<span class="sd">    - One channel (string), nominal_srate=0 (irregular), type=&#39;Markers&#39; by default.</span>
-<span class="sd">    - Call `publish(label)` to send &#39;pinkyflexion&#39;, &#39;thumbflexion&#39;, etc.</span>
+<span class="sd">    - One channel (string), nominal_srate=0 (irregular), type='Markers' by default.</span>
+<span class="sd">    - Call `publish(label)` to send 'pinkyflexion', 'thumbflexion', etc.</span>
 <span class="sd">    - Optional: pass metadata to embed model/config info in the stream description.</span>
 <span class="sd">    - Optional: de-duplicate consecutive identical labels.</span>
 
 <span class="sd">    Example:</span>
-<span class="sd">        lsl = GestureLSLBroadcaster(name=&quot;EMGGesture&quot;, metadata={&quot;model&quot;:&quot;128_channels&quot;})</span>
-<span class="sd">        lsl.publish(&quot;pinkyflexion&quot;)</span>
+<span class="sd">        lsl = GestureLSLBroadcaster(name="EMGGesture", metadata={"model":"128_channels"})</span>
+<span class="sd">        lsl.publish("pinkyflexion")</span>
 <span class="sd">        lsl.close()</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Message&quot;</span><span class="p">,</span>
-        <span class="n">stream_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Markers&quot;</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"Message"</span><span class="p">,</span>
+        <span class="n">stream_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"Markers"</span><span class="p">,</span>
         <span class="n">source_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">metadata</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">only_on_change</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">chunk_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
         <span class="n">max_buffered</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">360</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Args:</span>
-<span class="sd">            name: Stream name shown in LSL (e.g., &quot;EMGGesture&quot;).</span>
-<span class="sd">            stream_type: LSL type. &quot;Markers&quot; is commonly used for string events.</span>
+<span class="sd">            name: Stream name shown in LSL (e.g., "EMGGesture").</span>
+<span class="sd">            stream_type: LSL type. "Markers" is commonly used for string events.</span>
 <span class="sd">            source_id: Optional unique ID to distinguish multiple sources.</span>
 <span class="sd">            metadata: Dict with any extra info (model label, classes, fs, etc.).</span>
 <span class="sd">            only_on_change: If True, suppress duplicate consecutive labels.</span>
 <span class="sd">            chunk_size: Outlet chunk size (usually 1 for markers).</span>
 <span class="sd">            max_buffered: Max buffered samples in outlet.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">stream_type</span> <span class="o">=</span> <span class="n">stream_type</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">source_id</span> <span class="o">=</span> <span class="n">source_id</span> <span class="ow">or</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_source&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">source_id</span> <span class="o">=</span> <span class="n">source_id</span> <span class="ow">or</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_source"</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">only_on_change</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">only_on_change</span><span class="p">)</span>
 
         <span class="c1"># One string channel, irregular sampling (0 Hz)</span>
@@ -582,13 +582,13 @@
 <div class="viewcode-block" id="LSLMessagePublisher.publish">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLMessagePublisher.publish">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">publish</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">timestamp</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Push a single gesture label as a string sample.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            label: Your gesture string, e.g. &quot;pinkyflexion&quot;.</span>
+<span class="sd">            label: Your gesture string, e.g. "pinkyflexion".</span>
 <span class="sd">            timestamp: LSL timestamp; if None, uses local_clock().</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
             <span class="n">label</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">label</span><span class="p">)</span>
 
@@ -603,7 +603,7 @@
 <div class="viewcode-block" id="LSLMessagePublisher.close">
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.LSLMessagePublisher.close">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Close the outlet (optional; GC will handle it too).&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Close the outlet (optional; GC will handle it too)."""</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="c1"># Just drop references so GC can clean up.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_outlet</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># type: ignore</span>

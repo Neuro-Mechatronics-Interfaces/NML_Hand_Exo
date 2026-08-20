@@ -513,7 +513,7 @@
 <a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.decoding.IntentOutputStabilizer">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">IntentOutputStabilizer</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Smooth continuous intent and reject single-window direction reversals.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Smooth continuous intent and reject single-window direction reversals."""</span>
 
     <span class="n">ema_alpha</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.25</span>
     <span class="n">max_step</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.18</span>
@@ -546,7 +546,7 @@
         <span class="o">*</span><span class="p">,</span>
         <span class="n">open_label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">close_label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-        <span class="n">rest_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;rest&quot;</span><span class="p">,</span>
+        <span class="n">rest_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"rest"</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DecoderDecision</span><span class="p">:</span>
         <span class="n">projection</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">decision</span><span class="o">.</span><span class="n">signed_intent</span>
