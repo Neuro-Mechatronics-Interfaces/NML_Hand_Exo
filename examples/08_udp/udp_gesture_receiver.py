@@ -112,12 +112,12 @@ FLEX_PERCENT = {
     "wrist": 75,
 }
 REST_PERCENT = {
-    "thumb": 50, "index": 35, "middle": 35, "ring": 35, "pinky": 35,
+    "thumb": 50, "index": 50, "middle": 50, "ring": 50, "pinky": 50,
     "wrist": 50,
 }
 EXTEND_PERCENT = {
-    "thumb": 30, "index": 15, "middle": 15, "ring": 15, "pinky": 15,
-    "wrist": 25,
+    "thumb": 5, "index": 5, "middle": 5, "ring": 5, "pinky": 5,
+    "wrist": 5,
 }
 
 def build_command_map():
@@ -141,16 +141,16 @@ def build_command_map():
     """
     command_map = {0: "set_gesture:grasp:open"}
     for index, joint in enumerate(JOINTS, start=1):
-        # command_map[index] = f"set_gesture_angle:{joint}:{FLEX_PERCENT[joint]}"
-        # command_map[-index] = f"set_gesture_angle:{joint}:{EXTEND_PERCENT}"
-        # command_map[index + REST_VALUE_OFFSET] = (
-        #     f"set_gesture_angle:{joint}:{REST_PERCENT[joint]}"
-        # )
-        command_map[index] = f"set_gesture:{joint}:flex"
-        command_map[-index] = f"set_gesture:{joint}:extend"
+        command_map[index] = f"set_gesture_angle:{joint}:{FLEX_PERCENT[joint]}"
+        command_map[-index] = f"set_gesture_angle:{joint}:{EXTEND_PERCENT}"
         command_map[index + REST_VALUE_OFFSET] = (
-            f"set_gesture:{joint}:rest"
+            f"set_gesture_angle:{joint}:{REST_PERCENT[joint]}"
         )
+        # command_map[index] = f"set_gesture:{joint}:flex"
+        # command_map[-index] = f"set_gesture:{joint}:extend"
+        # command_map[index + REST_VALUE_OFFSET] = (
+        #     f"set_gesture:{joint}:rest"
+        # )
     return command_map
 
 
@@ -221,7 +221,7 @@ DEFAULT_TOTAL_CURRENT_MA = 800
 
 # Commands sent once at startup when arming, and the release sent on exit.
 # ARM_COMMANDS = ("reboot:all", "set_exo_mode:gesture_fixed", "enable:all")
-ARM_COMMANDS = ("reboot:all", "enable:all")
+ARM_COMMANDS = ("reboot:all", "enable:all", "home:all")
 DISARM_COMMANDS = ("disable:all",)
 
 # Sent after arming (--no-home to skip). Homing drives every motor to its zero

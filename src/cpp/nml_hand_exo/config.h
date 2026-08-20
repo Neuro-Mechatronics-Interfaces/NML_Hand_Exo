@@ -229,7 +229,7 @@ constexpr const char* MOTOR_NAMES[] = {
 
 constexpr float HOME_STATES[] = {
   // left (IDs 1-9) — placeholders, calibrate before use
-  228.45, 132.70, 220.79, 232.23, 122.76, 193.34, 80.26, 98.21, 63.80,
+  102.6, 252.03, 251.15, 226.78, 331.76, 169.58, 173.01, 172.24, 80.96,
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
   228.45, 132.70, 220.79, 232.23, 122.76, 193.34, 80.26, 98.21, 63.80
 };
@@ -237,8 +237,8 @@ constexpr float HOME_STATES[] = {
 /// @brief Physical joint limits [min, max] for each motor.
 constexpr float jointLimits[][2] = {
   // left (IDs 1-9) — placeholders
-  {38.00, 194.00}, {167.00, 310.00}, {175.00, 285.00}, {169.00, 269.00}, {290.00, 367.00},
-  {107.00, 184.00}, {164.00, 223.00}, {136.00, 204.00}, {65.00, 155.00},
+  {47.00, 168.00}, {182.00, 315.00}, {238.00, 291.00}, {196.00, 255.00}, {280.00, 408.00},
+  {119.50, 184.00}, {159.00, 223.00}, {133.00, 208.00}, {63.00, 146.00},
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
   {201.17, 269.46}, {90.02, 163.42}, {198.09, 227.13}, {160.26, 260.86}, {106.74, 147.31},
   {162.27, 231.35}, {49.54, 102.52}, {74.71, 127.78}, {14.96, 109.65}
@@ -247,7 +247,7 @@ constexpr float jointLimits[][2] = {
 /// @brief Default flip direction per motor.
 constexpr bool DEFAULT_FLIPS[] = {
   // left (IDs 1-9) — placeholders
-  false, false, false, false, false, false, false, false, false,
+  true, true, false, false, true, true, false, true, false,
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
   false, false, false, true, false, false, true, false, true
 };
@@ -502,17 +502,17 @@ constexpr float REST_THUMBFLEX   =  0.50f;
 constexpr float FLEX_THUMBFLEX   =  0.90f;
 
 constexpr float EXTEND_INDEX     =  0.10f;
-constexpr float REST_INDEX       =  0.25f;
-constexpr float FLEX_INDEX       =  0.50f;
+constexpr float REST_INDEX       =  0.50f;
+constexpr float FLEX_INDEX       =  0.90f;
 constexpr float EXTEND_MIDDLE    =  0.10f;
-constexpr float REST_MIDDLE      =  0.25f;
-constexpr float FLEX_MIDDLE      =  0.50f;
+constexpr float REST_MIDDLE      =  0.50f;
+constexpr float FLEX_MIDDLE      =  0.90f;
 constexpr float EXTEND_RING      =  0.10f;
-constexpr float REST_RING        =  0.25f;
-constexpr float FLEX_RING        =  0.50f;
+constexpr float REST_RING        =  0.50f;
+constexpr float FLEX_RING        =  0.90f;
 constexpr float EXTEND_PINKY     =  0.10f;
-constexpr float REST_PINKY       =  0.25f;
-constexpr float FLEX_PINKY       =  0.50f;
+constexpr float REST_PINKY       =  0.50f;
+constexpr float FLEX_PINKY       =  0.90f;
 
 // Wrist flexion/extension. Both `wrist` and `wrist2` are mounted on the back of
 // the arm and pull on the dorsal aspect of the wrist, so they act in concert and
@@ -613,7 +613,7 @@ constexpr int DEFAULT_GOAL_CURRENT_MA = 150;
 // leaving headroom for the board, OLED and IMU. Raise it with
 // `set_total_current_lim:<mA>` once you know what your supply sustains; watch
 // `current_status` for the measured aggregate while you do.
-constexpr int TOTAL_CURRENT_BUDGET_MA = 800;
+constexpr int TOTAL_CURRENT_BUDGET_MA = 2000;
 
 /// @brief Current a motor is allowed once it is judged to have settled, in mA.
 ///
@@ -621,7 +621,7 @@ constexpr int TOTAL_CURRENT_BUDGET_MA = 800;
 /// the point is to cap what a STALLED motor can keep pulling. The worst case
 /// must fit the budget on its own, so keep N_MOTORS * HOLD_CURRENT_MA below
 /// TOTAL_CURRENT_BUDGET_MA (18 * 25 = 450 mA against a 800 mA default).
-constexpr int HOLD_CURRENT_MA = 25;
+constexpr int HOLD_CURRENT_MA = 300;
 
 /// @brief Minimum gap between the governor's individual motor reads, in ms.
 ///
@@ -676,7 +676,7 @@ constexpr uint16_t MIN_MOVE_CURRENT_MA = 75;
 /// Bounds how long a motor may hold an admission slot, so one joint jammed
 /// against an obstruction cannot stop the rest of a gesture from ever being
 /// dispatched. Also what turns "no movement" into a reported verdict.
-constexpr unsigned long MOVE_TIMEOUT_MS = 2500;
+constexpr unsigned long MOVE_TIMEOUT_MS = 5000;
 
 /// @brief Position error within which a move counts as having reached its goal.
 constexpr float GESTURE_REACH_TOLERANCE_DEG = 4.0f;
@@ -688,18 +688,18 @@ constexpr float GESTURE_REACH_TOLERANCE_DEG = 4.0f;
 /// an endstop or a spastic finger keeps pulling. The distinction matters --
 /// arrived motors are released from the budget, but a motor doing real work is
 /// left at full effort unless the fleet is genuinely over budget.
-constexpr uint16_t CURRENT_SETTLED_MA = 25;
+constexpr uint16_t CURRENT_SETTLED_MA = 50;
 
 /// @brief How long a motor is presumed to still be travelling, in ms.
 ///
 /// Only after this has elapsed is a low draw read as "arrived" rather than
 /// "has not started pulling yet". Long enough for a full-range digit move.
-constexpr unsigned long MOVE_WINDOW_MS = 500;
+constexpr unsigned long MOVE_WINDOW_MS = 1000;
 
 /// @brief How long a motor must draw stall-level current before it is demoted
 /// to HOLD_CURRENT_MA, in ms. This is what stops a fleet of motors parked on
 /// their endstops from holding at full effort indefinitely.
-constexpr unsigned long STALL_HOLD_MS = 250;
+constexpr unsigned long STALL_HOLD_MS = 500;
 
 /// @brief Direct-control limits used by serial velocity/current commands.
 constexpr float DIRECT_VELOCITY_LIMIT_RPM = 50.0f;
