@@ -101,6 +101,22 @@ DIRECT_CURRENT_LIMIT_MA = 910.0
 EMG_FINGER_MOTOR_NAMES = frozenset(
     {"thumbadd", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky"}
 )
+GESTURE_GATE_JOINT_NAMES = (
+    # "wrist2" is deliberately absent: firmware's gesture library only
+    # addresses it via the combined "wrist" gesture (both motors, one
+    # fractional value) -- set_gesture:wrist2:* is not a recognized gesture
+    # name, so firmware ACKs it and moves nothing.
+    "wrist", "thumbadd", "thumbrot", "thumbflex",
+    "index", "middle", "ring", "pinky",
+)
+GESTURE_GATE_POSTURES = (
+    ("Grasp", "grasp"),
+    ("Keygrip", "keygrip"),
+    ("Pinch Index", "pinch_index"),
+    ("Pinch Middle", "pinch_middle"),
+    ("Pinch Ring", "pinch_ring"),
+    ("Peace", "peace"),
+)
 XC330_T288_TORQUE_CONSTANT = 0.00115
 UDP_HEARTBEAT_INTERVAL_MS = 15000
 UDP_HEARTBEAT_RESPONSE_TIMEOUT_MS = 500
@@ -1741,6 +1757,15 @@ class HandExoGUI(QWidget):
         self._emg_shadow_active = False
         self._emg_last_commands: dict[int, float] = {}
 
+        # -- Gesture Gate: discrete 0/1 LSL input mapped to set_gesture() ----
+        self._gate_intent_worker = EmgIntentWorker(self)
+        self._gate_intent_worker.sample_received.connect(self._on_gate_intent_sample)
+        self._gate_intent_worker.status_changed.connect(self._on_gate_intent_status)
+        self._gate_latest: dict | None = None
+        self._gate_live = False
+        self._gate_last_decision: int | None = None
+        self._gate_motor_checks: dict[str, tuple[QCheckBox, QCheckBox]] = {}
+
         self._udp_telemetry = UDPTelemetryPublisher()
         self._udp_telem_sent_count = 0
         self._udp_telem_last_status = 0.0
@@ -1951,6 +1976,7 @@ class HandExoGUI(QWidget):
         hand_state_page = self._build_visualization_tab()
         direct_control_page = self._build_direct_control_tab()
         emg_page = self._build_emg_teleop_tab()
+        gate_page = self._build_gesture_gate_tab()
         teleop_page = self._build_teleop_tab()
         udp_page = self._build_udp_bindings_tab()
         settings_page = self._build_settings_tab()
@@ -1962,6 +1988,7 @@ class HandExoGUI(QWidget):
 
         integrations_tabs = QTabWidget()
         integrations_tabs.setDocumentMode(True)
+        integrations_tabs.addTab(gate_page, "Gesture Gate")
         integrations_tabs.addTab(teleop_page, "WebSocket Teleop")
         integrations_tabs.addTab(udp_page, "UDP Bindings")
         integrations_tabs.addTab(settings_page, "Streaming Settings")
@@ -2451,6 +2478,243 @@ class HandExoGUI(QWidget):
         """Show decoder tuning only when the operator explicitly asks for it."""
         for widget in getattr(self, "_emg_advanced_widgets", []):
             widget.setVisible(bool(visible))
+
+    def _build_gesture_gate_tab(self) -> QWidget:
+        """Discrete 0/1 LSL input, e.g. a threshold-based EMG gate, mapped to
+        set_gesture() posture or per-joint commands on each 0<->1 transition.
+
+        Distinct from EMG Teleop: that tab drives continuous current/velocity
+        from a decoder's signed_intent channel. This tab reads the same
+        NMLIntentV1 contract's ``state`` channel as a strict on/off command and
+        fires the existing firmware-level gesture commands, so it inherits
+        firmware's own current governor rather than the direct-control path.
+        """
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        warning = QLabel(
+            "Connect a publisher of the NMLIntentV1 contract whose 'state' channel "
+            "is a strict 0/1 (e.g. a threshold-gate tool). 0 sends the Open/Extend "
+            "action below, 1 sends Close/Flex. Commands fire only on a 0<->1 "
+            "transition, like pressing a gesture button."
+        )
+        warning.setWordWrap(True)
+        warning.setStyleSheet("color: #f39c12; font-weight: bold;")
+        layout.addWidget(warning)
+
+        self._gate_target_row = QWidget()
+        target_row_layout = QHBoxLayout(self._gate_target_row)
+        target_row_layout.setContentsMargins(0, 0, 0, 0)
+        target_row_layout.addWidget(QLabel("Target:"))
+        self._gate_target_combo = QComboBox()
+        self._gate_target_combo.addItems(["Both", "Left Only", "Right Only"])
+        target_row_layout.addWidget(self._gate_target_combo)
+        target_row_layout.addStretch()
+        self._gate_target_row.setVisible(False)  # shown when mode == "Dual"
+        layout.addWidget(self._gate_target_row)
+
+        input_box = QGroupBox("Gate Input")
+        input_layout = QGridLayout(input_box)
+        self._gate_source_edit = QLineEdit("nml-emg-threshold-gate-v1")
+        self._gate_connect_btn = QPushButton("Connect LSL")
+        self._gate_disconnect_btn = QPushButton("Disconnect")
+        self._gate_disconnect_btn.setEnabled(False)
+        self._gate_status_lbl = QLabel("Not connected")
+        self._gate_sample_lbl = QLabel("No gate sample")
+        self._gate_connect_btn.clicked.connect(self._on_gate_connect)
+        self._gate_disconnect_btn.clicked.connect(self._on_gate_disconnect)
+        input_layout.addWidget(QLabel("LSL source ID:"), 0, 0)
+        input_layout.addWidget(self._gate_source_edit, 0, 1)
+        input_layout.addWidget(self._gate_connect_btn, 0, 2)
+        input_layout.addWidget(self._gate_disconnect_btn, 0, 3)
+        input_layout.addWidget(self._gate_status_lbl, 1, 0, 1, 4)
+        input_layout.addWidget(self._gate_sample_lbl, 2, 0, 1, 4)
+        self._gate_confidence_spin = QDoubleSpinBox()
+        self._gate_confidence_spin.setRange(0.0, 1.0)
+        self._gate_confidence_spin.setValue(0.50)
+        self._gate_stale_ms_spin = QSpinBox()
+        self._gate_stale_ms_spin.setRange(50, 2000)
+        self._gate_stale_ms_spin.setValue(300)
+        input_layout.addWidget(QLabel("Min confidence:"), 3, 0)
+        input_layout.addWidget(self._gate_confidence_spin, 3, 1)
+        input_layout.addWidget(QLabel("Freshness (ms):"), 3, 2)
+        input_layout.addWidget(self._gate_stale_ms_spin, 3, 3)
+        layout.addWidget(input_box)
+
+        map_box = QGroupBox("What 0 / 1 Does")
+        map_layout = QVBoxLayout(map_box)
+        self._gate_mode_combo = QComboBox()
+        self._gate_mode_combo.addItems(["Posture (grasp, keygrip, ...)", "Custom Motors"])
+        self._gate_mode_combo.currentIndexChanged.connect(self._on_gate_mode_changed)
+        map_layout.addWidget(self._gate_mode_combo)
+
+        self._gate_posture_row = QWidget()
+        posture_row_layout = QHBoxLayout(self._gate_posture_row)
+        posture_row_layout.setContentsMargins(0, 0, 0, 0)
+        posture_row_layout.addWidget(QLabel("Gesture:"))
+        self._gate_posture_combo = QComboBox()
+        for label, cmd in GESTURE_GATE_POSTURES:
+            self._gate_posture_combo.addItem(label, cmd)
+        posture_row_layout.addWidget(self._gate_posture_combo)
+        posture_row_layout.addWidget(QLabel("0 = Open     1 = Close"))
+        posture_row_layout.addStretch()
+        map_layout.addWidget(self._gate_posture_row)
+
+        self._gate_motor_box = QWidget()
+        motor_grid = QGridLayout(self._gate_motor_box)
+        motor_grid.addWidget(QLabel("Motor"), 0, 0)
+        motor_grid.addWidget(QLabel("Include"), 0, 1)
+        motor_grid.addWidget(QLabel("Invert (default: 0=extend, 1=flex)"), 0, 2)
+        self._gate_motor_checks = {}
+        for row, name in enumerate(GESTURE_GATE_JOINT_NAMES, start=1):
+            motor_grid.addWidget(QLabel(name), row, 0)
+            include_cb = QCheckBox()
+            invert_cb = QCheckBox()
+            motor_grid.addWidget(include_cb, row, 1)
+            motor_grid.addWidget(invert_cb, row, 2)
+            self._gate_motor_checks[name] = (include_cb, invert_cb)
+        self._gate_motor_box.setVisible(False)
+        map_layout.addWidget(self._gate_motor_box)
+        layout.addWidget(map_box)
+
+        control_box = QGroupBox("Control")
+        control_layout = QVBoxLayout(control_box)
+        action_row = QHBoxLayout()
+        self._gate_start_btn = QPushButton("START GATE CONTROL")
+        self._gate_start_btn.setMinimumHeight(44)
+        self._gate_start_btn.setProperty("accent", True)
+        self._gate_start_btn.clicked.connect(lambda: self._on_gate_live_toggled(True))
+        self._gate_stop_btn = QPushButton("STOP GATE CONTROL")
+        self._gate_stop_btn.setMinimumHeight(44)
+        self._gate_stop_btn.setProperty("danger", True)
+        self._gate_stop_btn.clicked.connect(lambda: self._on_gate_live_toggled(False))
+        self._gate_stop_btn.setEnabled(False)
+        action_row.addWidget(self._gate_start_btn, 2)
+        action_row.addWidget(self._gate_stop_btn, 1)
+        control_layout.addLayout(action_row)
+        self._gate_live_status_lbl = QLabel("Stopped")
+        self._gate_live_status_lbl.setStyleSheet("color: #888888; font-weight: bold;")
+        control_layout.addWidget(self._gate_live_status_lbl)
+        layout.addWidget(control_box)
+        layout.addStretch()
+        return widget
+
+    def _on_gate_mode_changed(self, index: int):
+        is_custom = index == 1
+        self._gate_posture_row.setVisible(not is_custom)
+        self._gate_motor_box.setVisible(is_custom)
+
+    def _on_gate_connect(self):
+        if self._gate_intent_worker.isRunning():
+            return
+        source_id = self._gate_source_edit.text().strip()
+        if not source_id:
+            QMessageBox.warning(self, "Gate Source", "Enter an LSL source ID.")
+            return
+        self._gate_intent_worker.configure(source_id)
+        self._gate_latest = None
+        self._gate_connect_btn.setEnabled(False)
+        self._gate_disconnect_btn.setEnabled(True)
+        self._gate_intent_worker.start()
+
+    def _on_gate_disconnect(self):
+        self._on_gate_live_toggled(False)
+        if self._gate_intent_worker.isRunning():
+            self._gate_intent_worker.stop()
+            self._gate_intent_worker.wait(1200)
+        self._gate_connect_btn.setEnabled(True)
+        self._gate_disconnect_btn.setEnabled(False)
+
+    def _on_gate_intent_status(self, text: str, color: str):
+        self._gate_status_lbl.setText(text)
+        self._gate_status_lbl.setStyleSheet(f"color: {color};")
+
+    def _on_gate_live_toggled(self, on: bool):
+        if on:
+            if not self.exo_connected:
+                QMessageBox.warning(self, "Not Connected", "Connect to a device first.")
+                return
+            if self._gate_mode_combo.currentIndex() == 1 and not any(
+                include_cb.isChecked()
+                for include_cb, _invert_cb in self._gate_motor_checks.values()
+            ):
+                QMessageBox.warning(
+                    self, "No Motors Selected", "Check at least one motor to control."
+                )
+                return
+            try:
+                mode = self.mode_combo.currentText()
+                if mode == "Dual":
+                    target = self._gate_target_combo.currentText()
+                    self._ensure_gesture_ready(target=target)
+                    self._apply_gesture_target_motors(target)
+                else:
+                    self._ensure_gesture_ready()
+            except Exception as e:
+                self._log(f"[Gate] readiness error: {e}")
+                return
+            self._gate_live = True
+            self._gate_last_decision = None
+            self._gate_start_btn.setEnabled(False)
+            self._gate_stop_btn.setEnabled(True)
+            self._gate_live_status_lbl.setText("Live — waiting for first sample")
+            self._gate_live_status_lbl.setStyleSheet("color: #27ae60; font-weight: bold;")
+        else:
+            self._gate_live = False
+            self._gate_last_decision = None
+            self._gate_start_btn.setEnabled(True)
+            self._gate_stop_btn.setEnabled(False)
+            self._gate_live_status_lbl.setText("Stopped")
+            self._gate_live_status_lbl.setStyleSheet("color: #888888; font-weight: bold;")
+
+    def _on_gate_intent_sample(self, sample: dict):
+        self._gate_latest = sample
+        values = sample.get("values", [])
+        if len(values) < 4:
+            self._gate_sample_lbl.setText("Invalid NMLIntentV1 sample (need 4 channels)")
+            return
+        signed, effort, confidence, state = (float(v) for v in values[:4])
+        self._gate_sample_lbl.setText(
+            f"state={state:.0f}  confidence={confidence:.3f}  "
+            f"(signed={signed:+.3f} effort={effort:.3f})"
+        )
+        if not self._gate_live:
+            return
+        if not math.isfinite(state) or not math.isfinite(confidence):
+            return
+        age_s = time.monotonic() - sample.get("received_monotonic", 0.0)
+        if age_s > self._gate_stale_ms_spin.value() / 1000.0:
+            return
+        if confidence < self._gate_confidence_spin.value():
+            return
+        decision = 1 if state >= 0.5 else 0
+        if decision == self._gate_last_decision:
+            return
+        self._gate_last_decision = decision
+        self._dispatch_gate_decision(decision)
+
+    def _dispatch_gate_decision(self, decision: int):
+        if not self.exo_connected:
+            return
+        try:
+            mode = self.mode_combo.currentText()
+            if mode == "Dual":
+                self._apply_gesture_target_motors(self._gate_target_combo.currentText())
+            if self._gate_mode_combo.currentIndex() == 0:
+                gesture = self._gate_posture_combo.currentData()
+                state = "close" if decision else "open"
+                cmd = f"set_gesture:{gesture}:{state}"
+                self.exo.send_command(cmd)
+                self._log(f"[Gate] {decision} -> {cmd}")
+            else:
+                for name, (include_cb, invert_cb) in self._gate_motor_checks.items():
+                    if not include_cb.isChecked():
+                        continue
+                    flex = bool(decision) != invert_cb.isChecked()
+                    cmd = f"set_gesture:{name}:{'flex' if flex else 'extend'}"
+                    self.exo.send_command(cmd)
+                    self._log(f"[Gate] {decision} -> {cmd}")
+        except Exception as e:
+            self._log(f"[Gate] dispatch error: {e}")
 
     def _build_teleop_tab(self) -> QWidget:
         widget = QWidget()
@@ -5339,6 +5603,8 @@ class HandExoGUI(QWidget):
             self._cal_side_row.setVisible(is_dual)
         if hasattr(self, "_gesture_target_row"):
             self._gesture_target_row.setVisible(is_dual)
+        if hasattr(self, "_gate_target_row"):
+            self._gate_target_row.setVisible(is_dual)
         if hasattr(self, "_udp_binding_target_combo"):
             self._udp_binding_target_combo.setEnabled(is_dual)
         self._refresh_profiles()
