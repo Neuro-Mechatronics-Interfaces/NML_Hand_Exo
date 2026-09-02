@@ -101,6 +101,33 @@ public:
                          uint8_t* movedOut = nullptr,
                          uint8_t* stuckOut = nullptr);
 
+    /// @brief Position a gesture from a SIGNED value anchored at its rest pose.
+    ///
+    /// The rest-anchored sibling of setGestureAngle(): where that command's 0
+    /// is the extend posture, this one's 0 is the gesture's calibrated REST
+    /// posture, so the sign carries direction the way the continuous decoder
+    /// stream does -- positive toward flex, negative toward extend.
+    ///
+    ///   signed = -100  ->  the gesture's extend posture
+    ///   signed =    0  ->  its rest posture (per motor, from the rest state)
+    ///   signed = +100  ->  its flex posture
+    ///
+    /// Each motor interpolates through its OWN rest fraction, so a gesture that
+    /// drives several motors (the thumb, the coupled wrist pair) keeps every
+    /// motor on its calibrated rest at signed 0 even when their rests do not
+    /// line up on a single percentage. A motor whose gesture defines no rest
+    /// state (restFraction is NaN) falls back to the linear extend<->flex axis,
+    /// i.e. it behaves as setGestureAngle((signed + 100) / 2) for that motor.
+    ///
+    /// @param gesture Angle-addressable gesture name.
+    /// @param signedValue Position in [-100, 100]; clamped to that range.
+    /// @param movedOut Optional out: motors actually commanded.
+    /// @param stuckOut Optional out: motors skipped for having no travel.
+    /// @return true if the gesture is angle-addressable, false otherwise.
+    bool setGestureSignedAngle(const String& gesture, float signedValue,
+                               uint8_t* movedOut = nullptr,
+                               uint8_t* stuckOut = nullptr);
+
     /// @brief Sample where the angle-addressable gestures currently sit.
     ///
     /// The read-back half of setGestureAngle(): both use the same extend ->
