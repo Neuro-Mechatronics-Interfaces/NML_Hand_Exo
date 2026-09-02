@@ -2,6 +2,7 @@
 .venv
 .handexo
 .idea
+.vscode
 .ipynb_checkpoints/
 .worktrees/
 
@@ -127,3 +128,5 @@ logs/*.jsonl
 
 # Agentic workflow ignores
 .claude
+.mcp.json
+.codex/config.toml

@@ -1342,6 +1342,92 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       commandPrint("ERROR: set_gesture_angle unknown or non-addressable gesture: " + gestureStr);
     }
 
+  } else if (cmd == "set_finger_angles") {
+    // Positional batch form of set_gesture_angle. One command positions every
+    // named joint, in the fixed order below, so the continuous UDP path sends
+    // one write and gets one reply per frame instead of one of each per joint.
+    //
+    //   set_finger_angles:<thumb>:<index>:<middle>:<ring>:<pinky>[:<wrist>]
+    //
+    // Each field is a SIGNED INTEGER in [-100, 100] anchored at the gesture's
+    // calibrated REST posture: -100 is its extend posture, 0 is its rest
+    // posture, +100 is its flex posture. This matches the continuous decoder
+    // convention (positive flex, negative extend, zero rest) directly, so the
+    // host scales its [-1, 1] value by 100, rounds, and sends it as-is. An
+    // EMPTY field HOLDS that joint unchanged -- so a host driving only some
+    // fingers, or one whose decoder has fewer channels than the hand has
+    // joints, leaves the rest where they are. Trailing joints may simply be
+    // omitted (fewer colons), which holds them the same way an empty field
+    // does.
+    //
+    // Signed integers, not percentages, on purpose: the continuous path is the
+    // only caller, the -100..100 range carries direction in the sign, and an
+    // integer is shorter on the wire than a 0-100.0 percentage. Fixed order
+    // matches UDP_GESTURE_JOINTS in the SDK so the receiver and the firmware
+    // share one contract. `wrist` is optional and last because not every
+    // build/host drives it.
+    static const char* const kFingerOrder[] = {
+      "thumb", "index", "middle", "ring", "pinky", "wrist"
+    };
+    const uint8_t kFingerCount = sizeof(kFingerOrder) / sizeof(kFingerOrder[0]);
+
+    uint8_t commanded = 0;   // joints given a signed target
+    uint8_t held = 0;        // joints with an empty/omitted field
+    uint8_t unknown = 0;     // targets that named no addressable gesture
+    uint8_t zeroTravel = 0;  // motors skipped for having no calibrated travel
+    String bad;              // first malformed field, for the error reply
+
+    for (uint8_t k = 0; k < kFingerCount; ++k) {
+      // getArg returns "" both for an explicitly empty field ("::") and for a
+      // field past the end of the token, so an omitted trailing joint is held
+      // exactly like an empty one -- no separate length check needed.
+      String field = getArg(token, k + 1);
+      field.trim();
+      if (field.length() == 0) {
+        ++held;
+        continue;
+      }
+      // Signed integer only: toInt() reads a bad token as 0, which is a real
+      // move (to rest), so reject anything that is not [+-]?digits up front. No
+      // '.' here -- the wire contract is integers.
+      bool numeric = true;
+      for (uint16_t i = 0; i < field.length(); ++i) {
+        char c = field[i];
+        if (isDigit(c) || ((c == '-' || c == '+') && i == 0)) continue;
+        numeric = false;
+        break;
+      }
+      if (!numeric || (field.length() == 1 && (field[0] == '-' || field[0] == '+'))) {
+        if (bad.length() == 0) bad = String(kFingerOrder[k]) + "=" + field;
+        continue;
+      }
+      long signedValue = field.toInt();
+      uint8_t moved = 0;
+      uint8_t stuck = 0;
+      if (gc.setGestureSignedAngle(String(kFingerOrder[k]),
+                                   (float)signedValue, &moved, &stuck)) {
+        ++commanded;
+        zeroTravel += stuck;
+      } else {
+        // A joint the firmware does not define (e.g. no wrist on this build)
+        // is counted, not fatal: the rest of the array still applies.
+        ++unknown;
+      }
+    }
+
+    if (bad.length()) {
+      commandPrint("ERROR: set_finger_angles field not a signed integer: " + bad);
+    } else {
+      // Leading "OK: finger_angles" keeps a stable prefix for host matching;
+      // the counts follow so a caller can see holds, unknown joints, and
+      // zero-travel motors without a separate query.
+      String reply = "OK: finger_angles commanded=" + String(commanded) +
+                     " held=" + String(held);
+      if (unknown) reply += " unknown=" + String(unknown);
+      if (zeroTravel) reply += " zero_travel=" + String(zeroTravel);
+      commandPrint(reply);
+    }
+
   } else if (cmd == "get_gesture_angle" ||
              cmd == "get_gesture_sang" ||
              cmd == "get_gesture_angles") {
@@ -1547,6 +1633,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" get_gesture           |                      | // Get exo gesture"));
     commandPrint(F(" set_gesture_state     |  NAME:VALUE          | // Set exo gesture state"));
     commandPrint(F(" set_gesture_angle     |  NAME:0-100          | // Interpolate a gesture: 0=its extend state, 100=its flex state"));
+    commandPrint(F(" set_finger_angles     |  T:I:M:R:P[:W]       | // Batch signed -100..100 (thumb:index:middle:ring:pinky[:wrist]): -100 extend, 0 rest, +100 flex; empty holds"));
     commandPrint(F(" get_gesture_angle     |  NAME/ALL            | // Read positions as 0-100 (101/102 out of range, 255 no travel)"));
     commandPrint(F(" get_gesture_sang      |  NAME/ALL            | // Read signed degrees from rest: flex positive, extend negative"));
     commandPrint(F(" get_gesture_angles    |  NAME/ALL            | // Read <percent-code>,<signed-degrees> pairs"));

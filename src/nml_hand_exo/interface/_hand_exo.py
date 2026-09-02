@@ -5,7 +5,11 @@ import time
 import numpy as np
 
 from ._interfaces import BaseComm
-from ._gesture_protocol import ANGLE_ADDRESSABLE_GESTURES
+from ._gesture_protocol import (
+    ANGLE_ADDRESSABLE_GESTURES,
+    SET_FINGER_ANGLES_ORDER,
+    format_set_finger_angles,
+)
 
 
 #: Firmware version that introduced the per-joint "rest" state, anchored
@@ -48,6 +52,15 @@ FW_GESTURE_ANGLE_READBACK = (0, 6, 0)
 #: Firmware version that added rest-zeroed signed gesture angles and the
 #: combined percentage/signed-degree query.
 FW_GESTURE_SIGNED_ANGLE = (0, 6, 1)
+
+#: Firmware version that added ``set_finger_angles`` -- a positional batch form
+#: of ``set_gesture_angle`` that positions every named joint from one command.
+#: 0.6.4 changed the field encoding from an unsigned 0..100 percentage to a
+#: signed ``[-100, 100]`` value anchored at each joint's rest posture; the 0.6.3
+#: form never shipped, so this is the only supported wire form. An unknown
+#: command is SILENT in firmware, so a host cannot detect the miss from the
+#: reply and must gate on the version.
+FW_SET_FINGER_ANGLES = (0, 6, 4)
 
 #: Reported instead of a percentage when a joint sits outside its gesture
 #: endpoints: below the 0% extend posture or above the 100% flex posture.
@@ -1868,6 +1881,58 @@ class HandExo(object):
                 warning=True,
             )
         self.send_command(f"set_gesture_angle:{name}:{pct:g}")
+
+    def set_finger_angles(self, values: dict[str, int | float | None]):
+        """
+        Position several per-joint gestures from ONE batch command.
+
+        The batch form of :meth:`set_gesture_angle` (firmware >= 0.6.4): every
+        joint named in ``values`` is positioned in a single write instead of one
+        write per joint, which is what the continuous UDP path needs to keep one
+        command and one reply per frame.  Each value is a SIGNED integer in
+        ``[-100, 100]`` anchored at that joint's calibrated ``rest`` posture:
+
+        - ``-100`` -> the joint's ``extend`` posture
+        - ``0``    -> its ``rest`` posture
+        - ``+100`` -> its ``flex`` posture
+
+        which matches the continuous decoder convention (positive flex, negative
+        extend, zero rest).  Non-integer numbers are rounded to the nearest
+        integer.
+
+        A joint absent from ``values`` or mapped to ``None`` is HELD unchanged
+        by the firmware, so a host that drives only some fingers leaves the rest
+        where they are.
+
+        Args:
+            values (dict[str, int | float | None]): Joint name -> signed value
+                in ``[-100, 100]`` (or ``None`` to hold).  Recognized joints, in
+                wire order, are :data:`SET_FINGER_ANGLES_ORDER`.
+
+        Returns:
+            None
+
+        Raises:
+            RuntimeError: If the device firmware is older than 0.6.4.
+            ValueError: If no joint has a value, an unknown joint is named, or a
+                value is non-numeric, non-finite, or outside ``[-100, 100]``.
+        """
+        if not isinstance(values, dict):
+            raise ValueError(f"values must be a dict, got {type(values).__name__}")
+        normalized: dict[str, int | float | None] = {}
+        for joint, value in values.items():
+            name = str(joint).strip().lower()
+            if name not in SET_FINGER_ANGLES_ORDER:
+                supported = ", ".join(SET_FINGER_ANGLES_ORDER)
+                raise ValueError(
+                    f"set_finger_angles joint must be one of {supported}, got {joint!r}"
+                )
+            normalized[name] = value
+        # Build (and validate) the command BEFORE the firmware check so a
+        # malformed request fails the same way regardless of the device version.
+        command = format_set_finger_angles(normalized)
+        self._require_firmware(FW_SET_FINGER_ANGLES, "set_finger_angles")
+        self.send_command(command)
 
     def get_gesture_angle(
         self, gesture: str = "all", timeout: float = 1.0

@@ -665,9 +665,26 @@ class NMLHandExo {
     /// velocity/current control: hold_position:<id>:<relative-angle> and
     /// release_hold:<id>. Gate on >= 0.6.2.
     /// Development extension -- hold_position accepts optional per-hold
-    /// current in mA and reports the applied, safety-clamped value. Keep the
-    /// public version at 0.6.2 until these accumulated changes are released.
-    static constexpr const char* VERSION = "0.6.2";
+    /// current in mA and reports the applied, safety-clamped value.
+    ///
+    /// 0.6.3 -- adds set_finger_angles:<thumb>:<index>:<middle>:<ring>:<pinky>
+    /// [:<wrist>], a positional batch form of set_gesture_angle that positions
+    /// every named joint from ONE command instead of one per joint. An EMPTY
+    /// field holds that joint unchanged, so a host that only drives some
+    /// fingers leaves the rest where they are with a single write. Cuts the
+    /// per-frame command and reply count on the continuous UDP path from
+    /// one-per-joint to one. Gate on >= 0.6.3.
+    ///
+    /// 0.6.4 -- set_finger_angles fields are now SIGNED INTEGERS in [-100, 100]
+    /// anchored at each gesture's calibrated REST posture (-100 extend, 0 rest,
+    /// +100 flex), replacing the 0.6.3 unsigned 0..100 extend->flex percentage.
+    /// This matches the continuous decoder convention (positive flex, negative
+    /// extend, zero rest) so the host sends round(value*100) directly, and it is
+    /// rest-anchored per motor so signed 0 lands on rest even on multi-motor
+    /// gestures. Adds GestureController::setGestureSignedAngle. The 0.6.3 wire
+    /// form never shipped, so this replaces rather than extends it. Gate on
+    /// >= 0.6.4.
+    static constexpr const char* VERSION = "0.6.4";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.
