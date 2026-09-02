@@ -41,6 +41,7 @@ Examples:
 ```
 get_absolute_angle:index
 get_absolute_angle:all
+status:all
 set_angle:index:45
 set_motor_limits:index:162.8:224.93
 set_zero_offset:wrist:149.1
@@ -56,6 +57,17 @@ get_gesture_angles:all
 info
 version
 ```
+
+The read-only `status:<id|name|all>` command returns a compact motor summary,
+including torque state, control modes, absolute and relative angles, stored
+home angle, joint limits, present current, goal current, and current limits.
+With `all`, it also includes the global current budget, hold current, and
+current-governor state.
+
+At firmware startup, the controller probes the configured IDs and caches which
+motors respond. In a dual build, gesture commands and current-budget management
+skip IDs that did not respond, so operating one connected hand does not wait on
+the absent hand.
 
 Text responses are terminated with `;`. `SerialComm.receive()` reads until `;` is seen.
 
@@ -415,22 +427,32 @@ Before touching any C++ firmware or the serial protocol:
 In dual firmware (`BUILD_LEFT_HAND 2`), `MOTOR_NAMES[]` contains duplicate bare names:
 "wrist" exists at index 0 (ID 1, left) and index 9 (ID 11, right).
 
-Firmware `getMotorIDByName()` performs a linear scan and **returns the first match**.
-In dual mode this is always the left motor. Any command using a bare name in dual mode
-silently targets the wrong side:
+The command resolver now detects which side responds on the bus the first time a
+bare motor name is used, then caches that active side. With one hand connected,
+bare names target that hand:
 
 ```
-set_zero_offset:wrist:X   →  ID 1 (left), regardless of intent
-set_motor_limits:wrist:X:Y →  ID 1 (left)
+set_zero_offset:wrist:X    →  connected hand's wrist
+set_motor_limits:index:X:Y →  connected hand's index
 ```
 
-**Safe pattern**: use the integer DXL ID. `getMotorID()` parses the token as an integer
-first; if non-zero, the integer is used directly without name lookup:
+Side-qualified names remain available using `/` (the protocol already uses `:`
+as the argument delimiter):
+
+```
+set_angle:R/index:45      →  ID 16 (right index)
+get_current:L/pinky      →  ID 9 (left pinky)
+```
+
+Numeric DXL IDs are still accepted for unambiguous low-level control:
 
 ```
 set_zero_offset:11:X   →  ID 11 (right wrist)  ✓
 set_motor_limits:11:X:Y →  ID 11 (right wrist) ✓
 ```
+
+If both sides respond, bare names are rejected as ambiguous rather than silently
+choosing the left side.
 
 `HandExo.apply_calibration(name_to_id={...})` enforces ID-based commands automatically
 when the GUI passes a `name_to_id` mapping. See [docs/dual_exo_architecture.md](dual_exo_architecture.md).

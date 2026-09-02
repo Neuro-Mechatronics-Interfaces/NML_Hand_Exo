@@ -256,21 +256,22 @@ the CLI is used. Applied calibration is lost on device reboot.
 
 ---
 
-## Dual-mode: bare motor names always resolve to the left side
+## Dual-mode: bare motor names resolve to the connected side
 
 In dual firmware (`BUILD_LEFT_HAND 2`), `MOTOR_NAMES[]` has "wrist" at index 0 (ID 1,
-left) AND index 9 (ID 11, right). `getMotorIDByName()` returns the **first match** — always
-left.
+left) AND index 9 (ID 11, right). The command resolver probes the bus once, caches the
+side with responding motors, and resolves bare names to that side when only one hand
+is connected.
 
-Any firmware command that takes a motor name in dual mode silently targets the left motor:
+When both sides respond, bare names are rejected as ambiguous. Use an explicit side
+qualifier or numeric ID:
 
 ```
-set_zero_offset:wrist:X  →  ID 1 (left wrist) — RIGHT IS NEVER UPDATED
+set_zero_offset:R/wrist:X  →  ID 11 (right wrist)
+set_zero_offset:11:X       →  ID 11 (right wrist)
 ```
 
-**Always use explicit DXL IDs for calibration and limit commands in dual firmware.**
-`HandExo.apply_calibration(name_to_id=...)` enforces this. Do not call it without
-`name_to_id` when in dual mode. Use `GUI._make_name_to_id(side)` to build the map.
+The GUI still uses explicit DXL IDs for calibration and limit commands.
 
 ---
 

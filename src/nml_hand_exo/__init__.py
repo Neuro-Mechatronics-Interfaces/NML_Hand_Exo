@@ -3,7 +3,7 @@ nml_hand_exo: Python package for controlling the NML HandExo device.
 
 """
 
-__version__ = "0.2.17.1"
+__version__ = "0.2.18"
 __author__ = "Neuromechatronics Lab"
 __email__ = "neuromech@andrew.cmu.edu"
 __license__ = "MIT"

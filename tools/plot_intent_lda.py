@@ -112,7 +112,7 @@ def plot_loadings(loadings: np.ndarray, destination: Path):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("session", type=Path)
-    parser.add_argument("--output-dir", type=Path, default=Path("analysis_outputs") / "intent_lda")
+    parser.add_argument("--output-dir", type=Path, default=Path("output_data") / "intent_lda")
     parser.add_argument(
         "--pair",
         nargs=2,

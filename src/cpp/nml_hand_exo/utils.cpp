@@ -245,8 +245,94 @@ String getArg(const String line, const int index, char delimiter = ':') {
   return line.substring(fromIndex, toIndex);
 }
 
+enum ActiveMotorSide : uint8_t {
+  ACTIVE_SIDE_UNKNOWN = 0,
+  ACTIVE_SIDE_LEFT,
+  ACTIVE_SIDE_RIGHT,
+  ACTIVE_SIDE_BOTH,
+};
+
+static ActiveMotorSide gActiveMotorSide = ACTIVE_SIDE_UNKNOWN;
+
+int findMotorNameOnSide(NMLHandExo& exo, const String& name, ActiveMotorSide side) {
+  String target = name;
+  target.trim();
+  target.toLowerCase();
+  for (int i = 0; i < exo.getMotorCount(); ++i) {
+    uint8_t id = exo.getMotorIDByIndex(i);
+    bool isRight = id >= 11 && id <= 19;
+    if ((side == ACTIVE_SIDE_RIGHT) != isRight) continue;
+    if (target.equalsIgnoreCase(exo.getMotorNameByID(id))) return id;
+  }
+  return -1;
+}
+
+void detectActiveMotorSide(NMLHandExo& exo) {
+#if BUILD_LEFT_HAND == 2
+  bool leftConnected = false;
+  bool rightConnected = false;
+  for (int i = 0; i < exo.getMotorCount(); ++i) {
+    uint8_t id = exo.getMotorIDByIndex(i);
+    if (id <= 9 && exo.isMotorConnected(id)) leftConnected = true;
+    if (id >= 11 && id <= 19 && exo.isMotorConnected(id)) rightConnected = true;
+    if (leftConnected && rightConnected) break;
+  }
+  if (leftConnected && rightConnected) {
+    gActiveMotorSide = ACTIVE_SIDE_BOTH;
+  } else if (leftConnected) {
+    gActiveMotorSide = ACTIVE_SIDE_LEFT;
+  } else if (rightConnected) {
+    gActiveMotorSide = ACTIVE_SIDE_RIGHT;
+  } else {
+    gActiveMotorSide = ACTIVE_SIDE_UNKNOWN;
+  }
+#else
+  gActiveMotorSide = (String(HAND_SIDE).equalsIgnoreCase("right"))
+                         ? ACTIVE_SIDE_RIGHT : ACTIVE_SIDE_LEFT;
+#endif
+}
+
+int resolveMotorToken(NMLHandExo& exo, const String& rawToken) {
+  String target = rawToken;
+  target.trim();
+  if (target.length() == 0) return -1;
+
+  // Numeric IDs are always unambiguous and remain an escape hatch.
+  String numericTarget = target;
+  numericTarget.toUpperCase();
+  int numericID = numericTarget.toInt();
+  if (numericID != 0 || numericTarget == "0") return exo.getMotorID(target);
+
+  ActiveMotorSide requestedSide = ACTIVE_SIDE_UNKNOWN;
+  String name = target;
+  String lowered = target;
+  lowered.toLowerCase();
+  // Slash keeps the side qualifier inside one colon-delimited argument:
+  // status:R/index, set_angle:R/index:45.
+  if (lowered.startsWith("l/")) {
+    requestedSide = ACTIVE_SIDE_LEFT;
+    name = target.substring(2);
+  } else if (lowered.startsWith("r/")) {
+    requestedSide = ACTIVE_SIDE_RIGHT;
+    name = target.substring(2);
+  }
+
+#if BUILD_LEFT_HAND == 2
+  if (requestedSide == ACTIVE_SIDE_UNKNOWN) {
+    if (gActiveMotorSide == ACTIVE_SIDE_UNKNOWN) detectActiveMotorSide(exo);
+    requestedSide = gActiveMotorSide;
+  }
+  if (requestedSide == ACTIVE_SIDE_BOTH || requestedSide == ACTIVE_SIDE_UNKNOWN) {
+    return -1;  // Bare names are ambiguous or no connected side was found.
+  }
+  return findMotorNameOnSide(exo, name, requestedSide);
+#else
+  return exo.getMotorID(name);
+#endif
+}
+
 int getArgMotorID(NMLHandExo& exo, const String& line, const int index) {
-  return exo.getMotorID(getArg(line, index));
+  return resolveMotorToken(exo, getArg(line, index));
 }
 
 int applyTorqueToMotorIDList(NMLHandExo& exo, const String& token, bool enable) {
@@ -329,7 +415,7 @@ uint8_t collectFastTelemetryIDs(NMLHandExo& exo, const String& token, uint8_t* i
     if (arg.length() == 0) {
       break;
     }
-    int resolvedID = exo.getMotorID(arg);
+    int resolvedID = resolveMotorToken(exo, arg);
     if (resolvedID != -1) {
       ids[count++] = (uint8_t)resolvedID;
     }
@@ -430,6 +516,77 @@ void sendShadowTelemetryStatus(NMLHandExo& exo) {
   commandPrint(info);
 }
 
+void sendMotorStatus(NMLHandExo& exo, const String& token) {
+  String target = getArg(token, 1);
+  target.trim();
+
+#if BUILD_LEFT_HAND == 2
+  if (gActiveMotorSide == ACTIVE_SIDE_UNKNOWN) detectActiveMotorSide(exo);
+#else
+  if (gActiveMotorSide == ACTIVE_SIDE_UNKNOWN) {
+    gActiveMotorSide = String(HAND_SIDE).equalsIgnoreCase("right")
+                         ? ACTIVE_SIDE_RIGHT : ACTIVE_SIDE_LEFT;
+  }
+#endif
+
+  const char* activeSide = "unknown";
+  if (gActiveMotorSide == ACTIVE_SIDE_LEFT) activeSide = "left";
+  else if (gActiveMotorSide == ACTIVE_SIDE_RIGHT) activeSide = "right";
+  else if (gActiveMotorSide == ACTIVE_SIDE_BOTH) activeSide = "both";
+
+  commandPrint("Motor status: {mode: " + exo.getMotorControlMode() +
+               ", exo_mode: " + exo.getExoOperatingMode() +
+               ", active_side: " + String(activeSide) +
+               ", total_current_limit_mA: " + String(exo.getTotalCurrentBudget()) +
+               ", hold_current_mA: " + String(exo.getHoldCurrent()) +
+               ", governor: " +
+               String(exo.getCurrentGovernorEnabled() ? "on" : "off") + "}");
+
+  auto printMotor = [&](uint8_t id) {
+    float home = exo.getZeroAngle(id);
+    float absolute = exo.getAbsoluteAngle(id);
+    float relative = absolute - home;
+    if (exo.getFlipMotor(id)) {
+      relative *= -1.0f;
+    }
+
+    // Emit one frame at a time. A dual build can have 18 motors, and retaining
+    // the complete report in one Arduino String can exhaust or fragment the
+    // board heap before anything reaches the terminal.
+    String line = "Motor: {name: " + exo.getMotorNameByID(id) +
+           ", id: " + String(id) +
+           ", enabled: " +
+           String(exo.getTorqueEnabledStatus(id) ? "true" : "false") +
+           ", absolute_angle: " + String(absolute, 2) +
+           ", relative_angle: " + String(relative, 2) +
+           ", home: " + String(home, 2) +
+           ", current_mA: " + String(exo.getCurrent(id)) +
+           ", goal_current_mA: " + String(exo.getGoalCurrent(id), 1) +
+           ", current_limit_mA: " + String(exo.getCurrentLimit(id)) +
+           ", limits: " + exo.getMotorLimits(id) + "}";
+    commandPrint(line);
+  };
+
+  if (target.length() == 0 || target.equalsIgnoreCase("ALL")) {
+    for (int i = 0; i < exo.getMotorCount(); ++i) {
+      uint8_t id = exo.getMotorIDByIndex(i);
+#if BUILD_LEFT_HAND == 2
+      if (gActiveMotorSide == ACTIVE_SIDE_LEFT && id >= 11) continue;
+      if (gActiveMotorSide == ACTIVE_SIDE_RIGHT && id <= 9) continue;
+#endif
+      printMotor(id);
+    }
+    return;
+  }
+
+  int id = getArgMotorID(exo, token, 1);
+  if (id == -1) {
+    commandPrint("ERROR: status requires a valid motor ID/name or ALL");
+    return;
+  }
+  printMotor((uint8_t)id);
+}
+
 void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token) {
 
   token.trim();        // Remove any trailing white space
@@ -497,6 +654,9 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
 
   } else if (cmd == "shadow_status") {
     sendShadowTelemetryStatus(exo);
+
+  } else if (cmd == "status") {
+    sendMotorStatus(exo, token);
 
   } else if (cmd == "enable") {
     String arg = getArg(token, 1);  // local copy
@@ -675,7 +835,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       }
       commandPrint(info);
     } else {
-      id = exo.getMotorID(getArg(token, 1));
+      id = resolveMotorToken(exo, getArg(token, 1));
       if (id != -1) {
         int acc = exo.getAccelerationLimit(id);
         commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
@@ -816,7 +976,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     if (target == "all") {
       exo.resetAllZeros();
     } else {
-      id = exo.getMotorID(target);
+      id = resolveMotorToken(exo, target);
       if (id != -1) exo.setZeroOffset(id);
     }
 
@@ -1036,7 +1196,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     } else if (target == "STATUS") {
       digitalWrite(STATUS_LED_PIN, state);
     } else {
-      id = exo.getMotorID(target);
+      id = resolveMotorToken(exo, target);
       if (id != -1) exo.setMotorLED(id, state);
     }
 
@@ -1143,7 +1303,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       exo.homeAllMotors();
       commandPrint(F("OK: home all"));
     } else {
-      id = exo.getMotorID(target);
+      id = resolveMotorToken(exo, target);
       if (id != -1) {
         exo.setHome(id);
         commandPrint("OK: home " + String(id));
@@ -1480,11 +1640,13 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   
   } else if (token == "help") {
     commandPrint(F(" ================================== List of commands ======================================"));
+    commandPrint(F(" -- System and diagnostics ---------------------------------------------------------------"));
     commandPrint(F(" led                   |  ID/NAME/ALL:ON/OFF  | // Turn motor or system LED on/off"));
     commandPrint(F(" help                  |                      | // Display available commands"));
     commandPrint(F(" home                  |  ID/NAME/ALL         | // Set specific motor (or all) to home position"));
     commandPrint(F(" info                  |                      | // Gets information about exo device. Returns string of metadata with comma delimiters"));
     commandPrint(F(" info_verbose          |                      | // Gets info plus live motor telemetry (slow if motors are offline)"));
+    commandPrint(F(" status                |  ID/NAME/ALL         | // Read-only summary of motor state, position, limits, and current"));
     commandPrint(F(" debug                 |  ON/OFF              | // Set verbose output on/off"));
     commandPrint(F(" set_reply_route       |  BOTH/TELEM/CMD      | // Route replies: both(legacy)/telem(decoupled)/cmd (dual-CDC)"));
     commandPrint(F(" get_reply_route       |                      | // Get current reply/telemetry CDC route"));
@@ -1493,28 +1655,33 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" reset_loop_stats      |                      | // Clear loop statistics"));
     commandPrint(F(" reboot                |  ID/NAME/ALL         | // Reboot motor"));
     commandPrint(F(" version               |                      | // Get current software version"));
+    commandPrint(F(" -- Torque and motor power ----------------------------------------------------------------"));
     commandPrint(F(" enable                |  ID/NAME             | // Enable torque for motor"));
     commandPrint(F(" disable               |  ID/NAME             | // Disable torque for motor"));
     commandPrint(F(" enable_ids            |  ID:ID:ID...         | // Enable torque for a list of DXL IDs"));
     commandPrint(F(" disable_ids           |  ID:ID:ID...         | // Disable torque for a list of DXL IDs"));
-    commandPrint(F(" get_enable            |  ID/NAME             | // Get the torque enable status of the motor"));
+    commandPrint(F(" get_enabled           |  ID/NAME/ALL         | // Get the torque enable status of the motor"));
     commandPrint(F(" get_baud              |  ID/NAME             | // Get baud rate for motor"));
     commandPrint(F(" set_baud              |  ID/NAME:VALUE       | // Set baud rate for motor"));
+    commandPrint(F(" -- Velocity and acceleration ------------------------------------------------------------"));
     commandPrint(F(" get_goal_velocity     |  ID/NAME             | // Get current velocity profile for motor"));
     commandPrint(F(" set_goal_velocity     |  ID/NAME/ALL:VALUE   | // Set velocity profile for motor"));
     commandPrint(F(" get_velocity          |  ID/NAME/ALL         | // Get present velocity in rpm"));
     commandPrint(F(" set_velocity          |  ID:SIGNED_RPM       | // Direct velocity command (velocity mode)"));
     commandPrint(F(" get_goal_acceleration |  ID/NAME             | // Get current acceleration profile for motor"));
     commandPrint(F(" set_goal_acceleration |  ID/NAME/ALL:VALUE   | // Set acceleration limit for motor"));
-    commandPrint(F(" get_home              |  ID/NAME             | // Get stored zero position"));
+    commandPrint(F(" -- Position and direct motion ------------------------------------------------------------"));
+    commandPrint(F(" get_home              |  ID/NAME/ALL         | // Get stored zero position"));
     commandPrint(F(" set_home              |  ID/NAME:VALUE       | // Set current position as new zero angle"));
     commandPrint(F(" get_angle             |  ID/NAME             | // Get relative motor angle"));
     commandPrint(F(" set_angle             |  ID/NAME:ANGLE       | // Set motor angle"));
     commandPrint(F(" get_absolute_angle    |  ID/NAME/ALL         | // Get absolute motor angle"));
     commandPrint(F(" set_absolute_angle    |  ID/NAME:ANGLE       | // Set absolute motor angle"));
-    commandPrint(F(" get_torque            |  ID/NAME             | // Get torque output reading from motor"));
-    commandPrint(F(" get_current           |  ID/NAME             | // Get current draw from motor"));
+    commandPrint(F(" -- Current and hold control -------------------------------------------------------------"));
+    commandPrint(F(" get_torque            |  ID/NAME/ALL         | // Get torque output reading from motor"));
+    commandPrint(F(" get_current           |  ID/NAME/ALL         | // Get current draw from motor"));
     commandPrint(F(" set_current_lim       |  ID/NAME:VAL         | // Set per-motor current draw limit"));
+    commandPrint(F(" get_current_lim       |  ID/NAME/ALL         | // Get per-motor current draw limit"));
     commandPrint(F(" set_total_current_lim |  MA                  | // Set COMBINED current budget across all motors"));
     commandPrint(F(" get_total_current_lim |                      | // Get combined current budget"));
     commandPrint(F(" set_hold_current      |  MA                  | // Current allowed to a settled/shed motor"));
@@ -1527,12 +1694,15 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" hold_position         |  ID:ANGLE[:MA]       | // Hold one explicit ID with optional per-hold current"));
     commandPrint(F(" release_hold          |  ID                  | // Disable held ID and restore global mode"));
     commandPrint(F(" set_command_timeout   |  MILLISECONDS        | // Set direct-control watchdog (50-5000 ms)"));
+    commandPrint(F(" get_command_timeout   |                      | // Get direct-control watchdog timeout"));
+    commandPrint(F(" -- Telemetry and contact instrumentation -----------------------------------------------"));
     commandPrint(F(" get_telemetry_fast    |  ID:ID:ID.../ALL     | // Binary current/velocity/position telemetry frame"));
     commandPrint(F(" telemetry_diag        |  ID:ID:ID.../ALL     | // Text diagnostics for fast telemetry reads"));
     commandPrint(F(" shadow_config         |  INTERVAL:ID:ID...   | // Configure read-only contact evidence sampling"));
     commandPrint(F(" shadow_start          |  None                 | // Start sampling (VELOCITY mode only)"));
     commandPrint(F(" shadow_stop           |  None                 | // Stop sampling; no motor state changes"));
     commandPrint(F(" shadow_status         |  None                 | // Buffered current/position/derived-velocity snapshot"));
+    commandPrint(F(" -- Motor limits and control modes -------------------------------------------------------"));
     commandPrint(F(" get_motor_limits      |  ID/NAME             | // Get motor limits (upper and lower bounds)"));
     commandPrint(F(" set_motor_limits      |  ID/NAME:VAL:VAL     | // Set motor limits (upper and lower bounds)"));
     commandPrint(F(" set_upper_limit       |  ID/NAME:ANGLE       | // Set the absolute upper bound position limit for the motor"));
@@ -1542,6 +1712,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_control_mode      |  ALL:VALUE           | // Safe direct-mode alias; torque remains off"));
     commandPrint(F(" get_exo_mode          |                      | // Get exo device operation mode"));
     commandPrint(F(" set_exo_mode          |  VALUE               | // Set exo device operation mode (FREE', 'GESTURE_FIXED', 'GESTURE_CONTINUOUS')"));
+    commandPrint(F(" -- Gestures ------------------------------------------------------------------------------"));
     commandPrint(F(" gesture_list          |                      | // Get gestures in library"));
     commandPrint(F(" set_gesture           |  NAME:VALUE          | // Set exo gesture"));
     commandPrint(F(" get_gesture           |                      | // Get exo gesture"));
@@ -1553,6 +1724,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" get_gesture_state     |                      | // Get exo gesture state"));
     commandPrint(F(" cycle_gesture         |                      | // Executes the next gesture in the library"));
     commandPrint(F(" cycle_gesture_state   |                      | // Cycles the next gesture state"));
+    commandPrint(F(" -- Calibration, IMU, and display --------------------------------------------------------"));
     commandPrint(F(" set_zero_offset       |  ID/NAME/ALL:VALUE   | // Set the zero offset for a motor to an arbitrary angle"));
     commandPrint(F(" set_flip              |  ID/NAME:0/1         | // Set motor direction flip (1=inverted, 0=normal)"));
     commandPrint(F(" get_flip              |  ID/NAME/ALL         | // Get motor direction flip status"));

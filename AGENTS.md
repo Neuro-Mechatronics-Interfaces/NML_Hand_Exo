@@ -101,10 +101,11 @@ GUI mode dropdown:
 At connect time, every motor NOT in the active mode's ID range is explicitly disabled
 so firmware broadcast commands (e.g. `set_gesture`) cannot move the inactive side.
 
-**Duplicate motor names in dual firmware.** `MOTOR_NAMES[]` contains "wrist" twice — once
-for ID 1 (left) and once for ID 11 (right). Firmware `getMotorIDByName()` returns the
-**first** match, always left. Any command using a bare name in dual mode may silently
-target the wrong motor. Always use explicit integer IDs for calibration and motor commands.
+**Duplicate motor names in dual firmware.** `MOTOR_NAMES[]` contains each motor name
+twice. The command resolver probes the Dynamixel bus once and maps bare names to the
+connected side when only one hand responds. If both sides respond, use an explicit
+side qualifier such as `R/index` or an integer ID. Calibration continues to use
+explicit integer IDs.
 
 See [docs/dual_exo_architecture.md](docs/dual_exo_architecture.md) for the full model.
 

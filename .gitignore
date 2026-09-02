@@ -23,8 +23,6 @@ __pycache__/
 *.txt
 data/
 external/
-analysis_outputs/
-aim3_analysis/outputs/
 output_data/
 
 # Images (exclude from data folders, but allow docs)

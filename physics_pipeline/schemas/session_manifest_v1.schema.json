@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "nml.physics_session.v1",
+  "title": "NML physics-session sidecar manifest",
+  "type": "object",
+  "required": ["schema", "session_id", "side", "condition"],
+  "properties": {
+    "schema": {"const": "nml.physics_session.v1"},
+    "session_id": {"type": "string", "minLength": 1},
+    "participant_id": {"type": "string"},
+    "side": {"enum": ["left", "right", "dual", "unknown"]},
+    "condition": {"type": "string"},
+    "xdf_file": {"type": "string"},
+    "prompt_plan": {"type": "string"},
+    "calibration_profile": {"type": "string"},
+    "firmware_version": {"type": "string"},
+    "software_commit": {"type": "string"},
+    "electrode_layout": {"type": "object"},
+    "hand_measurements": {"type": "object"},
+    "exoskeleton_geometry": {"type": "object"},
+    "motor_joint_mapping": {"type": "object"},
+    "torque_estimation": {"type": "object"},
+    "stream_inventory": {"type": "object"},
+    "control_configuration": {"type": "object"},
+    "kinematics_system": {"type": "object"},
+    "interaction_force_system": {"type": "object"},
+    "notes": {"type": "array", "items": {"type": "string"}},
+    "extra": {"type": "object"}
+  },
+  "additionalProperties": false
+}

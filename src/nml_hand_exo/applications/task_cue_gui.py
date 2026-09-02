@@ -62,10 +62,15 @@ class DisabledMarkerPublisher:
 class PromptStep:
     label: str
     duration_s: float
+    metadata: tuple[tuple[str, str], ...] = ()
 
     @property
     def is_rest(self) -> bool:
         return self.label.casefold() == "rest"
+
+    @property
+    def marker_suffix(self) -> str:
+        return "".join(f"|{key}={value}" for key, value in self.metadata)
 
 
 class TaskState(str, Enum):
@@ -107,7 +112,26 @@ def validate_prompt_plan(payload: object) -> tuple[PromptStep, ...]:
         duration_s = float(duration)
         if not math.isfinite(duration_s) or duration_s <= 0.0:
             raise ValueError(f"Step {index} duration must be finite and greater than zero")
-        steps.append(PromptStep(label=label, duration_s=duration_s))
+        metadata = []
+        for key, value in entry.items():
+            if key in {"label", "duration"}:
+                continue
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError(f"Step {index} contains an invalid metadata key")
+            if isinstance(value, (dict, list)) or value is None:
+                raise ValueError(
+                    f"Step {index} metadata {key!r} must be a string, number, or boolean"
+                )
+            key_text = key.strip()
+            value_text = str(value).strip()
+            if any(token in key_text or token in value_text for token in ("|", "\n", "\r", "=")):
+                raise ValueError(
+                    f"Step {index} metadata {key!r} contains a reserved marker character"
+                )
+            metadata.append((key_text, value_text))
+        steps.append(
+            PromptStep(label=label, duration_s=duration_s, metadata=tuple(metadata))
+        )
     return tuple(steps)
 
 
@@ -181,14 +205,16 @@ class TaskScheduler:
             self._emit(
                 "trial_start|"
                 f"trial={self._trial_text(self.current_trial_id)}|"
-                f"gesture={step.label}|duration_s={step.duration_s:.3f}",
+                f"gesture={step.label}|duration_s={step.duration_s:.3f}"
+                f"{step.marker_suffix}",
                 timestamp,
             )
             phase = "gesture"
         self._emit(
             "prompt_onset|"
             f"phase={phase}|trial={self._trial_text(self.current_trial_id)}|"
-            f"gesture={step.label}|duration_s={step.duration_s:.3f}",
+            f"gesture={step.label}|duration_s={step.duration_s:.3f}"
+            f"{step.marker_suffix}",
             timestamp,
         )
         self.deadline = timestamp + step.duration_s
@@ -625,7 +651,12 @@ class TaskCueOperatorWindow(QMainWindow):
         if destination.suffix.casefold() != ".json":
             destination = destination.with_suffix(".json")
         payload = [
-            {"label": step.label, "duration": step.duration_s} for step in self.plan
+            {
+                "label": step.label,
+                "duration": step.duration_s,
+                **dict(step.metadata),
+            }
+            for step in self.plan
         ]
         try:
             destination.write_text(

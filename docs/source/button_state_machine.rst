@@ -40,7 +40,8 @@ Hardware Setup
 4. **System Boot-Up**
    After powering on, the system initializes to the default operating mode:
    - **Default Mode**: ``gesture_fixed`` (see ``DEFAULT_EXO_MODE`` in `config.h`)
-   - **Verbose Logging**: Enabled by default for debugging (see ``DEFAULT_VERBOSE``)
+   - **Verbose Logging**: Disabled by default; enable it when detailed command
+     and response logging is needed (see ``DEFAULT_VERBOSE``)
 
 Interaction Logic
 ------------------

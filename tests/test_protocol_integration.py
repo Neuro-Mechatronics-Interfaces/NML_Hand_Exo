@@ -81,6 +81,19 @@ def test_velocity_limit_api_uses_rpm_and_explicit_motor_id():
     assert measured == pytest.approx(52 * 0.229)
 
 
+def test_hand_exo_command_observer_is_noninvasive_and_reports_acknowledgement():
+    exo, comm = _fake_exo()
+    events = []
+    exo.add_command_observer(events.append)
+    exo.add_command_observer(lambda _event: (_ for _ in ()).throw(RuntimeError("ignored")))
+
+    exo.set_control_mode("current")
+
+    assert comm.sent[-1] == "set_control_mode:all:current"
+    assert [event["status"] for event in events[-2:]] == ["sent", "acknowledged"]
+    assert events[-1]["command"] == "set_control_mode:all:current"
+
+
 def test_gui_direct_command_respects_each_motor_row_limit():
     class Spin:
         def __init__(self, value):

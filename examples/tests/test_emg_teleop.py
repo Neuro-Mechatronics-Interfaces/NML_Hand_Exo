@@ -415,6 +415,33 @@ def test_serial_worker_writes_multi_motor_current_set_as_one_payload():
     ]
 
 
+def test_serial_worker_observes_high_rate_direct_source_without_changing_payload():
+    payloads = []
+    observed = []
+    worker = SerialWorker()
+    worker.set_exo(
+        SimpleNamespace(
+            command_delimiter="\r\n",
+            device=SimpleNamespace(send=payloads.append),
+            _notify_command_observers=lambda **event: observed.append(event),
+        )
+    )
+    worker.request_direct_actions(
+        {16: ("current", 42.0)}, source="emg"
+    )
+
+    worker._handle_direct_actions()
+
+    assert payloads == ["set_current:16:42.0\r\n"]
+    assert observed == [
+        {
+            "command": "set_current:16:42.0",
+            "status": "sent",
+            "source": "emg",
+        }
+    ]
+
+
 def test_custom_finger_subset_is_ready_when_explicit_ids_are_safe_and_armed():
     target_ids = [15, 16, 17, 18, 19]
     gui = SimpleNamespace(

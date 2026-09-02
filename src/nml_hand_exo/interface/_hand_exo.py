@@ -299,6 +299,9 @@ class HandExo(object):
         self.side: str | None = side
         # Populated lazily by firmware_version(); None means "not yet queried".
         self._firmware_version: tuple[int, ...] | None = None
+        # Optional instrumentation callbacks. They are observational only:
+        # callback failures are swallowed so recording can never alter control.
+        self._command_observers = []
 
         if auto_connect:
             self.device.connect()
@@ -381,12 +384,77 @@ class HandExo(object):
             except Exception:
                 pass
             self.device.send(cmd)
+            self._notify_command_observers(
+                command=cmd,
+                status="sent",
+                source="unknown",
+            )
             self.logger(f"Sent: {cmd.strip()}")
             time.sleep(self.send_delay)  # Allow time for the command to be processed
         except Exception as e:
+            self._notify_command_observers(
+                command=cmd,
+                status="failed",
+                source="unknown",
+                error=str(e),
+            )
             raise ConnectionError(
                 f"Failed to send command {cmd.strip()!r}: {e}"
             ) from e
+
+    def add_command_observer(self, callback) -> None:
+        """Register a non-invasive callback for host command observations.
+
+        The callback receives a new dictionary for each event. Observers are
+        instrumentation only and cannot prevent or modify a command.
+        """
+
+        if not callable(callback):
+            raise TypeError("command observer must be callable")
+        observers = getattr(self, "_command_observers", None)
+        if observers is None:
+            observers = []
+            self._command_observers = observers
+        if callback not in observers:
+            observers.append(callback)
+
+    def remove_command_observer(self, callback) -> None:
+        """Remove a previously registered command observer if present."""
+
+        try:
+            getattr(self, "_command_observers", []).remove(callback)
+        except ValueError:
+            pass
+
+    def _notify_command_observers(
+        self,
+        *,
+        command: str,
+        status: str,
+        source: str = "unknown",
+        response: str = "",
+        error: str = "",
+    ) -> None:
+        observers = tuple(getattr(self, "_command_observers", ()))
+        if not observers:
+            return
+        event = {
+            "command": str(command).strip().rstrip(";\r\n").strip(),
+            "status": str(status),
+            "source": str(source),
+            "host_wall_time_s": time.time(),
+            "host_monotonic_s": time.monotonic(),
+        }
+        if response:
+            event["response"] = str(response).strip()[:500]
+        if error:
+            event["error"] = str(error).strip()[:500]
+        for observer in observers:
+            try:
+                observer(dict(event))
+            except Exception:
+                # Instrumentation must never affect a device transaction.
+                continue
 
     def _command_transaction(
         self,
@@ -408,11 +476,23 @@ class HandExo(object):
             or "ERROR:" in normalized.upper()
             or expected.lower() not in normalized.lower()
         ):
+            self._notify_command_observers(
+                command=command,
+                status="rejected",
+                source="unknown",
+                response=raw,
+            )
             raise ProtocolResponseError(
                 command=command,
                 expected=expected,
                 raw_response=raw,
             )
+        self._notify_command_observers(
+            command=command,
+            status="acknowledged",
+            source="unknown",
+            response=normalized,
+        )
         return normalized
 
     def _receive(

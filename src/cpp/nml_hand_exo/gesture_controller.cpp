@@ -122,6 +122,7 @@ void GestureController::executeGesture(const String& gesture, const String& stat
   for (int i = 0; i < exo_.getMotorCount(); ++i) {
     if (!touched[i]) continue;
     uint8_t id = exo_.getMotorIDByIndex(i);
+    if (!exo_.isMotorConnected(id)) continue;
     if (VERBOSE) {
       if (trace.length()) trace += ", ";
       trace += String(id) + "->" + String(absAngles[i], 2);

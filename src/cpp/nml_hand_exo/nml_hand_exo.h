@@ -146,6 +146,11 @@ class NMLHandExo {
     /// @return The motor ID or -1 if not found.
     int getMotorID(const String& token);
 
+    /// @brief Return whether a motor responded during initialization.
+    /// @param id Dynamixel motor ID.
+    /// @return True when the motor responds to a ping.
+    bool isMotorConnected(uint8_t id);
+
     /// @brief Get the index of a motor in the internal arrays from its ID.
     /// @param id The motor ID.
     /// @return The index in the motor array or -1 if not found.
@@ -665,9 +670,8 @@ class NMLHandExo {
     /// velocity/current control: hold_position:<id>:<relative-angle> and
     /// release_hold:<id>. Gate on >= 0.6.2.
     /// Development extension -- hold_position accepts optional per-hold
-    /// current in mA and reports the applied, safety-clamped value. Keep the
-    /// public version at 0.6.2 until these accumulated changes are released.
-    static constexpr const char* VERSION = "0.6.2";
+    /// current in mA and reports the applied, safety-clamped value.
+    static constexpr const char* VERSION = "0.6.3";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.
@@ -690,6 +694,9 @@ class NMLHandExo {
 
     /// @brief Array of current limits for each motor
     uint16_t* currentLimits_;
+
+    /// @brief Cached bus presence for each configured motor.
+    bool* motorConnected_;
 
     /// @brief Mode switch pin
     int modeSwitchPin = -1;
