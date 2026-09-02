@@ -13,7 +13,7 @@
 
 
 /// @brief Verbose output toggle for debugging.
-bool VERBOSE = DEFAULT_VERBOSE; // default to true
+bool VERBOSE = DEFAULT_VERBOSE; // default to false
 
 /// @brief Reply/telemetry routing for dual-CDC. Legacy-safe default (BOTH).
 uint8_t gReplyRoute = REPLY_ROUTE_BOTH;
@@ -66,8 +66,10 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
 
   // Allocate and initialize current limits
   currentLimits_ = new uint16_t[numMotors_];
+  motorConnected_ = new bool[numMotors_];
   for (int i = 0; i < numMotors_; ++i) {
       currentLimits_[i] = MOTOR_CURRENT_LIMIT;
+      motorConnected_[i] = false;
   }
 
   // Allocate flip flags and initialize from config defaults (overwritten by calibration)
@@ -120,9 +122,17 @@ void NMLHandExo::initializeSerial(int baud) {
   dxl_.begin(baud);
 }
 void NMLHandExo::initializeMotors() {
+  // Detect the physically present motors once. A dual firmware build may have
+  // only one hand attached; avoiding writes to absent IDs keeps commands fast
+  // and prevents the current governor from waiting on bus timeouts.
+  for (int i = 0; i < numMotors_; ++i) {
+    motorConnected_[i] = dxl_.ping(motorIds_[i]) != 0;
+  }
+
   // Configure motor operating modes and torque, but DON'T move them yet
   for (int i = 0; i < numMotors_; i++) {
     uint8_t id = motorIds_[i];
+    if (!motorConnected_[i]) continue;
     dxl_.torqueOff(id);
     dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION);
     dxl_.torqueOn(id);
@@ -154,6 +164,7 @@ void NMLHandExo::initializeMotors() {
   // nearest equivalent of HOME_STATES modulo 360 degrees.
   for (int i = 0; i < numMotors_; i++) {
     uint8_t id = motorIds_[i];
+    if (!motorConnected_[i]) continue;
     float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
 
     // Sanity check: if read returns exactly 0.0 but home is far away,
@@ -200,6 +211,10 @@ int NMLHandExo::getMotorID(const String& token) {
     return id;
   }
   return getMotorIDByName(target);  // Otherwise, try name lookup
+}
+bool NMLHandExo::isMotorConnected(uint8_t id) {
+  int index = getIndexById(id);
+  return index != -1 && motorConnected_[index];
 }
 uint8_t NMLHandExo::getMotorIDByIndex(const int index) {
   return motorIds_[index];
@@ -607,6 +622,7 @@ void NMLHandExo::setRelativeAngle(uint8_t id, float relativeAngle) {
     debugPrint("Invalid motor ID: " + String(id));
     return;
   }
+  if (!motorConnected_[index]) return;
 
   // Flip the relative angle if necessary
   if (flipMotor_[index]) {
@@ -645,6 +661,7 @@ void NMLHandExo::setAbsoluteAngle(uint8_t id, float absoluteAngle) {
     debugPrint("Invalid motor ID: " + String(id));
     return;
   }
+  if (!motorConnected_[index]) return;
   float clamped = constrain(absoluteAngle, jointLimits_[index][0], jointLimits_[index][1]);
 
   // In extended/current-based position mode the motor travels directly from
@@ -673,6 +690,7 @@ void NMLHandExo::setHome(uint8_t id){
     debugPrint(F("Invalid motor ID"));
     return;
   }
+  if (!motorConnected_[index]) return;
 
   // Command the motor to move to the stored zero offset position
   float homeAngle = zeroOffsets_[index];
@@ -1031,6 +1049,7 @@ float NMLHandExo::staticBudgetScale() const {
   uint32_t movingNominal = 0;
   uint32_t heldTotal = 0;
   for (int i = 0; i < numMotors_; ++i) {
+    if (!motorConnected_[i]) continue;
     if (motorMoving_[i]) {
       movingNominal += currentLimits_[i];
     } else {
@@ -1059,8 +1078,12 @@ uint8_t NMLHandExo::maxConcurrentMovers() const {
   // remaining (N - k) sit at hold current, all inside the budget. Admitting
   // more than this is what starves the fleet into moving nothing at all.
   uint8_t best = 0;
-  for (uint8_t k = 1; k <= numMotors_; ++k) {
-    uint32_t heldTotal = (uint32_t)(numMotors_ - k) * holdCurrentMa_;
+  uint8_t connectedCount = 0;
+  for (int i = 0; i < numMotors_; ++i) {
+    if (motorConnected_[i]) connectedCount++;
+  }
+  for (uint8_t k = 1; k <= connectedCount; ++k) {
+    uint32_t heldTotal = (uint32_t)(connectedCount - k) * holdCurrentMa_;
     if (heldTotal >= totalCurrentBudgetMa_) break;
     uint32_t available = totalCurrentBudgetMa_ - heldTotal;
     if (available < (uint32_t)k * MIN_MOVE_CURRENT_MA) break;
@@ -1083,6 +1106,11 @@ void NMLHandExo::refreshCurrentAllocation() {
   const uint8_t limit = maxConcurrentMovers();
   uint8_t admitted = 0;
   for (int i = 0; i < numMotors_; ++i) {
+    if (!motorConnected_[i]) {
+      motorMoving_[i] = false;
+      motorAdmitted_[i] = false;
+      continue;
+    }
     if (motorAdmitted_[i] && motorMoving_[i] && admitted < limit) {
       admitted++;
     } else {
@@ -1103,13 +1131,18 @@ void NMLHandExo::refreshCurrentAllocation() {
   // exceed the budget no matter what the governor's scale does.
   uint16_t share = 0;
   if (admitted > 0) {
-    uint32_t heldTotal = (uint32_t)(numMotors_ - admitted) * holdCurrentMa_;
+    uint8_t connectedCount = 0;
+    for (int i = 0; i < numMotors_; ++i) {
+      if (motorConnected_[i]) connectedCount++;
+    }
+    uint32_t heldTotal = (uint32_t)(connectedCount - admitted) * holdCurrentMa_;
     uint32_t available = (heldTotal >= totalCurrentBudgetMa_)
                            ? 0 : (totalCurrentBudgetMa_ - heldTotal);
     share = (uint16_t)(available / admitted);
   }
 
   for (int i = 0; i < numMotors_; ++i) {
+    if (!motorConnected_[i]) continue;
     uint16_t target;
     if (!motorAdmitted_[i]) {
       target = holdCurrentMa_;
@@ -1406,6 +1439,14 @@ void NMLHandExo::serviceCurrentGovernor() {
   // latency; the control law below runs when the cursor completes a sweep.
   bool ok = true;
   int cursor = governorCursor_;
+  if (!motorConnected_[cursor]) {
+    do {
+      cursor++;
+      if (cursor >= numMotors_) cursor = 0;
+    } while (cursor != governorCursor_ && !motorConnected_[cursor]);
+    governorCursor_ = cursor;
+    if (!motorConnected_[cursor]) return;
+  }
   int16_t current_mA = readPresentCurrentMa(motorIds_[cursor], ok);
   if (ok) {
     uint16_t magnitude = (current_mA < 0) ? (uint16_t)(-current_mA)
@@ -1442,8 +1483,19 @@ void NMLHandExo::serviceCurrentGovernor() {
       }
     }
 
-    governorCursor_++;
-    if (governorCursor_ < numMotors_) return;   // sweep still in progress
+    int nextCursor = cursor + 1;
+    if (nextCursor >= numMotors_) nextCursor = 0;
+    while (nextCursor != cursor && !motorConnected_[nextCursor]) {
+      nextCursor++;
+      if (nextCursor >= numMotors_) nextCursor = 0;
+    }
+    if (nextCursor > cursor || nextCursor == cursor) {
+      governorCursor_ = nextCursor;
+      if (nextCursor != cursor) return;  // sweep still in progress
+    } else {
+      // The next connected motor wrapped to the beginning: this sweep is done.
+      governorCursor_ = nextCursor;
+    }
   }
 
   // Sweep complete (or aborted by a read error): act on what it found.

@@ -1,6 +1,6 @@
 [project]
 name = "nml_hand_exo"
-version = "0.2.17.1"
+version = "0.2.18"
 description = "Control, calibrate, and decode intent for the NML Hand Exoskeleton"
 authors = [
     { name="Jonathan Shulgach", email="jshulgac@andrew.cmu.edu" },

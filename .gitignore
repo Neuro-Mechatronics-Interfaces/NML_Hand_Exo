@@ -2,6 +2,7 @@
 .venv
 .handexo
 .idea
+.vscode
 .ipynb_checkpoints/
 .worktrees/
 
@@ -23,8 +24,6 @@ __pycache__/
 *.txt
 data/
 external/
-analysis_outputs/
-aim3_analysis/outputs/
 output_data/
 
 # Images (exclude from data folders, but allow docs)
@@ -127,3 +126,5 @@ logs/*.jsonl
 
 # Agentic workflow ignores
 .claude
+.mcp.json
+.codex/config.toml

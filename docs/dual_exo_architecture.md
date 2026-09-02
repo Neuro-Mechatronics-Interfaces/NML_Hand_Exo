@@ -59,16 +59,22 @@ In dual firmware, `MOTOR_NAMES[]` contains "wrist" at index 0 (ID 1, left) AND
 
 ## Firmware name resolution in dual mode `[VERIFIED]`
 
-`NMLHandExo::getMotorIDByName()` (`nml_hand_exo.cpp:165`) does a **linear scan and
-returns the first match**. In dual firmware, bare name commands always resolve to the
-left motor:
+The command resolver probes the bus the first time a bare motor name is used and
+caches the side with responding motors. With one hand connected, bare names resolve
+to that hand:
 
 ```
-set_zero_offset:wrist:X  →  firmware resolves "wrist" → ID 1 (left)
-set_motor_limits:wrist:X:Y  →  ID 1 (left only)
+set_zero_offset:wrist:X  →  connected hand's wrist
+set_motor_limits:index:X:Y  →  connected hand's index
 ```
 
-**This is the root cause of the calibration side-mixing bug (fixed April 2026).**
+If both sides respond, bare names are rejected as ambiguous. Use `/` for an explicit
+side, since `:` is the command argument delimiter:
+
+```
+set_angle:R/index:45  →  ID 16 (right index)
+get_current:L/pinky  →  ID 9 (left pinky)
+```
 
 ### Safe pattern — use integer IDs
 
@@ -80,7 +86,8 @@ set_zero_offset:11:X  →  ID 11 (right wrist)  ✓
 set_zero_offset:1:X   →  ID 1  (left wrist)   ✓
 ```
 
-Always use integer IDs for any motor command where the target side matters.
+Integer IDs remain available for low-level unambiguous control. The GUI's explicit
+ID mapping continues to be preferred for calibration workflows.
 
 ---
 
@@ -111,7 +118,12 @@ All commands that must respect the mode selection use this list.
 
 ---
 
-## Inactive-side containment at connect time `[VERIFIED]`
+## Motor presence and inactive-side containment `[VERIFIED]`
+
+Firmware startup probes each configured ID and caches bus presence. Gesture goal
+writes, current-budget allocation, and governor sampling skip motors that did not
+respond, while a dual build still supports both hands when both sets of IDs are
+present.
 
 `set_gesture` and similar firmware broadcasts act on ALL firmware-managed motors
 regardless of which side the GUI selected. To prevent the inactive side from moving,

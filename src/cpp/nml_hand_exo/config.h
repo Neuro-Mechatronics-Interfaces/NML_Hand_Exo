@@ -153,7 +153,7 @@ constexpr const char* COMMAND_DELIMITER = ";";
 constexpr const char* DEFAULT_EXO_MODE = "gesture_fixed"; // Available modes are "free", "gesture_fixed", and "gesture_continuous"
 
 /// @brief Verbose output toggle for debugging.
-constexpr bool DEFAULT_VERBOSE = true;
+constexpr bool DEFAULT_VERBOSE = false;
 
 // ---- Hand-side build selector -----------------------------------------------
 // 0 = right exo only  (IDs 11-19, HAND_SIDE="right")
@@ -240,8 +240,8 @@ constexpr float jointLimits[][2] = {
   {47.00, 168.00}, {182.00, 315.00}, {238.00, 291.00}, {196.00, 255.00}, {280.00, 408.00},
   {119.50, 184.00}, {159.00, 223.00}, {133.00, 208.00}, {63.00, 146.00},
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  {201.17, 269.46}, {90.02, 163.42}, {198.09, 227.13}, {160.26, 260.86}, {106.74, 147.31},
-  {162.27, 231.35}, {49.54, 102.52}, {74.71, 127.78}, {14.96, 109.65}
+  {170.00, 313.00}, {41.00, 190.00}, {130.00, 220.00}, {170.00, 258.00}, {54.00, 183.00},
+  {172.00, 240.00}, {49.00, 115.00}, {47.00, 129.00}, {15.00, 111.00}
 };
 
 /// @brief Default flip direction per motor.
@@ -613,7 +613,7 @@ constexpr int DEFAULT_GOAL_CURRENT_MA = 150;
 // leaving headroom for the board, OLED and IMU. Raise it with
 // `set_total_current_lim:<mA>` once you know what your supply sustains; watch
 // `current_status` for the measured aggregate while you do.
-constexpr int TOTAL_CURRENT_BUDGET_MA = 2000;
+constexpr int TOTAL_CURRENT_BUDGET_MA = 2500;
 
 /// @brief Current a motor is allowed once it is judged to have settled, in mA.
 ///

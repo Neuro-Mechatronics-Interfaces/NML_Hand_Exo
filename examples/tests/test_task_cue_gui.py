@@ -100,6 +100,36 @@ def test_two_step_marker_sequence():
     assert publisher.events[-1][1] == pytest.approx(100.3)
 
 
+def test_prompt_metadata_is_preserved_in_markers_and_saved_plan(tmp_path, qapp):
+    plan = validate_prompt_plan(
+        [
+            {
+                "label": "attempt_hand_close",
+                "duration": 1.0,
+                "condition": "exo_transparent",
+                "posture_target": "mid",
+                "assistance_level": 0,
+            }
+        ]
+    )
+    clock = FakeClock(5.0)
+    publisher = FakePublisher()
+    scheduler = TaskScheduler(publisher, clock)
+    scheduler.start(plan, "physics.json")
+    onset = [value for value, _timestamp in publisher.events if value.startswith("prompt_onset")][0]
+    assert "condition=exo_transparent" in onset
+    assert "posture_target=mid" in onset
+    assert "assistance_level=0" in onset
+
+    window = TaskCueOperatorWindow()
+    window._set_plan(plan)
+    destination = tmp_path / "saved.json"
+    window.save_plan(destination)
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert payload[0]["condition"] == "exo_transparent"
+    assert payload[0]["posture_target"] == "mid"
+
+
 def test_pause_resume_freezes_remaining_time_and_extends_deadline():
     clock = FakeClock(10.0)
     publisher = FakePublisher()

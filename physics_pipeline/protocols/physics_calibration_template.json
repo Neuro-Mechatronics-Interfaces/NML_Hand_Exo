@@ -1,0 +1,40 @@
+[
+  {
+    "label": "rest",
+    "duration": 3.0,
+    "condition": "TO_BE_SPECIFIED",
+    "contraction": "relaxed",
+    "posture_target": "open",
+    "assistance_level": "TO_BE_SPECIFIED",
+    "side": "TO_BE_SPECIFIED"
+  },
+  {
+    "label": "attempt_hand_close",
+    "duration": 4.0,
+    "condition": "TO_BE_SPECIFIED",
+    "contraction": "isometric",
+    "posture_target": "open",
+    "effort_level": "comfortable_submaximal",
+    "assistance_level": "TO_BE_SPECIFIED",
+    "side": "TO_BE_SPECIFIED"
+  },
+  {
+    "label": "rest",
+    "duration": 3.0,
+    "condition": "TO_BE_SPECIFIED",
+    "contraction": "relaxed",
+    "posture_target": "mid",
+    "assistance_level": "TO_BE_SPECIFIED",
+    "side": "TO_BE_SPECIFIED"
+  },
+  {
+    "label": "attempt_hand_open",
+    "duration": 4.0,
+    "condition": "TO_BE_SPECIFIED",
+    "contraction": "isometric",
+    "posture_target": "mid",
+    "effort_level": "comfortable_submaximal",
+    "assistance_level": "TO_BE_SPECIFIED",
+    "side": "TO_BE_SPECIFIED"
+  }
+]

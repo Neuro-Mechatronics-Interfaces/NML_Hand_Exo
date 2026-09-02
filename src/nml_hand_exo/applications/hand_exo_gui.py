@@ -83,7 +83,19 @@ from nml_hand_exo.interface._udp_command_bindings import (
 from nml_hand_exo.interface._udp_torque_pulse import TorquePulse, smoothstep
 from nml_hand_exo.interface._telemetry_streaming import (
     NumericLSLTelemetryOutlet,
+    StringLSLEventOutlet,
+    StructuredLSLTelemetryOutlet,
     UDPTelemetryPublisher,
+)
+from nml_hand_exo.interface._command_stream import (
+    COMMAND_EVENT_STREAM_NAME,
+    COMMAND_EVENT_STREAM_SCHEMA,
+    COMMAND_EVENT_STREAM_TYPE,
+    COMMAND_STREAM_NAME,
+    COMMAND_STREAM_SCHEMA,
+    COMMAND_STREAM_TYPE,
+    CommandMotor,
+    CommandStateTracker,
 )
 from nml_hand_exo.decoding.shadow_contact import ShadowContactEstimator
 
@@ -1242,6 +1254,7 @@ class SerialWorker(QThread):
         self._poll_pending = False
         self._direct_pending = False
         self._direct_actions: dict[int, tuple[str, float | None]] = {}
+        self._direct_sources: dict[int, str] = {}
         self._realtime_control = False
         self._realtime_motor_ids: list[int] = []
         self._shadow_telemetry = False
@@ -1279,11 +1292,15 @@ class SerialWorker(QThread):
         with self._state_lock:
             return self._poll_pending
 
-    def enqueue(self, command: str, timeout: float = 1.0):
-        self._urgent_q.put(("command", command, float(timeout)))
+    def enqueue(
+        self, command: str, timeout: float = 1.0, source: str = "unknown"
+    ):
+        self._urgent_q.put(("command", command, float(timeout), str(source)))
 
     def request_direct_actions(
-        self, actions: dict[int, tuple[str, float | None]]
+        self,
+        actions: dict[int, tuple[str, float | None]],
+        source: str = "unknown",
     ):
         """Coalesce per-ID direct commands for execution off the Qt thread.
 
@@ -1304,6 +1321,9 @@ class SerialWorker(QThread):
             return
         with self._state_lock:
             self._direct_actions.update(normalized)
+            self._direct_sources.update(
+                {motor_id: str(source) for motor_id in normalized}
+            )
             if self._direct_pending:
                 return
             self._direct_pending = True
@@ -1336,8 +1356,8 @@ class SerialWorker(QThread):
             if tag == "stop":
                 break
             if tag == "command":
-                _, command, timeout = item
-                self._handle_command(command, timeout)
+                _, command, timeout, source = item
+                self._handle_command(command, timeout, source)
             elif tag == "pose_ack":
                 _, value, host, port, timeout = item
                 self._handle_pose_ack(value, host, port, timeout)
@@ -1355,6 +1375,8 @@ class SerialWorker(QThread):
         with self._state_lock:
             actions = self._direct_actions
             self._direct_actions = {}
+            sources = self._direct_sources
+            self._direct_sources = {}
         try:
             def apply(raw_exo):
                 commands = []
@@ -1379,9 +1401,38 @@ class SerialWorker(QThread):
                 # Send the complete set in one transport write so per-command
                 # HandExo.send_delay cannot exceed the 50 ms control period.
                 raw_exo.device.send(payload)
+                for command, (dxl_id, _action) in zip(
+                    commands, sorted(actions.items())
+                ):
+                    self._notify_command_observers(
+                        raw_exo,
+                        command=command,
+                        status="sent",
+                        source=sources.get(dxl_id, "unknown"),
+                    )
 
             self._with_raw_exo(apply)
         except Exception as exc:
+            try:
+                def report_failed(raw_exo):
+                    for dxl_id, (mode, value) in sorted(actions.items()):
+                        if mode == "velocity":
+                            command = f"set_velocity:{dxl_id}:{float(value)}"
+                        elif mode == "current":
+                            command = f"set_current:{dxl_id}:{float(value)}"
+                        else:
+                            command = f"stop:{dxl_id}"
+                        self._notify_command_observers(
+                            raw_exo,
+                            command=command,
+                            status="failed",
+                            source=sources.get(dxl_id, "unknown"),
+                            error=str(exc),
+                        )
+
+                self._with_raw_exo(report_failed)
+            except Exception:
+                pass
             self.direct_failed.emit(str(exc))
         finally:
             with self._state_lock:
@@ -1394,9 +1445,11 @@ class SerialWorker(QThread):
         result = {
             "relative": None,
             "positions": None,
+            "position_ticks": None,
             "torques": None,
             "currents": None,
             "velocities": None,
+            "telemetry_errors": None,
             "telemetry_meta": None,
             "shadow": None,
             "telemetry_requested": include_telemetry,
@@ -1490,6 +1543,12 @@ class SerialWorker(QThread):
                     )
                     for mid, data in fast.items()
                 }
+                result["position_ticks"] = {
+                    mid: data.get("position_ticks") for mid, data in fast.items()
+                }
+                result["telemetry_errors"] = {
+                    mid: bool(data.get("error")) for mid, data in fast.items()
+                }
                 timestamp_by_id = {
                     mid: data.get("timestamp_ms") for mid, data in fast.items()
                 }
@@ -1553,9 +1612,9 @@ class SerialWorker(QThread):
             self._last_poll_error_log = now
             self.line_received.emit(message)
 
-    def _handle_command(self, command: str, timeout: float):
+    def _handle_command(self, command: str, timeout: float, source: str = "unknown"):
         try:
-            raw = self._transact(command, timeout)
+            raw = self._transact(command, timeout, source=source)
             if not raw.strip():
                 raise ProtocolResponseError(
                     command=command,
@@ -1566,7 +1625,28 @@ class SerialWorker(QThread):
                 line = line.strip().rstrip(";").strip()
                 if line:
                     self.line_received.emit(line)
+            self._with_raw_exo(
+                lambda raw_exo: self._notify_command_observers(
+                    raw_exo,
+                    command=command,
+                    status="acknowledged",
+                    source=source,
+                    response=raw,
+                )
+            )
         except Exception as exc:
+            try:
+                self._with_raw_exo(
+                    lambda raw_exo: self._notify_command_observers(
+                        raw_exo,
+                        command=command,
+                        status="failed",
+                        source=source,
+                        error=str(exc),
+                    )
+                )
+            except Exception:
+                pass
             self.line_received.emit(f"[cmd] {command} failed: {exc}")
 
     def _handle_pose_ack(
@@ -1624,7 +1704,9 @@ class SerialWorker(QThread):
             lambda raw_exo: isinstance(raw_exo.device, DualSerialComm)
         )
 
-    def _transact(self, command: str, timeout: float) -> str:
+    def _transact(
+        self, command: str, timeout: float, source: str = "instrumentation"
+    ) -> str:
         def do_transact(raw_exo):
             delimiter = raw_exo.command_delimiter
             full = command if command.endswith(delimiter) else command + delimiter
@@ -1637,6 +1719,12 @@ class SerialWorker(QThread):
             except Exception:
                 pass
             comm.send(full)
+            self._notify_command_observers(
+                raw_exo,
+                command=command,
+                status="sent",
+                source=source,
+            )
             try:
                 return comm.receive(
                     wait_until_return=True,
@@ -1649,6 +1737,20 @@ class SerialWorker(QThread):
                 return comm.receive(wait_until_return=True, timeout=timeout)
 
         return self._with_raw_exo(do_transact)
+
+    @staticmethod
+    def _notify_command_observers(raw_exo, **event) -> None:
+        """Notify optional instrumentation without affecting transport I/O."""
+
+        notify = getattr(raw_exo, "_notify_command_observers", None)
+        if not callable(notify):
+            return
+        try:
+            notify(**event)
+        except Exception:
+            # Recording is never allowed to turn a successful send into a
+            # control failure or delay the safety path.
+            return
 
     def _with_raw_exo(self, callback):
         exo = self._exo
@@ -1665,6 +1767,8 @@ class SerialWorker(QThread):
 # ==========================================================================
 
 class HandExoGUI(QWidget):
+
+    hardware_command_observed = pyqtSignal(object)
 
     # Firmware builds whose built-in ROM has been reviewed for calibration-free
     # operation. A device merely reporting limits is not enough to authorize
@@ -1751,6 +1855,28 @@ class HandExoGUI(QWidget):
         self._lsl_torque = NumericLSLTelemetryOutlet(
             "NMLHandExoMotorTorque", "MotorTorque", "Nm"
         )
+        self._lsl_state = StructuredLSLTelemetryOutlet(
+            "NMLHandExoStateV1",
+            "NMLHandExoState",
+            "nml_hand_exo_state_v1",
+            "nml.hand_exo.state.v1",
+        )
+        self._lsl_state_sequence = 0
+        self._lsl_command = StructuredLSLTelemetryOutlet(
+            COMMAND_STREAM_NAME,
+            COMMAND_STREAM_TYPE,
+            "nml_hand_exo_command_v1",
+            COMMAND_STREAM_SCHEMA,
+        )
+        self._lsl_events = StringLSLEventOutlet(
+            COMMAND_EVENT_STREAM_NAME,
+            COMMAND_EVENT_STREAM_TYPE,
+            "nml_hand_exo_events_v1",
+            COMMAND_EVENT_STREAM_SCHEMA,
+        )
+        self._command_tracker = CommandStateTracker()
+        self._lsl_event_sequence = 0
+        self.hardware_command_observed.connect(self._on_hardware_command_observed)
         self._udp_command_worker = UDPCommandWorker(self)
         self._udp_command_worker.command_received.connect(self._on_udp_command)
         self._udp_command_worker.heartbeat_received.connect(
@@ -2830,6 +2956,16 @@ class HandExoGUI(QWidget):
         self._lsl_angles_cb.setChecked(True)
         self._lsl_torque_cb = QCheckBox("Publish motor torque")
         self._lsl_torque_cb.setChecked(True)
+        self._lsl_state_cb = QCheckBox("Publish complete state (v1)")
+        self._lsl_state_cb.setChecked(True)
+        self._lsl_command_cb = QCheckBox("Publish requested commands (v1)")
+        self._lsl_command_cb.setChecked(True)
+        self._lsl_command_cb.setToolTip(
+            "Host-transmitted requests only. Firmware-resolved goal registers "
+            "remain unknown unless measured by firmware telemetry."
+        )
+        self._lsl_events_cb = QCheckBox("Publish command/events (v1)")
+        self._lsl_events_cb.setChecked(True)
         self._lsl_status_lbl = QLabel("Disabled")
         self._lsl_status_lbl.setStyleSheet("color: #888888;")
         sampling_row.addWidget(self._lsl_enabled_cb)
@@ -2840,6 +2976,9 @@ class HandExoGUI(QWidget):
         lsl_row = QHBoxLayout()
         lsl_row.addWidget(self._lsl_angles_cb)
         lsl_row.addWidget(self._lsl_torque_cb)
+        lsl_row.addWidget(self._lsl_state_cb)
+        lsl_row.addWidget(self._lsl_command_cb)
+        lsl_row.addWidget(self._lsl_events_cb)
         lsl_row.addStretch()
         lsl_row.addWidget(self._lsl_status_lbl)
         lsl_layout.addLayout(lsl_row)
@@ -2917,6 +3056,13 @@ class HandExoGUI(QWidget):
         )
         self._lsl_angles_cb.setChecked(settings.value("lsl/angles", True, type=bool))
         self._lsl_torque_cb.setChecked(settings.value("lsl/torque", True, type=bool))
+        self._lsl_state_cb.setChecked(settings.value("lsl/state_v1", True, type=bool))
+        self._lsl_command_cb.setChecked(
+            settings.value("lsl/command_v1", True, type=bool)
+        )
+        self._lsl_events_cb.setChecked(
+            settings.value("lsl/events_v1", True, type=bool)
+        )
         self._udp_telem_cb.setChecked(settings.value("udp_telemetry/enabled", False, type=bool))
         self._udp_telem_host.setText(settings.value("udp_telemetry/host", "127.0.0.1"))
         self._udp_telem_port.setValue(settings.value("udp_telemetry/port", 10002, type=int))
@@ -2943,6 +3089,9 @@ class HandExoGUI(QWidget):
         settings.setValue("telemetry/rate_hz", self._telemetry_rate_spin.value())
         settings.setValue("lsl/angles", self._lsl_angles_cb.isChecked())
         settings.setValue("lsl/torque", self._lsl_torque_cb.isChecked())
+        settings.setValue("lsl/state_v1", self._lsl_state_cb.isChecked())
+        settings.setValue("lsl/command_v1", self._lsl_command_cb.isChecked())
+        settings.setValue("lsl/events_v1", self._lsl_events_cb.isChecked())
         settings.setValue("udp_telemetry/enabled", self._udp_telem_cb.isChecked())
         settings.setValue("udp_telemetry/host", self._udp_telem_host.text().strip())
         settings.setValue("udp_telemetry/port", self._udp_telem_port.value())
@@ -3011,7 +3160,13 @@ class HandExoGUI(QWidget):
         settings.sync()
 
     def _on_lsl_enabled_toggled(self, enabled: bool):
-        for widget in (self._lsl_angles_cb, self._lsl_torque_cb):
+        for widget in (
+            self._lsl_angles_cb,
+            self._lsl_torque_cb,
+            self._lsl_state_cb,
+            self._lsl_command_cb,
+            self._lsl_events_cb,
+        ):
             widget.setEnabled(enabled)
         self._lsl_status_lbl.setText("Disabled" if not enabled else "Enabled")
         self._lsl_status_lbl.setStyleSheet(
@@ -3033,14 +3188,53 @@ class HandExoGUI(QWidget):
             self.motor_names,
             nominal_srate=nominal_rate,
         )
-        errors = [e for e in (self._lsl_angles.last_error, self._lsl_torque.last_error) if e]
+        self._lsl_state.configure(
+            enabled and self._lsl_state_cb.isChecked(),
+            self._lsl_state_channel_specs(),
+            nominal_srate=nominal_rate,
+            stream_metadata={
+                "torque_semantics": "estimated from present motor current; not human joint torque",
+                "motor_id_contract": "left=1-9; right=11-19",
+            },
+        )
+        self._lsl_command.configure(
+            enabled and self._lsl_command_cb.isChecked(),
+            self._command_tracker.channel_specs(),
+            nominal_srate=nominal_rate,
+            stream_metadata={
+                "semantics": "host-transmitted requests; not authoritative firmware goal registers",
+                "unknown_value": "NaN",
+                "control_mode_codes": "0=unknown,1=position,2=current_position,3=velocity,4=current",
+                "command_source_codes": "0=unknown,1=gui,2=udp,3=emg,4=safety,5=calibration,6=instrumentation",
+            },
+        )
+        self._lsl_events.configure(
+            enabled and self._lsl_events_cb.isChecked()
+        )
+        errors = [
+            error
+            for error in (
+                self._lsl_angles.last_error,
+                self._lsl_torque.last_error,
+                self._lsl_state.last_error,
+                self._lsl_command.last_error,
+                self._lsl_events.last_error,
+            )
+            if error
+        ]
         if errors:
             self._lsl_status_lbl.setText(f"LSL unavailable: {errors[0]}")
             self._lsl_status_lbl.setStyleSheet("color: #c0392b;")
-        elif enabled and (self._lsl_angles_cb.isChecked() or self._lsl_torque_cb.isChecked()):
+        elif enabled and (
+            self._lsl_angles_cb.isChecked()
+            or self._lsl_torque_cb.isChecked()
+            or self._lsl_state_cb.isChecked()
+            or self._lsl_command_cb.isChecked()
+            or self._lsl_events_cb.isChecked()
+        ):
             if self.motor_names:
                 self._lsl_status_lbl.setText(
-                    f"Publishing {len(self.motor_names)} channel(s) at telemetry refresh rate"
+                    "Publishing selected LSL streams at telemetry refresh rate"
                 )
                 self._lsl_status_lbl.setStyleSheet("color: #27ae60;")
             else:
@@ -3049,6 +3243,103 @@ class HandExoGUI(QWidget):
         else:
             self._lsl_status_lbl.setText("Disabled")
             self._lsl_status_lbl.setStyleSheet("color: #888888;")
+
+    def _lsl_motor_descriptor(self, display_name: str, motor_id: int) -> tuple[str, str]:
+        """Return explicit side and bare name for one active DXL ID."""
+        text = str(display_name).strip()
+        if text.upper().startswith("L:"):
+            return "L", text[2:]
+        if text.upper().startswith("R:"):
+            return "R", text[2:]
+        if 1 <= int(motor_id) <= 9:
+            return "L", text
+        if 11 <= int(motor_id) <= 19:
+            return "R", text
+        return "U", text
+
+    def _lsl_state_channel_specs(self) -> list[dict[str, object]]:
+        specs: list[dict[str, object]] = [
+            {"label": "frame.sequence", "unit": "count", "quantity": "sequence"},
+            {
+                "label": "frame.firmware_timestamp_ms",
+                "unit": "ms",
+                "quantity": "firmware_timestamp",
+            },
+            {
+                "label": "frame.fast_read_flags",
+                "unit": "code",
+                "quantity": "fast_read_flags",
+            },
+        ]
+        fields = (
+            ("relative_angle_deg", "degrees"),
+            ("absolute_angle_deg", "degrees"),
+            ("position_ticks", "ticks"),
+            ("velocity_rpm", "rpm"),
+            ("present_current_mA", "mA"),
+            ("estimated_motor_torque_from_current_Nm", "N.m"),
+            ("telemetry_valid", "boolean"),
+        )
+        for index, display_name in enumerate(self.motor_names):
+            if index >= len(self._motor_dxl_id):
+                continue
+            motor_id = int(self._motor_dxl_id[index])
+            side, bare_name = self._lsl_motor_descriptor(display_name, motor_id)
+            safe_name = re.sub(r"[^a-zA-Z0-9]+", "_", bare_name).strip("_") or "motor"
+            prefix = f"{side}.{safe_name}.id{motor_id}"
+            for quantity, unit in fields:
+                specs.append(
+                    {
+                        "label": f"{prefix}.{quantity}",
+                        "unit": unit,
+                        "quantity": quantity,
+                        "motor_id": motor_id,
+                        "motor_name": bare_name,
+                        "side": {"L": "left", "R": "right"}.get(side, "unknown"),
+                    }
+                )
+        return specs
+
+    def _configure_command_tracker_motors(self) -> None:
+        motors = []
+        for index, display_name in enumerate(self.motor_names):
+            if index >= len(self._motor_dxl_id):
+                continue
+            motor_id = int(self._motor_dxl_id[index])
+            side, bare_name = self._lsl_motor_descriptor(display_name, motor_id)
+            motors.append(CommandMotor(motor_id, bare_name, side))
+        self._command_tracker.configure_motors(motors)
+
+    def _on_hardware_command_observed(self, event: dict) -> None:
+        normalized = self._command_tracker.observe(event)
+        if not normalized.get("recordable"):
+            return
+        self._lsl_event_sequence += 1
+        normalized["event_sequence"] = self._lsl_event_sequence
+        normalized["schema"] = COMMAND_EVENT_STREAM_SCHEMA
+        self._lsl_events.publish(normalized)
+        self._publish_complete_lsl_command()
+
+    def _publish_exo_event(
+        self, event_type: str, status: str, source: str = "gui", **fields
+    ) -> None:
+        self._lsl_event_sequence += 1
+        event = {
+            "schema": COMMAND_EVENT_STREAM_SCHEMA,
+            "event_sequence": self._lsl_event_sequence,
+            "event_type": str(event_type),
+            "status": str(status),
+            "source": str(source),
+            "host_wall_time_s": time.time(),
+            "host_monotonic_s": time.monotonic(),
+        }
+        event.update({key: value for key, value in fields.items() if value is not None})
+        self._lsl_events.publish(event)
+
+    def _publish_complete_lsl_command(self) -> None:
+        if not self._lsl_command.enabled or not self._command_tracker.motors:
+            return
+        self._lsl_command.publish(self._command_tracker.snapshot())
 
     def _refresh_udp_binding_profiles(self, preferred: str = ""):
         try:
@@ -4474,6 +4765,18 @@ class HandExoGUI(QWidget):
         self._udp_last_command_lbl.setStyleSheet(
             f"color: {color}; font-size: 10px;"
         )
+        normalized_outcome = outcome.strip().lower()
+        if normalized_outcome.startswith(("accepted", "rejected", "failed")):
+            publish_event = getattr(self, "_publish_exo_event", None)
+            if callable(publish_event):
+                publish_event(
+                    "udp_command",
+                    normalized_outcome.split(";", 1)[0],
+                    source="udp",
+                    sender=sender,
+                    payload=preview,
+                    outcome=outcome,
+                )
 
     def _on_udp_command(self, payload: str, sender: str):
         self._record_udp_queue_length()
@@ -4681,7 +4984,7 @@ class HandExoGUI(QWidget):
                 return
         self._set_udp_command_feedback(payload, sender, "received", "#f39c12")
         try:
-            self._serial_worker.enqueue(command)
+            self._serial_worker.enqueue(command, source="udp")
             if command.startswith("set_control_mode:all:"):
                 selected_mode = command.rsplit(":", 1)[-1]
                 if selected_mode in ("velocity", "current"):
@@ -4705,7 +5008,7 @@ class HandExoGUI(QWidget):
         self._udp_stream_pending.clear()
         for command, payload, sender in pending_items:
             try:
-                self._serial_worker.enqueue(command)
+                self._serial_worker.enqueue(command, source="udp")
                 if command.startswith("set_gesture_angle:"):
                     self._queue_udp_pose_ack(COMMAND_PASSTHROUGH_ACK, sender)
                 self._udp_stream_sent_since_status += 1
@@ -4852,9 +5155,11 @@ class HandExoGUI(QWidget):
             return
         relative = result.get("relative")
         positions = result.get("positions")
+        position_ticks = result.get("position_ticks")
         torques = result.get("torques")
         currents = result.get("currents")
         velocities = result.get("velocities")
+        telemetry_errors = result.get("telemetry_errors")
         if not result.get("telemetry_requested", True):
             # Teleop owns its configured stream rate and intentionally renders
             # each sensor frame; normal telemetry uses the decoupled renderer.
@@ -4890,6 +5195,19 @@ class HandExoGUI(QWidget):
             self._telemetry_values_by_name(currents),
             telemetry_meta,
         )
+        self._publish_complete_lsl_state(
+            relative=relative,
+            positions=positions,
+            position_ticks=position_ticks,
+            velocities=velocities,
+            currents=currents,
+            torques=torques,
+            telemetry_errors=telemetry_errors,
+            telemetry_meta=telemetry_meta,
+        )
+        # Repeat the latest host-request snapshot at the measured-state cadence.
+        # Importers use zero-order hold; unresolved fields intentionally remain NaN.
+        self._publish_complete_lsl_command()
 
     def _reset_telemetry_buffers(self):
         for field_buffers in self._telemetry_buffers.values():
@@ -5094,6 +5412,51 @@ class HandExoGUI(QWidget):
             self._udp_telem_status_lbl.setText(f"Send error: {exc}")
             self._udp_telem_status_lbl.setStyleSheet("color: #c0392b;")
 
+    def _publish_complete_lsl_state(
+        self,
+        *,
+        relative: dict | None,
+        positions: dict | None,
+        position_ticks: dict | None,
+        velocities: dict | None,
+        currents: dict | None,
+        torques: dict | None,
+        telemetry_errors: dict | None,
+        telemetry_meta: dict | None,
+    ) -> None:
+        if not self._lsl_state.enabled:
+            return
+        self._lsl_state_sequence += 1
+        meta = telemetry_meta or {}
+        values: dict[str, float | int | bool | None] = {
+            "frame.sequence": self._lsl_state_sequence,
+            "frame.firmware_timestamp_ms": meta.get("firmware_timestamp_ms"),
+            "frame.fast_read_flags": meta.get("fast_telemetry_flags"),
+        }
+        fields = (
+            ("relative_angle_deg", relative),
+            ("absolute_angle_deg", positions),
+            ("position_ticks", position_ticks),
+            ("velocity_rpm", velocities),
+            ("present_current_mA", currents),
+            ("estimated_motor_torque_from_current_Nm", torques),
+        )
+        for index, display_name in enumerate(self.motor_names):
+            if index >= len(self._motor_dxl_id):
+                continue
+            motor_id = int(self._motor_dxl_id[index])
+            side, bare_name = self._lsl_motor_descriptor(display_name, motor_id)
+            safe_name = re.sub(r"[^a-zA-Z0-9]+", "_", bare_name).strip("_") or "motor"
+            prefix = f"{side}.{safe_name}.id{motor_id}"
+            observed = False
+            for quantity, source in fields:
+                value = source.get(motor_id) if source is not None else None
+                values[f"{prefix}.{quantity}"] = value
+                observed = observed or value is not None
+            error = telemetry_errors.get(motor_id) if telemetry_errors is not None else False
+            values[f"{prefix}.telemetry_valid"] = bool(observed and not error)
+        self._lsl_state.publish(values)
+
     def _build_header(self):
         target_layout = getattr(self, "_header_layout", self.main_layout)
         row = QHBoxLayout()
@@ -5122,6 +5485,14 @@ class HandExoGUI(QWidget):
 
     def _global_stop_all_motion(self):
         """Stop every GUI command source and torque-off active-side IDs."""
+        publish_event = getattr(self, "_publish_exo_event", None)
+        if callable(publish_event):
+            publish_event(
+                "safety_stop",
+                "requested",
+                source="safety",
+                motor_ids=list(getattr(self, "_motor_dxl_id", ())),
+            )
         self._finish_home_sequence(resume_polling=False)
         if self._teleop_streaming:
             self._on_teleop_stop()
@@ -6226,10 +6597,15 @@ class HandExoGUI(QWidget):
                     dual_active = False
                     conn_desc = f"{port} @ {baud} [{mode}]"
 
-                exo = SynchronizedHandExo(
-                    HandExo(comm, side=side, auto_connect=True,
-                            verbose=False, command_delimiter='\r\n')
+                raw_exo = HandExo(
+                    comm,
+                    side=side,
+                    auto_connect=True,
+                    verbose=False,
+                    command_delimiter='\r\n',
                 )
+                raw_exo.add_command_observer(self.hardware_command_observed.emit)
+                exo = SynchronizedHandExo(raw_exo)
                 try:
                     if not dual_active:
                         # Firmware reply routing persists across host reconnects.
@@ -6375,6 +6751,7 @@ class HandExoGUI(QWidget):
             # Keys are display names (with L:/R: prefix in Dual mode).
             self._motor_idx = {name: i for i, name in enumerate(self.motor_names)}
             self._motor_row = {name: row for row, name in enumerate(self.motor_names)}
+            self._configure_command_tracker_motors()
 
             self._build_motor_rows()
             self._sync_motor_enabled_states_after_connect()
@@ -6383,6 +6760,13 @@ class HandExoGUI(QWidget):
             self._rebuild_teleop_table()
             self._rebuild_direct_motor_combo()
             self._configure_lsl_outlets()
+            self._publish_exo_event(
+                "connection",
+                "connected",
+                mode=mode,
+                motor_ids=list(self._motor_dxl_id),
+                dual_cdc=bool(self._dual_cdc_active),
+            )
             self._last_telemetry_update_monotonic = None
             self._telemetry_rate_ema = None
             self._reset_telemetry_buffers()
@@ -6409,6 +6793,7 @@ class HandExoGUI(QWidget):
         self._update_enabled_state()
 
     def _disconnect(self):
+        self._publish_exo_event("connection", "disconnecting")
         self._finish_home_sequence(resume_polling=False)
         # Stop teleop streaming first so the tick timer doesn't fire after
         # the serial port closes.  Also signal the WebSocket worker to exit
@@ -6454,6 +6839,7 @@ class HandExoGUI(QWidget):
         self._right_motor_names = []
         self._motor_dxl_id      = []
         self.motor_names        = []
+        self._configure_command_tracker_motors()
         self._direct_motor_combo.clear()
         self._emg_motor_combo.clear()
         self._emg_hold_angle = None
@@ -6521,7 +6907,7 @@ class HandExoGUI(QWidget):
             return
         self._raw_command_edit.clear()
         self._log(f"> {command}")
-        self._serial_worker.enqueue(command, timeout=2.0)
+        self._serial_worker.enqueue(command, timeout=2.0, source="gui")
 
     def _motor_all(self, action):
         """Enable or disable all active-mode motors.
@@ -8389,8 +8775,12 @@ class HandExoGUI(QWidget):
             )
             self._emg_shadow_log_writer.writeheader()
             ids = ":".join(str(int(mid)) for mid in target_ids)
-            self._serial_worker.enqueue(f"shadow_config:2:{ids}", timeout=1.0)
-            self._serial_worker.enqueue("shadow_start", timeout=1.0)
+            self._serial_worker.enqueue(
+                f"shadow_config:2:{ids}", timeout=1.0, source="instrumentation"
+            )
+            self._serial_worker.enqueue(
+                "shadow_start", timeout=1.0, source="instrumentation"
+            )
             self._serial_worker.set_shadow_telemetry(True)
             self._emg_shadow_active = True
             self._emg_shadow_status.setText(
@@ -8422,7 +8812,9 @@ class HandExoGUI(QWidget):
         self._serial_worker.set_shadow_telemetry(False)
         self._emg_shadow_active = False
         if self.exo_connected and was_active:
-            self._serial_worker.enqueue("shadow_stop", timeout=1.0)
+            self._serial_worker.enqueue(
+                "shadow_stop", timeout=1.0, source="instrumentation"
+            )
         self._close_emg_shadow_log()
         self._emg_shadow_estimators = {}
         self._emg_last_commands = {}
@@ -8435,7 +8827,9 @@ class HandExoGUI(QWidget):
         self._serial_worker.set_shadow_telemetry(False)
         self._emg_shadow_active = False
         if self.exo_connected:
-            self._serial_worker.enqueue("shadow_stop", timeout=1.0)
+            self._serial_worker.enqueue(
+                "shadow_stop", timeout=1.0, source="instrumentation"
+            )
         self._close_emg_shadow_log()
         self._emg_shadow_estimators = {}
         self._emg_shadow_status.setText(f"Shadow monitor unavailable: {error}")
@@ -8611,9 +9005,17 @@ class HandExoGUI(QWidget):
         self._emg_last_command_id = None
         if self.exo_connected and ids_to_stop:
             try:
-                self._serial_worker.request_direct_actions(
-                    {dxl_id: ("stop", None) for dxl_id in ids_to_stop}
-                )
+                actions = {dxl_id: ("stop", None) for dxl_id in ids_to_stop}
+                try:
+                    self._serial_worker.request_direct_actions(
+                        actions, source="emg"
+                    )
+                except TypeError as exc:
+                    if "unexpected keyword argument" not in str(exc):
+                        raise
+                    # Compatibility with external/test workers implementing the
+                    # original one-argument method.
+                    self._serial_worker.request_direct_actions(actions)
             except Exception as exc:
                 self._log(f"[EMG] could not queue stop: {exc}")
         if not keep_live and hasattr(self, "_serial_worker"):
@@ -8726,7 +9128,12 @@ class HandExoGUI(QWidget):
                 if last_commands is not None:
                     last_commands[dxl_id] = motor_command
                 self._emg_commanded_ids.add(dxl_id)
-            self._serial_worker.request_direct_actions(actions)
+            try:
+                self._serial_worker.request_direct_actions(actions, source="emg")
+            except TypeError as exc:
+                if "unexpected keyword argument" not in str(exc):
+                    raise
+                self._serial_worker.request_direct_actions(actions)
             self._emg_last_command_id = target_ids[0] if len(target_ids) == 1 else None
             target_text = (
                 f"ID {target_ids[0]}"
@@ -9470,6 +9877,7 @@ class HandExoGUI(QWidget):
         self._serial_worker.request_poll(include_telemetry=False)
 
     def closeEvent(self, event):
+        self._publish_exo_event("application", "closing")
         self._cache_udp_command_endpoint()
         self._send_udp_local_close_notice("GUI shutdown")
         self._set_udp_source_status(None)
@@ -9502,6 +9910,9 @@ class HandExoGUI(QWidget):
         self._udp_response_socket.close()
         self._lsl_angles.close()
         self._lsl_torque.close()
+        self._lsl_state.close()
+        self._lsl_command.close()
+        self._lsl_events.close()
         try:
             if self.exo:
                 self.exo.close()
