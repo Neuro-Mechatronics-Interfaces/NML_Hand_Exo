@@ -38,7 +38,10 @@ Hardware Setup
    - A status LED (pin ``STATUS_LED_PIN``) will blink once to confirm startup.
 
 4. **System Boot-Up**
-   After powering on, the system initializes to the default operating mode:
+   After powering on, the system initializes to the default operating mode.
+
+   The default configuration is:
+
    - **Default Mode**: ``gesture_fixed`` (see ``DEFAULT_EXO_MODE`` in `config.h`)
    - **Verbose Logging**: Disabled by default; enable it when detailed command
      and response logging is needed (see ``DEFAULT_VERBOSE``)
