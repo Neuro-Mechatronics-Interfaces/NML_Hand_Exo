@@ -83,6 +83,8 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
   motorAdmitted_ = new bool[numMotors_];
   admissionMs_ = new unsigned long[numMotors_];
   goalAngle_ = new float[numMotors_];
+  goalAngleValid_ = new bool[numMotors_];
+  motorReachable_ = new bool[numMotors_];
   verdictPending_ = new bool[numMotors_];
   lastVerdict_ = new uint8_t[numMotors_];
   goalIssuedMs_ = new unsigned long[numMotors_];
@@ -100,6 +102,8 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
     motorAdmitted_[i] = false;
     admissionMs_[i] = 0;
     goalAngle_[i] = 0.0f;
+    goalAngleValid_[i] = false;
+    motorReachable_[i] = false;
     verdictPending_[i] = false;
     lastVerdict_[i] = MOVE_VERDICT_NONE;
     goalIssuedMs_[i] = 0;
@@ -124,6 +128,16 @@ void NMLHandExo::initializeMotors() {
   for (int i = 0; i < numMotors_; i++) {
     uint8_t id = motorIds_[i];
     dxl_.torqueOff(id);
+
+    // RETURN_DELAY_TIME is EEPROM-backed, so only write it when needed. Zero
+    // removes the factory 500 us pause before every read response without
+    // changing which commands produce responses.
+    uint32_t returnDelay = dxl_.readControlTableItem(RETURN_DELAY_TIME, id);
+    if (dxl_.getLastLibErrCode() == DXL_LIB_OK &&
+        returnDelay != DYNAMIXEL_RETURN_DELAY) {
+      dxl_.writeControlTableItem(RETURN_DELAY_TIME, id,
+                                 DYNAMIXEL_RETURN_DELAY);
+    }
     dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION);
     dxl_.torqueOn(id);
     // Ceiling stays at the part maximum so set_current_lim can raise effort at
@@ -178,6 +192,9 @@ void NMLHandExo::initializeMotors() {
     zeroOffsets_[i] = home + offset;
     jointLimits_[i][0] += offset;
     jointLimits_[i][1] += offset;
+    goalAngle_[i] = currentPos;
+    goalAngleValid_[i] = true;
+    motorReachable_[i] = true;
 
     if (turns != 0.0f) {
       debugPrint("[INIT] Motor " + String(id) + " multi-turn correction: "
@@ -625,7 +642,7 @@ void NMLHandExo::setRelativeAngle(uint8_t id, float relativeAngle) {
   // Register the move first: the budget pre-clamps effort before the motor
   // starts drawing, which is the whole point of the feed-forward half.
   noteGoalCommanded(index, abs_goal);
-  dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE);
+  goalAngleValid_[index] = dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE);
 
   char buffer[128];
   snprintf(buffer, sizeof(buffer), "Motor %d set to relative angle %.2f deg (absolute: %.2f deg)", id, relativeAngle, abs_goal);
@@ -655,8 +672,112 @@ void NMLHandExo::setAbsoluteAngle(uint8_t id, float absoluteAngle) {
   clamped = applyShortestPath(index, clamped);
 
   noteGoalCommanded(index, clamped);
-  dxl_.setGoalPosition(id, clamped, UNIT_DEGREE);
+  goalAngleValid_[index] = dxl_.setGoalPosition(id, clamped, UNIT_DEGREE);
   debugPrint("[NMLHandExo] Setting motor " + String(id) + " to absolute angle " + String(clamped, 2));
+}
+
+bool NMLHandExo::setAbsoluteAnglesSync(const MotorAngleTarget* targets,
+                                       uint8_t count, uint8_t* writtenOut,
+                                       uint8_t* skippedOut,
+                                       int16_t* libErrorOut) {
+  if (writtenOut) *writtenOut = 0;
+  if (skippedOut) *skippedOut = 0;
+  if (libErrorOut) *libErrorOut = DXL_LIB_OK;
+  if (!targets || count == 0 || count > numMotors_ || count > N_MOTORS) {
+    if (libErrorOut) *libErrorOut = DXL_LIB_ERROR_LENGTH;
+    return false;
+  }
+
+  DYNAMIXEL::XELInfoSyncWrite_t xels[N_MOTORS];
+  DYNAMIXEL::InfoSyncWriteInst_t syncInfo = {};
+  uint8_t packetBuffer[192];
+  int32_t goalTicks[N_MOTORS];
+  float resolvedGoals[N_MOTORS];
+  int targetIndices[N_MOTORS];
+  uint8_t packedCount = 0;
+  uint8_t skippedCount = 0;
+
+  // Resolve the complete batch before transmitting anything. In steady state
+  // the last accepted goal is the reference, so continuous frames require no
+  // read round trips. A motor with no trustworthy cache gets one live read.
+  for (uint8_t k = 0; k < count; ++k) {
+    const int index = getIndexById(targets[k].id);
+    if (index < 0 || !isfinite(targets[k].angleDeg)) {
+      if (libErrorOut) *libErrorOut = DXL_LIB_ERROR_INVAILD_ID;
+      return false;
+    }
+    for (uint8_t prior = 0; prior < k; ++prior) {
+      if (targets[prior].id == targets[k].id) {
+        if (libErrorOut) *libErrorOut = DXL_LIB_ERROR_INVAILD_ID;
+        return false;
+      }
+    }
+
+    // Dual firmware contains all 18 configured IDs even when only one hand is
+    // plugged in. Initialization already attempted a position read from every
+    // ID; omit known-offline motors instead of letting one missing hand veto
+    // the complete frame or adding repeated timeout delays to every update.
+    if (!motorReachable_[index]) {
+      ++skippedCount;
+      continue;
+    }
+
+    float reference;
+    if (goalAngleValid_[index]) {
+      reference = goalAngle_[index];
+    } else {
+      reference = dxl_.getPresentPosition(targets[k].id, UNIT_DEGREE);
+      if (dxl_.getLastLibErrCode() != DXL_LIB_OK || !isfinite(reference) ||
+          reference < -36000.0f || reference > 36000.0f) {
+        // Skip this frame but keep retrying a motor that was online at boot;
+        // a transient read error must not disable that joint until reset.
+        ++skippedCount;
+        continue;
+      }
+    }
+
+    float goal = constrain(targets[k].angleDeg,
+                           jointLimits_[index][0], jointLimits_[index][1]);
+    goal = applyShortestPathFromReference(index, goal, reference);
+
+    targetIndices[packedCount] = index;
+    resolvedGoals[packedCount] = goal;
+    // Match Dynamixel2Arduino's Protocol-2 position conversion (0.088 deg/tick).
+    goalTicks[packedCount] = (int32_t)roundf(goal / 0.088f);
+    xels[packedCount].id = targets[k].id;
+    xels[packedCount].p_data =
+        reinterpret_cast<uint8_t*>(&goalTicks[packedCount]);
+    ++packedCount;
+  }
+
+  if (skippedOut) *skippedOut = skippedCount;
+  if (packedCount == 0) {
+    if (libErrorOut) *libErrorOut = DXL_LIB_ERROR_TIMEOUT;
+    return false;
+  }
+
+  // Use a dedicated buffer so this packet is independent of any prior
+  // telemetry/read instruction cached in Dynamixel2Arduino's internal buffer.
+  syncInfo.packet.p_buf = packetBuffer;
+  syncInfo.packet.buf_capacity = sizeof(packetBuffer);
+  syncInfo.packet.is_completed = false;
+  syncInfo.addr = DYNAMIXEL_GOAL_POSITION_ADDRESS;
+  syncInfo.addr_length = DYNAMIXEL_GOAL_POSITION_LENGTH;
+  syncInfo.p_xels = xels;
+  syncInfo.xel_count = packedCount;
+  syncInfo.is_info_changed = true;
+
+  if (!dxl_.syncWrite(&syncInfo)) {
+    if (libErrorOut) *libErrorOut = (int16_t)dxl_.getLastLibErrCode();
+    return false;
+  }
+
+  for (uint8_t k = 0; k < packedCount; ++k) {
+    noteGoalCommanded(targetIndices[k], resolvedGoals[k]);
+    goalAngleValid_[targetIndices[k]] = true;
+  }
+  if (writtenOut) *writtenOut = packedCount;
+  return true;
 }
 float NMLHandExo::getZeroAngle(uint8_t id){
   int index = getIndexById(id);
@@ -681,7 +802,7 @@ void NMLHandExo::setHome(uint8_t id){
   homeAngle = applyShortestPath(index, homeAngle);
 
   noteGoalCommanded(index, homeAngle);
-  dxl_.setGoalPosition(id, homeAngle, UNIT_DEGREE);
+  goalAngleValid_[index] = dxl_.setGoalPosition(id, homeAngle, UNIT_DEGREE);
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "Motor %d homing to %.2f deg", id, homeAngle);
   debugPrint(buffer);
@@ -707,7 +828,7 @@ void NMLHandExo::setAngleById(uint8_t id, float angle_deg) {
 
   // Set new goal tick position
   noteGoalCommanded(index, abs_goal);
-  dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE);
+  goalAngleValid_[index] = dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE);
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "[NMLHandExo] Setting motor %d to abs angle %.2f deg", id, abs_goal);
   debugPrint(buffer);
@@ -840,7 +961,12 @@ float NMLHandExo::gestureAngleToFraction(uint8_t id, float angleDeg) {
 float NMLHandExo::applyShortestPath(int index, float goal) {
   if (index < 0 || index >= (int)numMotors_) return goal;
   const float present = dxl_.getPresentPosition(motorIds_[index], UNIT_DEGREE);
-  const float diff = goal - present;
+  return applyShortestPathFromReference(index, goal, present);
+}
+float NMLHandExo::applyShortestPathFromReference(int index, float goal,
+                                                 float reference) const {
+  if (index < 0 || index >= (int)numMotors_) return goal;
+  const float diff = goal - reference;
   if (fabsf(diff) <= 180.0f) return goal;
 
   const float lo = min(jointLimits_[index][0], jointLimits_[index][1]);
@@ -1167,9 +1293,22 @@ void NMLHandExo::concludeMove(int index, uint8_t verdict) {
     // "Settled" only means it stopped pulling; confirm it actually arrived.
     // This is the one extra position read per move, not per sample.
     float present = dxl_.getPresentPosition(motorIds_[index], UNIT_DEGREE);
-    float error = present - goalAngle_[index];
-    if (error < 0) error = -error;
-    if (error > GESTURE_REACH_TOLERANCE_DEG) verdict = MOVE_VERDICT_SHORT;
+    if (dxl_.getLastLibErrCode() == DXL_LIB_OK && isfinite(present)) {
+      float error = present - goalAngle_[index];
+      if (error < 0) error = -error;
+      if (error > GESTURE_REACH_TOLERANCE_DEG) verdict = MOVE_VERDICT_SHORT;
+      // Refresh the shortest-path cache with physical evidence whenever a move
+      // settles, including a SHORT verdict where goal and reality diverged.
+      goalAngle_[index] = present;
+      goalAngleValid_[index] = true;
+    } else {
+      verdict = MOVE_VERDICT_SHORT;
+      goalAngleValid_[index] = false;
+    }
+  } else {
+    // A stall/starvation means the accepted goal is no longer a trustworthy
+    // proxy for position. The next batch performs one recovery read for it.
+    goalAngleValid_[index] = false;
   }
   lastVerdict_[index] = verdict;
   if (verdict != MOVE_VERDICT_REACHED) verdictFailures_++;
@@ -1798,12 +1937,29 @@ void NMLHandExo::getMotorInfo(uint8_t id) {
   dxl_.ping(id);  // could be expanded to read Model Number, Version, etc.
   debugPrint("Pinged motor ID: " + String(id));
 }
-void NMLHandExo::setBaudRate(uint8_t id, uint32_t baudrate) {
-  dxl_.writeControlTableItem(BAUD_RATE, id, baudrate);
-  debugPrint("Motor ID:" + String(id) + " baudrate set to " + String(baudrate));
+bool NMLHandExo::setBaudRate(uint8_t id, uint32_t baudrate) {
+  // BAUD_RATE stores a model-specific index, not the literal bits-per-second
+  // value. Let the library perform that mapping and reject unsupported rates.
+  const bool ok = dxl_.setBaudrate(id, baudrate);
+  debugPrint("Motor ID:" + String(id) + " baudrate " +
+             (ok ? "set to " : "failed: ") + String(baudrate));
+  return ok;
 }
 uint32_t NMLHandExo::getBaudRate(uint8_t id) {
-  return dxl_.readControlTableItem(BAUD_RATE, id);
+  const uint32_t baudIndex = dxl_.readControlTableItem(BAUD_RATE, id);
+  if (dxl_.getLastLibErrCode() != DXL_LIB_OK) return 0;
+  // XL330/XC330 Protocol-2 baud indices. The old implementation exposed this
+  // raw index even though the API and serial response both promise bit/s.
+  switch (baudIndex) {
+    case 0: return 9600;
+    case 1: return 57600;
+    case 2: return 115200;
+    case 3: return 1000000;
+    case 4: return 2000000;
+    case 5: return 3000000;
+    case 6: return 4000000;
+    default: return 0;
+  }
 }
 void NMLHandExo::setMotorLED(uint8_t id, bool state) {
   // Sets specified motor LED to the specified state

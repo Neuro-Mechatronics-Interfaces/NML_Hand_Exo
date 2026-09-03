@@ -571,7 +571,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       String info = "Motor Baudrate: \n";
       for (int i = 0; i < exo.getMotorCount(); i++) {
         uint8_t id = exo.getMotorIDByIndex(i);
-          uint32_t baud = exo.getBaudRate(i);  
+        uint32_t baud = exo.getBaudRate(id);
         info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
             ", baudrate: " + String(baud) + "}\n";
       }
@@ -588,8 +588,26 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
 
   } else if (cmd == "set_baud") {
     id = getArgMotorID(exo, token, 1);
-    val = getArg(token, 2).toInt();
-    if (id != -1) exo.setBaudRate(id, val);
+    String baudArg = getArg(token, 2);
+    baudArg.trim();
+    bool numeric = baudArg.length() > 0;
+    for (uint16_t i = 0; i < baudArg.length(); ++i) {
+      if (!isDigit(baudArg[i])) {
+        numeric = false;
+        break;
+      }
+    }
+    if (id != -1 && numeric) {
+      uint32_t baud = (uint32_t)baudArg.toInt();
+      if (exo.setBaudRate(id, baud)) {
+        commandPrint("OK: baud id=" + String(id) + " value=" + String(baud));
+      } else {
+        commandPrint("ERROR: unsupported baud or Dynamixel write failed: " +
+                     String(baud));
+      }
+    } else if (id != -1) {
+      commandPrint("ERROR: set_baud requires a numeric baud rate");
+    }
 
   } else if (cmd == "get_goal_velocity") {
     String arg = getArg(token, 1);  // local copy
@@ -1375,6 +1393,8 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     uint8_t held = 0;        // joints with an empty/omitted field
     uint8_t unknown = 0;     // targets that named no addressable gesture
     uint8_t zeroTravel = 0;  // motors skipped for having no calibrated travel
+    MotorAngleTarget targets[N_MOTORS];
+    uint8_t targetCount = 0;
     String bad;              // first malformed field, for the error reply
 
     for (uint8_t k = 0; k < kFingerCount; ++k) {
@@ -1402,12 +1422,34 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
         continue;
       }
       long signedValue = field.toInt();
-      uint8_t moved = 0;
+      MotorAngleTarget gestureTargets[N_MOTORS];
+      uint8_t gestureTargetCount = 0;
       uint8_t stuck = 0;
-      if (gc.setGestureSignedAngle(String(kFingerOrder[k]),
-                                   (float)signedValue, &moved, &stuck)) {
+      if (gc.resolveGestureSignedTargets(String(kFingerOrder[k]),
+                                         (float)signedValue,
+                                         gestureTargets, N_MOTORS,
+                                         gestureTargetCount, &stuck)) {
         ++commanded;
         zeroTravel += stuck;
+        for (uint8_t j = 0; j < gestureTargetCount; ++j) {
+          // Gesture definitions should not overlap in this fixed command, but
+          // replacing a duplicate keeps the final target unambiguous if they
+          // ever do. Never transmit until every field has parsed successfully.
+          int existing = -1;
+          for (uint8_t n = 0; n < targetCount; ++n) {
+            if (targets[n].id == gestureTargets[j].id) {
+              existing = n;
+              break;
+            }
+          }
+          if (existing >= 0) {
+            targets[existing] = gestureTargets[j];
+          } else if (targetCount < N_MOTORS) {
+            targets[targetCount++] = gestureTargets[j];
+          } else if (bad.length() == 0) {
+            bad = "too_many_motor_targets";
+          }
+        }
       } else {
         // A joint the firmware does not define (e.g. no wrist on this build)
         // is counted, not fatal: the rest of the array still applies.
@@ -1415,14 +1457,33 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       }
     }
 
+    uint8_t written = 0;
+    uint8_t skippedOffline = 0;
+    int16_t syncLibError = DXL_LIB_OK;
+    bool syncOk = true;
+    if (bad.length() == 0 && targetCount > 0) {
+      syncOk = exo.setAbsoluteAnglesSync(targets, targetCount, &written,
+                                         &skippedOffline, &syncLibError);
+    }
+
     if (bad.length()) {
       commandPrint("ERROR: set_finger_angles field not a signed integer: " + bad);
+    } else if (!syncOk) {
+      commandPrint("ERROR: set_finger_angles no reachable targets or Sync Write failed"
+                   " requested=" + String(targetCount) +
+                   " skipped_offline=" + String(skippedOffline) +
+                   " lib_error=" + String(syncLibError));
     } else {
       // Leading "OK: finger_angles" keeps a stable prefix for host matching;
       // the counts follow so a caller can see holds, unknown joints, and
       // zero-travel motors without a separate query.
       String reply = "OK: finger_angles commanded=" + String(commanded) +
-                     " held=" + String(held);
+                     " held=" + String(held) +
+                     " motors=" + String(written) +
+                     " transport=sync_write";
+      if (skippedOffline) {
+        reply += " skipped_offline=" + String(skippedOffline);
+      }
       if (unknown) reply += " unknown=" + String(unknown);
       if (zeroTravel) reply += " zero_travel=" + String(zeroTravel);
       commandPrint(reply);

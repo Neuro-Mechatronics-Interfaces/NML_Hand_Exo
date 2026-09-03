@@ -53,6 +53,12 @@ struct __attribute__((packed)) FastTelemetryRecord {
   int32_t relative_cdeg;
 };
 
+/// @brief One absolute motor target for a multi-motor Sync Write.
+struct MotorAngleTarget {
+  uint8_t id;
+  float angleDeg;
+};
+
 /// @brief Buffered, read-only evidence used by the Phase-1 shadow estimator.
 struct ShadowTelemetryRecord {
   uint8_t id = 0;
@@ -112,6 +118,8 @@ class NMLHandExo {
       delete[] motorAdmitted_;
       delete[] admissionMs_;
       delete[] goalAngle_;
+      delete[] goalAngleValid_;
+      delete[] motorReachable_;
       delete[] verdictPending_;
       delete[] lastVerdict_;
       delete[] goalIssuedMs_;
@@ -308,6 +316,23 @@ class NMLHandExo {
     /// @param id Motor ID.
     /// @param angleDeg Absolute angle in degrees.
     void setAbsoluteAngle(uint8_t id, float angleDeg);
+
+    /// @brief Atomically command several absolute angles with one DXL packet.
+    ///
+    /// Every target is validated, clamped, and shortest-path-resolved before
+    /// anything is transmitted. Duplicate/unknown IDs or an unreadable initial
+    /// position is omitted from the packet so one offline ID cannot block the
+    /// rest of a dual-hand frame.
+    /// @param targets Array of motor IDs and absolute angles.
+    /// @param count Number of targets in the array.
+    /// @param writtenOut Optional out: number of targets packed and written.
+    /// @param skippedOut Optional out: number omitted because they are offline.
+    /// @param libErrorOut Optional out: Dynamixel library error on failure.
+    /// @return True when at least one target was transmitted successfully.
+    bool setAbsoluteAnglesSync(const MotorAngleTarget* targets, uint8_t count,
+                               uint8_t* writtenOut = nullptr,
+                               uint8_t* skippedOut = nullptr,
+                               int16_t* libErrorOut = nullptr);
 
     /// @brief Get the stored zero angle of a motor.
     /// @param id Motor ID.
@@ -588,7 +613,7 @@ class NMLHandExo {
     /// @brief Set the baud rate of a motor.
     /// @param id Motor ID.
     /// @param baudrate New baud rate.
-    void setBaudRate(uint8_t id, uint32_t baudrate);
+    bool setBaudRate(uint8_t id, uint32_t baudrate);
 
     /// @brief Get the baud rate of a motor.
     /// @param id Motor ID.
@@ -684,7 +709,19 @@ class NMLHandExo {
     /// gestures. Adds GestureController::setGestureSignedAngle. The 0.6.3 wire
     /// form never shipped, so this replaces rather than extends it. Gate on
     /// >= 0.6.4.
-    static constexpr const char* VERSION = "0.6.4";
+    ///
+    /// 0.7.0 -- set_finger_angles now resolves and validates the complete pose
+    /// before moving, then sends every motor goal in one Protocol 2.0 Sync
+    /// Write. Steady-state shortest-path resolution uses the last accepted
+    /// goal, eliminating one present-position round trip per motor per frame.
+    /// Also fixes set_baud to use Dynamixel2Arduino's baud-value mapping.
+    /// Gate on >= 0.7.0 for atomic single-packet finger frames.
+    ///
+    /// 0.7.1 -- dual firmware omits IDs that were unreachable during startup
+    /// from set_finger_angles Sync Write packets. A single attached nine-motor
+    /// hand therefore moves normally while the other nine IDs are reported as
+    /// skipped_offline instead of rejecting the whole frame.
+    static constexpr const char* VERSION = "0.7.1";
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.
@@ -764,6 +801,9 @@ class NMLHandExo {
     /// @return Goal to actually command.
     float applyShortestPath(int index, float goal);
 
+    /// @brief Pure shortest-path calculation using a supplied reference.
+    float applyShortestPathFromReference(int index, float goal, float reference) const;
+
     // -- Combined-motor current budget state --------------------------
     // currentLimits_[i] above is the NOMINAL per-motor effort (what
     // set_current_lim asked for). appliedCurrents_[i] is what is actually in
@@ -788,6 +828,12 @@ class NMLHandExo {
 
     /// @brief Absolute goal each motor was last sent, for judging arrival.
     float* goalAngle_;
+
+    /// @brief Whether goalAngle_ is safe to use as a shortest-path reference.
+    bool* goalAngleValid_;
+
+    /// @brief Whether startup obtained a trustworthy position from this ID.
+    bool* motorReachable_;
 
     /// @brief True between a goal being issued and its verdict being recorded.
     bool* verdictPending_;

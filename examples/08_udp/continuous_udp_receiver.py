@@ -3,49 +3,78 @@
 
 Binds a UDP socket, decodes the versioned ``nml.continuous.v1`` JSON datagrams
 emitted by ``continuous_to_udp_bridge.py`` (see ``CONTINUOUS_UDP_SCHEMA.md``),
-scales each channel's ``[-1, 1]`` value to a signed integer actuator target, and
-drives every joint from ONE ``set_finger_angles`` batch command per frame. An
-``NGA3`` binary ack is returned upstream for every accepted datagram. Runs until
+and drives the hand's POSITION from a per-channel velocity integrator rather than
+relaying each raw sample. Each channel's ``[-1, 1]`` value is a signed DRIVE that
+integrates a persistent float pose toward the endpoints; commands to the exo are
+THROTTLED so a holding or jittering hand does not saturate the serial link. An
+``NGA3`` binary ack is returned upstream for every accepted frame (flow control
+for an ack-gated sender), separately from the throttled commands. Runs until
 SIGINT (Ctrl-C), then returns the hand to rest, disables the motors, and closes
 the port.
+
+Adaptive integration + throttling
+---------------------------------
+These are POSITION commands, so rather than sending ``round(value * 100)``
+straight through every 60 ms -- which relays the decoder's per-sample noise to
+the actuators -- each channel's value is treated as a signed VELOCITY. It
+integrates a float position in ``[-1, 1]`` toward +1 (flex) or -1 (extend):
+``position += value * dt / RAMP_TIME_S``, clamped. A steady +1 stream walks that
+joint from rest to full flex over ``RAMP_TIME_S``; a value near 0 freezes it.
+
+The integrated position, not the raw sample, is what gets scaled and sent -- and
+it is sent only when it has EARNED a command. A command goes out when all of:
+the rate cap (``MIN_COMMAND_INTERVAL_S``) has elapsed; the pose has moved past
+``POSITION_DEADBAND`` versus the last sent command; and the recent drive on some
+moved joint has been CONSISTENTLY directional (``CONSISTENCY_MIN``) -- a smooth,
+sustained push toward one endpoint rather than sign-flipping jitter. A separate
+settle-release lands the final pose once after the drive goes idle, so a joint is
+not left one deadband short of where a consistent push was taking it. Frames that
+arrive between two dispatches are integrated but not each sent (counted as
+"coalesced").
 
 Difference from ``udp_gesture_receiver.py``
 ------------------------------------------
 That receiver takes discrete integer commands. This one takes a *continuous*
-per-channel vector on the same wire and turns each accepted datagram into a
-single batched joint move. The decoder decides how many channels it sends and
-names them; the fingers it does not name are HELD at rest here, so a
-three-channel decoder still leaves the other joints in a known neutral pose
-rather than wherever they were last left.
+per-channel vector on the same wire, integrates it into a persistent pose, and
+sends a throttled batched joint move when that pose has earned one -- not one
+move per datagram. The decoder decides how many channels it sends and names them;
+the fingers it does not name are HELD (their integrated position is left
+unchanged) rather than driven, and the watchdog is what restores rest.
 
-Upstream ack (schema nml.continuous.v2)
---------------------------------------
-Schema v1 datagrams are one-way, but this receiver acks every accepted one with
-a compact ``NGA3`` binary frame -- the uint32 sequence being acked plus the
-signed int8 value dispatched to each joint -- sent back to the datagram's source
-address. This is the v2 addition over the unidirectional v1 input contract; a
-sender that does not read its source socket simply ignores it. See
-``pack_continuous_ack`` in the SDK and ``CONTINUOUS_UDP_SCHEMA.md``.
+Upstream ack (schema nml.continuous.v2) -- and why it acks EVERY accepted frame
+------------------------------------------------------------------------------
+Schema v1 datagrams are one-way, but this receiver acks accepted ones with a
+compact ``NGA3`` binary frame -- the uint32 sequence plus the signed int8 pose
+per joint -- to the datagram's source address. See ``pack_continuous_ack`` in the
+SDK and ``CONTINUOUS_UDP_SCHEMA.md``.
 
-The ack fires when the DEVICE's reply for the frame arrives on the telemetry
-port, not when the host writes the command -- so it attests the device answered,
-not merely that the bytes were sent. DualSerialComm drains those replies on a
-background thread, so this costs no command latency: each accepted frame queues
-one ack, and each solicited reply retires the oldest queued frame (the same
-reply-driven scheme as ``udp_gesture_receiver.py``). If the host briefly outruns
-the device's reply rate, the oldest un-acked frame is dropped past a bounded
-queue rather than growing without limit.
+The ack is FLOW CONTROL. An ack-gated sender (the credit-based scheme the schema
+suggests) sends its NEXT frame only once the previous frame's ack returns, so
+**every accepted frame must be acked or the stream stalls** -- the receiver goes
+quiet, the sender waits forever, and the hand never moves. Throttling the exo
+commands must therefore NOT throttle the acks. So by default (``ack_on_accept``)
+the receiver acks each accepted frame IMMEDIATELY, reporting the current
+integrated pose, decoupled from the sparse device commands. The ack rate tracks
+the datagram rate; the command rate is capped separately.
+
+``--ack-on-reply`` selects the alternative: ack only the frames DISPATCHED to the
+device, on the device's serial reply, so the ack attests the exo answered.
+Because throttling coalesces many frames into one command, most frames then go
+un-acked (a gap in the acked sequence -- the schema's "coalesced" signal). That is
+correct only for a FREE-RUNNING sender; it STALLS an ack-gated one, which is why
+it is not the default.
 
 Value convention
 ----------------
-Each ``values[i]`` is finite and clipped to ``[-1, 1]``: positive is Flexion,
-negative is Extension, zero is Rest. The receiver scales it to the signed
-integer wire range the firmware's ``set_finger_angles`` expects,
-``round(v * 100)`` in ``[-100, 100]``:
+Each ``values[i]`` is finite and clipped to ``[-1, 1]``, and is a signed
+VELOCITY (drive), not a direct target: positive drives toward Flexion, negative
+toward Extension, zero holds. It integrates a per-channel position in ``[-1, 1]``
+that IS the target; that position is scaled to the signed wire range the
+firmware's ``set_finger_angles`` expects, ``round(pos * 100)`` in ``[-100, 100]``:
 
-    v = -1  ->  -100   (the joint's extend posture)
-    v =  0  ->     0   (its rest posture)
-    v = +1  ->  +100   (its flex posture)
+    pos = -1  ->  -100   (the joint's extend posture)
+    pos =  0  ->     0   (its rest posture)
+    pos = +1  ->  +100   (its flex posture)
 
 The firmware anchors that signed value at each joint's calibrated rest posture
 and interpolates rest<->flex above 0, rest<->extend below 0, per motor, so the
@@ -63,17 +92,19 @@ Safety policy (from the schema)
 -------------------------------
 * Stale or duplicate ``sequence`` numbers are dropped (the newest wins; the
   uint32 counter is treated as wrapping).
-* Values are clamped once more here before becoming actuator targets.
-* If no valid datagram arrives for the watchdog interval, every joint is driven
-  back to rest (0), so a dropped source cannot leave the hand holding a flexed
-  pose.
+* The integrated position is clamped to ``[-1, 1]`` and re-clamped to the signed
+  wire range before becoming an actuator target.
+* If no valid datagram arrives for the watchdog interval, the integrator is reset
+  and every joint is driven back to rest (0), so a dropped source cannot leave
+  the hand holding a flexed pose. The watchdog rest bypasses the throttle.
 
 Terminal output
 ---------------
 To keep the console readable at 60 ms/frame, accepted datagrams are logged in
 batches: every ``PRINT_EVERY`` accepted, one line reports the mean of that
-batch's per-joint values. Rejects, stale drops and watchdog trips still print as
-they happen. ``--quiet`` silences the batch lines.
+batch's INTEGRATED pose (scaled to the signed wire value) and the running
+command count. Rejects, stale drops and watchdog trips still print as they
+happen. ``--quiet`` silences the batch lines.
 
 ``PRINT_EVERY`` throttles ONLY that averaged summary line. The per-frame device
 reply and ack echoes fire once each on every accepted frame, so they would flood
@@ -82,7 +113,7 @@ is for debugging one frame at a time, not for a running stream.
 
 Requires firmware >= 0.6.4 for the signed ``set_finger_angles`` batch command.
 There is NO per-joint fallback: the receiver dispatches exactly one command per
-frame and acks on its reply, so an older device that ignores the command would
+DISPATCH and acks on its reply, so an older device that ignores the command would
 never reply and never ack. Startup aborts if the device reports an older (or no)
 version.
 
@@ -92,11 +123,14 @@ Usage:
     python examples/08_udp/continuous_udp_receiver.py --no-arm       # do not enable motors
     python examples/08_udp/continuous_udp_receiver.py --watchdog-ms 500
     python examples/08_udp/continuous_udp_receiver.py --print-every 5
+    python examples/08_udp/continuous_udp_receiver.py --ramp-time 0.8 --min-interval-ms 40
+    python examples/08_udp/continuous_udp_receiver.py --deadband 0.05 --consistency-min 0.6
     python examples/08_udp/continuous_udp_receiver.py --mock         # no exo attached
 
 --mock swaps the serial transport for an in-process fake that answers like the
-firmware, so the decode, channel resolution, value mapping, batching and the
-reply-driven ack loopback can all be exercised with no hardware present.
+firmware, so the decode, channel resolution, value mapping, the integrate/throttle
+loop and the reply-driven ack loopback can all be exercised with no hardware
+present.
 """
 
 import argparse
@@ -136,7 +170,7 @@ SEQUENCE_MODULUS = 2**32
 
 # Log one averaged line per this many accepted datagrams, so a 60 ms/frame stream
 # does not flood the console. Rejects/stale/watchdog still print immediately.
-PRINT_EVERY = 100
+PRINT_EVERY = 1
 
 # Cap on frames dispatched but not yet acked (awaiting their device reply). The
 # host can briefly outrun the device's reply rate; past this the oldest un-acked
@@ -182,6 +216,68 @@ CHANNEL_ALIASES = {
 # left. 0 is Rest. Set to None to instead leave unaddressed joints untouched.
 HELD_JOINT_VALUE = 0
 
+# ----------------------------------------------------------------------
+#  Adaptive integration + command throttling
+# ----------------------------------------------------------------------
+# These commands DRIVE POSITION. Rather than sending round(value*100) straight
+# through every 60 ms frame -- which relays the decoder's per-sample noise to the
+# actuators -- each channel's [-1, 1] value is treated as a signed VELOCITY that
+# integrates a per-channel float position toward +1 (flex) or -1 (extend). A
+# steady +1 stream walks that joint from rest to full flex over RAMP_TIME_S; a
+# value near 0 freezes it. The integrated position, not the raw sample, is what
+# gets scaled to the signed wire value and dispatched.
+#
+# On top of that, commands to the exo are THROTTLED so a holding or jittering
+# hand does not saturate the serial link with near-identical "noise" frames. A
+# command is sent only when all of: the rate cap has elapsed, the integrated pose
+# has moved past a deadband since the last SENT command, and the recent drive has
+# been CONSISTENTLY directional (a smooth push toward one endpoint, not sign-
+# flipping jitter). A separate settle-release commit lands the final pose once
+# after the drive stops, so a joint is not left one deadband short of its target.
+
+# Seconds of sustained full-scale (|value| == 1) drive to travel a channel's full
+# rest->endpoint span. Larger = more deliberate/slower; the integrator ramps at
+# value*(dt/RAMP_TIME_S) per frame. At 1.2 s a steady +1 reaches full flex in
+# ~1.2 s; a steady +0.5 takes ~2.4 s.
+RAMP_TIME_S = 0.030
+
+# Upper bound on the per-frame integration dt. Frames drained back-to-back from
+# the socket buffer carry dt~0 (no travel, correct); a scheduling stall or a gap
+# between bursts is capped here so a single long gap cannot jump the pose. Should
+# be a few normal frame periods; well below the watchdog, which handles true
+# silence separately.
+MAX_INTEGRATION_DT = 0.030
+
+# Minimum wall-clock spacing between commands actually sent to the exo. Caps the
+# command rate regardless of the ~16.7 Hz datagram rate; frames arriving inside
+# the window integrate but do not each dispatch.
+MIN_COMMAND_INTERVAL_S = 0.01
+
+# The integrated position (in [-1, 1]) must move at least this much on some joint,
+# versus the last SENT command, before a new command is worth sending. Kills the
+# stream of near-identical holds. 0.03 ~= 3 % of full travel ~= 3 signed wire
+# counts.
+POSITION_DEADBAND = 0.002
+
+# Directional-consistency gate. Per channel we track an EMA of the drive's sign
+# (CONSISTENCY_BETA sets its memory). A motion is only committed when some joint
+# that moved past the deadband has |consistency| >= CONSISTENCY_MIN -- i.e. the
+# recent drive pushed that joint the SAME way for several frames, rather than
+# oscillating. This is what makes the receiver send on smooth, consistent motion
+# toward an endpoint and stay quiet on noise.
+CONSISTENCY_BETA = 0.35
+CONSISTENCY_MIN = 0.5
+
+# Drives with |value| below this count as "no push" for the consistency EMA and
+# the integrator, so decoder noise around rest neither ramps the position nor
+# builds false directional consistency.
+DRIVE_EPS = 0.02
+
+# After the drive falls idle (all channels below DRIVE_EPS) the integrator stops
+# moving; if the settled pose still differs from the last sent command by the
+# deadband, ONE release command lands it (subject to the rate cap) so the joint
+# is not left short of where the last consistent push was taking it.
+
 # ======================================================================
 
 LINE_TERMINATOR = "\r\n"
@@ -191,7 +287,14 @@ LINE_TERMINATOR = "\r\n"
 SOCKET_POLL_S = 0.02
 
 # Return every joint to rest if no valid datagram arrives within this window.
-DEFAULT_WATCHDOG_MS = 500
+# This is a SAFETY net (a dead source must not leave the hand holding a grip),
+# NOT a stream-pacing knob. It must sit ABOVE the worst-case gap between valid
+# datagrams, or it fights the stream -- snapping the hand to rest and back
+# between bursts (the classic "herky-jerky" with an ack-gated sender whose
+# round-trip occasionally exceeds the window). 1500 ms clears normal ack-round-
+# trip variance while still catching a genuine dropout within ~1.5 s. Set 0 to
+# disable entirely (only when something else guarantees a safe stop).
+DEFAULT_WATCHDOG_MS = 1500
 
 # Commands sent once at startup when arming, and the release sent on exit.
 ARM_COMMANDS = ("reboot:all", "enable:all", "home:all")
@@ -250,6 +353,152 @@ def resolve_channels(channel_names):
         seen.add(joint)
         resolved.append(joint)
     return resolved
+
+
+class PoseIntegrator:
+    """Velocity-integrates each channel's drive into a throttled position command.
+
+    Each channel holds a float position in ``[-1, 1]``. An incoming per-frame
+    value is a signed DRIVE (velocity): ``position += value * dt / ramp_time_s``,
+    clamped, so a steady ``+1`` walks the joint from rest to full flex over
+    ``ramp_time_s`` and a value near 0 freezes it. A per-channel EMA of the drive
+    sign tracks how CONSISTENTLY the recent drive pushed one way, which gates
+    whether accumulated motion is worth committing.
+
+    The integrator is the single source of truth for the target pose. Accepted
+    frames only ``drive()`` it; ``due()`` decides when the integrated pose has
+    earned a command, per the rate cap + deadband + consistency policy. It does
+    not itself talk to the device -- the receiver dispatches when ``due()`` says
+    so and calls ``mark_sent()`` with what it committed.
+    """
+
+    def __init__(self, joints, ramp_time_s=RAMP_TIME_S,
+                 min_interval_s=MIN_COMMAND_INTERVAL_S,
+                 deadband=POSITION_DEADBAND, consistency_beta=CONSISTENCY_BETA,
+                 consistency_min=CONSISTENCY_MIN, drive_eps=DRIVE_EPS):
+        self.joints = list(joints)
+        self.ramp_time_s = max(1e-3, float(ramp_time_s))
+        self.min_interval_s = max(0.0, float(min_interval_s))
+        self.deadband = max(0.0, float(deadband))
+        self.consistency_beta = min(1.0, max(0.0, float(consistency_beta)))
+        self.consistency_min = max(0.0, float(consistency_min))
+        self.drive_eps = max(0.0, float(drive_eps))
+        #: Integrated float position per joint, in [-1, 1]. 0 is rest.
+        self.position = {j: 0.0 for j in self.joints}
+        #: EMA of drive sign per joint, in [-1, 1]; |.| near 1 == consistent push.
+        self.consistency = {j: 0.0 for j in self.joints}
+        #: Position last actually SENT to the device (float, [-1, 1]).
+        self.last_sent = {j: 0.0 for j in self.joints}
+        self._last_send_monotonic = None
+        #: True while NO channel is being actively driven (all below drive_eps).
+        #: Updated every drive() call; the settle-release keys off it.
+        self._drive_idle = True
+        #: Set once the settle-release has landed the residual for the current
+        #: idle episode, so it does not re-fire every idle frame. Cleared when
+        #: the drive becomes active again.
+        self._settled = True
+
+    def drive(self, joint_values, dt):
+        """Integrate one frame of per-joint drive over elapsed ``dt`` seconds.
+
+        ``joint_values`` maps joint -> signed drive in [-1, 1]; joints absent
+        from it get zero drive (they hold position). Only drives past
+        ``drive_eps`` move the position or build consistency, so near-rest decoder
+        noise neither ramps a joint nor fakes a direction.
+        """
+        if dt <= 0.0:
+            return
+        step_scale = dt / self.ramp_time_s
+        any_active = False
+        for joint in self.joints:
+            drive = float(joint_values.get(joint, 0.0))
+            if abs(drive) < self.drive_eps:
+                # No meaningful push: hold position, let consistency decay toward 0.
+                self.consistency[joint] += self.consistency_beta * (0.0 - self.consistency[joint])
+                continue
+            any_active = True
+            self.position[joint] = _clip_unit(self.position[joint] + drive * step_scale)
+            target_sign = 1.0 if drive > 0 else -1.0
+            self.consistency[joint] += self.consistency_beta * (target_sign - self.consistency[joint])
+        # Track the drive-idle edge: an active frame re-arms the settle-release so
+        # the NEXT idle episode gets one landing commit.
+        self._drive_idle = not any_active
+        if any_active:
+            self._settled = False
+
+    def moved_joints(self):
+        """Joints whose integrated position differs from the last sent by >= deadband."""
+        return [j for j in self.joints
+                if abs(self.position[j] - self.last_sent[j]) >= self.deadband]
+
+    def due(self, now):
+        """Should a command be dispatched now? Returns True when the pose has earned one.
+
+        The rate cap is the ONE spacing rule that always applies -- it gives a
+        regular command cadence, which is what makes motion look smooth. Past the
+        cap:
+
+        * Under active, consistent directional drive we dispatch EVERY tick,
+          deadband or not. The deadband must NOT gate active motion: at a high
+          datagram rate each frame integrates a tiny step, so requiring a whole
+          deadband of accumulation before sending makes commands fire in
+          irregular bursts (accumulate-then-flush) instead of at the steady rate
+          cap -- which reads as herky-jerky. During a smooth push the rate cap
+          alone paces it; the pose has advanced by exactly one cap-interval's
+          worth of travel, which is the smooth step we want.
+        * When the drive is NOT consistent (idle/holding/jittering) the deadband
+          applies: only re-send if the pose actually moved, so a still or noisy
+          hand does not stream near-identical commands. The settle-release is the
+          one-shot landing of residual motion after the drive stops.
+        """
+        if self._last_send_monotonic is not None and \
+                now - self._last_send_monotonic < self.min_interval_s:
+            return False
+        # Active consistent drive: pace on the rate cap alone (smooth cadence).
+        if not self._drive_idle and \
+                any(abs(c) >= self.consistency_min for c in self.consistency.values()):
+            return True
+        # Otherwise gate on real movement past the deadband.
+        moved = self.moved_joints()
+        if not moved:
+            return False
+        if self._drive_idle and not self._settled:
+            # Settle-release: the drive stopped with residual uncommitted motion.
+            return True
+        # A moved-but-not-idle joint under consistent drive (handled above) won't
+        # reach here; this catches a moved joint whose own channel is consistent.
+        return any(abs(self.consistency[j]) >= self.consistency_min for j in moved)
+
+    def signed_targets(self):
+        """The current integrated pose as signed [-100, 100] wire ints per joint."""
+        return {j: clamp_finger_value(self.position[j] * SET_FINGER_ANGLES_MAX)
+                for j in self.joints}
+
+    def mark_sent(self, now):
+        """Record that the current pose was just dispatched.
+
+        If the drive is currently idle, this commit is the settle-release (or a
+        rate-limited landing) for this idle episode, so mark the episode settled
+        to keep it from re-firing; an active drive re-arms it in drive().
+        """
+        self.last_sent = dict(self.position)
+        self._last_send_monotonic = now
+        if self._drive_idle:
+            self._settled = True
+
+    def reset_to_rest(self):
+        """Force the integrated pose (and last-sent baseline) to rest."""
+        for joint in self.joints:
+            self.position[joint] = 0.0
+            self.consistency[joint] = 0.0
+            self.last_sent[joint] = 0.0
+        self._drive_idle = True
+        self._settled = True
+
+
+def _clip_unit(x):
+    """Clamp to [-1, 1]."""
+    return -1.0 if x < -1.0 else (1.0 if x > 1.0 else x)
 
 
 def decode_continuous_packet(data):
@@ -429,19 +678,44 @@ def rediscover_cdc_pair(cmd_port, telem_port):
 
 
 class Receiver:
-    """Decodes continuous datagrams and drives the hand from batched moves.
+    """Decodes continuous datagrams and drives the hand from throttled moves.
 
-    Each accepted datagram dispatches exactly ONE ``set_finger_angles`` command
-    and, once the device's reply for it lands on the telemetry port, is acked
-    upstream. The ack therefore attests that the DEVICE answered the frame, not
-    merely that the host wrote it -- and because DualSerialComm drains replies on
-    a background thread, that answer never gates a subsequent command write.
+    Each accepted datagram is a signed per-channel DRIVE that velocity-integrates
+    a persistent float pose (``PoseIntegrator``) toward the endpoints; the raw
+    sample is not relayed straight through. Commands to the exo are THROTTLED: one
+    goes out only when the integrated pose has earned it (rate cap + deadband +
+    directional consistency), so a holding or jittering hand does not saturate the
+    serial link. Frames arriving between two dispatches integrate but do not each
+    command.
+
+    The ack is decoupled from the throttled commands so it can serve flow
+    control. By default (``ack_on_accept``) every accepted frame is acked
+    immediately with the current integrated pose, which is what an ack-gated
+    sender needs to release its next frame -- throttling the commands must not
+    throttle the acks or the stream stalls. ``ack_on_accept=False`` restores the
+    reply-driven ack (only dispatched frames, acked on the device's reply,
+    attesting the exo answered), which suits a free-running sender but stalls an
+    ack-gated one.
     """
 
     def __init__(self, comm, verbose=True, watchdog_s=None,
-                 print_every=PRINT_EVERY, trace=False):
+                 print_every=PRINT_EVERY, trace=False,
+                 ramp_time_s=RAMP_TIME_S,
+                 min_interval_s=MIN_COMMAND_INTERVAL_S,
+                 deadband=POSITION_DEADBAND,
+                 consistency_beta=CONSISTENCY_BETA,
+                 consistency_min=CONSISTENCY_MIN,
+                 drive_eps=DRIVE_EPS,
+                 ack_on_accept=True):
         self.comm = comm
         self.verbose = verbose
+        #: Ack policy. True: ack every accepted frame IMMEDIATELY (flow-control
+        #: credit for an ack-gated sender that only sends the next frame once the
+        #: previous is acked -- so every accepted frame MUST be acked or the
+        #: stream stalls). False: reply-driven ack, only for dispatched frames,
+        #: attesting the device answered (breaks an ack-gated sender). Command
+        #: throttling to the exo is independent of this either way.
+        self.ack_on_accept = ack_on_accept
         #: Echo every per-frame device reply and every ack as they happen. One
         #: of each fires on EVERY accepted frame, so this floods at the frame
         #: rate and is independent of print_every (which throttles only the
@@ -450,11 +724,28 @@ class Receiver:
         self.watchdog_s = watchdog_s
         self.print_every = max(1, int(print_every))
         self.sock = None
+        #: Monotonic time of the last heartbeat status line, and the dispatched
+        #: count then, so the heartbeat can flag a stream that is arriving but
+        #: producing no commands (the usual "no movement" cause).
+        self._last_heartbeat_monotonic = None
+        self._heartbeat_dispatched = 0
         self._ack_addr = None            # source of the last datagram, for acks
         self.last_sequence = None
         self.last_packet_monotonic = None
         self.channel_layout = None       # first accepted channel_names, locked
         self._resolved_joints = []       # canonical joints for the locked layout
+        #: Velocity integrator: the single source of truth for the target pose.
+        #: Accepted frames drive() it; it decides when a command is due.
+        self.integrator = PoseIntegrator(
+            JOINTS, ramp_time_s=ramp_time_s, min_interval_s=min_interval_s,
+            deadband=deadband, consistency_beta=consistency_beta,
+            consistency_min=consistency_min, drive_eps=drive_eps)
+        #: Monotonic time of the last frame fed to the integrator, for its dt.
+        self._last_drive_monotonic = None
+        #: Sequence of the newest accepted frame not yet folded into a dispatched
+        #: command. Carried into the command so its reply acks that sequence; the
+        #: frames it coalesced show as an ack-sequence gap.
+        self._pending_ack_sequence = None
         #: Last signed value commanded per joint, so the watchdog only re-sends
         #: when the pose needs to change and reconnect can restore it.
         self.commanded = {joint: HELD_JOINT_VALUE for joint in JOINTS}
@@ -472,6 +763,8 @@ class Receiver:
         self.accepted = 0
         self.rejected = 0
         self.stale = 0
+        #: Accepted frames integrated but NOT dispatched (throttled/coalesced).
+        self.coalesced = 0
         self.dispatched = 0
         self.acked = 0
         self.dropped_acks = 0
@@ -599,35 +892,78 @@ class Receiver:
                 print(f"  [{sender}] stale sequence {packet['sequence']} "
                       f"(last {self.last_sequence})")
             return
+        now = time.monotonic()
         self.last_sequence = packet["sequence"]
-        self.last_packet_monotonic = time.monotonic()
+        self.last_packet_monotonic = now
         self.accepted += 1
 
-        # Build the target pose as SIGNED integers in [-100, 100]: driven joints
-        # take their scaled channel value, the rest are held at HELD_JOINT_VALUE
-        # (or left at their last value if None).
-        targets = dict(self.commanded)
+        # This frame's per-joint DRIVE (signed velocity in [-1, 1]). Driven joints
+        # take their channel value; joints no channel names get zero drive, so the
+        # integrator holds them (undriven != commanded-to-rest here -- rest is what
+        # the pose starts at and the watchdog restores).
+        drive = {joint: 0.0 for joint in JOINTS}
         for joint, value in zip(self._resolved_joints, packet["values"]):
-            targets[joint] = value_to_signed(value)
-        if HELD_JOINT_VALUE is not None:
-            driven = set(self._resolved_joints)
-            for joint in JOINTS:
-                if joint not in driven:
-                    targets[joint] = HELD_JOINT_VALUE
+            drive[joint] = float(value)
 
-        # Dispatch the command and QUEUE the ack; it is emitted later, once the
-        # device's reply for this frame lands on the telemetry port. Acking here
-        # would only attest the host wrote the bytes -- reply-time acking attests
-        # the DEVICE answered, at no latency cost because the reply is drained on
-        # a background thread and never gates the next write.
-        self._apply(targets, packet["sequence"])
-        self.at_rest = all(v == 0 for v in targets.values())
+        # Integrate this frame over the real elapsed time since the last one.
+        # Clamp dt so one scheduling hiccup or a burst drained from the socket
+        # buffer cannot slam the integrator: dt==0 for buffered back-to-back
+        # frames adds no travel (correct), and a long stall is capped at
+        # MAX_INTEGRATION_DT rather than jumping the pose. The ramp speed thus
+        # tracks real seconds of drive, independent of frame-rate jitter.
+        dt = 0.0 if self._last_drive_monotonic is None \
+            else min(now - self._last_drive_monotonic, MAX_INTEGRATION_DT)
+        self._last_drive_monotonic = now
+        self.integrator.drive(drive, dt)
 
-        # Console output is batched: buffer this frame's driven values and flush
-        # one averaged line every print_every accepted frames.
-        self._print_buf.append({j: targets[j] for j in self._resolved_joints})
+        # Ack policy. An ack-gated sender only emits its NEXT frame once this one
+        # is acked, so under ack_on_accept we ack EVERY accepted frame right here
+        # -- reporting the current integrated pose -- to keep the stream flowing.
+        # The command to the exo is still throttled below; the ack (flow-control
+        # credit) is deliberately decoupled from the sparse device commands. Under
+        # the reply-driven policy instead, only dispatched frames are acked and
+        # the sequence rides on the next command (a coalesced frame shows as a
+        # gap -- which STALLS an ack-gated sender, hence it is not the default).
+        if self.ack_on_accept:
+            self._ack_now(packet["sequence"], self.integrator.signed_targets())
+            self._pending_ack_sequence = None
+        else:
+            self._pending_ack_sequence = packet["sequence"]
+
+        # Throttle: dispatch a command to the exo only if the integrated pose has
+        # earned one. Independent of the ack above.
+        self._maybe_dispatch(now)
+
+        # Console output is batched: buffer this frame's INTEGRATED pose (the
+        # thing being driven toward), not the raw sample, and flush one averaged
+        # line every print_every accepted frames.
+        pose = self.integrator.position
+        self._print_buf.append({j: pose[j] for j in self._resolved_joints})
         if self.verbose and len(self._print_buf) >= self.print_every:
             self._flush_print(sender)
+
+    def _maybe_dispatch(self, now):
+        """Dispatch the integrated pose iff the throttle policy says it is due.
+
+        Called after every integrated frame AND from the main loop's idle path,
+        so a rate-limited or settle-release command still goes out when no new
+        datagram is arriving. When it dispatches, the newest un-acked sequence is
+        folded into the command's ack entry; when it does not, the frame is
+        counted as coalesced.
+        """
+        if not self.integrator.due(now):
+            return
+        # A coalesced frame is one that was ACCEPTED and integrated but is being
+        # folded into a later command instead of dispatched on its own. Count it
+        # only when there is a genuine un-dispatched accepted frame pending -- not
+        # on every idle service_throttle() tick, which carries no new frame.
+        if self._pending_ack_sequence is not None:
+            self.coalesced += 1
+        targets = self.integrator.signed_targets()
+        self._apply(targets, self._pending_ack_sequence)
+        self.integrator.mark_sent(now)
+        self._pending_ack_sequence = None
+        self.at_rest = all(v == 0 for v in targets.values())
 
     def _apply(self, targets, sequence=None):
         """Dispatch one set_finger_angles command for `targets` (signed values).
@@ -652,31 +988,52 @@ class Receiver:
 
     # -- upstream (serial -> UDP ack) ----------------------------------
 
-    def _retire_pending(self):
-        """Ack the oldest frame awaiting a reply, now that one has arrived.
-
-        Mirrors udp_gesture_receiver.py: a solicited device reply retires the
-        oldest outstanding frame. One command was dispatched per frame, so one
-        reply retires one frame -- there is no per-frame reply count to track.
-        """
-        if not self._pending:
-            return
-        sequence, targets, addr = self._pending.popleft()
-        if self.sock is None:
+    def _send_ack(self, sequence, targets, addr):
+        """Send one NGA3 ack for `sequence` carrying `targets` to `addr`."""
+        if self.sock is None or addr is None:
             return
         try:
             self.sock.sendto(pack_continuous_ack(sequence, JOINTS, targets), addr)
             self.acked += 1
             if self.trace:
-                print(f"      -> ack seq {sequence} to {addr[0]}:{addr[1]}")
+                print(f"  [{time.monotonic():.3f}] -> ack seq {sequence} to "
+                      f"{addr[0]}:{addr[1]}")
         except OSError as exc:
             # A source that is not listening (ICMP port-unreachable) must not
             # kill the receiver; it is still driving the hand fine.
             if self.verbose:
                 print(f"  [ack] send to {addr} failed: {exc}", file=sys.stderr)
 
+    def _ack_now(self, sequence, targets):
+        """Ack an accepted frame immediately (ack_on_accept flow-control credit).
+
+        Acks at ACCEPTANCE, not on a device reply, so an ack-gated sender always
+        gets the credit to send its next frame -- the exo command is throttled
+        separately and must not gate the stream. `targets` is the integrated pose
+        reported to the sender (what the receiver is driving toward), which is
+        honest even when no command was dispatched this frame.
+        """
+        self._send_ack(sequence, targets, self._ack_addr)
+
+    def _retire_pending(self):
+        """Ack the oldest frame awaiting a reply, now that one has arrived.
+
+        Reply-driven path only (ack_on_accept is False): a solicited device reply
+        retires the oldest outstanding dispatched frame. One command was
+        dispatched per call, so one reply retires one frame.
+        """
+        if not self._pending:
+            return
+        sequence, targets, addr = self._pending.popleft()
+        self._send_ack(sequence, targets, addr)
+
     def _flush_print(self, sender):
-        """Print one line with the mean of the buffered driven values."""
+        """Print one line with the mean of the buffered INTEGRATED pose.
+
+        The buffer holds float positions in [-1, 1]; they are shown scaled to the
+        signed [-100, 100] wire value that actually reaches the exo, so the line
+        reads in the same units as the command and the ack.
+        """
         if not self._print_buf:
             return
         n = len(self._print_buf)
@@ -685,12 +1042,35 @@ class Receiver:
             for joint, value in frame.items():
                 sums[joint] = sums.get(joint, 0.0) + value
         means = " ".join(
-            f"{joint}={sums[joint] / n:+.1f}"
+            f"{joint}={sums[joint] / n * SET_FINGER_ANGLES_MAX:+.0f}"
             for joint in self._resolved_joints if joint in sums
         )
-        print(f"  [{sender}] avg of last {n} (seq ~{self.last_sequence}) "
-              f"-> {means}")
+        print(f"  [{time.monotonic():.3f}] [{sender}] avg pose of last {n} "
+              f"(seq ~{self.last_sequence}, {self.dispatched} sent) -> {means}")
         self._print_buf.clear()
+
+    def service_throttle(self):
+        """Emit a due command when no new datagram is arriving.
+
+        The integrator can become due between datagrams -- a rate-limited move
+        whose interval has now elapsed, or the settle-release once the drive has
+        gone idle. Called from the main loop's idle path so those still go out
+        rather than waiting for the next frame that may never come.
+        """
+        self._maybe_dispatch(time.monotonic())
+
+    def _rest_now(self):
+        """Reset the integrator to rest and dispatch it as an unacked safety move.
+
+        Routes through the integrator so its position and last-sent baseline stay
+        consistent with the device; a bare _apply would leave the integrator
+        believing the hand is still where it was, corrupting the next deadband and
+        settle decision. The rest move is not acked (sequence=None).
+        """
+        self.integrator.reset_to_rest()
+        self._pending_ack_sequence = None
+        self._apply({joint: 0 for joint in JOINTS})
+        self.at_rest = True
 
     def service_watchdog(self):
         """Return every joint to rest if the source has gone quiet."""
@@ -703,13 +1083,11 @@ class Receiver:
         self.watchdog_trips += 1
         print(f"  [watchdog] no valid datagram for {self.watchdog_s*1000:.0f} ms; "
               f"returning to rest")
-        self._apply({joint: 0 for joint in JOINTS})
-        self.at_rest = True
+        self._rest_now()
 
     def rest_all(self):
         """Drive every joint to rest, e.g. on shutdown before disarming."""
-        self._apply({joint: 0 for joint in JOINTS})
-        self.at_rest = True
+        self._rest_now()
 
     def drain_replies(self):
         """Consume device replies, acking the frame each solicited reply retires.
@@ -740,11 +1118,62 @@ class Receiver:
             if solicited:
                 self._retire_pending()
 
+    def heartbeat(self, now, interval_s=1.0):
+        """Print a periodic status line so a silent stream is diagnosable.
+
+        The common "no movement" causes are distinct and this tells them apart at
+        a glance: nothing arriving (received flat), arriving-but-rejected
+        (rejected climbing), or accepted-but-throttled (accepted climbing while
+        dispatched is flat -- drive too small/noisy for the deadband/consistency
+        gate). Only prints while a source is streaming and not at rest, and stays
+        quiet once things are moving normally, so it does not add console noise.
+        """
+        if not self.verbose:
+            return
+        if self._last_heartbeat_monotonic is None:
+            self._last_heartbeat_monotonic = now
+            self._heartbeat_dispatched = self.dispatched
+            return
+        if now - self._last_heartbeat_monotonic < interval_s:
+            return
+        sent_since = self.dispatched - self._heartbeat_dispatched
+        self._last_heartbeat_monotonic = now
+        self._heartbeat_dispatched = self.dispatched
+        # Only speak up when a stream is live (something arrived recently) but no
+        # command went out this interval -- the "accepted but nothing moved" case.
+        recent = (self.last_packet_monotonic is not None
+                  and now - self.last_packet_monotonic < interval_s)
+        if not recent or sent_since > 0:
+            return
+        pose = " ".join(
+            f"{j}={self.integrator.position[j] * SET_FINGER_ANGLES_MAX:+.0f}"
+            for j in (self._resolved_joints or JOINTS)
+        )
+        print(f"  [status] no exo command in {interval_s:g}s: "
+              f"recv={self.received} accepted={self.accepted} "
+              f"dispatched={self.dispatched} acked={self.acked} "
+              f"rejected={self.rejected} stale={self.stale} | pose {pose}")
+        if self.accepted > 0 and self.dispatched == 0:
+            # Held back by the throttle. Whether that is a problem depends on the
+            # drive: a real push should clear the gate within a few frames.
+            print("           (frames accepted but throttled -- drive may be too "
+                  "small/noisy for --deadband/--consistency-min, or values ~0)")
+        if not self.ack_on_accept and self.accepted > self.acked + 2:
+            # Reply-driven acks with an ack-gated sender: this is the stall path.
+            print("           (reply-driven acks are lagging accepts -- an "
+                  "ack-gated sender will stall; consider ack-on-accept, the "
+                  "default)")
+
     def print_summary(self):
         print(f"\n  datagrams received : {self.received}")
         print(f"  accepted           : {self.accepted}")
         print(f"  commands dispatched: {self.dispatched}")
-        print(f"  acks sent upstream : {self.acked} (on device reply)")
+        if self.coalesced:
+            ratio = (self.accepted / self.dispatched) if self.dispatched else 0.0
+            print(f"  frames coalesced   : {self.coalesced} "
+                  f"(integrated, not sent; {ratio:.1f} frames/command)")
+        ack_when = "on accept" if self.ack_on_accept else "on device reply"
+        print(f"  acks sent upstream : {self.acked} ({ack_when})")
         if self.dropped_acks:
             print(f"  acks dropped       : {self.dropped_acks} "
                   f"(host outran device replies)")
@@ -813,8 +1242,39 @@ def main(argv=None):
                         metavar="N",
                         help=f"Log one averaged line per N accepted datagrams "
                              f"(default {PRINT_EVERY}). The line reports the mean "
-                             f"of that batch's per-joint values. Rejects, stale "
+                             f"of that batch's integrated pose. Rejects, stale "
                              f"drops and watchdog trips still print immediately.")
+    parser.add_argument("--ramp-time", type=float, default=RAMP_TIME_S,
+                        metavar="S",
+                        help=f"Seconds of full-scale drive to travel a channel's "
+                             f"rest->endpoint span (default {RAMP_TIME_S:g}). The "
+                             f"incoming value is a velocity; larger is slower/more "
+                             f"deliberate. 0 or less means near-instant (relay).")
+    parser.add_argument("--min-interval-ms", type=float,
+                        default=MIN_COMMAND_INTERVAL_S * 1000.0, metavar="MS",
+                        help=f"Minimum spacing between commands actually sent to "
+                             f"the exo (default {MIN_COMMAND_INTERVAL_S*1000:g}). "
+                             f"Caps the command rate below the datagram rate.")
+    parser.add_argument("--deadband", type=float, default=POSITION_DEADBAND,
+                        metavar="FRAC",
+                        help=f"Min integrated-pose move (fraction of full travel, "
+                             f"[0,1]) versus the last sent command before a new "
+                             f"one is sent (default {POSITION_DEADBAND:g}).")
+    parser.add_argument("--consistency-min", type=float, default=CONSISTENCY_MIN,
+                        metavar="C",
+                        help=f"Directional-consistency threshold in [0,1] a moved "
+                             f"joint must reach before its motion is committed "
+                             f"(default {CONSISTENCY_MIN:g}). Higher = only very "
+                             f"smooth, sustained pushes command the exo.")
+    parser.add_argument("--ack-on-reply", dest="ack_on_accept",
+                        action="store_false",
+                        help="Ack a frame only when the DEVICE replies to a "
+                             "command dispatched for it (attests the exo "
+                             "answered), instead of the default ack-on-accept. "
+                             "Fewer acks, but this STALLS an ack-gated sender "
+                             "that waits for an ack before sending the next "
+                             "frame -- use only with a free-running sender.")
+    parser.set_defaults(ack_on_accept=True)
     parser.add_argument("--current-ma", type=int, default=DEFAULT_CURRENT_MA,
                         metavar="MA",
                         help=f"Per-motor working current in mA "
@@ -869,7 +1329,11 @@ def main(argv=None):
 
     receiver = Receiver(comm, verbose=not args.quiet,
                         watchdog_s=watchdog_s, print_every=args.print_every,
-                        trace=args.trace)
+                        trace=args.trace, ramp_time_s=args.ramp_time,
+                        min_interval_s=args.min_interval_ms / 1000.0,
+                        deadband=args.deadband,
+                        consistency_min=args.consistency_min,
+                        ack_on_accept=args.ack_on_accept)
 
     running = {"go": True}
 
@@ -950,15 +1414,24 @@ def main(argv=None):
             try:
                 data, addr = sock.recvfrom(65535)
             except socket.timeout:
+                # No datagram: a rate-limited or settle-release command may now
+                # be due, so pump the throttle before the watchdog and replies.
+                receiver.service_throttle()
                 receiver.service_watchdog()
                 receiver.drain_replies()
+                receiver.heartbeat(time.monotonic())
                 continue
             except OSError:
                 break
             if data:
                 receiver.handle(data, f"{addr[0]}:{addr[1]}", addr)
+            # handle() already pumped the throttle for this frame; pump again in
+            # case its dispatch was gated only by the rate cap and the interval
+            # has since elapsed.
+            receiver.service_throttle()
             receiver.service_watchdog()
             receiver.drain_replies()
+            receiver.heartbeat(time.monotonic())
 
             if receiver.link_down:
                 print("[WARN] Serial link lost; attempting to reconnect...",

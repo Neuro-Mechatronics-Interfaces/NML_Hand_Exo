@@ -128,6 +128,19 @@ public:
                                uint8_t* movedOut = nullptr,
                                uint8_t* stuckOut = nullptr);
 
+    /// @brief Resolve a signed gesture without commanding any motor.
+    /// @param gesture Angle-addressable gesture name.
+    /// @param signedValue Position in [-100, 100]; clamped to that range.
+    /// @param out Destination motor-target array.
+    /// @param maxTargets Capacity of @p out.
+    /// @param targetCountOut Number of targets written.
+    /// @param stuckOut Optional out: motors skipped for having no travel.
+    /// @return True if the gesture is angle-addressable and fits in @p out.
+    bool resolveGestureSignedTargets(const String& gesture, float signedValue,
+                                     MotorAngleTarget* out, uint8_t maxTargets,
+                                     uint8_t& targetCountOut,
+                                     uint8_t* stuckOut = nullptr);
+
     /// @brief Sample where the angle-addressable gestures currently sit.
     ///
     /// The read-back half of setGestureAngle(): both use the same extend ->

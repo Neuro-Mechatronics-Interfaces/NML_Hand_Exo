@@ -173,6 +173,34 @@ it. Do not reinstate an unconditional ±360 snap.
 
 ---
 
+## Whole-hand streaming: batch the DXL write, not only the serial command
+
+Firmware 0.6.4 reduced `set_finger_angles` to one host command/reply, but its
+implementation still called `setAbsoluteAngle()` separately for every resolved
+motor. Each call performed a present-position read and an acknowledged Goal
+Position write; in a dual build that was up to 36 Dynamixel transactions for
+one 18-motor pose and limited the UDP receiver to roughly 1.2 Hz.
+
+Firmware 0.7.0 resolves all six gesture fields without moving, uses the last
+accepted goal as the steady-state shortest-path reference, and emits one
+Protocol 2.0 Goal Position Sync Write. Keep this path atomic: do not put
+per-motor reads or writes back inside the frame loop. If a later field is
+malformed, no earlier field may have moved.
+
+In a dual firmware build, gesture resolution still produces 18 targets even
+when only one nine-motor hand is physically connected. Firmware 0.7.1 records
+which IDs returned a trustworthy startup position and omits offline IDs from
+the Sync Write. Do not restore the 0.7.0 behavior where one missing ID rejected
+the whole frame; expect `motors=9 skipped_offline=9` for a single attached hand.
+
+OpenRB-150's Dynamixel port remains at 1 Mbps. The motors expose faster baud
+indices, but the controller port is specified for no more than 1 Mbps and this
+exo chain was unstable at 2 Mbps. Throughput comes from fewer packets, not a
+higher bus setting. Startup also sets the motors' response delay to zero, but
+only writes EEPROM when its current value differs.
+
+---
+
 ## A joint that acks every command and never moves (fixed in 0.6.0)
 
 Before 0.6.0, gesture percentages were a fraction of the **window width**

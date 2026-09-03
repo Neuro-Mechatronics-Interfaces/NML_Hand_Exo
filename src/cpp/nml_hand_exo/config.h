@@ -425,6 +425,17 @@ constexpr long COMMAND_BAUD_RATE = 115200;
 /// position reads. 1 Mbps was stable in repeated tests.
 constexpr long DYNAMIXEL_BAUD_RATE = 1000000;
 
+/// @brief Dynamixel status-packet return delay in 2 us units.
+///
+/// The factory value is 250 (500 us). Reads still return normally at zero,
+/// while avoiding that fixed half-millisecond delay on every response. The
+/// value is written only when it differs, to avoid needless EEPROM wear.
+constexpr uint8_t DYNAMIXEL_RETURN_DELAY = 0;
+
+/// @brief XL/XC-series Protocol 2.0 Goal Position control-table layout.
+constexpr uint16_t DYNAMIXEL_GOAL_POSITION_ADDRESS = 116;
+constexpr uint16_t DYNAMIXEL_GOAL_POSITION_LENGTH = 4;
+
 /// @brief Total number of gesture contained in the library
 /// 6 postures (grasp, keygrip, pinch_index, pinch_middle, pinch_ring, peace),
 /// one extend/rest/flex gesture for each digit and the wrist, plus three

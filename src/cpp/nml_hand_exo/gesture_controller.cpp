@@ -250,6 +250,38 @@ bool GestureController::setGestureSignedAngle(const String& gesture,
   if (movedOut) *movedOut = 0;
   if (stuckOut) *stuckOut = 0;
 
+  MotorAngleTarget targets[N_MOTORS];
+  uint8_t targetCount = 0;
+  if (!resolveGestureSignedTargets(gesture, signedValue, targets, N_MOTORS,
+                                   targetCount, stuckOut)) {
+    return false;
+  }
+
+  String trace;
+  for (uint8_t k = 0; k < targetCount; ++k) {
+    if (VERBOSE) {
+      if (trace.length()) trace += ", ";
+      trace += String(targets[k].id) + "->" + String(targets[k].angleDeg, 2);
+    }
+    exo_.setAbsoluteAngle(targets[k].id, targets[k].angleDeg);
+  }
+  if (movedOut) *movedOut = targetCount;
+
+  // Like setGestureAngle(), a direct positioning command: leave the
+  // gesture state machine untouched so cycle_gesture_state still works.
+  debugPrint("[GestureController] " + gesture + " signed " +
+             String(constrain(signedValue, -100.0f, 100.0f), 1) +
+             " targets: " + trace);
+  return true;
+}
+
+bool GestureController::resolveGestureSignedTargets(
+    const String& gesture, float signedValue, MotorAngleTarget* out,
+    uint8_t maxTargets, uint8_t& targetCountOut, uint8_t* stuckOut) {
+  targetCountOut = 0;
+  if (stuckOut) *stuckOut = 0;
+  if (!out || maxTargets == 0) return false;
+
   int gIdx = findGestureIndex(gesture);
   if (gIdx == -1) {
     debugPrint("[GestureController] Unknown gesture: " + gesture);
@@ -263,6 +295,7 @@ bool GestureController::setGestureSignedAngle(const String& gesture,
                "' has no flex state; not angle-addressable");
     return false;
   }
+  if (nAxis > maxTargets) return false;
 
   signedValue = constrain(signedValue, -100.0f, 100.0f);
   const float s = signedValue / 100.0f;   // -1 .. +1
@@ -271,8 +304,6 @@ bool GestureController::setGestureSignedAngle(const String& gesture,
   // s<0 interpolates rest->extend. A gesture with no rest state leaves
   // restFraction NaN; fall back to the linear extend->flex axis for that motor
   // so signed 0 lands at travel midpoint rather than nowhere.
-  String trace;
-  uint8_t moved = 0;
   uint8_t stuck = 0;
   for (uint8_t k = 0; k < nAxis; ++k) {
     if (fabsf(exo_.getGestureSpan(axis[k].id)) < GESTURE_MIN_TRAVEL_DEG) {
@@ -299,20 +330,11 @@ bool GestureController::setGestureSignedAngle(const String& gesture,
     }
 
     const float target = exo_.gestureFractionToAngle(axis[k].id, fraction);
-    if (VERBOSE) {
-      if (trace.length()) trace += ", ";
-      trace += String(axis[k].id) + "->" + String(target, 2);
-    }
-    exo_.setAbsoluteAngle(axis[k].id, target);
-    ++moved;
+    out[targetCountOut].id = axis[k].id;
+    out[targetCountOut].angleDeg = target;
+    ++targetCountOut;
   }
-  if (movedOut) *movedOut = moved;
   if (stuckOut) *stuckOut = stuck;
-
-  // Like setGestureAngle(), a direct positioning command: leave the
-  // gesture state machine untouched so cycle_gesture_state still works.
-  debugPrint("[GestureController] " + gesture + " signed " +
-             String(signedValue, 1) + " targets: " + trace);
   return true;
 }
 uint8_t GestureController::resolveGestureAxis(int gestureIndex,

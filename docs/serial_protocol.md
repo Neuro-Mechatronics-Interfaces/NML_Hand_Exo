@@ -110,6 +110,31 @@ Addressable gestures are exactly those with a `flex` state: `thumb`,
 drives both dorsal wrist motors (`wrist` and `wrist2`) together; the `rad`
 gesture that addressed `wrist2` alone existed only in 0.3.1 – 0.5.x.
 
+Firmware **0.6.4** adds the continuous whole-hand command:
+
+```text
+set_finger_angles:<thumb>:<index>:<middle>:<ring>:<pinky>[:<wrist>]
+OK: finger_angles commanded=6 held=0 motors=18 transport=sync_write;
+```
+
+Each populated field is a signed integer in `[-100, 100]`: `-100` is that
+gesture's extend posture, `0` its calibrated rest posture, and `+100` its flex
+posture. Empty or omitted trailing fields hold their joints unchanged.
+
+Starting in firmware **0.7.0**, the parser validates and resolves the complete
+frame before any motor command is sent. It then writes all resolved Goal
+Position values with one Protocol 2.0 broadcast Sync Write. A malformed later
+field therefore cannot leave an earlier finger updated, and a dual 18-motor
+pose costs one DXL write packet rather than a present-position read plus an
+acknowledged write for every motor. The `motors` reply field reports how many
+DXL targets were packed; `transport=sync_write` confirms the fast path.
+
+Firmware **0.7.1** also supports a single physical hand while the dual build is
+loaded. IDs whose position could not be read during startup are omitted from
+the packet rather than rejecting every target. For one connected nine-motor
+hand the reply is therefore `motors=9 ... skipped_offline=9`; all requested
+targets are still validated before the reachable subset is transmitted.
+
 `get_gesture_angle` replies with a single line of `name=code` pairs:
 
 ```text
@@ -320,6 +345,19 @@ return delay restored. The same motor was stable at 1 Mbps (`100/100` repeated
 position reads, zero timeout/CRC/overflow errors), so 1 Mbps is the recommended
 rate for both the USB debug link and the DXL bus.
 
+Firmware 0.7.0 reduces `RETURN_DELAY_TIME` from the factory 500 us to zero at
+startup (only when the EEPROM value differs). This removes fixed response
+latency from reads while retaining the stable 1 Mbps link. Do not raise
+`DYNAMIXEL_BAUD_RATE` on this hardware: although XL330/XC330 actuators expose
+2/3/4 Mbps settings, OpenRB-150's Dynamixel TTL port is specified for at most
+1 Mbps, and every motor plus the controller must use the same rate.
+
+`set_baud:<id>:<bits-per-second>` now passes the literal rate through the
+Dynamixel2Arduino mapping instead of incorrectly writing that number into the
+one-byte baud-index register. It is a maintenance/recovery command, not a
+throughput knob for this OpenRB build; changing only one motor takes it off the
+active 1 Mbps bus until the controller/motor rates are made equal again.
+
 HC-05 factory default is 9600. The firmware is configured for 115200 (`COMMAND_BAUD_RATE`).
 If you swap an HC-05 module, use AT command mode to set it to 115200 before use.
 
@@ -444,6 +482,7 @@ when the GUI passes a `name_to_id` mapping. See [docs/dual_exo_architecture.md](
 | `DEBUG_BAUD_RATE`       | 1000000  | USB serial baud                      |
 | `COMMAND_BAUD_RATE`     | 115200   | HC-05 Bluetooth baud (firmware side) |
 | `DYNAMIXEL_BAUD_RATE`   | 1000000  | Dynamixel bus baud                   |
+| `DYNAMIXEL_RETURN_DELAY`| 0        | Status response delay (2 us units)  |
 | `MOTOR_CURRENT_LIMIT`   | 910      | XC330-T288 current cap per motor (mA) |
 | `DXL_PROTOCOL_VERSION`  | 2.0      | Dynamixel protocol version           |
 | `PULSE_RESOLUTION`      | 4096     | Encoder ticks per revolution         |
