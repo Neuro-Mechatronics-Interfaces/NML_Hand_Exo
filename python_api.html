@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Python API reference &mdash; NML Hand Exoskeleton 0.2.17.1 documentation</title>
+  <title>Python API reference &mdash; NML Hand Exoskeleton 0.2.18 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -15,7 +15,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=6b2294c0"></script>
+      <script src="_static/documentation_options.js?v=ae23a911"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
@@ -167,6 +167,8 @@
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.set_comm"><code class="docutils literal notranslate"><span class="pre">HandExo.set_comm()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.connect"><code class="docutils literal notranslate"><span class="pre">HandExo.connect()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.send_command"><code class="docutils literal notranslate"><span class="pre">HandExo.send_command()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.add_command_observer"><code class="docutils literal notranslate"><span class="pre">HandExo.add_command_observer()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.remove_command_observer"><code class="docutils literal notranslate"><span class="pre">HandExo.remove_command_observer()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.get_fast_telemetry"><code class="docutils literal notranslate"><span class="pre">HandExo.get_fast_telemetry()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.configure_shadow_telemetry"><code class="docutils literal notranslate"><span class="pre">HandExo.configure_shadow_telemetry()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.start_shadow_telemetry"><code class="docutils literal notranslate"><span class="pre">HandExo.start_shadow_telemetry()</span></code></a></li>
@@ -231,6 +233,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.get_gesture"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.set_gesture"><code class="docutils literal notranslate"><span class="pre">HandExo.set_gesture()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.set_gesture_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.set_gesture_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.set_finger_angles"><code class="docutils literal notranslate"><span class="pre">HandExo.set_finger_angles()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.get_gesture_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_angle()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.get_gesture_sang"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_sang()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nml_hand_exo.interface.HandExo.get_gesture_angles"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_angles()</span></code></a></li>
@@ -509,7 +512,7 @@
 <h2>Package version<a class="headerlink" href="#package-version" title="Link to this heading"></a></h2>
 <dl class="py data">
 <dt class="sig sig-object py" id="nml_hand_exo.__version__">
-<span class="sig-name descname"><span class="pre">__version__</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'0.2.17.1'</span></span><a class="headerlink" href="#nml_hand_exo.__version__" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">__version__</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'0.2.18'</span></span><a class="headerlink" href="#nml_hand_exo.__version__" title="Link to this definition"></a></dt>
 <dd><p>str(object=’’) -&gt; str
 str(bytes_or_buffer[, encoding[, errors]]) -&gt; str</p>
 <p>Create a new string object from the given object. If encoding or
@@ -1125,6 +1128,30 @@ firmware does not include a Side field (pre-handedness firmware).</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>cmd</strong> (<em>str</em>) – Command to send to the exoskeleton.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.interface.HandExo.add_command_observer">
+<span class="sig-name descname"><span class="pre">add_command_observer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">callback</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/interface/_hand_exo.html#HandExo.add_command_observer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.interface.HandExo.add_command_observer" title="Link to this definition"></a></dt>
+<dd><p>Register a non-invasive callback for host command observations.</p>
+<p>The callback receives a new dictionary for each event. Observers are
+instrumentation only and cannot prevent or modify a command.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.interface.HandExo.remove_command_observer">
+<span class="sig-name descname"><span class="pre">remove_command_observer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">callback</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/interface/_hand_exo.html#HandExo.remove_command_observer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.interface.HandExo.remove_command_observer" title="Link to this definition"></a></dt>
+<dd><p>Remove a previously registered command observer if present.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
 </dd>
 </dl>
 </dd></dl>
@@ -2151,6 +2178,45 @@ outside that range.</p></li>
 <li><p><strong>RuntimeError</strong> – If the device firmware is older than 0.3.0, or does
     not define the gesture (<code class="docutils literal notranslate"><span class="pre">rad</span></code> exists only in 0.3.1 - 0.5.x).</p></li>
 <li><p><strong>ValueError</strong> – If <code class="docutils literal notranslate"><span class="pre">percent</span></code> is not a number.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nml_hand_exo.interface.HandExo.set_finger_angles">
+<span class="sig-name descname"><span class="pre">set_finger_angles</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">values</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/nml_hand_exo/interface/_hand_exo.html#HandExo.set_finger_angles"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nml_hand_exo.interface.HandExo.set_finger_angles" title="Link to this definition"></a></dt>
+<dd><p>Position several per-joint gestures from ONE batch command.</p>
+<p>The batch form of <a class="reference internal" href="#nml_hand_exo.interface.HandExo.set_gesture_angle" title="nml_hand_exo.interface.HandExo.set_gesture_angle"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_gesture_angle()</span></code></a> (firmware &gt;= 0.6.4): every
+joint named in <code class="docutils literal notranslate"><span class="pre">values</span></code> is positioned in a single write instead of one
+write per joint, which is what the continuous UDP path needs to keep one
+command and one reply per frame.  Each value is a SIGNED integer in
+<code class="docutils literal notranslate"><span class="pre">[-100,</span> <span class="pre">100]</span></code> anchored at that joint’s calibrated <code class="docutils literal notranslate"><span class="pre">rest</span></code> posture:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">-100</span></code> -&gt; the joint’s <code class="docutils literal notranslate"><span class="pre">extend</span></code> posture</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">0</span></code>    -&gt; its <code class="docutils literal notranslate"><span class="pre">rest</span></code> posture</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">+100</span></code> -&gt; its <code class="docutils literal notranslate"><span class="pre">flex</span></code> posture</p></li>
+</ul>
+<p>which matches the continuous decoder convention (positive flex, negative
+extend, zero rest).  Non-integer numbers are rounded to the nearest
+integer.</p>
+<p>A joint absent from <code class="docutils literal notranslate"><span class="pre">values</span></code> or mapped to <code class="docutils literal notranslate"><span class="pre">None</span></code> is HELD unchanged
+by the firmware, so a host that drives only some fingers leaves the rest
+where they are.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>values</strong> (<em>dict</em><em>[</em><em>str</em><em>, </em><em>int</em><em> | </em><em>float</em><em> | </em><em>None</em><em>]</em>) – Joint name -&gt; signed value
+in <code class="docutils literal notranslate"><span class="pre">[-100,</span> <span class="pre">100]</span></code> (or <code class="docutils literal notranslate"><span class="pre">None</span></code> to hold).  Recognized joints, in
+wire order, are <code class="xref py py-data docutils literal notranslate"><span class="pre">SET_FINGER_ANGLES_ORDER</span></code>.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>RuntimeError</strong> – If the device firmware is older than 0.6.4.</p></li>
+<li><p><strong>ValueError</strong> – If no joint has a value, an unknown joint is named, or a
+    value is non-numeric, non-finite, or outside <code class="docutils literal notranslate"><span class="pre">[-100,</span> <span class="pre">100]</span></code>.</p></li>
 </ul>
 </dd>
 </dl>

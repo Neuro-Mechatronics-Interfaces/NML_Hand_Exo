@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>nml_hand_exo.interface._hand_exo &mdash; NML Hand Exoskeleton 0.2.17.1 documentation</title>
+  <title>nml_hand_exo.interface._hand_exo &mdash; NML Hand Exoskeleton 0.2.18 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
@@ -14,7 +14,7 @@
   
       <script src="../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../../_static/documentation_options.js?v=6b2294c0"></script>
+      <script src="../../../_static/documentation_options.js?v=ae23a911"></script>
       <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -164,6 +164,8 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_comm"><code class="docutils literal notranslate"><span class="pre">HandExo.set_comm()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.connect"><code class="docutils literal notranslate"><span class="pre">HandExo.connect()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.send_command"><code class="docutils literal notranslate"><span class="pre">HandExo.send_command()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.add_command_observer"><code class="docutils literal notranslate"><span class="pre">HandExo.add_command_observer()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.remove_command_observer"><code class="docutils literal notranslate"><span class="pre">HandExo.remove_command_observer()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_fast_telemetry"><code class="docutils literal notranslate"><span class="pre">HandExo.get_fast_telemetry()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.configure_shadow_telemetry"><code class="docutils literal notranslate"><span class="pre">HandExo.configure_shadow_telemetry()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.start_shadow_telemetry"><code class="docutils literal notranslate"><span class="pre">HandExo.start_shadow_telemetry()</span></code></a></li>
@@ -228,6 +230,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_gesture"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_gesture"><code class="docutils literal notranslate"><span class="pre">HandExo.set_gesture()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_gesture_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.set_gesture_angle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_finger_angles"><code class="docutils literal notranslate"><span class="pre">HandExo.set_finger_angles()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_gesture_angle"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_angle()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_gesture_sang"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_sang()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../python_api.html#nml_hand_exo.interface.HandExo.get_gesture_angles"><code class="docutils literal notranslate"><span class="pre">HandExo.get_gesture_angles()</span></code></a></li>
@@ -508,7 +511,11 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">._interfaces</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseComm</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">._gesture_protocol</span><span class="w"> </span><span class="kn">import</span> <span class="n">ANGLE_ADDRESSABLE_GESTURES</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._gesture_protocol</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ANGLE_ADDRESSABLE_GESTURES</span><span class="p">,</span>
+    <span class="n">SET_FINGER_ANGLES_ORDER</span><span class="p">,</span>
+    <span class="n">format_set_finger_angles</span><span class="p">,</span>
+<span class="p">)</span>
 
 
 <span class="c1">#: Firmware version that introduced the per-joint "rest" state, anchored</span>
@@ -551,6 +558,15 @@
 <span class="c1">#: Firmware version that added rest-zeroed signed gesture angles and the</span>
 <span class="c1">#: combined percentage/signed-degree query.</span>
 <span class="n">FW_GESTURE_SIGNED_ANGLE</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+<span class="c1">#: Firmware version that added ``set_finger_angles`` -- a positional batch form</span>
+<span class="c1">#: of ``set_gesture_angle`` that positions every named joint from one command.</span>
+<span class="c1">#: 0.6.4 changed the field encoding from an unsigned 0..100 percentage to a</span>
+<span class="c1">#: signed ``[-100, 100]`` value anchored at each joint's rest posture; the 0.6.3</span>
+<span class="c1">#: form never shipped, so this is the only supported wire form. An unknown</span>
+<span class="c1">#: command is SILENT in firmware, so a host cannot detect the miss from the</span>
+<span class="c1">#: reply and must gate on the version.</span>
+<span class="n">FW_SET_FINGER_ANGLES</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
 
 <span class="c1">#: Reported instead of a percentage when a joint sits outside its gesture</span>
 <span class="c1">#: endpoints: below the 0% extend posture or above the 100% flex posture.</span>
@@ -807,6 +823,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">side</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">side</span>
         <span class="c1"># Populated lazily by firmware_version(); None means "not yet queried".</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_firmware_version</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># Optional instrumentation callbacks. They are observational only:</span>
+        <span class="c1"># callback failures are swallowed so recording can never alter control.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_command_observers</span> <span class="o">=</span> <span class="p">[]</span>
 
         <span class="k">if</span> <span class="n">auto_connect</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
@@ -903,13 +922,84 @@
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                 <span class="k">pass</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_notify_command_observers</span><span class="p">(</span>
+                <span class="n">command</span><span class="o">=</span><span class="n">cmd</span><span class="p">,</span>
+                <span class="n">status</span><span class="o">=</span><span class="s2">"sent"</span><span class="p">,</span>
+                <span class="n">source</span><span class="o">=</span><span class="s2">"unknown"</span><span class="p">,</span>
+            <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Sent: </span><span class="si">{</span><span class="n">cmd</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
             <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">send_delay</span><span class="p">)</span>  <span class="c1"># Allow time for the command to be processed</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_notify_command_observers</span><span class="p">(</span>
+                <span class="n">command</span><span class="o">=</span><span class="n">cmd</span><span class="p">,</span>
+                <span class="n">status</span><span class="o">=</span><span class="s2">"failed"</span><span class="p">,</span>
+                <span class="n">source</span><span class="o">=</span><span class="s2">"unknown"</span><span class="p">,</span>
+                <span class="n">error</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">),</span>
+            <span class="p">)</span>
             <span class="k">raise</span> <span class="ne">ConnectionError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">"Failed to send command </span><span class="si">{</span><span class="n">cmd</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span>
             <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span></div>
 
+
+<div class="viewcode-block" id="HandExo.add_command_observer">
+<a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.HandExo.add_command_observer">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_command_observer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Register a non-invasive callback for host command observations.</span>
+
+<span class="sd">        The callback receives a new dictionary for each event. Observers are</span>
+<span class="sd">        instrumentation only and cannot prevent or modify a command.</span>
+<span class="sd">        """</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">callable</span><span class="p">(</span><span class="n">callback</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">"command observer must be callable"</span><span class="p">)</span>
+        <span class="n">observers</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_command_observers"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">observers</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">observers</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_command_observers</span> <span class="o">=</span> <span class="n">observers</span>
+        <span class="k">if</span> <span class="n">callback</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">observers</span><span class="p">:</span>
+            <span class="n">observers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">callback</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HandExo.remove_command_observer">
+<a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.HandExo.remove_command_observer">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">remove_command_observer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Remove a previously registered command observer if present."""</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_command_observers"</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">callback</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">pass</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_notify_command_observers</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">command</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">status</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">source</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"unknown"</span><span class="p">,</span>
+        <span class="n">response</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+        <span class="n">error</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">observers</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_command_observers"</span><span class="p">,</span> <span class="p">()))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">observers</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">event</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"command"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">command</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">";</span><span class="se">\r\n</span><span class="s2">"</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span>
+            <span class="s2">"status"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">status</span><span class="p">),</span>
+            <span class="s2">"source"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">source</span><span class="p">),</span>
+            <span class="s2">"host_wall_time_s"</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>
+            <span class="s2">"host_monotonic_s"</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">(),</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="n">response</span><span class="p">:</span>
+            <span class="n">event</span><span class="p">[</span><span class="s2">"response"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">response</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()[:</span><span class="mi">500</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">error</span><span class="p">:</span>
+            <span class="n">event</span><span class="p">[</span><span class="s2">"error"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">error</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()[:</span><span class="mi">500</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">observer</span> <span class="ow">in</span> <span class="n">observers</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">observer</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">event</span><span class="p">))</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="c1"># Instrumentation must never affect a device transaction.</span>
+                <span class="k">continue</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_command_transaction</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -931,11 +1021,23 @@
             <span class="ow">or</span> <span class="s2">"ERROR:"</span> <span class="ow">in</span> <span class="n">normalized</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
             <span class="ow">or</span> <span class="n">expected</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">normalized</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
         <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_notify_command_observers</span><span class="p">(</span>
+                <span class="n">command</span><span class="o">=</span><span class="n">command</span><span class="p">,</span>
+                <span class="n">status</span><span class="o">=</span><span class="s2">"rejected"</span><span class="p">,</span>
+                <span class="n">source</span><span class="o">=</span><span class="s2">"unknown"</span><span class="p">,</span>
+                <span class="n">response</span><span class="o">=</span><span class="n">raw</span><span class="p">,</span>
+            <span class="p">)</span>
             <span class="k">raise</span> <span class="n">ProtocolResponseError</span><span class="p">(</span>
                 <span class="n">command</span><span class="o">=</span><span class="n">command</span><span class="p">,</span>
                 <span class="n">expected</span><span class="o">=</span><span class="n">expected</span><span class="p">,</span>
                 <span class="n">raw_response</span><span class="o">=</span><span class="n">raw</span><span class="p">,</span>
             <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_notify_command_observers</span><span class="p">(</span>
+            <span class="n">command</span><span class="o">=</span><span class="n">command</span><span class="p">,</span>
+            <span class="n">status</span><span class="o">=</span><span class="s2">"acknowledged"</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="s2">"unknown"</span><span class="p">,</span>
+            <span class="n">response</span><span class="o">=</span><span class="n">normalized</span><span class="p">,</span>
+        <span class="p">)</span>
         <span class="k">return</span> <span class="n">normalized</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_receive</span><span class="p">(</span>
@@ -2582,6 +2684,61 @@
                 <span class="n">warning</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="sa">f</span><span class="s2">"set_gesture_angle:</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">pct</span><span class="si">:</span><span class="s2">g</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HandExo.set_finger_angles">
+<a class="viewcode-back" href="../../../python_api.html#nml_hand_exo.interface.HandExo.set_finger_angles">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_finger_angles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]):</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Position several per-joint gestures from ONE batch command.</span>
+
+<span class="sd">        The batch form of :meth:`set_gesture_angle` (firmware &gt;= 0.6.4): every</span>
+<span class="sd">        joint named in ``values`` is positioned in a single write instead of one</span>
+<span class="sd">        write per joint, which is what the continuous UDP path needs to keep one</span>
+<span class="sd">        command and one reply per frame.  Each value is a SIGNED integer in</span>
+<span class="sd">        ``[-100, 100]`` anchored at that joint's calibrated ``rest`` posture:</span>
+
+<span class="sd">        - ``-100`` -&gt; the joint's ``extend`` posture</span>
+<span class="sd">        - ``0``    -&gt; its ``rest`` posture</span>
+<span class="sd">        - ``+100`` -&gt; its ``flex`` posture</span>
+
+<span class="sd">        which matches the continuous decoder convention (positive flex, negative</span>
+<span class="sd">        extend, zero rest).  Non-integer numbers are rounded to the nearest</span>
+<span class="sd">        integer.</span>
+
+<span class="sd">        A joint absent from ``values`` or mapped to ``None`` is HELD unchanged</span>
+<span class="sd">        by the firmware, so a host that drives only some fingers leaves the rest</span>
+<span class="sd">        where they are.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            values (dict[str, int | float | None]): Joint name -&gt; signed value</span>
+<span class="sd">                in ``[-100, 100]`` (or ``None`` to hold).  Recognized joints, in</span>
+<span class="sd">                wire order, are :data:`SET_FINGER_ANGLES_ORDER`.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            RuntimeError: If the device firmware is older than 0.6.4.</span>
+<span class="sd">            ValueError: If no joint has a value, an unknown joint is named, or a</span>
+<span class="sd">                value is non-numeric, non-finite, or outside ``[-100, 100]``.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"values must be a dict, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">normalized</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">joint</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">values</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">joint</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">SET_FINGER_ANGLES_ORDER</span><span class="p">:</span>
+                <span class="n">supported</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">SET_FINGER_ANGLES_ORDER</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"set_finger_angles joint must be one of </span><span class="si">{</span><span class="n">supported</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">joint</span><span class="si">!r}</span><span class="s2">"</span>
+                <span class="p">)</span>
+            <span class="n">normalized</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="c1"># Build (and validate) the command BEFORE the firmware check so a</span>
+        <span class="c1"># malformed request fails the same way regardless of the device version.</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="n">format_set_finger_angles</span><span class="p">(</span><span class="n">normalized</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_firmware</span><span class="p">(</span><span class="n">FW_SET_FINGER_ANGLES</span><span class="p">,</span> <span class="s2">"set_finger_angles"</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_command</span><span class="p">(</span><span class="n">command</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="HandExo.get_gesture_angle">
