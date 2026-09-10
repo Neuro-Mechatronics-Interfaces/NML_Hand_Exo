@@ -188,6 +188,11 @@ GESTURE_RESULT_PREFIX = "GESTURE_RESULT:"
 # firmware share one contract.
 JOINTS = SET_FINGER_ANGLES_ORDER
 
+# The five finger joints, in wire order, driven together in --grasp mode from a
+# single scalar (the first received value). Excludes the wrist, which grasp pins
+# at rest. Derived from JOINTS so it stays in sync with the shared contract.
+GRASP_FINGERS = tuple(j for j in JOINTS if j != "wrist")
+
 # Channel-name aliases -> canonical joint name. Matching is case-insensitive.
 # The decoder is free to label channels as it likes; these cover the obvious
 # spellings so a stream of ["Thumb", "Index", "Pinky"] resolves without a config
@@ -706,9 +711,13 @@ class Receiver:
                  consistency_beta=CONSISTENCY_BETA,
                  consistency_min=CONSISTENCY_MIN,
                  drive_eps=DRIVE_EPS,
-                 ack_on_accept=True):
+                 ack_on_accept=True, grasp=False):
         self.comm = comm
         self.verbose = verbose
+        #: Grasp mode: collapse the incoming vector to its FIRST value and drive
+        #: all five fingers from it, pinning the wrist at rest. Off by default; the
+        #: full per-channel layout is used otherwise.
+        self.grasp = grasp
         #: Ack policy. True: ack every accepted frame IMMEDIATELY (flow-control
         #: credit for an ack-gated sender that only sends the next frame once the
         #: previous is acked -- so every accepted frame MUST be acked or the
@@ -902,8 +911,20 @@ class Receiver:
         # integrator holds them (undriven != commanded-to-rest here -- rest is what
         # the pose starts at and the watchdog restores).
         drive = {joint: 0.0 for joint in JOINTS}
-        for joint, value in zip(self._resolved_joints, packet["values"]):
-            drive[joint] = float(value)
+        if self.grasp:
+            # Grasp mode: ignore the channel layout and drive all five fingers
+            # from the FIRST received value alone (a single grasp scalar), pinning
+            # the wrist at 0. This collapses a multi-channel stream into one
+            # whole-hand open/close.
+            grip = float(packet["values"][0])
+            for joint in GRASP_FINGERS:
+                drive[joint] = grip
+            # Hold the wrist hard at rest so a residual pose from before --grasp
+            # was engaged (or any drift) cannot leave it flexed.
+            self.integrator.position["wrist"] = 0.0
+        else:
+            for joint, value in zip(self._resolved_joints, packet["values"]):
+                drive[joint] = float(value)
 
         # Integrate this frame over the real elapsed time since the last one.
         # Clamp dt so one scheduling hiccup or a burst drained from the socket
@@ -938,7 +959,7 @@ class Receiver:
         # thing being driven toward), not the raw sample, and flush one averaged
         # line every print_every accepted frames.
         pose = self.integrator.position
-        self._print_buf.append({j: pose[j] for j in self._resolved_joints})
+        self._print_buf.append({j: pose[j] for j in self._reported_joints()})
         if self.verbose and len(self._print_buf) >= self.print_every:
             self._flush_print(sender)
 
@@ -1027,6 +1048,15 @@ class Receiver:
         sequence, targets, addr = self._pending.popleft()
         self._send_ack(sequence, targets, addr)
 
+    def _reported_joints(self):
+        """Joints the console lines report the integrated pose for.
+
+        Normally the locked channel layout's resolved joints; in grasp mode the
+        five fingers actually being driven, since the incoming layout no longer
+        describes what moves.
+        """
+        return GRASP_FINGERS if self.grasp else self._resolved_joints
+
     def _flush_print(self, sender):
         """Print one line with the mean of the buffered INTEGRATED pose.
 
@@ -1043,7 +1073,7 @@ class Receiver:
                 sums[joint] = sums.get(joint, 0.0) + value
         means = " ".join(
             f"{joint}={sums[joint] / n * SET_FINGER_ANGLES_MAX:+.0f}"
-            for joint in self._resolved_joints if joint in sums
+            for joint in self._reported_joints() if joint in sums
         )
         print(f"  [{time.monotonic():.3f}] [{sender}] avg pose of last {n} "
               f"(seq ~{self.last_sequence}, {self.dispatched} sent) -> {means}")
@@ -1294,6 +1324,10 @@ def main(argv=None):
                              "prints one of each PER accepted frame, so it "
                              "floods at the frame rate independently of "
                              "--print-every; use it only for debugging.")
+    parser.add_argument("--grasp", action="store_true",
+                        help="Whole-hand grasp mode: ignore the channel layout and "
+                             "drive all five fingers from ONLY the first received "
+                             "value, fixing the wrist at 0. Off by default.")
     parser.add_argument("--mock", action="store_true",
                         help="Run with no exo attached. Uses an in-process fake "
                              "device that replies like the firmware.")
@@ -1333,7 +1367,7 @@ def main(argv=None):
                         min_interval_s=args.min_interval_ms / 1000.0,
                         deadband=args.deadband,
                         consistency_min=args.consistency_min,
-                        ack_on_accept=args.ack_on_accept)
+                        ack_on_accept=args.ack_on_accept, grasp=args.grasp)
 
     running = {"go": True}
 

@@ -163,7 +163,7 @@ constexpr bool DEFAULT_VERBOSE = true;
 // Both hands share ONE OpenRB-150 controller and one Dynamixel bus.
 // Left IDs: 1-9.  Right IDs: 11-19.
 // Calibration arrays are overwritten at runtime by apply_calibration.
-#define BUILD_LEFT_HAND 2
+#define BUILD_LEFT_HAND 0
 
 // ---- Motor IDs (single-exo modes only — dual defines arrays directly) --------
 #if BUILD_LEFT_HAND == 0   // right only
