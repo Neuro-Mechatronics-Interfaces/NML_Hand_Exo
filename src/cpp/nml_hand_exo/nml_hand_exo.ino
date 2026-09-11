@@ -169,7 +169,9 @@ void setup() {
 
 void loop() {
 #if EXO_AXON_USB
-  gAxon.poll();
+  gAxon.poll([](void* context, uint8_t id, int16_t& angle) {
+    return static_cast<NMLHandExo*>(context)->readAxonAngle(id, angle);
+  }, &exo);
 #endif
   // Record iteration timing first: the loop period bounds how fast any command
   // can possibly be picked up. Query with `loop_stats`.

@@ -197,6 +197,9 @@ class NMLHandExo {
     /// @param record Destination record.
     /// @return True if the ID belongs to this exo firmware build.
     bool getFastTelemetryRecord(uint8_t id, FastTelemetryRecord& record);
+    // Read-only Axon sampler: one position transaction, bounded to 2 ms.
+    // Returns raw encoder angle in tenths of a degree; no wrap/clamp or motion.
+    bool readAxonAngle(uint8_t id, int16_t& angle);
 
     /// @brief Read compact telemetry records for multiple motor IDs.
     /// @param ids Array of requested Dynamixel IDs.
@@ -721,7 +724,11 @@ class NMLHandExo {
     /// from set_finger_angles Sync Write packets. A single attached nine-motor
     /// hand therefore moves normally while the other nine IDs are reported as
     /// skipped_offline instead of rejecting the whole frame.
+#if EXO_AXON_USB
+    static constexpr const char* VERSION = "0.7.1-axon-0.2.0";
+#else
     static constexpr const char* VERSION = "0.7.1";
+#endif
 
   private:
     /// @brief Dynamixel2Arduino object for motor communication.

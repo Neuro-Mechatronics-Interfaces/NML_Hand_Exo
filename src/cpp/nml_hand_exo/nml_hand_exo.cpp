@@ -1373,6 +1373,17 @@ int16_t NMLHandExo::readPresentCurrentMa(uint8_t id, bool& ok) {
   return (int16_t)raw;
 }
 
+bool NMLHandExo::readAxonAngle(uint8_t id, int16_t& angle) {
+  angle = INT16_MIN;
+  if (getIndexById(id) < 0) return false;
+  const int32_t ticks = dxl_.readControlTableItem((uint8_t)PRESENT_POSITION, id, 2);
+  if (dxl_.getLastLibErrCode() != DXL_LIB_OK) return false;
+  const float value = round(ticks * 3600.0f / (float)PULSE_RESOLUTION);
+  if (!isfinite(value) || value <= INT16_MIN || value > INT16_MAX) return false;
+  angle = (int16_t)value;
+  return true;
+}
+
 bool NMLHandExo::readPresentPositionTicks(uint8_t id, int32_t& ticks) {
   while (DXL_SERIAL.available() > 0) {
     DXL_SERIAL.read();
