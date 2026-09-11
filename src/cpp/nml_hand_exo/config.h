@@ -5,6 +5,7 @@
  */
 #pragma once
 #include <Arduino.h>
+#include "axon_config.h"
 
 // ========= Board specific configuration ===================
 /// @brief Serial port for Dynamixel communication.
@@ -75,8 +76,12 @@
 // Enabled by default on OpenRB-150. Define SINGLE_CDC before building to
 // force legacy one-port behavior (bench debugging over a single COM port).
 // The Bluetooth COMMAND_SERIAL (Serial3 / HC-05) path is unchanged either way.
-#if defined(ARDUINO_OpenRB) && !defined(SINGLE_CDC)
+#if defined(ARDUINO_OpenRB) && !defined(SINGLE_CDC) && !EXO_AXON_USB
   #define DUAL_CDC 1
+#endif
+
+#if EXO_AXON_USB && defined(DUAL_CDC) && DUAL_CDC
+#error "Axon + two CDC functions exceed the OpenRB USB endpoint budget"
 #endif
 
 #if defined(DUAL_CDC) && DUAL_CDC

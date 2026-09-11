@@ -1,5 +1,9 @@
 # Serial Protocol & Firmware Reference
 
+Optional SciFi builds use `EXO_AXON_USB=1`: Axon interface 0 plus one CDC at
+1/2, with the same ASCII protocol. See [Axon USB](axon_usb.md). The dual-CDC
+descriptions below apply to the default build without that flag.
+
 > `[VERIFIED]` = confirmed from source. `[INFERRED]` = reasonable but unverified.
 
 ---

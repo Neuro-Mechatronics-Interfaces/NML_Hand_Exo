@@ -32,6 +32,12 @@ SOFTWARE.
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BNO055.h>
 
+#if EXO_AXON_USB
+#include "AxonUsbPeripheral.h"
+// Must plug before the core's SerialUSB: Axon = interface 0, CDC = 1/2.
+axon_exo::AxonUsbPeripheral gAxon __attribute__((init_priority(101)));
+#endif
+
 // Create IMU device (The Adafruit_BNO055 library can be downloaded from Arduino's Library Manager)
 Adafruit_BNO055 bno055;  //= Adafruit_BNO055(55, 0x28)
 
@@ -162,6 +168,9 @@ void setup() {
 }
 
 void loop() {
+#if EXO_AXON_USB
+  gAxon.poll();
+#endif
   // Record iteration timing first: the loop period bounds how fast any command
   // can possibly be picked up. Query with `loop_stats`.
   loopStatsTick();
