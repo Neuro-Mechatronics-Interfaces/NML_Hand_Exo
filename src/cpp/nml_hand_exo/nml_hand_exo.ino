@@ -169,8 +169,30 @@ void setup() {
 
 void loop() {
 #if EXO_AXON_USB
-  gAxon.poll([](void* context, uint8_t id, int16_t& angle) {
-    return static_cast<NMLHandExo*>(context)->readAxonAngle(id, angle);
+  gAxon.poll([](void* context, uint8_t id,
+                axon_exo::AxonUsbPeripheral::Field field,
+                axon_exo::MotorSample& sample) {
+    // One bounded read-only Dynamixel transaction per call; the peripheral
+    // staggers the fields across passes so no single pass blocks. Torque is
+    // derived from the current already sampled this cycle (no extra bus read),
+    // so it never issues its own transaction.
+    auto* exo = static_cast<NMLHandExo*>(context);
+    using Field = axon_exo::AxonUsbPeripheral::Field;
+    if (exo->getIndexById(id) < 0) return false;  // not a motor of this build
+    if (field == Field::kAngle) {
+      return exo->readAxonAngle(id, sample.angle);
+    }
+    if (field == Field::kCurrent) {
+      // getCurrent returns PRESENT_CURRENT in mA (~1 mA/raw unit). A bus error
+      // yields the Dynamixel library's sentinel; the id was validated above so
+      // a known motor that reads back is treated as measured.
+      sample.current_mA = exo->getCurrent(id);
+      return true;
+    }
+    // kTorque: pure arithmetic from the current sampled this cycle; valid only
+    // if that current read succeeded.
+    sample.torque_Nm = sample.current_mA * XC330_T288_TORQUE_CONSTANT;
+    return sample.current_ok;
   }, &exo);
 #endif
   // Record iteration timing first: the loop period bounds how fast any command

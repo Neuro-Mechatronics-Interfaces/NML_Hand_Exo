@@ -49,26 +49,48 @@ void AxonUsbPeripheral::accept() {
       ids_[i] = uint8_t(id);
     }
     token_ = get32(rx_+28); address_ = get32(rx_+8);
-    count_ = uint8_t(n); cursor_ = 0; sampling_ = true;
+    count_ = uint8_t(n); cursor_ = 0; field_ = Field::kAngle; sampling_ = true;
   }
 }
 void AxonUsbPeripheral::finish() {
-  // Four 16-bit channels per motor: absolute angle (0.1 degree), age low/high
-  // words in ms, validity (0=measured, 1=unavailable). Source timestamps are
-  // recoverable exactly: snapshot timestamp minus the unsigned 32-bit age.
-  beginReply(0xF211, 20+8*count_, address_);
+  // Eight 16-bit channels per motor (schema 0xF212):
+  //   0 angle          absolute encoder angle, tenths of a degree
+  //   1 age_lo         low 16 bits of source sample age in ms
+  //   2 age_hi         high 16 bits of source sample age in ms
+  //   3 angle_status   0 measured, 1 unavailable/error/out of range
+  //   4 current_mA     PRESENT_CURRENT in mA (signed), or 0 if unavailable
+  //   5 current_status 0 measured, 1 unavailable/error
+  //   6 torque_lo      low 16 bits of float32 torque (N*m), little-endian
+  //   7 torque_hi      high 16 bits of that float32; all-ones-payload if invalid
+  // Source timestamps recover exactly: snapshot timestamp minus the 32-bit age.
+  // The schema id is deliberately distinct from the legacy 4-field 0xF211 so an
+  // old driver rejects this layout at the frame-type check instead of
+  // misinterpreting current/torque words as a second motor's angle/age.
+  beginReply(0xF212, 20+16*count_, address_);
   put32(tx_+24, 1); put32(tx_+28, token_);
   put32(tx_+32, uint32_t(uptime_ms_)); put32(tx_+36, uint32_t(uptime_ms_>>32));
   put32(tx_+40, count_);
   for (unsigned i=0; i<count_; ++i) {
+    const MotorSample& s = samples_[i];
     const uint32_t age = uint32_t(uptime_ms_ - sample_ms_[i]);
-    auto* p = tx_+44+8*i;
-    put32(p, uint16_t(angles_[i]) | ((age & 0xFFFF) << 16));
-    put32(p+4, (age >> 16) | (uint32_t(angles_[i] == INT16_MIN) << 16));
+    // angle_status is authoritative from the reader, but a sentinel angle also
+    // forces unavailable so a stale buffer can never read as a valid zero.
+    const uint32_t angle_bad = (!s.angle_ok || s.angle == INT16_MIN) ? 1u : 0u;
+    uint32_t torque_bits;
+    if (s.torque_ok) {
+      memcpy(&torque_bits, &s.torque_Nm, sizeof(torque_bits));
+    } else {
+      torque_bits = 0xFFFFFFFFu;  // NaN payload marks torque unavailable
+    }
+    auto* p = tx_+44+16*i;
+    put32(p,    uint16_t(s.angle) | ((age & 0xFFFF) << 16));
+    put32(p+4,  (age >> 16) | (angle_bad << 16));
+    put32(p+8,  uint16_t(s.current_mA) | (uint32_t(s.current_ok ? 0u : 1u) << 16));
+    put32(p+12, torque_bits);
   }
   sampling_ = false;
 }
-void AxonUsbPeripheral::poll(AngleReader read, void* context) {
+void AxonUsbPeripheral::poll(SampleReader read, void* context) {
   const uint32_t now = millis();
   uptime_ms_ += uint32_t(now-last_ms_); last_ms_ = now;
   if (!USBDevice.configured() || pluggedInterface != 0) {
@@ -84,11 +106,28 @@ void AxonUsbPeripheral::poll(AngleReader read, void* context) {
     return;
   }
   if (sampling_) {
-    // One bounded read per pass; never issue a whole-hand blocking loop.
-    sample_ms_[cursor_] = uptime_ms_;
-    angles_[cursor_] = INT16_MIN;
-    if (!read(context, ids_[cursor_], angles_[cursor_])) angles_[cursor_] = INT16_MIN;
-    if (++cursor_ == count_) finish();
+    // One bounded read per pass; never issue a whole-hand blocking loop. Each
+    // motor needs three register reads (angle, current, torque); they are
+    // staggered across passes so a single pass still issues at most one
+    // Dynamixel transaction. The whole-motor sample timestamp is stamped on the
+    // first (angle) field, so age reflects the start of that motor's read set.
+    MotorSample& s = samples_[cursor_];
+    if (field_ == Field::kAngle) {
+      s = MotorSample{};              // clear stale values at the motor's start
+      sample_ms_[cursor_] = uptime_ms_;
+      s.angle_ok = read(context, ids_[cursor_], Field::kAngle, s);
+      if (!s.angle_ok) s.angle = INT16_MIN;
+      field_ = Field::kCurrent;
+    } else if (field_ == Field::kCurrent) {
+      s.current_ok = read(context, ids_[cursor_], Field::kCurrent, s);
+      if (!s.current_ok) s.current_mA = 0;
+      field_ = Field::kTorque;
+    } else {
+      s.torque_ok = read(context, ids_[cursor_], Field::kTorque, s);
+      if (!s.torque_ok) s.torque_Nm = 0.0f;
+      field_ = Field::kAngle;
+      if (++cursor_ == count_) finish();
+    }
     return;
   }
   if (now-last_rx_ > 250) { used_=discard_=0; expected_=24; }

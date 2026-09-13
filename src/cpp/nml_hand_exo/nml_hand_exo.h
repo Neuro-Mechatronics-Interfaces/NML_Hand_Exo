@@ -724,8 +724,14 @@ class NMLHandExo {
     /// from set_finger_angles Sync Write packets. A single attached nine-motor
     /// hand therefore moves normally while the other nine IDs are reported as
     /// skipped_offline instead of rejecting the whole frame.
+    ///
+    /// axon-0.3.0 -- the read-only Axon telemetry block grows from 4 to 8
+    /// channels per motor, adding current_mA (+status) and derived torque (N*m)
+    /// alongside the existing angle/age/status. The reply schema id becomes
+    /// 0xF212 so a driver expecting the 4-field 0xF211 layout rejects rather
+    /// than misparses. No motion or actuation is added; readback only.
 #if EXO_AXON_USB
-    static constexpr const char* VERSION = "0.7.1-axon-0.2.0";
+    static constexpr const char* VERSION = "0.7.1-axon-0.3.0";
 #else
     static constexpr const char* VERSION = "0.7.1";
 #endif
