@@ -650,6 +650,30 @@ class NMLHandExo {
     /// @return Control mode as a string.
     String getMotorMode();
 
+    /// @brief Whether absolute-position telemetry is a controlled/meaningful
+    /// quantity in the active control mode.
+    ///
+    /// PRESENT_POSITION is always readable on the XC330 regardless of operating
+    /// mode, but it is only a commanded/held quantity when the motor is in a
+    /// position-controlling mode (POSITION or CURRENT_POSITION). In VELOCITY or
+    /// pure CURRENT the shaft position is free, so the reported angle is a
+    /// bystander reading, not a controlled measurement. The Axon telemetry marks
+    /// the angle field unavailable when this is false so a consumer never treats
+    /// an uncontrolled position as commanded state. Keyed off the firmware's
+    /// single tracked control mode (motorControlMode_), which every motor shares.
+    bool modeControlsPosition() const;
+
+    /// @brief Whether present-current (and derived torque) telemetry is a
+    /// controlled/meaningful quantity in the active control mode.
+    ///
+    /// PRESENT_CURRENT is always readable, but only reflects a commanded effort
+    /// when the motor is in a current-controlling mode (CURRENT or
+    /// CURRENT_POSITION). In POSITION or VELOCITY the current is whatever the
+    /// position/velocity loop happens to draw, so it is marked unavailable in
+    /// telemetry (and torque, derived from it, follows). Keyed off
+    /// motorControlMode_.
+    bool modeControlsCurrent() const;
+
     /// @brief Current software version.
     ///
     /// 0.3.0 -- per-joint gestures gained a third "rest" state, "extend" is now

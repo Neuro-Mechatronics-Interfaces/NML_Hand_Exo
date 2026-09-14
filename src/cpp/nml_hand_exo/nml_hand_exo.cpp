@@ -2070,3 +2070,18 @@ String NMLHandExo::getMotorControlMode() {
   return mode;
 }
 
+// Field-validity by control mode for Axon telemetry. The mode strings mirror
+// setMotorControlMode()/setMotorMode(): "POSITION", "CURRENT_POSITION",
+// "VELOCITY", "CURRENT" (and "DISABLED"). Position is a controlled quantity in
+// the two position-holding modes; current (and its derived torque) is a
+// controlled quantity in the two current-driving modes. The Axon telemetry
+// callback ANDs these into the per-field validity so an uncontrolled-but-
+// readable register is reported as unavailable rather than as a measurement.
+// Both false for "DISABLED"/"UNKNOWN": no field is a controlled quantity then.
+bool NMLHandExo::modeControlsPosition() const {
+  return motorControlMode_ == "POSITION" || motorControlMode_ == "CURRENT_POSITION";
+}
+bool NMLHandExo::modeControlsCurrent() const {
+  return motorControlMode_ == "CURRENT" || motorControlMode_ == "CURRENT_POSITION";
+}
+

@@ -180,17 +180,23 @@ void loop() {
     using Field = axon_exo::AxonUsbPeripheral::Field;
     if (exo->getIndexById(id) < 0) return false;  // not a motor of this build
     if (field == Field::kAngle) {
-      return exo->readAxonAngle(id, sample.angle);
+      // The angle register still reads in every mode, but it is only a
+      // controlled/commanded quantity in a position-holding mode. In VELOCITY or
+      // pure CURRENT the shaft is free, so read it but report it unavailable so a
+      // consumer never treats an uncontrolled position as commanded state.
+      return exo->readAxonAngle(id, sample.angle) && exo->modeControlsPosition();
     }
     if (field == Field::kCurrent) {
       // getCurrent returns PRESENT_CURRENT in mA (~1 mA/raw unit). A bus error
       // yields the Dynamixel library's sentinel; the id was validated above so
-      // a known motor that reads back is treated as measured.
+      // a known motor that reads back is treated as measured. Current is only a
+      // controlled quantity in a current-driving mode; in POSITION/VELOCITY the
+      // loop draws whatever it needs, so mark it unavailable there.
       sample.current_mA = exo->getCurrent(id);
-      return true;
+      return exo->modeControlsCurrent();
     }
     // kTorque: pure arithmetic from the current sampled this cycle; valid only
-    // if that current read succeeded.
+    // if that current read was itself a valid (mode-controlled) measurement.
     sample.torque_Nm = sample.current_mA * XC330_T288_TORQUE_CONSTANT;
     return sample.current_ok;
   }, &exo);

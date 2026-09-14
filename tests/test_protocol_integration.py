@@ -323,3 +323,27 @@ def test_velocity_mode_verifies_motor_hardware_limit_before_mode_change():
     assert "if (dxl_.ping(motorIds_[i]) == 0) continue;" in firmware
     assert "!directVelocityLimitVerified_[index]" in firmware
     assert "motor mode change failed safety verification" in parser
+
+
+def test_axon_telemetry_marks_fields_unavailable_by_control_mode():
+    """The 0xF212 telemetry stamps a field unavailable when the active control
+    mode does not control that quantity (symmetric): position is valid only in
+    POSITION/CURRENT_POSITION, current (and derived torque) only in
+    CURRENT/CURRENT_POSITION. The register still reads; the validity bit does not.
+    """
+    root = Path(__file__).resolve().parents[1]
+    firmware = (root / "src/cpp/nml_hand_exo/nml_hand_exo.cpp").read_text()
+    ino = (root / "src/cpp/nml_hand_exo/nml_hand_exo.ino").read_text()
+
+    # The two predicates key off the single tracked control mode and cover the
+    # symmetric table (position in the two position modes, current in the two
+    # current modes; both false for DISABLED/UNKNOWN).
+    assert 'motorControlMode_ == "POSITION" || motorControlMode_ == "CURRENT_POSITION"' in firmware
+    assert 'motorControlMode_ == "CURRENT" || motorControlMode_ == "CURRENT_POSITION"' in firmware
+    assert "bool NMLHandExo::modeControlsPosition() const" in firmware
+    assert "bool NMLHandExo::modeControlsCurrent() const" in firmware
+
+    # The Axon telemetry callback ANDs the mode predicate into each field's
+    # validity, so an uncontrolled-but-readable register reports as unavailable.
+    assert "readAxonAngle(id, sample.angle) && exo->modeControlsPosition()" in ino
+    assert "return exo->modeControlsCurrent();" in ino
