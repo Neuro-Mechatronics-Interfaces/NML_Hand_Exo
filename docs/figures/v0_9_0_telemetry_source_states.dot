@@ -1,0 +1,13 @@
+digraph telemetry_source {
+  rankdir=LR;
+  node [shape=box, style="rounded,filled", fillcolor="#eef4fb", fontname="Helvetica", fontsize=11];
+  edge [fontname="Helvetica", fontsize=9];
+
+  MEASURED [label="MEASURED\n(idle: read real DXL\nregisters via Sync Read)"];
+  ESTIMATED [label="ESTIMATED\n(motion active: interpolate\nfrom internal joint model)"];
+
+  MEASURED -> ESTIMATED [label="movement command issued\n(directCommandActive / goal set /\ngesture or home in progress)"];
+  ESTIMATED -> ESTIMATED [label="motion continues:\nadvance model each tick"];
+  ESTIMATED -> MEASURED [label="motion settled + quiet for\nESTIMATE_HOLDOFF_MS\n(no bus contention)"];
+  MEASURED -> MEASURED [label="idle: poll at telemetry rate"];
+}

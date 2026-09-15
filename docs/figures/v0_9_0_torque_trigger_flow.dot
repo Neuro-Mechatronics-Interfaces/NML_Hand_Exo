@@ -1,0 +1,17 @@
+digraph torque_trigger {
+  rankdir=TB;
+  node [shape=box, style="rounded,filled", fillcolor="#eef7ee", fontname="Helvetica", fontsize=11];
+  edge [fontname="Helvetica", fontsize=9];
+
+  est [label="Per-joint torque estimate\n(applied current x k_t,\nadjusted by joint-moment model)"];
+  thr [label="Compare to per-joint\nflexion-torque threshold\ntau_trig[j]"];
+  emg [label="EMG threshold modifier\n(external, host-set):\nlowers tau_trig[j] on intent", shape=box, fillcolor="#fbf3e6"];
+  lerp [label="Trigger lerp of digit j\ntoward its prefixed flexed pose"];
+  hold [label="Hold / no motion\n(below threshold)"];
+
+  est -> thr;
+  emg -> thr [label="set_joint_trigger:j:tau\n(runtime)"];
+  thr -> lerp [label="estimate >= tau_trig[j]"];
+  thr -> hold [label="estimate < tau_trig[j]"];
+  lerp -> est [label="motion feeds back into\nthe joint-state model"];
+}

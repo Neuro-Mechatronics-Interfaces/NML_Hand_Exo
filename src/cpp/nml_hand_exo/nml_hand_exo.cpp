@@ -372,6 +372,13 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
     for (uint8_t i = 0; i < count; ++i) {
       int index = getIndexById(ids[i]);
       if (index == -1) { records[i].error = 1; continue; }
+      // Skip IDs that were unreachable at startup. A dual build carries all 18
+      // IDs even with one hand attached; packing the 9 offline IDs into the
+      // Sync Read makes it wait out a per-ID timeout for each missing status
+      // packet, which stacks into a long bursty stall that can wedge the bus --
+      // the cause of the GUI-freeze-after-Home regression. Their records keep
+      // the zeroed position-only defaults with the error bit set.
+      if (!motorReachable_[index]) { records[i].error = 1; continue; }
       xels[packed].id = ids[i];
       xels[packed].p_recv_buf = recvBufs[packed];
       recIndex[packed] = i;              // map packed slot -> records[] slot
@@ -423,6 +430,12 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
     records[i].error = 0;
     int index = getIndexById(id);
     if (index == -1) {
+      records[i].error = 1;
+      continue;
+    }
+    // Skip offline IDs here too: three per-ID timeouts each would otherwise
+    // stall the fallback badly on a one-hand dual build.
+    if (!motorReachable_[index]) {
       records[i].error = 1;
       continue;
     }

@@ -1287,12 +1287,29 @@ class SerialWorker(QThread):
             self._poll_pending = True
         self._poll_q.put(("poll", bool(include_telemetry)))
 
+    def reset_poll_pending(self):
+        """Clear the poll-dedup guard. request_poll() suppresses a new poll while
+        one is marked pending; if that flag is ever left set (an interrupted poll
+        while telemetry was suspended, say) polling never resumes. Call this when
+        deliberately restarting polling so a stale guard cannot wedge it."""
+        with self._state_lock:
+            self._poll_pending = False
+
     def has_pending_poll(self) -> bool:
         with self._state_lock:
             return self._poll_pending
 
     def enqueue(self, command: str, timeout: float = 1.0):
         self._urgent_q.put(("command", command, float(timeout)))
+
+    def enqueue_send(self, command: str):
+        """Fire-and-forget: send a command on the worker thread WITHOUT waiting
+        for a reply. Use for setters like enable:/home:/stop: that either emit no
+        delimited acknowledgement or route it to the telemetry CDC -- waiting on
+        a reply for those (via enqueue()) just times out per command and scrambles
+        ack/command pairing. Runs under the serial lock on the worker thread, so
+        the Qt thread never blocks."""
+        self._urgent_q.put(("send", command))
 
     def request_direct_actions(
         self, actions: dict[int, tuple[str, float | None]]
@@ -1350,6 +1367,9 @@ class SerialWorker(QThread):
             if tag == "command":
                 _, command, timeout = item
                 self._handle_command(command, timeout)
+            elif tag == "send":
+                _, command = item
+                self._handle_send(command)
             elif tag == "pose_ack":
                 _, value, host, port, timeout = item
                 self._handle_pose_ack(value, host, port, timeout)
@@ -1564,6 +1584,13 @@ class SerialWorker(QThread):
         if now - self._last_poll_error_log >= 2.0:
             self._last_poll_error_log = now
             self.line_received.emit(message)
+
+    def _handle_send(self, command: str):
+        """Fire-and-forget send under the serial lock; do not wait for a reply."""
+        try:
+            self._with_raw_exo(lambda raw_exo: raw_exo.send_command(command))
+        except Exception as exc:
+            self.line_received.emit(f"[send] {command} failed: {exc}")
 
     def _handle_command(self, command: str, timeout: float):
         try:
@@ -5074,13 +5101,23 @@ class HandExoGUI(QWidget):
         self._request_device_poll(force_telemetry=True)
 
     def _run_bulk_serial_action(self, action_callback):
-        """Run a bulk serial action with poll scheduling paused, then refresh UI."""
+        """Run a bulk serial action with poll scheduling paused, then refresh UI.
+
+        The action runs under the shared serial RLock (``run_locked``). That lock
+        is also held by the worker thread during a telemetry poll, so the action
+        must not start until any in-flight poll has cleared -- otherwise the Qt
+        thread blocks on the lock inside ``run_locked`` with no event pumping and
+        the whole GUI freezes. If the poll cannot be cleared (a wedged/very slow
+        device read), skip the action and report it rather than freezing.
+        """
         was_angle_timer_active = self._angle_timer.isActive()
         self._angle_timer.stop()
         self._suspend_device_poll_requests = True
         try:
-            # Let any in-flight poll finish so bulk commands don't queue behind it.
-            self._wait_for_pending_poll(1200)
+            if not self._wait_for_pending_poll(2000):
+                self._log("Action skipped: device is busy (telemetry read did "
+                          "not free up). Try again in a moment.")
+                return None
             result = action_callback()
         finally:
             self._suspend_device_poll_requests = False
@@ -5089,14 +5126,23 @@ class HandExoGUI(QWidget):
         self._request_device_poll(force_telemetry=True)
         return result
 
-    def _wait_for_pending_poll(self, timeout_ms: int):
-        """Give an in-flight automatic poll a brief chance to finish."""
+    def _wait_for_pending_poll(self, timeout_ms: int) -> bool:
+        """Give an in-flight automatic poll a brief chance to finish.
+
+        Returns True if no poll is pending (safe to take the serial lock on the
+        main thread), False if one is still in flight after the timeout. A
+        caller that would otherwise block the Qt thread on ``run_locked`` MUST
+        check this: a slow/wedged device read holds the shared serial RLock, and
+        acquiring it on the main thread with no event pumping freezes the whole
+        GUI until the read returns.
+        """
         deadline = time.monotonic() + (timeout_ms / 1000.0)
         while time.monotonic() < deadline:
             if not self._serial_worker.has_pending_poll():
-                return
+                return True
             QApplication.processEvents()
             time.sleep(0.02)
+        return not self._serial_worker.has_pending_poll()
 
     def _request_device_poll(self, force_telemetry: bool = False):
         if not self.exo_connected:
@@ -5147,6 +5193,9 @@ class HandExoGUI(QWidget):
         interval_ms = HandExoGUI._device_poll_interval_ms(self)
         self._angle_timer.start(interval_ms)
         if force_refresh:
+            # Clear any stale poll-dedup guard so a deliberate restart is never
+            # suppressed by a _poll_pending left set from an interrupted poll.
+            self._serial_worker.reset_poll_pending()
             self._request_device_poll(force_telemetry=True)
 
     def _on_device_poll_completed(self, result: dict):
@@ -6038,6 +6087,10 @@ class HandExoGUI(QWidget):
             applied_current = self._run_bulk_serial_action(
                 lambda: self.exo.run_locked(_apply)
             )
+            if applied_current is None:
+                # Action was skipped because the device was busy; leave the
+                # spinbox as-is and let the user retry.
+                return
             if int(round(applied_current)) != current_mA:
                 raise RuntimeError(
                     f"current readback was {applied_current} mA, expected {current_mA} mA"
@@ -7072,14 +7125,15 @@ class HandExoGUI(QWidget):
             self._home_poll_was_active = was_polling
             self._angle_timer.stop()
             self._suspend_device_poll_requests = True
-            self._wait_for_pending_poll(1200)
-            # A direct-mode restore turns torque off. Restore only motors that
-            # were enabled before Home All, preserving explicit user disables.
-            def _enable_home_targets(raw_exo):
-                for dxl_id in sorted(enabled_ids):
-                    raw_exo.enable_motor(dxl_id)
-
-            self.exo.run_locked(_enable_home_targets)
+            # Issue every device command through the serial WORKER thread, never
+            # via run_locked() on the Qt thread. The worker owns the serial lock
+            # and serializes these with any in-flight telemetry read on its own
+            # thread, so the GUI thread never blocks on the lock -- which is what
+            # previously froze the whole app when a poll was slow to answer a
+            # busy/homing device. A direct-mode restore turns torque off, so
+            # re-enable only motors that were enabled before Home All.
+            for dxl_id in sorted(enabled_ids):
+                self._serial_worker.enqueue_send(f"enable:{dxl_id}")
             self._home_groups_pending = self._home_motor_groups(enabled_ids)
             self._home_groups_total = len(self._home_groups_pending)
             self.home_all_btn.setEnabled(False)
@@ -7122,17 +7176,13 @@ class HandExoGUI(QWidget):
             self._finish_home_sequence()
             return
         group = self._home_groups_pending.pop(0)
-        try:
-            def _home_group(raw_exo):
-                for dxl_id in group:
-                    raw_exo.home(dxl_id)
-
-            self.exo.run_locked(_home_group)
-            self._log(f"Home stage: IDs {group}")
-        except Exception as exc:
-            self._log(f"Home stage failed for IDs {group}: {exc}")
-            self._finish_home_sequence()
-            return
+        # Enqueue the group's home commands on the worker thread (never
+        # run_locked on the Qt thread) so the GUI cannot block on the serial
+        # lock. Fire-and-forget: the worker serializes them behind any in-flight
+        # read, and the inter-group settle timer paces the staged motion.
+        for dxl_id in group:
+            self._serial_worker.enqueue_send(f"home:{dxl_id}")
+        self._log(f"Home stage: IDs {group}")
         if self._home_groups_pending:
             self._home_timer.start(HOME_GROUP_SETTLE_MS)
         else:
@@ -7145,9 +7195,15 @@ class HandExoGUI(QWidget):
         self._suspend_device_poll_requests = False
         if hasattr(self, "home_all_btn"):
             self.home_all_btn.setEnabled(self.exo_connected)
-        if resume_polling and self._home_poll_was_active:
-            self._resume_normal_polling(force_refresh=True)
+        # Always resume polling after a home sequence, regardless of whether it
+        # was captured as active at the start. The prior conditional resume left
+        # telemetry (table + torque plot) dead whenever _home_poll_was_active was
+        # False -- e.g. a stale/False capture -- with no way to recover short of
+        # a reconnect. Polling is the normal connected state, so restore it.
+        self._log("[home] sequence complete; resuming telemetry polling.")
         self._home_poll_was_active = False
+        if resume_polling and self.exo_connected:
+            self._resume_normal_polling(force_refresh=True)
 
     def _apply_motor_angles(self, angles: dict):
         if not self.exo_connected:
@@ -9816,7 +9872,15 @@ class HandExoGUI(QWidget):
 
     def _log(self, msg: str):
         ts = datetime.now().strftime("%H:%M:%S")
-        self.log_text.append(f"[{ts}] {msg}")
+        line = f"[{ts}] {msg}"
+        self.log_text.append(line)
+        # Also mirror to stderr, flushed, so breadcrumbs are visible in a
+        # terminal in real time even when the Qt widget cannot repaint (e.g.
+        # while diagnosing a main-thread stall). Cheap; safe if stderr is absent.
+        try:
+            print(line, file=sys.stderr, flush=True)
+        except Exception:
+            pass
 
     def _clear_layout(self, layout):
         while layout.count():
