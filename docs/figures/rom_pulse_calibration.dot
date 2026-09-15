@@ -1,0 +1,22 @@
+digraph rom_pulse {
+  rankdir=TB;
+  node [shape=box, style="rounded,filled", fillcolor="#eef4fb", fontname="Helvetica", fontsize=11];
+  edge [fontname="Helvetica", fontsize=9];
+  PULSE [label="Powered pulse: 20 ms\nStart 20 mA; cap 80 mA; measured travel checks\nStart requires valid position inside limits"];
+  REST [label="Write zero current, read position\nRest at least 400 ms; require measured settling"];
+  FEEDBACK [label="Read position + velocity; correct model\nUpdate local displacement response + eligible gain\nPredict next pulse for 0.5 deg; max 2 mA change"];
+  RETURN [label="Optional return (disabled by default)\nNon-fault outcomes only; 20 mA / 4 s timeout"];
+  DONE [label="Zero current / torque off; report result\nFault ends campaign; limits require Apply"];
+  PULSE -> REST [label="deadline / 1-deg travel / excessive mean speed"];
+  PULSE -> REST [label="position read fails: zero current\nup to 3 recovery rests; same amplitude", color="#a63"];
+  REST -> PULSE [label="recovered feedback: retry same pulse\nno fit / stall update for invalid pulse", color="#a63"];
+  REST -> FEEDBACK [label="rest elapsed"];
+  FEEDBACK -> PULSE [label="continue: bounded predicted-amplitude step\ncheck stored limits before applying"];
+  FEEDBACK -> DONE [label="endstop / ceiling: default finish"];
+  FEEDBACK -> RETURN [label="return explicitly enabled", style=dashed];
+  PULSE -> DONE [label="stored limit / fault / watchdog"];
+  REST -> DONE [label="outside limits / 3-deg excursion\nsettling failure / watchdog"];
+  RETURN -> DONE;
+  PULSE -> DONE [label="stop / disable / retries exhausted\nor late deadline", color="#a33"];
+  REST -> DONE [label="stop / disable / retries exhausted", color="#a33"];
+}

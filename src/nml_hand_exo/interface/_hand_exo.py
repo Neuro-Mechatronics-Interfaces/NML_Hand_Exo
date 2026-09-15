@@ -1,4 +1,5 @@
 import math
+from datetime import datetime, timezone
 import re
 import struct
 import time
@@ -9,6 +10,7 @@ from ._gesture_protocol import (
     ANGLE_ADDRESSABLE_GESTURES,
     SET_FINGER_ANGLES_ORDER,
     format_set_finger_angles,
+    normalize_finger_angles,
 )
 
 
@@ -33,6 +35,8 @@ FW_RAD_GESTURE = (0, 3, 1)
 #: motors drew together; from 0.4.0 it sets the per-motor nominal and the
 #: firmware allocator owns GOAL_CURRENT under a fleet-wide cap.
 FW_CURRENT_BUDGET = (0, 4, 0)
+FW_JOINT_STATE_MODEL = (0, 9, 0)
+TELEM_SOURCE_ESTIMATED = 0x80
 
 #: Firmware version that added an atomic per-ID current-position hold while
 #: the remaining motors stay in global velocity/current direct control.
@@ -457,27 +461,32 @@ class HandExo(object):
         self,
         timeout: float = 0.5,
         motor_ids: list[int] | tuple[int, ...] | None = None,
-    ) -> dict[int, dict[str, float | int | bool]]:
+    ) -> dict[int, dict[str, float | int | bool | str | None]]:
         """Read the firmware's compact binary telemetry frame.
 
         The firmware emits an ``NX`` frame with one fixed-size record per motor.
         Records are keyed by Dynamixel ID and include relative/absolute angles,
-        present current, raw velocity, and raw position ticks.
+        current, raw velocity, and raw position ticks. NX v2 also supplies
+        per-field sources and per-sample UTC/uptime; unavailable values are None.
         """
-        stream_getter = getattr(self.device, "fast_telemetry_device", None)
-        serial_dev = stream_getter() if callable(stream_getter) else None
-        if serial_dev is None:
-            raise RuntimeError(
-                "get_fast_telemetry requires a serial transport with raw-byte support"
-            )
+        binary_reader = getattr(self.device, "get_fast_frame", None)
+        if getattr(self.device, "usb_protocol", None) == "protobuf-v1" and callable(binary_reader):
+            import io
+            serial_dev = io.BytesIO(binary_reader(motor_ids, timeout=timeout))
+        else:
+            stream_getter = getattr(self.device, "fast_telemetry_device", None)
+            serial_dev = stream_getter() if callable(stream_getter) else None
+            if serial_dev is None:
+                raise RuntimeError(
+                    "get_fast_telemetry requires a serial transport with raw-byte support"
+                )
 
-        ids = "all" if not motor_ids else ":".join(str(int(mid)) for mid in motor_ids)
-        try:
-            serial_dev.reset_input_buffer()
-        except Exception:
-            pass
-        self.send_command(f"get_telemetry_fast:{ids}")
-
+            ids = "all" if not motor_ids else ":".join(str(int(mid)) for mid in motor_ids)
+            try:
+                serial_dev.reset_input_buffer()
+            except Exception:
+                pass
+            self.send_command(f"get_telemetry_fast:{ids}")
         header_fmt = "<2sBBBHIH"
         record_fmt = "<BBhiiii"
         header_len = struct.calcsize(header_fmt)
@@ -505,9 +514,13 @@ class HandExo(object):
         magic, version, flags, count, payload_len, timestamp_ms, checksum = struct.unpack(
             header_fmt, header
         )
-        if magic != b"NX" or version != 1:
+        if magic != b"NX" or version not in (1, 2):
             raise ValueError("Unsupported fast telemetry frame")
 
+        record_fmt = "<BBhiiiiBQI" if version == 2 else "<BBhiiii"
+        record_len = struct.calcsize(record_fmt)
+        if count > 32 or payload_len != count * record_len:
+            raise ValueError("Invalid fast telemetry payload length")
         payload = serial_dev.read(payload_len)
         if len(payload) != payload_len:
             raise TimeoutError("Timed out reading fast telemetry payload")
@@ -515,27 +528,246 @@ class HandExo(object):
         if calc != checksum:
             raise ValueError("Fast telemetry checksum mismatch")
 
-        records: dict[int, dict[str, float | int | bool]] = {}
+        records: dict[int, dict[str, float | int | bool | str | None]] = {}
         offset = 0
         for _ in range(count):
             if offset + record_len > len(payload):
                 break
-            mid, error, current_mA, velocity_raw, position_ticks, absolute_cdeg, relative_cdeg = (
-                struct.unpack_from(record_fmt, payload, offset)
+            fields = struct.unpack_from(record_fmt, payload, offset)
+            mid, error, current_mA, velocity_raw, position_ticks, absolute_cdeg, relative_cdeg = fields[:7]
+            sources = fields[7] if version == 2 else (0 if error else 0x15)
+            source_names = ("unavailable", "measured", "estimated", "unavailable")
+            position_source, current_source, velocity_source = (
+                source_names[(sources >> shift) & 3] if not error else "unavailable"
+                for shift in (0, 2, 4)
             )
             records[mid] = {
                 "id": mid,
                 "error": bool(error),
-                "current": current_mA,
-                "velocity_raw": velocity_raw,
-                "position_ticks": position_ticks,
-                "absolute_angle": absolute_cdeg / 100.0,
-                "angle": relative_cdeg / 100.0,
+                "current": current_mA if current_source != "unavailable" else None,
+                "velocity_raw": velocity_raw if velocity_source != "unavailable" else None,
+                "position_ticks": position_ticks if position_source != "unavailable" else None,
+                "absolute_angle": absolute_cdeg / 100.0 if position_source != "unavailable" else None,
+                "angle": relative_cdeg / 100.0 if position_source != "unavailable" else None,
+                "sources": sources if not error else 0,
+                "position_source": position_source,
+                "current_source": current_source,
+                "torque_source": current_source,
+                "velocity_source": velocity_source,
+                "estimated": "estimated" in (position_source, current_source, velocity_source),
+                "frame_version": version,
+                "utc_timestamp_ms": (fields[8] or None) if version == 2 else None,
+                "utc_synchronized": bool(fields[8]) if version == 2 else False,
+                "sample_timestamp_ms": fields[9] if version == 2 else timestamp_ms,
                 "timestamp_ms": timestamp_ms,
                 "flags": flags,
             }
             offset += record_len
         return records
+
+    def reset_io_profile(self, *, timeout: float = 1.0) -> str:
+        """Reset device wall-time counters and loop statistics; no motor changes."""
+        return self._command_transaction("reset_io_profile", expected="OK: io profile reset", timeout=timeout)
+
+    def get_io_profile(self, *, timeout: float = 2.0) -> dict:
+        """Exclusive stage times since reset, including idle time in ``other``.
+
+        Fractions sum to one. Call maxima are inclusive and must not be summed.
+        These measure firmware wall time, not host latency or USB wire occupancy.
+        Older builds raise ProtocolResponseError (probe capability, not version).
+        """
+        reply = self._command_transaction("io_profile", expected="IO_PROFILE:", timeout=timeout)
+        return self._parse_io_profile(reply)
+
+    @staticmethod
+    def _parse_io_profile(reply: str) -> dict:
+        header = re.search(r"IO_PROFILE:\s*version=(\d+)\s+window_us=(\d+)(?=\s|;|$)", reply)
+        if not header:
+            line = next((line.strip() for line in reply.splitlines() if 'IO_PROFILE:' in line), reply)
+            raise ValueError(
+                f"Malformed I/O profile header: {line[:240]!r}; expected "
+                "'IO_PROFILE: version=1 window_us=<integer>'. Earlier firmware "
+                "used unsupported 64-bit printf formatting; recompile/reflash the current source."
+            )
+        if int(header[1]) != 1:
+            raise ValueError(f"Unsupported I/O profile version {header[1]} (SDK supports 1)")
+        window = int(header[2])
+        stages = {}
+        for name, calls, elapsed, maximum in re.findall(
+            r"IO_STAGE: name=(\w+) calls=(\d+) exclusive_us=(\d+) max_span_us=(\d+)", reply
+        ):
+            if name in stages:
+                raise ValueError("Duplicate I/O profile stage")
+            stages[name] = dict(calls=int(calls), exclusive_us=int(elapsed),
+                                max_span_us=int(maximum), fraction=int(elapsed) / window if window else 0.0)
+        if not stages or sum(s["exclusive_us"] for s in stages.values()) != window:
+            raise ValueError("Incomplete I/O profile reply")
+        return dict(version=1, window_us=window, stages=stages)
+
+    def drain_async_events(self) -> list[str]:
+        """Consume queued ROM completion events on transports with an event queue.
+
+        DualSerialComm preserves these across telemetry polls and reply flushes.
+        This does not send a command or wait for a device response.
+        """
+        drain = getattr(self.device, "drain_async_lines", None)
+        return drain() if callable(drain) else []
+
+    def get_hand_visualization_calibration(self, info: dict | None = None, *, timeout: float = 0.5) -> dict[int, dict]:
+        """Read RAM calibration by DXL ID for the schematic hand display.
+
+        Uses existing firmware metadata commands only; no live motor-register
+        reads, writes, profile application, or enabling torque.
+        ``info`` can reuse the connection handshake's limits. ``timeout`` bounds
+        each metadata reply independently of the transport's default timeout.
+        """
+        info = self.info() if info is None else info
+        homes = self._get_motor_attribute("home", "all", True, timeout=timeout)
+        flips = self._get_motor_attribute("flip", "all", True, timeout=timeout)
+        result = {}
+        for mid, motor in info.get("motors", {}).items():
+            limits, home, flip = motor.get("limits"), homes.get(mid), flips.get(mid)
+            if not isinstance(limits, (list, tuple)) or len(limits) != 2 or home is None:
+                continue
+            if str(flip).lower() not in ("true", "false", "1", "0"):
+                continue
+            try:
+                lo, hi, home = map(float, (*limits, home))
+            except (TypeError, ValueError):
+                continue
+            if not all(map(math.isfinite, (lo, hi, home))) or lo >= hi:
+                continue
+            result[int(mid)] = dict(home=home, limit_min=lo, limit_max=hi,
+                                    flip=str(flip).lower() in ("true", "1"))
+        return result
+
+    def synchronize_utc(self, when: datetime | None = None, *, timeout: float = 1.0) -> dict:
+        """Set device UTC from an aware datetime, or the PC clock at send time.
+
+        Firmware >= 0.9.0; Unix milliseconds on the wire. This sets the clock
+        offset, not its oscillator rate. Serial transit delay is not compensated.
+        Device watchdogs use uptime and are unaffected by clock adjustments.
+        """
+        if when is not None and (not isinstance(when, datetime) or when.tzinfo is None or when.utcoffset() is None):
+            raise ValueError("when must be a timezone-aware datetime")
+        self._require_joint_model()
+        if when is None:
+            epoch_ms = time.time_ns() // 1_000_000
+        else:
+            delta = when.astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)
+            epoch_ms = (delta.days * 86400 + delta.seconds) * 1000 + delta.microseconds // 1000
+        if not 1 <= epoch_ms <= 253402300799999:
+            raise ValueError("UTC time must be after the Unix epoch and before year 10000")
+        reply = self._command_transaction(f"set_utc_time:{epoch_ms}",
+                                          expected="OK: set_utc_time", timeout=timeout)
+        result = self._parse_utc_reply(reply)
+        if not result["synchronized"]:
+            raise ValueError("Device did not synchronize UTC")
+        return result
+
+    def get_utc_time(self, *, timeout: float = 1.0) -> dict:
+        """Read device UTC/uptime without altering either clock."""
+        self._require_joint_model()
+        reply = self._command_transaction("get_utc_time", expected="UTC_TIME:", timeout=timeout)
+        return self._parse_utc_reply(reply)
+
+    @staticmethod
+    def _parse_utc_reply(reply: str) -> dict:
+        fields = dict(re.findall(r"(\w+)=([^\s;]+)", reply))
+        utc_ms, uptime_ms = int(fields["utc_ms"]), int(fields["uptime_ms"])
+        if fields.get("synchronized") not in ("0", "1") or not 0 <= uptime_ms <= 0xffffffff:
+            raise ValueError("Invalid UTC clock reply")
+        synchronized = fields["synchronized"] == "1"
+        if not 0 <= utc_ms <= 253402300799999 or synchronized != bool(utc_ms):
+            raise ValueError("Invalid UTC synchronization state")
+        return dict(utc_ms=utc_ms if synchronized else None, uptime_ms=uptime_ms,
+                    synchronized=synchronized)
+
+    def _require_joint_model(self):
+        if self.firmware_version() < FW_JOINT_STATE_MODEL:
+            raise RuntimeError("Joint-state model requires firmware >= 0.9.0")
+
+    @staticmethod
+    def _joint_model_id(motor_id):
+        if isinstance(motor_id, bool) or not isinstance(motor_id, int) or not 1 <= motor_id <= 253:
+            raise ValueError("motor_id must be an explicit integer DXL ID (1..253)")
+        return motor_id
+
+    @staticmethod
+    def _joint_model_params(gain=0.1, time_constant=0.15, max_velocity=60.0,
+                            stiffness=0.0, moment=0.0):
+        params = dict(gain=gain, time_constant=time_constant, max_velocity=max_velocity,
+                      stiffness=stiffness, moment=moment)
+        ranges = ((0.001, 10), (0.01, 10), (0.1, 300), (0, 1), (-1, 1))
+        for (name, value), (lo, hi) in zip(params.items(), ranges):
+            if isinstance(value, bool):
+                raise ValueError(f"{name} must be a finite number in [{lo}, {hi}]")
+            value = float(value)
+            if not math.isfinite(value) or not lo <= value <= hi:
+                raise ValueError(f"{name} must be a finite number in [{lo}, {hi}]")
+            params[name] = value
+        return params
+
+    def set_joint_model(self, motor_id: int, *, gain=0.1, time_constant=0.15,
+                        max_velocity=60.0, stiffness=0.0, moment=0.0,
+                        timeout: float = 1.0) -> str:
+        """Tune telemetry-only dynamics; units are deg/s/mA, s, deg/s, Nm/deg, Nm."""
+        mid = self._joint_model_id(motor_id)
+        params = self._joint_model_params(gain, time_constant, max_velocity, stiffness, moment)
+        self._require_joint_model()
+        if getattr(self.device, "usb_protocol", None) == "protobuf-v1":
+            self.device.write_joint_model(mid, params, timeout=timeout)
+            return f"OK: set_joint_model id={mid}"
+        command = f"set_joint_model:{mid}:" + ":".join(format(v, ".9g") for v in params.values())
+        return self._command_transaction(command, expected=f"OK: set_joint_model id={mid}", timeout=timeout)
+
+    def get_joint_model(self, motor_id: int) -> dict:
+        """Read per-ID dynamics, trigger, and v0.9.1 pulse-response statistics."""
+        mid = self._joint_model_id(motor_id)
+        self._require_joint_model()
+        reply = self._command_transaction(f"get_joint_model:{mid}", expected="JOINT_MODEL:", timeout=1.0)
+        fields = dict(re.findall(r"(\w+)=([^\s;]+)", reply))
+        if int(fields.get("id", -1)) != mid:
+            raise ValueError("Joint model reply has the wrong motor ID")
+        result = self._joint_model_params(**{name: float(fields[name]) for name in
+            ("gain", "time_constant", "max_velocity", "stiffness", "moment")})
+        tau = float(fields["trigger"])
+        if not math.isnan(tau) and (not math.isfinite(tau) or not 0 <= tau <= 1):
+            raise ValueError("Invalid joint trigger in reply")
+        result.update(id=mid, trigger=None if math.isnan(tau) else tau)
+        for direction in ('flex', 'extend'):
+            prefix = f'pulse_{direction}_'
+            if prefix + 'slope' in fields:
+                slope = float(fields[prefix + 'slope'])
+                result.setdefault('pulse_responses', {})[direction] = dict(
+                    slope=None if math.isnan(slope) else slope,
+                    moving_samples=int(fields[prefix + 'samples']),
+                    no_motion_samples=int(fields[prefix + 'no_motion']),
+                    gradient_samples=int(fields[prefix + 'gradients']))
+        return result
+
+    def set_estimate_holdoff(self, ms: int) -> str:
+        """Set the quiet period after movement before telemetry may read the bus."""
+        if isinstance(ms, bool) or not isinstance(ms, int) or not 50 <= ms <= 5000:
+            raise ValueError("ms must be an integer in [50, 5000]")
+        self._require_joint_model()
+        return self._command_transaction(f"set_estimate_holdoff:{ms}",
+                                        expected=f"OK: set_estimate_holdoff ms={ms}", timeout=1.0)
+
+    def set_joint_trigger(self, motor_id: int, tau: float) -> str:
+        """Store a flexion torque threshold (Nm). Does not initiate assistance."""
+        mid = self._joint_model_id(motor_id)
+        if isinstance(tau, bool) or not math.isfinite(float(tau)) or not 0 <= float(tau) <= 1:
+            raise ValueError("tau must be finite and in [0, 1] Nm")
+        self._require_joint_model()
+        return self._command_transaction(f"set_joint_trigger:{mid}:{float(tau):.9g}",
+                                        expected=f"OK: set_joint_trigger id={mid}", timeout=1.0)
+
+    def clear_joint_trigger(self, motor_id: int) -> str:
+        mid = self._joint_model_id(motor_id)
+        self._require_joint_model()
+        return self._command_transaction(f"clear_joint_trigger:{mid}",
+                                        expected=f"OK: clear_joint_trigger id={mid}", timeout=1.0)
 
     def configure_shadow_telemetry(
         self,
@@ -657,6 +889,8 @@ class HandExo(object):
         motor_id: (int or str) = 'all',
         wait_until_return: bool = False,
         command: str | None = None,
+        *,
+        timeout: float | None = None,
     ) -> float or list or bool or dict:
         """
         Generic method to retrieve a specified attribute from the motor(s).
@@ -671,7 +905,7 @@ class HandExo(object):
         command_name = command or f"get_{attr}"
         command_text = f"{command_name}:{motor_id}"
         self.send_command(command_text)
-        raw = self._receive(wait_until_return=wait_until_return)
+        raw = self._receive(wait_until_return=wait_until_return, timeout=timeout)
         if self.verbose:
             print(f"Raw return: {raw}")
         raw = raw.strip()
@@ -870,19 +1104,26 @@ class HandExo(object):
         self.send_command("help")
         return self._receive(wait_until_return=True)
 
-    def set_debug(self, enable: bool):
+    def set_debug(self, enable: bool, *, timeout: float = 1.0):
         """
         Enables or disables verbose debug output from the Arduino.
 
         Args:
             enable (bool): True to enable debug output, False to disable.
+            timeout (float): Maximum wait for the debug-state acknowledgement.
 
         Returns:
             None
 
         """
         state = "on" if enable else "off"
-        self.send_command(f"debug:{state}")
+        # A queue flush cannot discard an acknowledgement still in flight.
+        # Complete this transaction before info/UTC/telemetry can consume its
+        # reply, including when benchmarks deliberately use send_delay=0.
+        self._command_transaction(
+            f"debug:{state}", expected=f"Debug state: {'true' if enable else 'false'}",
+            timeout=timeout,
+        )
 
     def version(self) -> str:
         """
@@ -1020,6 +1261,14 @@ class HandExo(object):
         motors = {}
 
         for ln in lines:
+            for label, key, convert in (
+                ("USB Protocol", "usb_protocol", str), ("USB CDC Count", "usb_cdc_count", int),
+                ("USB Text Port", "usb_text_port", str), ("USB Binary Port", "usb_binary_port", str),
+                ("Model Step Ms", "model_step_ms", int), ("I/O Profile", "io_profile_version", int),
+                ("USB Features", "usb_features", str.split),
+            ):
+                if ln.startswith(label + ":"):
+                    info[key] = convert(ln.partition(":")[2].strip())
             m = name_pat.search(ln)
             if m:
                 info['name'] = m.group(1)
@@ -1194,6 +1443,8 @@ class HandExo(object):
 
     def set_direct_velocity(self, motor_id: int, velocity_rpm: float):
         """Command signed velocity in rpm while firmware is in velocity mode."""
+        if self._send_binary_motor_command("set_velocity", motor_id, velocity_rpm):
+            return
         self.send_command(f"set_velocity:{int(motor_id)}:{float(velocity_rpm)}")
 
     def get_motor_acceleration(self, motor_id: (int or str) = 'all') -> float:
@@ -1250,6 +1501,8 @@ class HandExo(object):
             None
 
         """
+        if self._send_binary_motor_command("set_angle", motor_id, angle):
+            return
         if isinstance(motor_id, str):
             cmd = f"set_angle:{motor_id}:{angle}"
         else:
@@ -1281,6 +1534,8 @@ class HandExo(object):
             None
 
         """
+        if self._send_binary_motor_command("set_absolute_angle", motor_id, angle):
+            return
         if isinstance(motor_id, str):
             cmd = f"set_absolute_angle:{motor_id}:{angle}"
         else:
@@ -1428,6 +1683,12 @@ class HandExo(object):
         Every motor may sit at this value simultaneously, so the firmware caps
         it at ``budget / n_motors``.
 
+        This global current-position control allowance affects the hardware,
+        not the telemetry estimator. Zero removes holding effort after a move
+        concludes and can allow a loaded joint to sag. Active moves retain
+        their separate allocation. Use :meth:`current_status` to inspect the
+        applied allowance and budget.
+
         Args:
             hold_mA (float): Hold current in mA.
 
@@ -1537,12 +1798,67 @@ class HandExo(object):
             'goal_current', motor_id, True, command='get_goal_current'
         )
 
+    def _send_binary_motor_command(self, command, motor_id, value=None):
+        if getattr(self.device, "usb_protocol", None) != "protobuf-v1":
+            return False
+        sender = getattr(self.device, "send_motor_command", None)
+        if not callable(sender):
+            return False
+        self.device.flush_input()
+        sender(command, motor_id, value)
+        return True
+
     def set_direct_current(self, motor_id: int, current_mA: float):
         """Command signed current in mA while firmware is in current mode."""
+        if self._send_binary_motor_command("set_current", motor_id, current_mA):
+            return
         self.send_command(f"set_current:{int(motor_id)}:{float(current_mA)}")
+
+    @staticmethod
+    def _motor_targets(values):
+        if not isinstance(values, dict) or not 1 <= len(values) <= 18:
+            raise ValueError('Provide a mapping of 1..18 explicit integer DXL IDs to values')
+        result = {}
+        for mid, value in values.items():
+            mid = HandExo._joint_model_id(mid)
+            if isinstance(value, bool):
+                raise ValueError('Motor targets must be finite numbers')
+            value = float(value)
+            if not math.isfinite(value):
+                raise ValueError('Motor targets must be finite numbers')
+            result[mid] = value
+        return result
+
+    def _send_motor_batch(self, command, targets):
+        targets = self._motor_targets(targets)
+        if getattr(self.device, 'usb_protocol', None) != 'protobuf-v1':
+            raise RuntimeError('Batch motor commands require Protobuf firmware with batch_motion')
+        self.device.flush_input()
+        self.device.send_batch_command(command, targets)
+
+    def set_angles(self, angles: dict[int, float], *, absolute: bool = False):
+        """Send one Protobuf angle batch keyed by DXL ID, using one DXL Sync Write.
+
+        Degrees are relative to each motor's home/flip unless ``absolute=True``.
+        Firmware clamps to calibrated joint limits and skips offline motors.
+        Requires the ``batch_motion`` capability; no motor is implicitly enabled.
+        """
+        self._send_motor_batch('set_absolute_angles' if absolute else 'set_angles', angles)
+
+    def set_currents(self, currents_mA: dict[int, float]):
+        """Send one Protobuf batch of signed mA targets keyed by DXL ID.
+
+        Requires current mode and ``batch_motion``. Firmware performs guarded
+        sequential writes, with the same limit checks and watchdog as
+        ``set_direct_current``. A bus failure can leave a prefix applied; the
+        SDK never automatically retries. This is not a DXL Sync Write.
+        """
+        self._send_motor_batch('set_currents', currents_mA)
 
     def stop_direct_control(self, motor_id: (int or str) = 'all'):
         """Immediately zero direct velocity and current goals."""
+        if self._send_binary_motor_command("stop", motor_id):
+            return
         target = motor_id if isinstance(motor_id, str) else int(motor_id)
         self.send_command(f"stop:{target}")
 
@@ -1788,6 +2104,10 @@ class HandExo(object):
         if str(state).strip().lower() == "rest":
             self._require_firmware(FW_PER_JOINT_REST, "The per-joint 'rest' state")
         self._require_gesture_firmware(gesture)
+        if getattr(self.device, 'usb_protocol', None) == 'protobuf-v1':
+            self.device.flush_input()
+            self.device.send_gesture(gesture, state)
+            return
         self.send_command(f"set_gesture:{gesture}:{state}")
 
     def _require_gesture_firmware(self, gesture: str) -> None:
@@ -1880,6 +2200,10 @@ class HandExo(object):
                 "firmware will clamp it.",
                 warning=True,
             )
+        if getattr(self.device, 'usb_protocol', None) == 'protobuf-v1':
+            self.device.flush_input()
+            self.device.send_gesture(name, percent=pct)
+            return
         self.send_command(f"set_gesture_angle:{name}:{pct:g}")
 
     def set_finger_angles(self, values: dict[str, int | float | None]):
@@ -1930,9 +2254,13 @@ class HandExo(object):
             normalized[name] = value
         # Build (and validate) the command BEFORE the firmware check so a
         # malformed request fails the same way regardless of the device version.
-        command = format_set_finger_angles(normalized)
+        normalized = normalize_finger_angles(normalized)
         self._require_firmware(FW_SET_FINGER_ANGLES, "set_finger_angles")
-        self.send_command(command)
+        if getattr(self.device, 'usb_protocol', None) == 'protobuf-v1':
+            self.device.flush_input()
+            self.device.send_finger_angles(normalized)
+            return
+        self.send_command(format_set_finger_angles(normalized))
 
     def get_gesture_angle(
         self, gesture: str = "all", timeout: float = 1.0
@@ -2190,9 +2518,34 @@ class HandExo(object):
         # from the value recorded during calibration.  Query actual positions first
         # and snap every profile value to the motor's current epoch before pushing to
         # firmware; otherwise getRelativeAngle() subtracts a home that is ~360° off.
-        self.send_command("get_absolute_angle:all")
-        _raw = self._receive(wait_until_return=True)
-        _parsed = self._parse_motor_data_block(_raw)
+        model_settings = {}
+        for name, values in cal["motors"].items():
+            if "joint_model" not in values and "joint_trigger" not in values:
+                continue
+            if not name_to_id or name not in name_to_id:
+                raise ValueError("Joint-model profile settings require explicit name_to_id mapping")
+            self._joint_model_id(name_to_id[name])
+            model = self._joint_model_params(**values["joint_model"]) if "joint_model" in values else None
+            tau = values.get("joint_trigger")
+            if tau is not None and (isinstance(tau, bool) or not math.isfinite(float(tau)) or not 0 <= float(tau) <= 1):
+                raise ValueError("Profile joint_trigger must be null or finite in [0, 1] Nm")
+            model_settings[name] = (model, tau, "joint_trigger" in values)
+        if model_settings:
+            self._require_joint_model()
+
+        measurement_deadline = time.monotonic() + 1.0
+        while True:
+            self.send_command("get_absolute_angle:all")
+            _raw = self._receive(wait_until_return=True)
+            _parsed = self._parse_motor_data_block(_raw)
+            relevant = [record for mid, record in _parsed.items()
+                        if (mid in name_to_id.values() if name_to_id else record.get("name") in cal["motors"])]
+            source_pending = any(record.get("source", "measured") != "measured" for record in relevant)
+            if not source_pending:
+                break
+            if time.monotonic() >= measurement_deadline:
+                raise RuntimeError("Calibration requires measured idle positions; stop motion and retry")
+            time.sleep(0.05)
 
         # Key by integer DXL ID for unambiguous lookup in dual firmware where
         # multiple motors share the same bare name (e.g. two "wrist" motors).
@@ -2236,6 +2589,15 @@ class HandExo(object):
             self.set_zero_offset(motor_ref, adj_home)
             self.set_motor_limits(motor_ref, adj_limit_min, adj_limit_max)
             self.set_flip(motor_ref, vals["flip"])
+            if name in model_settings:
+                model, tau, has_trigger = model_settings[name]
+                if model is not None:
+                    self.set_joint_model(dxl_id, **model)
+                if has_trigger:
+                    if tau is None:
+                        self.clear_joint_trigger(dxl_id)
+                    else:
+                        self.set_joint_trigger(dxl_id, tau)
 
         profile_name = os.path.basename(filepath).removesuffix(".json")
         self.logger(f"Calibration profile '{profile_name}' applied from {filepath}")
@@ -2261,14 +2623,18 @@ class HandExo(object):
         direction: str,
         *,
         wait: bool = True,
-        timeout: float = 30.0,
+        timeout: float = 55.0,
     ):
         """Run an impedance range-of-motion sweep for one joint and direction.
 
         Firmware >= 0.8.0. Drives a single joint under current-mode control,
-        ramping current slowly until the joint just starts to move and then
-        resists a small extra nudge; that angle is reported as the endstop for
-        the requested direction. The joint is returned to where it started.
+        increasing effort while tracking measured net progress. A moved-then-stalled
+        joint reports its furthest measured angle as an endstop candidate.
+        v0.9.1 starts at 20 mA with 20-ms pulses and at least 400 ms of rest,
+        adjusting amplitude by at most 2 mA toward a 0.5-degree response.
+        A per-direction response model and telemetry gain learn in RAM from
+        valid observations. Excess travel aborts; automatic return is disabled
+        by default. Current/travel bounds come from firmware ROM_CAL_* settings.
 
         The global control mode MUST already be ``current`` (call
         :meth:`set_control_mode` with ``"current"`` first) and the joint must be
@@ -2292,7 +2658,7 @@ class HandExo(object):
                 later with :meth:`read_rom_result`.
             timeout (float): Seconds to wait for the result when ``wait`` is
                 True. The firmware bounds a sweep with its own ROM_CAL_TIMEOUT_MS
-                watchdog (15 s by default), so allow headroom over that.
+                watchdog (45 s in v0.9.1), so allow headroom over that.
 
         Returns:
             dict | str: Parsed result dict when ``wait`` is True (keys ``id``,
@@ -2324,7 +2690,7 @@ class HandExo(object):
         direction: str,
         *,
         wait: bool = True,
-        per_motor_timeout: float = 30.0,
+        per_motor_timeout: float = 55.0,
     ):
         """Impedance ROM sweep of every motor a gesture drives, one direction.
 
@@ -2373,28 +2739,47 @@ class HandExo(object):
             n_motors = int(m.group(1))
         results = []
         for _ in range(n_motors):
-            results.append(self.read_rom_result(timeout=per_motor_timeout))
+            result = self.read_rom_result(timeout=per_motor_timeout)
+            results.append(result)
+            if result.get("status") in ("aborted", "timeout"):
+                break
         return results
 
     def cancel_rom(self) -> str:
-        """Abort a running impedance ROM sweep (single or gesture) and return
-        the joint home. Cancels the whole campaign, not just the current motor.
+        """Abort a running impedance ROM sweep (single or gesture).
+
+        Cancels the whole campaign. v0.9.1 stops without an automatic return;
+        older firmware may command the joint back to its starting position.
 
         Safe to call when no sweep is running. Firmware >= 0.8.0.
         """
         return self._command_transaction("cancel_rom", expected="OK: cancel_rom")
 
-    def read_rom_result(self, timeout: float = 30.0) -> dict:
+    def read_rom_result(self, timeout: float = 55.0) -> dict:
         """Wait for and parse the asynchronous ``ROM_CAL_RESULT`` telemetry line.
 
         See :meth:`calibrate_rom`. Returns a dict with keys ``id`` (int),
         ``dir`` (str), ``home`` (float), ``endstop`` (float or None when no
         endstop was found), ``current_mA`` (float), and ``status`` (one of
-        ``ok``, ``ceiling``, ``timeout``, ``aborted``).
+        ``ok``, ``ceiling``, ``timeout``, ``aborted``, ``limit``).
+        Pulsed v0.9 firmware also reports ``pulses``, ``fit_samples``, and
+        ``model_gain``. Gain updates are volatile and affect estimates only.
 
         Raises:
             TimeoutError: If no ROM_CAL_RESULT line arrives within ``timeout``.
         """
+        read_event = getattr(self.device, "read_async_line", None)
+        if callable(read_event):
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                raw = read_event(max(0.0, deadline - time.monotonic()))
+                if not raw:
+                    break
+                if raw.startswith('ROM_CAL_RESULT:'):
+                    return self._parse_rom_result(raw)
+                if raw.startswith('ROM_CAL_PULSE:'):
+                    self.logger(raw)
+            raise TimeoutError(f"No ROM_CAL_RESULT received within {timeout:.1f} s")
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             raw = self._receive(
@@ -2427,12 +2812,13 @@ class HandExo(object):
 
         def _as_float(value):
             try:
-                return float(value)
+                number = float(value)
+                return number if math.isfinite(number) else None
             except (TypeError, ValueError):
                 return None
 
         endstop = fields.get("endstop")
-        return {
+        result = {
             "id": int(fields["id"]) if "id" in fields else None,
             "dir": fields.get("dir"),
             "home": _as_float(fields.get("home")),
@@ -2442,6 +2828,18 @@ class HandExo(object):
             "current_mA": _as_float(fields.get("current_mA")),
             "status": fields.get("status"),
         }
+        for key in ("pulses", "fit_samples", "pulse_on_ms", "max_pulse_on_ms", "recoveries"):
+            if key in fields:
+                result[key] = int(fields[key])
+        if "model_gain" in fields:
+            result["model_gain"] = _as_float(fields["model_gain"])
+        for key in ("reason", "fit_reason", "pulse_stop", "response_reason"):
+            if key in fields:
+                result[key] = fields[key]
+        for key in ("angle", "limit_min", "limit_max", "max_excursion_deg", "predicted_deg", "observed_deg"):
+            if key in fields:
+                result[key] = _as_float(fields[key])
+        return result
 
     def enable_oled(self) -> str:
         """

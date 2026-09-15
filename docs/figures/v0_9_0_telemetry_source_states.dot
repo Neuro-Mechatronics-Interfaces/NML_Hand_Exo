@@ -4,10 +4,15 @@ digraph telemetry_source {
   edge [fontname="Helvetica", fontsize=9];
 
   MEASURED [label="MEASURED\n(idle: read real DXL\nregisters via Sync Read)"];
-  ESTIMATED [label="ESTIMATED\n(motion active: interpolate\nfrom internal joint model)"];
+  ESTIMATED [label="ESTIMATED\n(shared bus: model telemetry;\ncontrol safety reads retained)"];
+  UNAVAILABLE [label="UNAVAILABLE\n(idle telemetry read failed;\nmodel not corrected)"];
 
   MEASURED -> ESTIMATED [label="movement command issued\n(directCommandActive / goal set /\ngesture or home in progress)"];
-  ESTIMATED -> ESTIMATED [label="motion continues:\nadvance model each tick"];
-  ESTIMATED -> MEASURED [label="motion settled + quiet for\nESTIMATE_HOLDOFF_MS\n(no bus contention)"];
+  ESTIMATED -> ESTIMATED [label="advance model with 1 ms substeps:\nnear position goal, use holding load;\ncontroller motion flags unchanged"];
+  ESTIMATED -> MEASURED [label="control ends motion + quiet holdoff\nand successful idle read\n(correct model from measurement)"];
+  MEASURED -> UNAVAILABLE [label="idle read incomplete/error"];
+  ESTIMATED -> UNAVAILABLE [label="quiet holdoff elapsed;\nidle read fails"];
+  UNAVAILABLE -> MEASURED [label="successful idle read"];
+  UNAVAILABLE -> ESTIMATED [label="new motion; use last model seed\n(if no seed: values unavailable)"];
   MEASURED -> MEASURED [label="idle: poll at telemetry rate"];
 }

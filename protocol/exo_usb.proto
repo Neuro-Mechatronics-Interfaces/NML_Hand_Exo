@@ -1,0 +1,67 @@
+syntax = "proto2";
+package exo_usb;
+
+// High-rate equivalents retain the ASCII command names and engineering units.
+// Slow configuration, help, info and ROM events stay on the primary text CDC.
+enum Command {
+  GET_TELEMETRY_FAST = 1;
+  SET_CURRENT = 2;        // signed mA, one explicit ID
+  SET_VELOCITY = 3;       // signed rpm, one explicit ID
+  SET_ABSOLUTE_ANGLE = 4; // degrees, one explicit ID
+  SET_ANGLE = 5;          // relative degrees, one explicit ID
+  STOP = 6;              // explicit IDs; empty IDs means emergency stop all
+  SET_JOINT_MODEL = 7;   // complete telemetry model parameters, one explicit ID
+  SET_ANGLES = 8;       // relative degrees, parallel motor_ids/values arrays
+  SET_ABSOLUTE_ANGLES = 9;
+  SET_CURRENTS = 10;    // signed mA, parallel motor_ids/values arrays
+  SET_FINGER_ANGLES = 11;
+  SET_GESTURE = 12;
+  SET_GESTURE_ANGLE = 13; // percent 0..100, gesture.name + value
+}
+message FingerAngles {
+  // Missing fields hold that joint; signed integers are rest-relative -100..100.
+  optional sint32 thumb = 1;
+  optional sint32 index = 2;
+  optional sint32 middle = 3;
+  optional sint32 ring = 4;
+  optional sint32 pinky = 5;
+  optional sint32 wrist = 6;
+}
+message Gesture {
+  required string name = 1;
+  optional string pose = 2;
+}
+message BatchResult {
+  optional uint32 motors = 1;
+  optional uint32 skipped_offline = 2;
+  optional uint32 commanded = 3;
+  optional uint32 held = 4;
+  optional uint32 unknown = 5;
+  optional uint32 zero_travel = 6;
+}
+message JointModel {
+  required float gain = 1;          // deg/s/mA
+  required float time_constant = 2; // seconds
+  required float max_velocity = 3;  // deg/s
+  required float stiffness = 4;     // Nm/deg
+  required float moment = 5;        // Nm
+}
+message Request {
+  required uint32 sequence = 1;
+  required Command command = 2;
+  repeated uint32 motor_ids = 3 [packed = true];
+  optional float value = 4;
+  optional JointModel joint_model = 5;
+  repeated float values = 6 [packed = true];
+  optional FingerAngles finger_angles = 7;
+  optional Gesture gesture = 8;
+}
+enum Status { OK = 0; INVALID_REQUEST = 1; REJECTED = 2; }
+message Response {
+  required uint32 sequence = 1;
+  required Status status = 2;
+  // NX v2 header + packed records, identical units, provenance and timestamps.
+  // Avoid varint expansion and preserve the existing SDK's validated decoder.
+  optional bytes nx_frame = 3;
+  optional BatchResult batch = 4;
+}

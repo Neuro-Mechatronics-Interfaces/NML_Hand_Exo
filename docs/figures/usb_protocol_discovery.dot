@@ -1,0 +1,15 @@
+digraph usb_protocol {
+  rankdir=TB;
+  node [shape=box, style="rounded,filled", fillcolor="#eef4fb", fontname="Helvetica", fontsize=11];
+  edge [fontname="Helvetica", fontsize=9];
+  DISCOVER [label="AutoSerialComm: open candidate CDC\nRead info and USB capabilities"];
+  LEGACY [label="ascii-nx: SerialComm / DualSerialComm\nText commands; NX on primary CDC"];
+  BINARY [label="protobuf-v1: ProtobufSerialComm\nPrimary text / secondary binary RPC\nFeatures gate model writes and batch/gesture motion"];
+  REJECT [label="Unknown protocol / missing sibling\nClose ports; no fallback guess", fillcolor="#fbeeee"];
+  SDK [label="HandExo API / GUI / benchmark\nTyped motor/model calls and common NX decoder"];
+  DISCOVER -> LEGACY [label="legacy metadata or ascii-nx"];
+  DISCOVER -> BINARY [label="explicit metadata + compatible runtime"];
+  DISCOVER -> REJECT [label="unsupported or incomplete layout"];
+  LEGACY -> SDK;
+  BINARY -> SDK [label="disable legacy NX polling\nand ASCII shadow streaming"];
+}

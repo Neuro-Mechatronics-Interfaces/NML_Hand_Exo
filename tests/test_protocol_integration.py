@@ -316,11 +316,11 @@ def test_velocity_mode_verifies_motor_hardware_limit_before_mode_change():
     assert "DIRECT_VELOCITY_LIMIT_RAW = 218" in config
     assert "readControlTableItem(VELOCITY_LIMIT, id)" in firmware
     assert "writeControlTableItem(\n            VELOCITY_LIMIT, id, DIRECT_VELOCITY_LIMIT_RAW)" in firmware
-    assert firmware.index("dxl_.torqueOff(motorIds_[i]);") < firmware.index(
+    assert firmware.index("dxl_.torqueOff(motorIds_[i])") < firmware.index(
         "ensureDirectVelocityLimit(motorIds_[i])"
     )
     assert 'motorControlMode_ = "DISABLED"' in firmware
-    assert "if (dxl_.ping(motorIds_[i]) == 0) continue;" in firmware
+    assert "if (EXO_PROFILE_CALL(DXL_READ, dxl_.ping(motorIds_[i])) == 0) continue;" in firmware
     assert "!directVelocityLimitVerified_[index]" in firmware
     assert "motor mode change failed safety verification" in parser
 

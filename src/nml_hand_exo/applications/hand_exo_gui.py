@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTextEdit, QGridLayout, QMessageBox, QGroupBox, QComboBox,
     QDialog, QInputDialog, QScrollArea, QFrame, QSizePolicy, QSpacerItem,
     QTabWidget, QTabBar, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QSpinBox, QDoubleSpinBox,
+    QSpinBox, QDoubleSpinBox, QSplitter, QStackedWidget,
 )
 from PyQt5.QtCore import Qt, QEvent, QSettings, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QFontMetrics, QIcon
@@ -42,7 +42,10 @@ from nml_hand_exo.calibration import (
     set_default_profile,
 )
 from nml_hand_exo.applications.styles import DARK_STYLE
-from nml_hand_exo.interface import HandExo, SerialComm, DualSerialComm
+from nml_hand_exo.applications._hand_state import motor_display_sample
+from nml_hand_exo.applications._telemetry_plot import finite_curve_data
+from nml_hand_exo.calibration.rom import build_auto_rom_queue
+from nml_hand_exo.interface import HandExo, SerialComm, DualSerialComm, AutoSerialComm
 from nml_hand_exo.interface._gesture_protocol import (
     COMMAND_PASSTHROUGH_ACK,
     POSE_QUERY,
@@ -99,6 +102,7 @@ except ImportError:
 # numeric table alone if it is missing.
 try:
     import pyqtgraph as _pg
+    import numpy as _np
     _PYQTGRAPH_AVAILABLE = True
 except ImportError:
     _pg = None                      # type: ignore[assignment]
@@ -720,7 +724,7 @@ class HandSkeletonWidget(QWidget):
     """
     2D dorsal-view stick-figure hand skeleton, driven by normalised motor states.
 
-    Call update_motor_states(t_dict, connected) after each angle poll.
+    Call update_joint_samples(samples, ...) with one decoded telemetry snapshot.
     Each t-value is in [0, 1]:  0 = extended / open,  1 = flexed / closed.
 
     Motor → visual role
@@ -730,7 +734,7 @@ class HandSkeletonWidget(QWidget):
       thumbadd                       →  thumb lateral abduction angle
       thumbrot                       →  thumb metacarpal in-plane rotation (±7°)
       wrist                          →  tilt of the whole hand assembly (±9°)
-      wrist2                         →  omitted (v1; pronation/supination not shown)
+      wrist2                         →  paired wrist actuator; no independent visual axis
     """
 
     # (MCP x, MCP y, proximal length, distal length) in hand-unit space.
@@ -746,20 +750,62 @@ class HandSkeletonWidget(QWidget):
         super().__init__(parent)
         self._t: dict[str, float] = {}   # normalised motor states
         self._connected = False
+        self._samples = {}
+        self._side = "right"
+        self._received_at = None
+        self._stale_after_s = 1.0
+        self._age_timer = QTimer(self)
+        self._age_timer.setInterval(250)
+        self._age_timer.timeout.connect(self.update)
         self.setMinimumSize(260, 320)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-    def update_motor_states(self, t_dict: dict[str, float], connected: bool = True):
-        """Push new normalised [0, 1] states and request a repaint."""
-        self._t = dict(t_dict)
-        self._connected = connected
+    def update_motor_states(self, t_dict: dict, connected: bool = True):
+        """Compatibility entry point; a caller without provenance is unknown."""
+        self.update_joint_samples({name: {"fraction": value, "source": "unknown"}
+                                   for name, value in t_dict.items()}, connected=connected)
+
+    def update_joint_samples(self, samples: dict, *, connected=True, side="right", stale_after_s=1.0):
+        """Display one telemetry snapshot, retaining a missing joint's last shape."""
+        if side != self._side:
+            self._t.clear()
+        self._samples = {name: dict(sample) for name, sample in samples.items()}
+        self._connected, self._side = connected, side
+        self._stale_after_s = stale_after_s
+        received = [v.get("host_received_monotonic_s") for v in samples.values()
+                    if v.get("host_received_monotonic_s") is not None]
+        self._received_at = min(received) if received else time.monotonic()
+        if not connected:
+            self._t.clear()
+            self._samples.clear()
+            self._received_at = None
+            self._age_timer.stop()
+        else:
+            for name, sample in samples.items():
+                value = sample.get("fraction")
+                if value is not None and math.isfinite(value):
+                    self._t[name] = max(0.0, min(1.0, float(value)))
+                else:
+                    self._samples[name]["source"] = "unavailable"
+            self._age_timer.start()
+        self.setToolTip("Red solid: measured; amber dashed: estimated; grey dotted: unavailable/stale.\n"
+                       "Shapes are schematic. Missing joints retain their last shape in grey.\n"
+                       "Last sample:\n" + "\n".join(
+            f"{name}: {sample.get('source', 'unknown')}; sample uptime ms={sample.get('sample_timestamp_ms')}; UTC ms={sample.get('utc_timestamp_ms')}"
+            for name, sample in self._samples.items()
+        ))
         self.update()
+
+    def _joint_source(self, name):
+        if self._received_at is None or time.monotonic() - self._received_at > self._stale_after_s:
+            return "unavailable"
+        return self._samples.get(name, {}).get("source", "unavailable")
 
     # -- Paint ---------------------------------------------------------------
 
     def paintEvent(self, event):
         from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QPolygonF
-        from PyQt5.QtCore import QPointF
+        from PyQt5.QtCore import QPointF, QRect
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
@@ -775,8 +821,13 @@ class HandSkeletonWidget(QWidget):
         # ── Scale / origin ───────────────────────────────────────────────────
         # Hand bounding box (unit space): ~0.44 wide (−0.24 … +0.20),
         #   ~0.78 tall (−0.10 forearm … +0.68 middle tip at full extension).
-        PAD = 18
-        scale = min((w - 2 * PAD) / 0.44, (h - 2 * PAD) / 0.78)
+        sources = {self._joint_source(name) for name in self._samples} or {"unavailable"}
+        painter.setPen(QColor("#bbbbbb"))
+        painter.setFont(QFont("Segoe UI", 9))
+        painter.drawText(QRect(8, 4, w - 16, 52), Qt.AlignTop | Qt.TextWordWrap,
+                         f"{self._side.title()} hand: " + ", ".join(sorted(sources)))
+        PAD = 24
+        scale = min((w - 2 * PAD) / 0.44, (h - 2 * PAD - 32) / 0.78)
         # ox: keep the 0.44-unit box horizontally centred; thumb extends left so
         # we bias the origin 0.24 units from the left edge of that box.
         ox = PAD + 0.24 * scale + max(0.0, (w - 2 * PAD - 0.44 * scale) / 2)
@@ -784,14 +835,17 @@ class HandSkeletonWidget(QWidget):
 
         def _px(x, y):
             """Hand-unit coords → screen pixels (y-axis flipped for screen)."""
-            return ox + x * scale, oy - y * scale
+            px = ox + x * scale
+            return (w - px if self._side == "left" else px), oy - y * scale
 
         # ── Pens / brushes ───────────────────────────────────────────────────
         lw = max(2, int(scale * 0.022))
         bone_pen  = QPen(QColor("#c0392b"), lw, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         thin_pen  = QPen(QColor("#3a3a3a"), max(1, lw - 1), Qt.SolidLine, Qt.RoundCap)
         joint_brush  = QBrush(QColor("#777777"))
-        accent_brush = QBrush(QColor("#c0392b"))
+        wrist_color = {"measured": "#c0392b", "estimated": "#e5a63b",
+                       "unknown": "#999999"}.get(self._joint_source("wrist"), "#555555")
+        accent_brush = QBrush(QColor(wrist_color))
         palm_brush   = QBrush(QColor("#222222"))
         jr = max(3, int(scale * 0.028))  # joint dot radius (px)
 
@@ -826,9 +880,15 @@ class HandSkeletonWidget(QWidget):
             return [_rot(xi, yi) for xi, yi in pts]
 
         # ── Drawing helpers ──────────────────────────────────────────────────
-        def _chain(pts):
+        def _chain(pts, source):
             """Draw bone segments between consecutive rotated unit-space points."""
-            painter.setPen(bone_pen)
+            color, style = {
+                "measured": ("#c0392b", Qt.SolidLine),
+                "estimated": ("#e5a63b", Qt.DashLine),
+                "unknown": ("#999999", Qt.DashDotLine),
+                "unavailable": ("#555555", Qt.DotLine),
+            }.get(source, ("#555555", Qt.DotLine))
+            painter.setPen(QPen(QColor(color), lw, style, Qt.RoundCap, Qt.RoundJoin))
             for i in range(len(pts) - 1):
                 x1, y1 = _px(*pts[i])
                 x2, y2 = _px(*pts[i + 1])
@@ -843,10 +903,7 @@ class HandSkeletonWidget(QWidget):
             painter.drawEllipse(int(cx_ - cr), int(cy_ - cr), cr * 2, cr * 2)
 
         # ── Forearm stub (fixed — does not rotate with wrist tilt) ───────────
-        painter.setPen(thin_pen)
-        ax, ay = _px(0.0, -0.08)
-        bx, by = _px(0.0,  0.00)
-        painter.drawLine(int(ax), int(ay), int(bx), int(by))
+        _chain([(0.0, -0.08), (0.0, 0.0)], self._joint_source("wrist"))
         # Wrist joint dot in accent colour, drawn here so it sits on top of
         # the palm polygon painted next.
         _dot(0.0, 0.0, jr + 2, accent_brush)
@@ -863,7 +920,7 @@ class HandSkeletonWidget(QWidget):
         painter.setPen(bone_pen)
 
         # ── Fingers ──────────────────────────────────────────────────────────
-        # Live angles come from get_angle:all → firmware getRelativeAngle.
+        # Latest measured/estimated relative angles come from NX telemetry.
         # Normalised t: 0 = home/extended, 1 = calibrated maximum flexion.
         # MCP bends up to 70°, PIP adds up to 50° — producing a natural curl.
         for name, (mx, my, prox, dist) in self._FINGER_CFG.items():
@@ -872,7 +929,7 @@ class HandSkeletonWidget(QWidget):
                 (prox, t * 70.0),   # MCP joint
                 (dist, t * 50.0),   # PIP joint (anatomically coupled for v1)
             ])
-            _chain(pts)
+            _chain(pts, self._joint_source(name))
             for pt in pts[1:]:  # skip the knuckle — it's on the palm edge
                 _dot(*pt)
 
@@ -891,7 +948,9 @@ class HandSkeletonWidget(QWidget):
             (0.130, 0.0),            # metacarpal — no intrinsic bend
             (0.115, t_flex * 60.0),  # proximal phalanx — flexion curl
         ])
-        _chain(thumb_pts)
+        thumb_sources = {self._joint_source(name) for name in ("thumbadd", "thumbrot", "thumbflex")}
+        thumb_source = next((v for v in ("unavailable", "unknown", "estimated", "measured") if v in thumb_sources), "unavailable")
+        _chain(thumb_pts, thumb_source)
         for pt in thumb_pts:
             _dot(*pt, r=jr - 1)
 
@@ -1353,6 +1412,7 @@ class SerialWorker(QThread):
 
     def run(self):
         while self._run:
+            self._drain_async_events()
             try:
                 item = self._urgent_q.get_nowait()
             except queue.Empty:
@@ -1382,6 +1442,18 @@ class SerialWorker(QThread):
                 finally:
                     with self._state_lock:
                         self._poll_pending = False
+
+    def _drain_async_events(self):
+        if self._exo is None:
+            return
+        try:
+            def drain(raw):
+                callback = getattr(raw, "drain_async_events", None)
+                return callback() if callable(callback) else []
+            for line in self._with_raw_exo(drain):
+                self.line_received.emit(line)
+        except Exception as exc:
+            self._log_poll_error(f"[events] {exc}")
 
     def _handle_direct_actions(self):
         with self._state_lock:
@@ -1445,7 +1517,18 @@ class SerialWorker(QThread):
                 if realtime_control
                 else self._motor_ids
             )
-        if include_telemetry and poll_ids and realtime_control and shadow_telemetry:
+        joint_model_firmware = self._with_raw_exo(
+            lambda raw: (getattr(raw, "_firmware_version", None) or ()) >= (0, 9, 0)
+        )
+        if include_telemetry and poll_ids and realtime_control and shadow_telemetry and joint_model_firmware:
+            # Preserve the optional recording snapshot, but never use its paused
+            # sampler as the live hand state while the joint model owns telemetry.
+            try:
+                result["shadow"] = self._get_shadow_telemetry()
+            except Exception as exc:
+                self._log_poll_error(f"[poll] shadow telemetry failed: {exc}")
+                self.shadow_failed.emit(str(exc))
+        if include_telemetry and poll_ids and realtime_control and shadow_telemetry and not joint_model_firmware:
             try:
                 shadow = self._get_shadow_telemetry()
                 records = shadow.get("records", {})
@@ -1491,7 +1574,7 @@ class SerialWorker(QThread):
                 self.shadow_failed.emit(str(exc))
                 self.completed.emit(result)
                 return
-        if include_telemetry and poll_ids:
+        if poll_ids and (include_telemetry or joint_model_firmware):
             try:
                 fast = self._get_fast_telemetry(
                     EMG_FAST_TELEMETRY_TIMEOUT_S if realtime_control else 0.5,
@@ -1535,6 +1618,15 @@ class SerialWorker(QThread):
                     "fast_telemetry_flags": first_record.get("flags"),
                     "motor_firmware_timestamp_ms": timestamp_by_id,
                     "motor_fast_telemetry_flags": flags_by_id,
+                    "motor_field_sources": {
+                        mid: {field: data.get(field + "_source", "unavailable")
+                              for field in ("position", "current", "torque", "velocity")}
+                        for mid, data in fast.items()
+                    },
+                    "motor_sources": {mid: data.get("sources", 0) for mid, data in fast.items()},
+                    "motor_utc_timestamp_ms": {mid: data.get("utc_timestamp_ms") for mid, data in fast.items()},
+                    "motor_sample_timestamp_ms": {mid: data.get("sample_timestamp_ms") for mid, data in fast.items()},
+                    "utc_synchronized": bool(fast) and all(data.get("utc_synchronized", False) for data in fast.values()),
                     "host_poll_completed_wall_s": time.time(),
                     "host_poll_completed_monotonic_s": time.monotonic(),
                 }
@@ -1542,7 +1634,7 @@ class SerialWorker(QThread):
                 return
             except Exception as exc:
                 self._log_poll_error(f"[poll] fast telemetry failed: {exc}")
-        if realtime_control or self._uses_dual_serial_transport():
+        if joint_model_firmware or realtime_control or self._uses_dual_serial_transport():
             # Text fallback can block for several sequential 500 ms reads.
             # During EMG control, or whenever dual CDC is active, missing
             # telemetry is safer than delaying the next command behind a set
@@ -1660,7 +1752,7 @@ class SerialWorker(QThread):
 
     def _uses_dual_serial_transport(self) -> bool:
         return self._with_raw_exo(
-            lambda raw_exo: isinstance(raw_exo.device, DualSerialComm)
+            lambda raw_exo: isinstance(raw_exo.device, DualSerialComm) or getattr(raw_exo.device, "is_split", False)
         )
 
     def _transact(self, command: str, timeout: float) -> str:
@@ -1703,7 +1795,62 @@ class SerialWorker(QThread):
 #  Main GUI
 # ==========================================================================
 
+class _CurrentPageTabWidget(QTabWidget):
+    """Let the outer scroll area fit the visible page, not the tallest tab."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.currentChanged.connect(lambda _index: self.updateGeometry())
+
+    def _current_height_hint(self, minimum):
+        hint = super().minimumSizeHint() if minimum else super().sizeHint()
+        stack = self.findChild(QStackedWidget, "qt_tabwidget_stackedwidget")
+        page = self.currentWidget()
+        if stack is not None and page is not None:
+            stack_hint = stack.minimumSizeHint() if minimum else stack.sizeHint()
+            page_hint = page.minimumSizeHint() if minimum else page.sizeHint()
+            # Hidden pages must not impose their height OR width on the scroll
+            # area. Keep only the frame and the tab bar's own width requirement.
+            chrome = max(0, hint.height() - stack_hint.height())
+            hint.setHeight(max(0, page_hint.height(), page.minimumHeight()) + chrome)
+            frame_width = max(0, hint.width() - stack_hint.width())
+            bar_hint = self.tabBar().minimumSizeHint() if minimum else self.tabBar().sizeHint()
+            hint.setWidth(max(0, page_hint.width(), page.minimumWidth(), bar_hint.width()) + frame_width)
+        return hint
+
+    def sizeHint(self):
+        return self._current_height_hint(False)
+
+    def minimumSizeHint(self):
+        return self._current_height_hint(True)
+
+    def hasHeightForWidth(self):
+        page = self.currentWidget()
+        return page is not None and page.hasHeightForWidth()
+
+    def heightForWidth(self, width):
+        # QScrollArea also asks this independently of minimumSizeHint(). Qt's
+        # default QTabWidget implementation includes hidden pages and treats
+        # their preferred height as a minimum, stretching the telemetry plot.
+        page = self.currentWidget()
+        if page is None:
+            return self.minimumSizeHint().height()
+        hint = self.minimumSizeHint()
+        chrome = max(0, hint.height() - max(page.minimumSizeHint().height(), page.minimumHeight()))
+        frame_width = max(0, self.width() - page.width())
+        layout = page.layout()
+        if layout is not None and layout.hasHeightForWidth():
+            height = layout.minimumHeightForWidth(max(0, width - frame_width))
+        elif page.hasHeightForWidth():
+            height = page.heightForWidth(max(0, width - frame_width))
+        else:
+            height = page.minimumSizeHint().height()
+        return max(height, page.minimumHeight(), page.minimumSizeHint().height()) + chrome
+
+
 class HandExoGUI(QWidget):
+
+    _connection_progress = pyqtSignal(str)
 
     # Firmware builds whose built-in ROM has been reviewed for calibration-free
     # operation. A device merely reporting limits is not enough to authorize
@@ -1719,6 +1866,8 @@ class HandExoGUI(QWidget):
             self.setWindowIcon(QIcon(WINDOW_ICON_PATH))
         self.exo = None
         self.exo_connected = False
+        self._connecting = False
+        self._connection_progress.connect(self._on_connection_progress)
         self.n_motors = 0
         self.motor_names = []
         self.motor_widgets = []  # list of dicts per motor row
@@ -1731,6 +1880,9 @@ class HandExoGUI(QWidget):
         # to normalise live relative angles against per-motor calibrated limits.
         self._active_cal_profile: dict | None = None
         self._firmware_limits_by_id: dict[int, tuple[float, float]] = {}
+        self._hand_calibration_by_id = {}
+        self._latest_hand_angles = {}
+        self._latest_hand_meta = None
         self._firmware_version_text = "unknown"
         self._firmware_build_side = "unknown"
         self._validated_firmware_reason = "not connected"
@@ -1789,6 +1941,9 @@ class HandExoGUI(QWidget):
         )
         self._lsl_torque = NumericLSLTelemetryOutlet(
             "NMLHandExoMotorTorque", "MotorTorque", "Nm"
+        )
+        self._lsl_sources = NumericLSLTelemetryOutlet(
+            "NMLHandExoTelemetrySources", "TelemetrySources", "source_bits"
         )
         self._udp_command_worker = UDPCommandWorker(self)
         self._udp_command_worker.command_received.connect(self._on_udp_command)
@@ -1959,7 +2114,7 @@ class HandExoGUI(QWidget):
         self._build_connection_section()
 
         # Tab widget: Controls | Telemetry
-        self.main_tabs = QTabWidget()
+        self.main_tabs = _CurrentPageTabWidget()
         self.main_tabs.setUsesScrollButtons(True)
         self.main_tabs.setElideMode(Qt.ElideRight)
         self.main_tabs.tabBar().installEventFilter(self)
@@ -1995,12 +2150,12 @@ class HandExoGUI(QWidget):
         udp_page = self._build_udp_bindings_tab()
         settings_page = self._build_settings_tab()
 
-        monitor_tabs = QTabWidget()
+        monitor_tabs = _CurrentPageTabWidget()
         monitor_tabs.setDocumentMode(True)
         monitor_tabs.addTab(telemetry_page, "Telemetry")
         monitor_tabs.addTab(hand_state_page, "Hand State")
 
-        integrations_tabs = QTabWidget()
+        integrations_tabs = _CurrentPageTabWidget()
         integrations_tabs.setDocumentMode(True)
         integrations_tabs.addTab(teleop_page, "WebSocket Teleop")
         integrations_tabs.addTab(udp_page, "UDP Bindings")
@@ -2073,7 +2228,10 @@ class HandExoGUI(QWidget):
         self._telem_table.setAlternatingRowColors(True)
         self._telem_table.setMinimumHeight(160)
 
-        layout.addWidget(self._telem_table)
+        self._telem_splitter = QSplitter(Qt.Horizontal)
+        self._telem_splitter.setChildrenCollapsible(False)
+        self._telem_splitter.addWidget(self._telem_table)
+        layout.addWidget(self._telem_splitter, stretch=1)
 
         # Live scrolling torque plot. One curve per motor, torque (N*m) vs the
         # last TORQUE_PLOT_WINDOW_S seconds. Fed from the same poll/render path
@@ -2091,9 +2249,12 @@ class HandExoGUI(QWidget):
             plot.setLabel("bottom", "Time", units="s")
             plot.showGrid(x=True, y=True, alpha=0.2)
             plot.addLegend(offset=(-10, 10))
-            plot.setMinimumHeight(220)
+            plot.setMinimumHeight(160)
             self._torque_plot = plot
-            layout.addWidget(plot, stretch=1)
+            self._telem_splitter.addWidget(plot)
+            self._telem_splitter.setStretchFactor(0, 2)
+            self._telem_splitter.setStretchFactor(1, 3)
+            self._telem_splitter.setSizes([400, 600])
         else:
             note = QLabel("Install pyqtgraph to see the live torque plot.")
             note.setStyleSheet("color: #888888; font-size: 10px;")
@@ -2107,7 +2268,7 @@ class HandExoGUI(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(4)
 
-        self._vis_status_lbl = QLabel("No profile loaded — showing home position")
+        self._vis_status_lbl = QLabel("Hand state uses device calibration; unavailable joints are grey")
         self._vis_status_lbl.setStyleSheet("color: #888888; font-size: 10px;")
         self._vis_status_lbl.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._vis_status_lbl)
@@ -3102,7 +3263,12 @@ class HandExoGUI(QWidget):
             self.motor_names,
             nominal_srate=nominal_rate,
         )
-        errors = [e for e in (self._lsl_angles.last_error, self._lsl_torque.last_error) if e]
+        self._lsl_sources.configure(
+            enabled and (self._lsl_angles_cb.isChecked() or self._lsl_torque_cb.isChecked()),
+            self.motor_names, nominal_srate=nominal_rate,
+        )
+        errors = [e for e in (self._lsl_angles.last_error, self._lsl_torque.last_error,
+                              self._lsl_sources.last_error) if e]
         if errors:
             self._lsl_status_lbl.setText(f"LSL unavailable: {errors[0]}")
             self._lsl_status_lbl.setStyleSheet("color: #c0392b;")
@@ -3924,15 +4090,6 @@ class HandExoGUI(QWidget):
         if not pose:
             return
         self._send_udp_pose_ack(host, port, value, pose)
-        inset_state = {}
-        for joint in UDP_GESTURE_JOINTS:
-            fraction = (pose.get(joint) or {}).get("fraction")
-            if isinstance(fraction, int) and 0 <= fraction <= 100:
-                visual_joint = "thumbflex" if joint == "thumb" else joint
-                inset_state[visual_joint] = fraction / 100.0
-        if inset_state:
-            self._udp_hand_vis.update_motor_states(inset_state, connected=True)
-
     def _send_initial_udp_ack(self, host: str, port: int):
         if (
             self._udp_source_live
@@ -4810,7 +4967,7 @@ class HandExoGUI(QWidget):
             self._vis_status_lbl.setText(f"Profile: {name}")
             self._vis_status_lbl.setStyleSheet("color: #27ae60; font-size: 10px;")
         else:
-            self._vis_status_lbl.setText("No profile loaded — showing home position")
+            self._vis_status_lbl.setText("Hand state uses device calibration; unavailable joints are grey")
             self._vis_status_lbl.setStyleSheet("color: #888888; font-size: 10px;")
 
     def _update_vis_status_dual(self):
@@ -4840,7 +4997,7 @@ class HandExoGUI(QWidget):
     def _build_rom_cal_controls(self) -> QWidget:
         """Impedance ROM calibration controls for the Telemetry tab.
 
-        Fires the firmware `calibrate_rom_gesture` sweep and shows the endstops
+        Queues explicit-ID `calibrate_rom` sweeps and shows the endstops
         it discovers, right beside the live torque plot so torque can be watched
         climbing into each endstop. Report-only until Apply is pressed.
         """
@@ -4851,7 +5008,8 @@ class HandExoGUI(QWidget):
         warn = QLabel(
             "Drives current into the selected joints to find their endstops. "
             "Keep an emergency stop within reach. Nothing changes stored limits "
-            "until you press Apply."
+            "until you press Apply. Firmware v0.9.1 starts at 20 mA / 20 ms, "
+            "learns a local pulse response, and leaves return-home to the operator."
         )
         warn.setWordWrap(True)
         warn.setStyleSheet("color: #f39c12; font-size: 10px;")
@@ -4892,8 +5050,9 @@ class HandExoGUI(QWidget):
 
         # Per-run state.
         self._rom_running = False
-        self._rom_current = None      # (gesture, direction) of the in-flight cmd
-        self._rom_queue = []          # list of (gesture, direction) still to send
+        self._rom_current = None      # (gesture, direction, DXL ID) in flight
+        self._rom_queue = []          # remaining explicit-ID commands
+        self._rom_target_ids = []
         self._rom_expected = 0        # ROM_CAL_RESULT lines expected for current cmd
         self._rom_seen = 0            # lines seen for current cmd
         self._rom_results = []        # list of parsed result dicts (all runs)
@@ -4920,7 +5079,16 @@ class HandExoGUI(QWidget):
         direction = self._rom_dir_combo.currentText()
         gestures = list(UDP_GESTURE_JOINTS) if gesture == "all" else [gesture]
         directions = ["flex", "extend"] if direction == "both" else [direction]
-        self._rom_queue = [(g, d) for g in gestures for d in directions]
+        self._rom_queue = build_auto_rom_queue(
+            gestures, directions,
+            [(mid, widget.get("cmd_name", widget["name"]))
+             for mid, widget in zip(self._motor_dxl_id, self.motor_widgets)],
+            self.mode_combo.currentText(),
+        )
+        if not self._rom_queue:
+            self._rom_status_lbl.setText("No matching motors in the selected side.")
+            return
+        self._rom_target_ids = sorted({entry[2] for entry in self._rom_queue})
         self._rom_results = []
         self._rom_running = True
         self._rom_start_btn.setEnabled(False)
@@ -4928,31 +5096,29 @@ class HandExoGUI(QWidget):
         self._rom_apply_btn.setEnabled(False)
         # Reset the torque plot history so the sweep starts on a clean trace.
         self._rebuild_torque_plot()
-        # calibrate_rom_gesture requires CURRENT mode; set it once up front.
+        # The firmware sweep requires global CURRENT mode, which drops torque.
         self._serial_worker.enqueue("set_control_mode:all:current", timeout=2.0)
         self._rom_status_lbl.setText("Set CURRENT mode; starting sweep…")
         self._rom_send_next()
 
     def _rom_send_next(self):
-        """Send the next queued gesture/direction, or finish the run."""
+        """Send the next explicit motor/direction, or finish the run."""
         if not self._rom_queue:
             self._rom_finish_run()
             return
-        gesture, direction = self._rom_queue.pop(0)
-        self._rom_current = (gesture, direction)
-        self._rom_expected = 0
+        gesture, direction, motor_id = self._rom_queue.pop(0)
+        self._rom_current = (gesture, direction, motor_id)
+        self._rom_expected = 1
         self._rom_seen = 0
         self._rom_status_lbl.setText(
-            f"Sweeping {gesture} {direction}…  ({len(self._rom_queue)} more queued)"
+            f"Sweeping {gesture} {direction}, ID {motor_id}…  ({len(self._rom_queue)} more queued)"
         )
-        # The arming ack ("OK: calibrate_rom_gesture ... motors=N") and the async
-        # ROM_CAL_RESULT lines both arrive on line_received (see _on_serial_line).
+        # Exactly one result is expected, independent of the other physical hand.
         self._serial_worker.enqueue(
-            f"calibrate_rom_gesture:{gesture}:{direction}", timeout=3.0
+            f"calibrate_rom:{motor_id}:{direction}", timeout=3.0
         )
-        # Safety net: if results never complete, move on after the firmware's own
-        # per-motor watchdog would have fired for every motor in the gesture.
-        self._rom_result_timer.start(60_000)
+        # Covers the firmware's 20 s sweep + 4 s return + command transit.
+        self._rom_result_timer.start(55_000)
 
     def _on_rom_serial_line(self, line: str):
         """Handle ROM-related firmware lines seen on the serial worker signal.
@@ -4963,16 +5129,35 @@ class HandExoGUI(QWidget):
         if not getattr(self, "_rom_running", False):
             return
         s = line.strip()
-        if s.startswith("OK: calibrate_rom_gesture"):
-            m = re.search(r"motors=(\d+)", s)
-            self._rom_expected = int(m.group(1)) if m else 1
-            self._rom_seen = 0
+        if s.startswith(("ERROR: calibrate_rom", "[cmd] calibrate_rom:",
+                         "[cmd] set_control_mode:all:current")):
+            self._log(f"[rom] stopping after command failure: {s}")
+            self._cancel_rom_calibration()
+            self._rom_status_lbl.setText(f"Stopped: {s}")
             return
         if s.startswith("ROM_CAL_RESULT:"):
             result = HandExo._parse_rom_result(s)
-            if self._rom_current:
-                result["gesture"] = self._rom_current[0]
+            if not self._rom_current:
+                return
+            gesture, direction, motor_id = self._rom_current
+            if result.get("id") != motor_id or result.get("dir") != direction:
+                return  # stale result, inactive side, or another consumer's sweep
+            result["gesture"] = gesture
             self._rom_results.append(result)
+            if result.get("status") in ("aborted", "timeout"):
+                self._cancel_rom_calibration()
+                self._rom_status_lbl.setText(
+                    f"Stopped: ID {motor_id} reported {result['status']} "
+                    f"({result.get('reason', 'reason unavailable on this firmware')})."
+                )
+                return
+            if result.get("status") == "limit":
+                self._log(
+                    f"[rom] ID {motor_id} {direction}: {result.get('reason', 'stored limit')}; "
+                    f"angle={result.get('angle')}°, limits="
+                    f"[{result.get('limit_min')}, {result.get('limit_max')}]°. "
+                    "No new endstop; check the calibration profile for this joint."
+                )
             self._mark_rom_endstop(result)
             self._rom_seen += 1
             if self._rom_expected and self._rom_seen >= self._rom_expected:
@@ -4980,14 +5165,16 @@ class HandExoGUI(QWidget):
                 self._rom_send_next()
 
     def _rom_result_timeout(self):
-        """A gesture's results did not all arrive; log and move on."""
+        """Abort on a lost result instead of starting another unconfirmed sweep."""
         if not self._rom_running:
             return
         self._log(f"[rom] timed out waiting for results of {self._rom_current}")
-        self._rom_send_next()
+        self._cancel_rom_calibration()
+        self._rom_status_lbl.setText("Stopped: timed out waiting for a motor result.")
 
     def _rom_finish_run(self):
         self._rom_running = False
+        self._rom_current = None
         self._rom_result_timer.stop()
         self._rom_start_btn.setEnabled(True)
         self._rom_cancel_btn.setEnabled(False)
@@ -4999,16 +5186,15 @@ class HandExoGUI(QWidget):
             f"{len(self._rom_results)} motor sweep(s). "
             + ("Press Apply to write limits." if ok else "")
         )
-        # Torque left the motors energized in CURRENT mode with zero goal; make
-        # sure nothing is driving.
-        self._serial_worker.enqueue("disable:all", timeout=2.0)
+        # Ensure every ID belonging to this campaign is disabled on completion.
+        for motor_id in self._rom_target_ids:
+            self._serial_worker.enqueue_send(f"disable:{motor_id}")
 
     def _cancel_rom_calibration(self):
         if not self._rom_running:
             return
         self._rom_queue = []
         self._serial_worker.enqueue("cancel_rom", timeout=2.0)
-        self._serial_worker.enqueue("disable:all", timeout=2.0)
         self._rom_finish_run()
         self._rom_status_lbl.setText("Cancelled.")
 
@@ -5065,15 +5251,19 @@ class HandExoGUI(QWidget):
             pass
         self._torque_curves = {}
         self._torque_history = {}
+        self._torque_estimated_curves = {}
         self._torque_plot_t0 = time.monotonic()
         # A distinct color per motor from pyqtgraph's intColor palette.
         n = max(1, len(self.motor_names))
         for i, name in enumerate(self.motor_names):
             pen = _pg.mkPen(_pg.intColor(i, hues=n), width=2)
             self._torque_curves[name] = self._torque_plot.plot([], [], pen=pen, name=name)
-            self._torque_history[name] = (deque(), deque())
+            self._torque_estimated_curves[name] = self._torque_plot.plot(
+                [], [], pen=_pg.mkPen(_pg.intColor(i, hues=n), width=2, style=Qt.DashLine)
+            )
+            self._torque_history[name] = (deque(), deque(), deque())
 
-    def _push_torque_plot(self, torque_by_name: dict):
+    def _push_torque_plot(self, torque_by_name: dict, sources_by_name=None):
         """Append one torque sample per motor and redraw the scrolling window.
 
         Called from _apply_telemetry_result on the existing render cadence, so
@@ -5086,16 +5276,29 @@ class HandExoGUI(QWidget):
         cutoff = t - TORQUE_PLOT_WINDOW_S
         for name, curve in self._torque_curves.items():
             value = torque_by_name.get(name)
-            if value is None:
-                continue
-            times, values = self._torque_history[name]
+            source = (sources_by_name or {}).get(name, "measured")
+            estimated = source == "estimated"
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                value = float("nan")
+            if not math.isfinite(value) or source == "unavailable":
+                value = float("nan")
+            times, values, estimates = self._torque_history[name]
             times.append(t)
-            values.append(float(value))
+            values.append(value if not estimated else float("nan"))
+            estimates.append(value if estimated else float("nan"))
             # Drop samples older than the scrolling window.
             while times and times[0] < cutoff:
                 times.popleft()
                 values.popleft()
-            curve.setData(list(times), list(values))
+                estimates.popleft()
+            for item, samples in ((curve, values), (self._torque_estimated_curves[name], estimates)):
+                x, y, connections = finite_curve_data(times, samples)
+                item.setData(x, y, connect=_np.asarray(connections, dtype=bool))
+        # Keep the live time window advancing even when every curve is empty.
+        # Old ROM markers must not pin the view to a completed sweep's time.
+        self._torque_plot.setXRange(max(0.0, cutoff), max(0.1, t), padding=0)
 
     def _poll_telemetry(self):
         self._request_device_poll(force_telemetry=True)
@@ -5202,6 +5405,8 @@ class HandExoGUI(QWidget):
         if not self.exo_connected:
             return
         relative = result.get("relative")
+        self._latest_hand_angles = relative or {}
+        self._latest_hand_meta = result.get("telemetry_meta")
         positions = result.get("positions")
         torques = result.get("torques")
         currents = result.get("currents")
@@ -5209,12 +5414,13 @@ class HandExoGUI(QWidget):
         if not result.get("telemetry_requested", True):
             # Teleop owns its configured stream rate and intentionally renders
             # each sensor frame; normal telemetry uses the decoupled renderer.
-            if relative is not None:
-                self._apply_motor_angles(relative)
+            self._apply_motor_angles(relative or {}, result.get("telemetry_meta"))
             return
         if positions is None and torques is None and currents is None and velocities is None:
+            self._reset_telemetry_buffers()
             self._buffer_telemetry_field("relative", relative)
-            self._telemetry_buffer_dirty = bool(relative)
+            self._buffered_telemetry_meta = {"read_failed": True}
+            self._telemetry_buffer_dirty = True
             ts = datetime.now().strftime("%H:%M:%S")
             self._telem_status_lbl.setText(f"Read failed  {ts}")
             self._telem_status_lbl.setStyleSheet("color: #c0392b;")
@@ -5224,6 +5430,8 @@ class HandExoGUI(QWidget):
         shadow = result.get("shadow")
         if shadow:
             self._record_emg_shadow_snapshot(shadow)
+        if (telemetry_meta or {}).get("motor_field_sources") != (self._buffered_telemetry_meta or {}).get("motor_field_sources"):
+            self._reset_telemetry_buffers()
         self._record_telemetry_sample_rate()
         self._buffer_telemetry_field("relative", relative)
         self._buffer_telemetry_field("positions", positions)
@@ -5253,12 +5461,17 @@ class HandExoGUI(QWidget):
             return
         field_buffers = self._telemetry_buffers[field]
         for motor_id, value in values.items():
-            if value is None:
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                value = float("nan")
+            if not math.isfinite(value):
+                field_buffers.pop(int(motor_id), None)
                 continue
             samples = field_buffers.setdefault(
                 int(motor_id), deque(maxlen=TELEMETRY_BUFFER_SAMPLES)
             )
-            samples.append(float(value))
+            samples.append(value)
 
     def _averaged_telemetry_field(self, field: str) -> dict[int, float]:
         return {
@@ -5275,6 +5488,9 @@ class HandExoGUI(QWidget):
         """Return a recent displayed relative angle without another serial read."""
         updated = self._last_telemetry_update_monotonic
         if updated is None or time.monotonic() - updated > float(max_age_s):
+            return None
+        source = (self._buffered_telemetry_meta or {}).get("motor_field_sources", {}).get(int(motor_id), {}).get("position")
+        if source is not None and source != "measured":
             return None
         value = self._averaged_telemetry_field("relative").get(int(motor_id))
         if value is None:
@@ -5318,13 +5534,11 @@ class HandExoGUI(QWidget):
         if not self.exo_connected or not self._telemetry_buffer_dirty:
             return
         self._telemetry_buffer_dirty = False
-        relative = self._averaged_telemetry_field("relative")
         positions = self._averaged_telemetry_field("positions")
         torques = self._averaged_telemetry_field("torques")
         currents = self._averaged_telemetry_field("currents")
         velocities = self._averaged_telemetry_field("velocities")
-        if relative:
-            self._apply_motor_angles(relative)
+        self._apply_motor_angles(self._latest_hand_angles, self._latest_hand_meta)
         self._apply_telemetry_result(
             positions,
             torques,
@@ -5346,6 +5560,7 @@ class HandExoGUI(QWidget):
         positions_by_name = {}
         torque_by_name = {}
         current_by_name = {}
+        torque_sources_by_name = {}
         for name, row in self._motor_row.items():
             i      = self._motor_idx[name]
             dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
@@ -5356,6 +5571,10 @@ class HandExoGUI(QWidget):
             positions_by_name[name] = pos
             torque_by_name[name] = torq
             current_by_name[name] = curr
+            sources = (telemetry_meta or {}).get("motor_field_sources", {}).get(dxl_id, {})
+            torque_sources_by_name[name] = sources.get("torque", "measured")
+            for col, field in ((1, "position"), (2, "torque"), (3, "current")):
+                self._telem_table.item(row, col).setToolTip(sources.get(field, "source unknown"))
             self._telem_table.item(row, 1).setText(
                 f"{pos:.2f}"  if pos  is not None else "—"
             )
@@ -5372,7 +5591,7 @@ class HandExoGUI(QWidget):
                 if curr is not None:
                     measured.append(f"current {curr:+.1f} mA")
                 self._emg_feedback_lbl.setText(
-                    "Measured feedback: " + " · ".join(measured)
+                    ("Estimated feedback: " if "estimated" in sources.values() else "Measured feedback: ") + " · ".join(measured)
                     if measured else "Measured feedback: —"
                 )
 
@@ -5389,10 +5608,13 @@ class HandExoGUI(QWidget):
                 f"({actual_rate:.1f} Hz actual / "
                 f"{self._telemetry_rate_spin.value()} Hz target)"
             )
-        self._telem_status_lbl.setText(status)
-        self._telem_status_lbl.setStyleSheet("color: #27ae60;")
+        if (telemetry_meta or {}).get("fast_telemetry_flags", 0) and int(telemetry_meta["fast_telemetry_flags"]) & 0x80:
+            status += " - estimated (dashed torque)"
+        failed = (telemetry_meta or {}).get("read_failed", False)
+        self._telem_status_lbl.setText(f"Read failed {ts}" if failed else status)
+        self._telem_status_lbl.setStyleSheet("color: #c0392b;" if failed else "color: #27ae60;")
         # Feed the live scrolling torque plot from the same values as the table.
-        self._push_torque_plot(torque_by_name)
+        self._push_torque_plot(torque_by_name, torque_sources_by_name)
         if publish:
             self._publish_telemetry(
                 positions_by_name, torque_by_name, current_by_name, telemetry_meta
@@ -5407,6 +5629,8 @@ class HandExoGUI(QWidget):
     ):
         self._lsl_angles.publish(positions)
         self._lsl_torque.publish(torques)
+        sources = (telemetry_meta or {}).get("motor_sources", {})
+        self._lsl_sources.publish(self._telemetry_values_by_name(sources))
         if not self._udp_telemetry.enabled:
             return
         frame = {
@@ -5508,16 +5732,8 @@ class HandExoGUI(QWidget):
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
         row0.addWidget(self.mode_combo)
         row0.addSpacing(12)
-        self.dual_cdc_cb = QCheckBox("Dual USB CDC")
-        self.dual_cdc_cb.setToolTip(
-            "Use the two USB-CDC COM ports exposed by the dual-CDC firmware:\n"
-            "commands go out on one port while telemetry streams in on the other,\n"
-            "removing head-of-line blocking. Pick either of the device's two COM\n"
-            "ports above — the sibling is found automatically. Leave unchecked for\n"
-            "single-port firmware or bench debugging on one COM port."
-        )
-        self.dual_cdc_cb.setChecked(True)
-        row0.addWidget(self.dual_cdc_cb)
+        self.usb_protocol_label = QLabel("USB protocol: automatic")
+        row0.addWidget(self.usb_protocol_label)
         row0.addStretch()
         outer.addLayout(row0)
 
@@ -5591,6 +5807,8 @@ class HandExoGUI(QWidget):
         button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
 
     def _refresh_ports(self):
+        if self._connecting:
+            return
         previous_port = self.port_combo.currentData()
         cached_port = QSettings("NML", "HandExoGUI").value(
             "connection/serial_port", "", type=str
@@ -5622,8 +5840,6 @@ class HandExoGUI(QWidget):
             self.connect_btn.setEnabled((not self.exo_connected) and has_ports)
             self.port_combo.setEnabled((not self.exo_connected) and has_ports)
             self.probe_btn.setEnabled((not self.exo_connected) and has_ports)
-            if hasattr(self, "dual_cdc_cb"):
-                self.dual_cdc_cb.setEnabled(not self.exo_connected)
 
     def _cache_selected_port(self, _index: int = -1):
         """Persist an explicitly selected COM port for later GUI launches."""
@@ -6535,8 +6751,64 @@ class HandExoGUI(QWidget):
             raise outcome["error"]
         return outcome.get("value")
 
+    @staticmethod
+    def _synchronize_device_clock(exo, info):
+        """Run in the connection worker before polling starts; old firmware is silent."""
+        if parse_firmware_version(str(info.get("version", ""))) >= (0, 9, 0):
+            info["utc_sync"] = exo.synchronize_utc()
+
+    def _on_connection_progress(self, message):
+        self._log(f"[connect] {message}")
+        if self._connecting:
+            self.status_label.setText(message)
+
+    @staticmethod
+    def _open_device_handshake(comm, side, *, dual_active, progress):
+        """Own the ports from opening through handshake, including every failure."""
+        exo = SynchronizedHandExo(HandExo(
+            comm, side=side, auto_connect=False, verbose=False, command_delimiter='\r\n'
+        ))
+        stage = "Opening serial ports and probing CDC direction" if dual_active else "Opening serial port"
+
+        def report(message):
+            nonlocal stage
+            stage = message
+            progress(message)
+
+        try:
+            report(stage)
+            exo.connect()
+            dual_active = bool(getattr(comm, "is_split", dual_active))
+            if not dual_active:
+                report("Setting reply routing (set_reply_route:both)")
+                exo.send_command("set_reply_route:both")
+                time.sleep(0.1)
+                comm.flush_input()
+            report("Disabling debug output (debug:off)")
+            exo.set_debug(False, timeout=1.0)
+            report("Reading firmware information (info, 5 s reply timeout)")
+            info = exo.info(timeout=5.0)
+            if not info.get("motors"):
+                raise ConnectionError("No motor records in info reply; check the CDC port pair and firmware reply routing.")
+            progress(f"Firmware {info.get('version', 'unknown')}; motor IDs {sorted(info['motors'])}")
+            report("Synchronizing UTC if supported (1 s reply timeout)")
+            HandExoGUI._synchronize_device_clock(exo, info)
+            report("Reading hand calibration (get_home/get_flip, 0.5 s per reply)")
+            try:
+                info["hand_calibration"] = exo.get_hand_visualization_calibration(info, timeout=0.5)
+                if not info["hand_calibration"]:
+                    progress("Hand calibration unavailable; continuing with profile-based visualization")
+            except Exception as exc:
+                info["hand_calibration"] = {}
+                progress(f"Hand calibration unavailable: {exc}")
+            report("Handshake complete")
+            return exo, info
+        except Exception as exc:
+            exo.close()
+            raise ConnectionError(f"{stage}: {exc}") from exc
+
     def _connect(self):
-        if self.exo_connected:
+        if self.exo_connected or self._connecting:
             return
         if self.port_combo.count() == 0:
             QMessageBox.warning(self, "No Ports", "No serial ports found. Click Refresh.")
@@ -6547,7 +6819,8 @@ class HandExoGUI(QWidget):
         baud = int(self.baud_combo.currentText())
         self._cache_selected_port()
 
-        self.connect_btn.setEnabled(False)
+        self._connecting = True
+        self._update_enabled_state()
         self.status_label.setText(f"Connecting to {port}...")
         self.status_label.setStyleSheet("color: #f39c12; font-weight: bold;")
         QApplication.processEvents()
@@ -6557,50 +6830,18 @@ class HandExoGUI(QWidget):
             # Both hands share the same OpenRB-150 board and Dynamixel bus.
             side = "left" if mode == "Left Only" else ("right" if mode == "Right Only" else None)
 
-            dual_requested = self.dual_cdc_cb.isChecked()
-
             def _open_and_handshake():
-                if dual_requested:
-                    # Dual USB-CDC: split commands and telemetry across the device's
-                    # two COM ports. Pair the selected port with its sibling; the
-                    # comm layer probes to fix command/telemetry direction.
-                    pair = find_cdc_sibling(port)
-                    if pair is None:
-                        raise ConnectionError(
-                            f"Dual USB CDC is selected but no sibling COM port was found "
-                            f"for {port}. Ensure the dual-CDC firmware is flashed and that "
-                            "both of the device's COM ports are present, then pick either one."
-                        )
-                    cmd_dev, telem_dev = pair
-                    comm = DualSerialComm(
-                        cmd_port=cmd_dev, telem_port=telem_dev, baudrate=baud,
-                        response_timeout=0.5,
-                    )
-                    dual_active = True
-                    conn_desc = f"cmd={cmd_dev} telem={telem_dev} @ {baud} [{mode}]"
-                else:
-                    comm = SerialComm(port=port, baudrate=baud, response_timeout=0.5)
-                    dual_active = False
-                    conn_desc = f"{port} @ {baud} [{mode}]"
-
-                exo = SynchronizedHandExo(
-                    HandExo(comm, side=side, auto_connect=True,
-                            verbose=False, command_delimiter='\r\n')
+                comm = AutoSerialComm(port, baud, response_timeout=0.5,
+                                      progress=self._connection_progress.emit)
+                exo, info = HandExoGUI._open_device_handshake(
+                    comm, side, dual_active=False, progress=self._connection_progress.emit,
                 )
-                try:
-                    if not dual_active:
-                        # Firmware reply routing persists across host reconnects.
-                        exo.send_command("set_reply_route:both")
-                        time.sleep(0.1)
-                        comm.flush_input()
-                    exo.send_command("debug:off")
-                    time.sleep(0.1)
-                    comm.flush_input()
-                    info = exo.info(timeout=5.0)
-                    return exo, info, dual_active, conn_desc
-                except Exception:
-                    exo.close()
-                    raise
+                conn_desc = f"{comm.usb_protocol} @ {baud} [{mode}]"
+                if comm.is_split:
+                    conn_desc += f" ? ports {comm.cmd_port}, {comm.telem_port}"
+                else:
+                    conn_desc += f" ? {comm.port}"
+                return exo, info, comm.is_split, conn_desc
 
             self._log(
                 f"Connecting: mode={mode}, port={port} @ {baud}, "
@@ -6620,6 +6861,14 @@ class HandExoGUI(QWidget):
             # including one per motor on every gesture — which dominates command
             # round-trip latency. The GUI does not consume those lines, so turn
             # them off rather than pay for them on every transaction.
+            self.usb_protocol_label.setText("USB protocol: " + info.get("usb_protocol", "legacy auto"))
+            binary_usb = info.get("usb_protocol") == "protobuf-v1"
+            self._emg_shadow_cb.setEnabled(not binary_usb)
+            if binary_usb:
+                self._emg_shadow_cb.setChecked(False)
+                self._emg_shadow_status.setText("Shadow ASCII stream unavailable with Protobuf USB")
+
+            self._hand_calibration_by_id = info.get("hand_calibration", {})
             motors_dict = info.get("motors", {})  # keyed by Dynamixel ID
             self._firmware_limits_by_id = {
                 int(dxl_id): (float(md["limits"][0]), float(md["limits"][1]))
@@ -6761,10 +7010,11 @@ class HandExoGUI(QWidget):
             self.status_label.setText("Connection failed")
             self.status_label.setObjectName("status-disconnected")
             self.status_label.setStyle(self.status_label.style())
-            QMessageBox.critical(self, "Connection Error", str(e))
             self._log(f"Connection failed: {e}")
-
-        self._update_enabled_state()
+            QMessageBox.critical(self, "Connection Error", str(e))
+        finally:
+            self._connecting = False
+            self._update_enabled_state()
 
     def _disconnect(self):
         self._finish_home_sequence(resume_polling=False)
@@ -6829,6 +7079,9 @@ class HandExoGUI(QWidget):
         self._active_cal_left   = None
         self._active_cal_right  = None
         self._firmware_limits_by_id = {}
+        self._hand_calibration_by_id = {}
+        self._latest_hand_angles = {}
+        self._latest_hand_meta = None
         self._firmware_version_text = "unknown"
         self._firmware_build_side = "unknown"
         self._refresh_validated_firmware_mode(None)
@@ -7205,14 +7458,19 @@ class HandExoGUI(QWidget):
         if resume_polling and self.exo_connected:
             self._resume_normal_polling(force_refresh=True)
 
-    def _apply_motor_angles(self, angles: dict):
+    def _apply_motor_angles(self, angles: dict, telemetry_meta=None):
         if not self.exo_connected:
             return
-        # Source: get_angle:all → firmware getRelativeAngle (zeroed at home, flip applied).
+        # NX relative angles are zeroed at home with the firmware flip applied.
         # HandExo returns {Dynamixel_ID: angle}; map to widget index via _motor_dxl_id.
         for i, w in enumerate(self.motor_widgets):
             dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
             val = angles.get(dxl_id) if dxl_id is not None else None
+            source = (telemetry_meta or {}).get("motor_field_sources", {}).get(dxl_id, {}).get("position", "unknown")
+            w["angle_lbl"].setToolTip(source)
+            if val is None or not math.isfinite(float(val)) or source == "unavailable":
+                w["angle_lbl"].setText("unavailable")
+                continue
             if val is not None:
                 w["angle_lbl"].setText(f"{float(val):.2f} deg")
                 if (
@@ -7222,7 +7480,7 @@ class HandExoGUI(QWidget):
                     self._emg_hold_current_lbl.setText(f"{float(val):+.2f}°")
 
         # Normalise each relative angle to [0, 1] for the Hand State visualisation.
-        t_dict: dict[str, float] = {}
+        samples_by_name = {}
         joints_left: dict = {}
         joints_right: dict = {}
         joints_single: dict = {}
@@ -7244,19 +7502,11 @@ class HandExoGUI(QWidget):
             else:
                 m = (self._active_cal_profile or {}).get("motors", {}).get(name)
 
-            if val is not None and m is not None:
-                rel_a = normalize_angle(m["limit_min"], m["home"], m["flip"])
-                rel_b = normalize_angle(m["limit_max"], m["home"], m["flip"])
-                lo, hi = min(rel_a, rel_b), max(rel_a, rel_b)
-                span = hi - lo
-                t = (
-                    max(0.0, min(1.0, (float(val) - lo) / span)) if span > 0 else 0.0
-                )
-                t_dict[name] = t
-                norm_val = round(t, 4)
-            else:
-                t_dict[name] = 0.0  # no data or no profile: show home position
-                norm_val = None
+            if m is None:
+                m = self._hand_calibration_by_id.get(dxl_id)
+            sample = motor_display_sample(val, m, dxl_id, telemetry_meta)
+            samples_by_name[name] = sample
+            norm_val = round(sample["fraction"], 4) if sample["fraction"] is not None else None
 
             if mode == "Dual":
                 if name.startswith("L:"):
@@ -7266,21 +7516,24 @@ class HandExoGUI(QWidget):
             else:
                 joints_single[name] = norm_val
 
-        # HandSkeletonWidget uses bare motor names (right-hand view).
-        # In Dual mode, pass only the right-side (or left-side if only left is present).
+        # Both views use the same side-specific samples and the same clocks.
+        side = "left" if mode == "Left Only" else "right"
         if mode == "Dual":
-            vis_side_pfx = "R:" if self._right_motor_names else "L:"
-            bare_t_dict = {
-                k[2:]: v for k, v in t_dict.items() if k.startswith(vis_side_pfx)
-            }
+            right_valid = any(name.startswith("R:") and sample["fraction"] is not None
+                              for name, sample in samples_by_name.items())
+            left_valid = any(name.startswith("L:") and sample["fraction"] is not None
+                             for name, sample in samples_by_name.items())
+            side = "left" if left_valid and not right_valid else "right"
+            prefix = "L:" if side == "left" else "R:"
+            samples = {name[2:]: sample for name, sample in samples_by_name.items() if name.startswith(prefix)}
         else:
-            bare_t_dict = t_dict  # already bare names in single mode
+            samples = samples_by_name
+        stale_after_s = max(1.0, 3 * self._device_poll_interval_ms() / 1000.0)
+        for view in (self._hand_vis, self._udp_hand_vis):
+            view.update_joint_samples(samples, connected=True, side=side, stale_after_s=stale_after_s)
+        self._publish_teleop_state(joints_left, joints_right, joints_single, telemetry_meta)
 
-        self._hand_vis.update_motor_states(bare_t_dict, connected=True)
-        self._udp_hand_vis.update_motor_states(bare_t_dict, connected=True)
-        self._publish_teleop_state(joints_left, joints_right, joints_single)
-
-    def _publish_teleop_state(self, joints_left: dict, joints_right: dict, joints_single: dict):
+    def _publish_teleop_state(self, joints_left: dict, joints_right: dict, joints_single: dict, telemetry_meta=None):
         if not self._teleop_streaming:
             return
         mode = self.mode_combo.currentText()
@@ -7294,7 +7547,7 @@ class HandExoGUI(QWidget):
                 value = values.get(bare)
             else:
                 value = joints_single.get(mw["name"])
-            item.setText(f"{value:.3f}" if value is not None else "no cal")
+            item.setText(f"{value:.3f}" if value is not None else "unavailable")
 
         if not self._teleop_worker.isRunning():
             return
@@ -7313,6 +7566,7 @@ class HandExoGUI(QWidget):
                 "side": self.exo.side or "right",
                 "joints": joints_single,
             }
+        frame["telemetry_meta"] = telemetry_meta or {}
         self._teleop_worker.enqueue(json.dumps(frame, separators=(",", ":")))
 
     def _run_calibration(self):
@@ -7474,15 +7728,15 @@ class HandExoGUI(QWidget):
     def _update_enabled_state(self):
         on = self.exo_connected
         has_ports = self.port_combo.count() > 0
-        self.connect_btn.setEnabled((not on) and has_ports)
+        idle = not on and not self._connecting
+        self.connect_btn.setEnabled(idle and has_ports)
         self.disconnect_btn.setEnabled(on)
         # Disable connection controls while connected so the serial target is stable.
-        self.mode_combo.setEnabled(not on)
-        self.port_combo.setEnabled((not on) and has_ports)
-        self.baud_combo.setEnabled(not on)
-        self.refresh_btn.setEnabled(not on)
-        self.probe_btn.setEnabled((not on) and has_ports)
-        self.dual_cdc_cb.setEnabled(not on)
+        self.mode_combo.setEnabled(idle)
+        self.port_combo.setEnabled(idle and has_ports)
+        self.baud_combo.setEnabled(idle)
+        self.refresh_btn.setEnabled(idle)
+        self.probe_btn.setEnabled(idle and has_ports)
         self.enable_all_btn.setEnabled(on)
         self.disable_all_btn.setEnabled(on)
         self.home_all_btn.setEnabled(on)
@@ -9863,6 +10117,7 @@ class HandExoGUI(QWidget):
         self._udp_response_socket.close()
         self._lsl_angles.close()
         self._lsl_torque.close()
+        self._lsl_sources.close()
         try:
             if self.exo:
                 self.exo.close()

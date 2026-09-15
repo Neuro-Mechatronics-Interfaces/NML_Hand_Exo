@@ -181,3 +181,66 @@ path.
 
 - [ ] Reflash OpenRB-150 with `utils.cpp` fix; verify Torque column populates
 - [ ] Per-column enable/disable checkbox to reduce serial traffic
+
+## Asynchronous automatic ROM results
+
+Dual-CDC text frames are split into ordinary command replies and asynchronous
+`ROM_CAL_RESULT` events. `flush_input()` clears only ordinary replies, so a new
+telemetry request cannot erase a completed sweep. `SerialWorker` drains ROM events
+on every work-loop iteration, including while idle, and emits `line_received` to
+advance the GUI ROM queue. Blocking SDK callers use `read_rom_result()` to consume
+one event without dropping later results. These are alternative consumers of the
+same event queue, not independent subscriptions.
+
+Previously the result occupied the ordinary reply queue and was commonly flushed
+by the next NX poll. The motor could finish while the GUI waited for its 60-second
+result timeout. Regression coverage is in `tests/test_rom_async_events.py`.
+Auto-ROM now issues one explicit-ID request at a time on the selected GUI side,
+accepts only matching ID/direction results, and aborts the run after a rejected
+request or a 30-second missing-result timeout. An absent opposite hand is never
+part of a single-side GUI campaign.
+The event queue is bounded to 256 lines; an overflowing queue drops its oldest
+event. This separation applies to `DualSerialComm`; the legacy single-port SDK
+retains its synchronous text-result reader.
+
+See [model and ROM timing settings](v0.9.0_implementation.md#model-speed-versus-automatic-rom-timing).
+
+### Plot recovery after missing data
+
+The Monitor table and torque plot share a horizontal splitter (table left,
+plot right). Drag its divider to resize them; neither pane collapses. Without
+pyqtgraph the table uses the available area. Tab height hints follow the selected
+page, so larger hidden Setup/Integrations pages do not stretch Monitor beyond the
+window. The plot and table share a 160-pixel minimum height and shrink together;
+the table scrolls its rows internally when needed.
+
+Non-finite telemetry clears that motor's averaging buffer immediately. A later
+finite sample starts a fresh average, so an earlier NaN cannot keep the torque
+series blank. Complete read failures clear the displayed sample buffers and
+create gaps rather than repeating the old values. Plot histories retain gap
+positions, but `finite_curve_data()` sends pyqtgraph only finite coordinates plus
+an explicit connection mask. This avoids all-NaN axis data while preserving gaps
+and measured/estimated boundaries. The live X window advances even when all
+curves are empty, and old ROM markers do not pin it to an expired time range.
+`tests/test_torque_plot_recovery.py` exercises recovery using real pyqtgraph curves.
+
+<!-- graphviz:docs/figures/rom_result_delivery.dot -->
+![GraphViz diagram](figures/rom_result_delivery.svg)
+<!-- /graphviz:docs/figures/rom_result_delivery.dot -->
+
+
+## Measuring rates and selecting the USB protocol
+
+`AutoSerialComm` uses `info` metadata to select single CDC, legacy dual CDC, or
+opt-in Protobuf USB. The Protobuf backend reads text on the primary CDC and
+binary RPC replies on the secondary; the legacy dual backend reads NX on the
+primary and text on the secondary. Those layouts must not be conflated.
+`HandExo.get_fast_telemetry()` uses the common validated NX decoder for both.
+The GUI disables legacy fallback and ASCII shadow sampling for Protobuf builds.
+
+Model integration uses bounded 1 ms substeps, independent of the GUI's 50 Hz
+acquisition target and 10 Hz rendering. The model does not command the motors.
+Use `examples/diagnostics/benchmark_fast_telemetry.py` to measure achieved rates
+and `HandExo.get_io_profile()` for exclusive firmware stage times. See
+[USB protocol and I/O diagnostics](usb_protocol_and_io_diagnostics.md) for the
+rate definitions, per-ID measurements and runnable examples.

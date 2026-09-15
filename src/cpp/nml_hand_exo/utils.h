@@ -72,7 +72,8 @@ int getArgMotorID(NMLHandExo& exo, const String& line, const int index);
 /// @param exo The NMLHandExo instance to control
 /// @param gc The GestureController instance to control gestures
 /// @param token The input string containing the command to parse
-void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token);
+void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token,
+                  bool fromBluetooth = false);
 
 /// @brief Initializes the IMU device 
 /// @param imu The imu instance

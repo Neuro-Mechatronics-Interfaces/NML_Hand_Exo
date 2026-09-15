@@ -38,6 +38,10 @@ class BaseComm:
         """Return the raw byte stream carrying fast telemetry, if supported."""
         return None
 
+    def drain_async_lines(self):
+        """Return asynchronous device events independently of command replies."""
+        return []
+
 
 class TCPComm(BaseComm):
     def __init__(self, ip, port=5001, timeout=5, verbose=False):
@@ -77,18 +81,20 @@ class TCPComm(BaseComm):
 class SerialComm(BaseComm):
     def __init__(
         self, port, baudrate, command_delimiter=';', timeout=1,
-        response_timeout=2.0, verbose=False,
+        response_timeout=2.0, verbose=False, write_timeout=1.0,
     ):
         self.port = port
         self.baudrate = baudrate
         self.command_delimiter = command_delimiter
         self.timeout = timeout
         self.response_timeout = response_timeout
+        self.write_timeout = write_timeout
         self.verbose = verbose
         self.device = None
 
     def connect(self):
-        self.device = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
+        self.device = serial.Serial(self.port, self.baudrate, timeout=self.timeout,
+                                    write_timeout=self.write_timeout)
 
     def close(self):
         if self.device and self.device.is_open:
@@ -197,7 +203,7 @@ class DualSerialComm(BaseComm):
 
     def __init__(
         self, cmd_port, telem_port, baudrate, command_delimiter=';', timeout=1,
-        response_timeout=2.0, verbose=False, line_terminator='\r\n',
+        response_timeout=2.0, verbose=False, line_terminator='\r\n', write_timeout=1.0,
     ):
         self.cmd_port = cmd_port
         self.telem_port = telem_port
@@ -205,19 +211,31 @@ class DualSerialComm(BaseComm):
         self.command_delimiter = command_delimiter
         self.timeout = timeout
         self.response_timeout = response_timeout
+        self.write_timeout = write_timeout
         self.verbose = verbose
         self.line_terminator = line_terminator
         self._cmd = None
         self._telem = None
         self._replies = queue.Queue(maxsize=self.MAX_QUEUED_REPLIES)
+        self._async_lines = queue.Queue(maxsize=self.MAX_QUEUED_REPLIES)
         self._telemetry = collections.deque(maxlen=self.MAX_TELEMETRY_LINES)
         self._reader = None
         self._reader_error = None
         self._stop = threading.Event()
 
     def connect(self):
-        self._cmd = serial.Serial(self.cmd_port, self.baudrate, timeout=self.timeout)
-        self._telem = serial.Serial(self.telem_port, self.baudrate, timeout=self.timeout)
+        try:
+            self.drain_async_lines()  # a new session cannot consume old ROM results
+            self._open_and_probe()
+        except Exception:
+            self.close()
+            raise
+
+    def _open_and_probe(self):
+        self._cmd = serial.Serial(self.cmd_port, self.baudrate, timeout=self.timeout,
+                                  write_timeout=self.write_timeout)
+        self._telem = serial.Serial(self.telem_port, self.baudrate, timeout=self.timeout,
+                                    write_timeout=self.write_timeout)
         # Let the CDC endpoints settle after the DTR assert that open() triggers.
         time.sleep(0.2)
         self._cmd.reset_input_buffer()
@@ -257,6 +275,9 @@ class DualSerialComm(BaseComm):
         if self.verbose:
             print(f"[DualSerialComm] cmd={self.cmd_port} telem={self.telem_port}")
 
+    def text_reply_device(self):
+        return self._telem
+
     def _start_reader(self):
         """Take ownership of the telemetry port with the background reader."""
         self._stop.clear()
@@ -280,7 +301,8 @@ class DualSerialComm(BaseComm):
         buffer = b""
         while not self._stop.is_set():
             try:
-                chunk = self._telem.read(max(1, self._telem.in_waiting))
+                stream = self.text_reply_device()
+                chunk = stream.read(max(1, stream.in_waiting))
             except Exception as exc:
                 # Only a close() is expected to land here. Anything else means
                 # the reply path is dead, and a silent exit would be
@@ -316,19 +338,47 @@ class DualSerialComm(BaseComm):
 
     def _publish_reply(self, frame: str):
         """Queue a reply frame, discarding the oldest if the cap is reached."""
+        reply_lines = []
+        for line in frame.splitlines():
+            if line.strip().startswith(("ROM_CAL_RESULT:", "ROM_CAL_PULSE:")):
+                self._queue_latest(self._async_lines, line.strip())
+            else:
+                reply_lines.append(line)
+        frame = "\n".join(reply_lines).strip()
+        if frame:
+            self._queue_latest(self._replies, frame)
+
+    @staticmethod
+    def _queue_latest(target, value):
         try:
-            self._replies.put_nowait(frame)
+            target.put_nowait(value)
             return
         except queue.Full:
             pass
         try:
-            self._replies.get_nowait()
+            target.get_nowait()
         except queue.Empty:
             pass
         try:
-            self._replies.put_nowait(frame)
+            target.put_nowait(value)
         except queue.Full:
             pass
+
+    def drain_async_lines(self):
+        """Drain ROM results; flush_input deliberately preserves these events."""
+        lines = []
+        while True:
+            try:
+                lines.append(self._async_lines.get_nowait())
+            except queue.Empty:
+                return lines
+
+    def read_async_line(self, timeout):
+        """Consume one event for synchronous SDK ROM callers, keeping later ones."""
+        try:
+            return self._async_lines.get(timeout=max(0.0, timeout))
+        except queue.Empty:
+            return ""
 
     def telemetry_lines(self):
         """Snapshot of recent unsolicited telemetry / debug lines."""
@@ -426,7 +476,8 @@ class DualSerialComm(BaseComm):
         Called before a send so a transaction cannot be handed a stale frame
         left over from an earlier timed-out request.  The port itself is not
         reset -- the reader thread owns it, and resetting underneath it would
-        truncate a frame mid-parse.
+        truncate a frame mid-parse. Asynchronous ROM results are held separately
+        and remain available through drain_async_lines().
         """
         while True:
             try:

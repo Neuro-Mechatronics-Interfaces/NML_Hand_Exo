@@ -63,7 +63,40 @@ version
 
 Text responses are terminated with `;`. `SerialComm.receive()` reads until `;` is seen.
 
+### Pulsed ROM calibration (v0.9.0)
+
+`calibrate_rom:<id>:<flex|extend>` retains its command and acknowledgement.
+The sweep applies 80--150 mA pulses in 5 mA increments, initially 150 ms on
+and 200 ms at zero commanded current. Position feedback after each pulse
+corrects the model. Valid moving pulses can refine its gain with the time
+constant and load parameters held fixed. These are volatile model changes.
+
+`ROM_CAL_RESULT` retains its existing fields and adds `pulses=<count>`,
+`fit_samples=<count>`, and `model_gain=<deg/s/mA>` (or `nan` if unavailable).
+Results also include `reason=<token>`, `pulse_on_ms=<last duration>`,
+`max_pulse_on_ms=<longest duration>`, `recoveries=<count>`, `angle=<last valid angle>`,
+and `limit_min` / `limit_max` in absolute degrees. The reason distinguishes
+position-read failure, pulse overrun, command watchdog, external stop, disabled
+torque, changed command/mode, current-write failure, direction reversal, and
+stored-limit termination. Existing status values and command arguments are unchanged.
+Status `limit` means the stored joint boundary stopped the sweep; it is not a
+newly discovered physical endstop. Only `status=ok` supplies an endstop for Apply.
+A failed position read immediately zeros current and waits 200 ms before retrying
+the same amplitude with fresh feedback (up to three recoveries). The invalid pulse
+cannot update gain or endstop detection. Further failures, external stops or disable
+commands abort. The measured control path, not the predictor, enforces termination.
+
+USB NX replies stay on the primary CDC, regardless of the text-only
+`set_reply_route`, and are not copied to the Bluetooth UART.
+A Bluetooth-origin NX request still receives its UART frame. ROM register I/O
+uses bounded 10 ms transactions; command handling services ROM between buffered
+lines so a request burst cannot starve the pulse deadline.
+
 ### Fast telemetry binary frame
+
+**Firmware 0.9.0:** `NX` header version 2 adds field provenance and per-record UTC/uptime timestamps. Motion-time telemetry uses the internal joint model; idle telemetry uses one Sync Read. Update the Python SDK alongside the firmware. See the [complete v0.9.0 wire contract](v0.9.0_implementation.md), including `set_joint_model`, `get_joint_model`, `set_estimate_holdoff`, `set_joint_trigger`, `clear_joint_trigger`, `set_utc_time`, and `get_utc_time`.
+
+The following describes the legacy version-1 frame, still supported by the SDK:
 
 `get_telemetry_fast:<id>:<id>...` returns one compact binary frame on the serial
 stream. `get_telemetry_fast:all` returns all firmware-managed motors. The frame
@@ -606,3 +639,25 @@ Open `src/cpp/nml_hand_exo/nml_hand_exo.ino` in the Arduino IDE.
 - Adafruit GFX Library
 
 Upload → board flashes LED 4× and prints `"Exo device ready to receive commands"`.
+
+
+### Optional Protobuf USB and I/O profiling
+
+Firmware v0.9.1 adds adaptive 20-ms Auto-ROM pulses and asynchronous
+`ROM_CAL_PULSE` observations. `get_joint_model` also reports per-direction pulse
+response statistics; see [the v0.9.1 procedure](v0.9.1_pulse_calibration.md).
+
+`EXO_USB_PROTOBUF=1` reserves the second CDC for bounded nanopb request/reply
+frames. Primary USB retains ASCII maintenance commands, `info`, `help` and ROM
+events. `info` advertises the protocol, CDC count/roles, model integration step,
+and I/O profile version. The SDK/GUI discovers this automatically; legacy NX
+polling and ASCII shadow streaming are disabled on the Protobuf backend.
+`USB Features: joint_model_write` advertises binary `SET_JOINT_MODEL` support;
+the SDK sends one explicit ID and five typed float parameters through this path.
+Older Protobuf builds require a reflash for model writes through the updated SDK.
+The additional `batch_motion` feature enables typed `set_angles`,
+`set_absolute_angles`, `set_currents`, `set_finger_angles`, `set_gesture`, and
+`set_gesture_angle`. ID-based angle batches use one DXL Sync Write; current
+batches retain sequential guarded writes. Gestures retain firmware-wide scope.
+`io_profile` and `reset_io_profile` expose exclusive wall time by firmware stage.
+See [the complete contract and benchmark commands](usb_protocol_and_io_diagnostics.md).

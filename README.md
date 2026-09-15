@@ -9,14 +9,9 @@
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-b31b34.svg)](https://neuro-mechatronics-interfaces.github.io/NML_Hand_Exo/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-`nml_hand_exo` is the Python SDK, operator software, and OpenRB-150 firmware for
-the NML Hand Exoskeleton. It supports explicit Dynamixel control, participant
-calibration, Lab Streaming Layer (LSL) integration, event-marked task sessions,
-and continuous EMG intent decoding.
+`nml_hand_exo` is the Python SDK, operator software, and OpenRB-150 firmware for the NML Hand Exoskeleton. It supports explicit Dynamixel control, participant calibration, Lab Streaming Layer (LSL) integration, event-marked task sessions, and continuous EMG intent decoding.
 
-This is research software for supervised laboratory use. It is not a medical
-device. Verify calibration, current limits, joint limits, and the emergency-stop
-workflow before placing the device on a participant.
+This is research software for supervised laboratory use. It is not a medical device. Verify calibration, current limits, joint limits, and the emergency-stop workflow before placing the device on a participant.
 
 ## Quick links
 
@@ -31,13 +26,11 @@ workflow before placing the device on a participant.
 
 - USB serial, dual-CDC USB, Bluetooth serial, and TCP communication transports.
 - Single-side and dual-side operation with explicit integer Dynamixel IDs.
-- PyQt operator GUI for connection, calibration, telemetry, direct control, and
-  guarded EMG teleoperation.
+- PyQt operator GUI for connection, calibration, telemetry, direct control, and guarded EMG teleoperation.
 - Participant task-cue application with optional LSL event markers.
 - Legacy centroid and current LDA-based continuous intent decoders.
 - XDF session import, decoder validation, playback utilities, and analysis tools.
-- OpenRB-150 firmware with joint-limit, current-limit, and direct-command safety
-  handling.
+- OpenRB-150 firmware with joint-limit, current-limit, and direct-command safety handling.
 - Hardware-independent fakes and unit tests for host-side development.
 
 ## Installation
@@ -65,8 +58,7 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-The Python package does not require a sibling repository, private drive, or
-lab-local package.
+The Python package does not require a sibling repository, private drive, or lab-local package.
 
 ## Optional dependencies
 
@@ -84,16 +76,19 @@ python -m pip install -e ".[ml]"
 
 # Tests and packaging tools
 python -m pip install -e ".[dev]"
+
+# For running FAST with protobuf
+python -m pip install -e ".[protobuf]"
+
+# For EVERYTHING
+pip install ".[protobuf,analysis,integrations,ml,dev,docs]"
 ```
 
-LabRecorder is optional external software. It is useful for creating XDF files
-that combine EMG and task markers, but it is not needed to import the package,
-run the exoskeleton GUI, or use the Python API.
+LabRecorder is optional external software. It is useful for creating XDF files that combine EMG and task markers, but it is not needed to import the package, run the exoskeleton GUI, or use the Python API.
 
 ## Getting started
 
-Connect to one OpenRB command port at 1 Mbps and inspect the firmware-reported
-motor map:
+Connect to one OpenRB command port at 1 Mbps and inspect the firmware-reported motor map:
 
 ```python
 from nml_hand_exo import HandExo, SerialComm
@@ -108,9 +103,7 @@ finally:
     exo.close()
 ```
 
-Use integer IDs reported by `info()` for calibration and motion commands. Bare
-motor names are ambiguous in dual firmware. Never command motion outside the
-active calibration profile's joint limits.
+Use integer IDs reported by `info()` for calibration and motion commands. Bare motor names are ambiguous in dual firmware. Never command motion outside the active calibration profile's joint limits.
 
 ## CLI usage
 
@@ -127,16 +120,11 @@ nml-task-cue --help
 nml-task-cue
 ```
 
-`handexo gui` is the main operator application. `handexo emg-intent` is the
-maintained discovery, validation, visualization, and continuous-decoding
-workflow. `handexo emg-centroid` remains available for backward compatibility
-and comparison with older recordings.
+`handexo gui` is the main operator application. `handexo emg-intent` is the maintained discovery, validation, visualization, and continuous-decoding workflow. `handexo emg-centroid` remains available for backward compatibility and comparison with older recordings.
 
 ## Examples
 
-Examples are grouped by purpose under [`examples/`](examples/README.md). Run
-them from the repository root so package imports and relative resources resolve
-consistently:
+Examples are grouped by purpose under [`examples/`](examples/README.md). Run them from the repository root so package imports and relative resources resolve consistently:
 
 ```powershell
 python examples/01_basic/example_serial_exo.py --help
@@ -146,8 +134,7 @@ python examples/08_udp/udp_gesture_receiver.py --help
 python tools/import_xdf_intent_session.py --help
 ```
 
-Hardware examples do not move motors during `--help`. Read the safety notes in
-their local README before running a motion command.
+Hardware examples do not move motors during `--help`. Read the safety notes in their local README before running a motion command.
 
 ## Package structure
 
@@ -172,8 +159,7 @@ docs/                   architecture, protocol, and Sphinx documentation
 
 ## Documentation
 
-Protocol and architecture documents live directly in [`docs/`](docs/). Build
-the Sphinx reference locally with:
+Protocol and architecture documents live directly in [`docs/`](docs/). Build the Sphinx reference locally with:
 
 ```powershell
 python -m pip install -e ".[docs]"
@@ -190,15 +176,12 @@ python tools/check_protocol_contract.py
 git diff --check
 ```
 
-Hardware is not required for the unit suite. Tests that exercise a live serial
-device are documented separately and must be run with the appropriate firmware,
-calibration profile, and physical safety setup.
+Hardware is not required for the unit suite. Tests that exercise a live serial device are documented separately and must be run with the appropriate firmware, calibration profile, and physical safety setup.
 
 ## Release workflow
 
 Releases use the version declared in `pyproject.toml` and
-`nml_hand_exo.__version__`. A release commit must be tagged with the matching
-`vX.Y.Z` tag before upload.
+`nml_hand_exo.__version__`. A release commit must be tagged with the matching `vX.Y.Z` tag before upload.
 
 ```powershell
 python -m build
@@ -206,15 +189,11 @@ python -m twine check dist/*
 ```
 
 TestPyPI and PyPI uploads are intentionally manual. See
-[`docs/releasing.md`](docs/releasing.md) for the complete verification and
-upload commands. Never store an API token in this repository.
+[`docs/releasing.md`](docs/releasing.md) for the complete verification and upload commands. Never store an API token in this repository.
 
 ## Contributing
 
-Open an issue before making a protocol or firmware contract change. Keep host
-and firmware command names synchronized, prefer Python-side compatibility fixes,
-and include regression tests for parser or safety behavior. Pull requests should
-pass the complete test, compile, documentation, and packaging checks above.
+Open an issue before making a protocol or firmware contract change. Keep host and firmware command names synchronized, prefer Python-side compatibility fixes, and include regression tests for parser or safety behavior. Pull requests should pass the complete test, compile, documentation, and packaging checks above.
 
 ## License
 

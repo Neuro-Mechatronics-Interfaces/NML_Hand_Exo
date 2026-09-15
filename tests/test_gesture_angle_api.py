@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 from nml_hand_exo.interface._hand_exo import HandExo
 
@@ -6,6 +7,7 @@ from nml_hand_exo.interface._hand_exo import HandExo
 class GestureAngleApiTests(unittest.TestCase):
     def make_exo(self):
         exo = HandExo.__new__(HandExo)
+        exo.device = SimpleNamespace(usb_protocol='ascii-nx')
         exo.commands = []
         exo._firmware_version = (0, 2, 16)
         exo.send_command = exo.commands.append

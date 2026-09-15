@@ -1,0 +1,14 @@
+digraph rom_result_delivery {
+  graph [rankdir=TB, bgcolor="transparent", label="Dual CDC text delivery", labelloc=t, fontname="Arial"];
+  node [shape=box, style="rounded,filled", fillcolor="#edf2f7", fontname="Arial"];
+  edge [fontname="Arial", fontsize=10];
+  reader [label="Telemetry CDC reader\nComplete text frames"];
+  replies [label="Command reply queue\nCleared before new requests"];
+  events [label="ROM result queue\nPreserved across reply flushes"];
+  transactions [label="Command transactions\nAcknowledgements and query replies"];
+  consumers [label="GUI worker or SDK ROM reader\nGUI matches active ID + direction"];
+  reader -> replies [label="Ordinary reply"];
+  reader -> events [label="ROM_CAL_RESULT"];
+  replies -> transactions;
+  events -> consumers;
+}

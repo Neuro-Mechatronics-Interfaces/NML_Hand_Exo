@@ -13,6 +13,7 @@
 #include <Adafruit_BNO055.h>
 #include <chrono>
 #include <thread>
+#include "io_profile.h"
 
 
 // IMU variables (print delay logic currently disabled)
@@ -31,6 +32,7 @@ static uint32_t sLoopMaxUs  = 0;
 static uint64_t sLoopTotalUs = 0;
 
 void loopStatsTick() {
+  exo_io::profile().charge(micros());
   uint32_t now = micros();
   if (sLoopLastUs != 0) {
     uint32_t delta = now - sLoopLastUs;   // unsigned math survives rollover
@@ -57,8 +59,11 @@ uint32_t loopStatsMeanUs() {
 }
 
 void telemetryPrintln(const String& msg) {
-  // Route a device->host line to the correct USB CDC(s).
-#if defined(DUAL_CDC) && DUAL_CDC
+  EXO_PROFILE(USB_TX);
+  // The Protobuf build reserves the second CDC exclusively for binary data.
+#if EXO_USB_PROTOBUF
+  CMD_SERIAL.println(msg);
+#elif defined(DUAL_CDC) && DUAL_CDC
   // Legacy-safe: default route BOTH mirrors to the command CDC so a single-port
   // host still sees replies; a dual-port host can switch to TELEM to decouple.
   if (gReplyRoute != REPLY_ROUTE_TELEM) CMD_SERIAL.println(msg);
@@ -89,9 +94,9 @@ void commandPrint(const String& msg) {
   // The Bluetooth command path (COMMAND_SERIAL) always mirrors the reply; the
   // USB CDC target(s) are chosen by telemetryPrintln() per the runtime route.
   #if defined(COMMAND_SERIAL)
-    COMMAND_SERIAL.println(cmdMsg);
+    EXO_PROFILE_CALL(BT_TX, COMMAND_SERIAL.println(cmdMsg));
   #else
-    Serial2.println(cmdMsg);  // fallback
+    EXO_PROFILE_CALL(BT_TX, Serial2.println(cmdMsg));  // fallback
   #endif
   telemetryPrintln(cmdMsg);
 }
@@ -293,7 +298,7 @@ void writeFastTelemetryFrame(Stream& stream, FastTelemetryRecord* records, uint8
   FastTelemetryHeader header;
   header.magic[0] = 'N';
   header.magic[1] = 'X';
-  header.version = 1;
+  header.version = 2;
   header.flags = flags;
   header.count = count;
   header.payload_len = count * sizeof(FastTelemetryRecord);
@@ -338,7 +343,9 @@ uint8_t collectFastTelemetryIDs(NMLHandExo& exo, const String& token, uint8_t* i
 }
 
 const char* fastTelemetryMethodName(uint8_t method) {
-  switch (method) {
+  switch (method & 0x0f) {
+    case FAST_TELEM_METHOD_MODEL:
+      return "model";
     case FAST_TELEM_METHOD_FAST_SYNC_READ:
       return "fastSyncRead";
     case FAST_TELEM_METHOD_SYNC_READ:
@@ -350,7 +357,14 @@ const char* fastTelemetryMethodName(uint8_t method) {
   }
 }
 
-void sendFastTelemetry(NMLHandExo& exo, const String& token) {
+void sendFastTelemetry(NMLHandExo& exo, const String& token, bool fromBluetooth) {
+  EXO_PROFILE(NX_PACK);
+#if EXO_USB_PROTOBUF
+  if (!fromBluetooth) {
+    commandPrint(F("ERROR: use Protobuf GET_TELEMETRY_FAST on the binary CDC"));
+    return;
+  }
+#endif
   uint8_t ids[32];
   FastTelemetryRecord records[32];
   uint8_t idCount = collectFastTelemetryIDs(exo, token, ids, 32);
@@ -364,9 +378,13 @@ void sendFastTelemetry(NMLHandExo& exo, const String& token) {
   uint8_t recordCount = exo.getFastTelemetryRecords(ids, idCount, records, method, 10);
   (void)startMicros;
 
-  writeFastTelemetryFrame(DEBUG_SERIAL, records, recordCount, method);
+  // Binary NX stays on the primary CDC; DualSerialComm reads raw bytes there.
+  // reply_route controls text only (the other CDC has a text reader).
+  if (!fromBluetooth) EXO_PROFILE_CALL(USB_TX, writeFastTelemetryFrame(DEBUG_SERIAL, records, recordCount, method));
 #if defined(COMMAND_SERIAL)
-  writeFastTelemetryFrame(COMMAND_SERIAL, records, recordCount, method);
+  // A 310-byte nine-motor frame takes ~27 ms at 115200 baud. Mirroring every
+  // USB poll here blocked the control loop even with no Bluetooth client.
+  if (fromBluetooth) EXO_PROFILE_CALL(BT_TX, writeFastTelemetryFrame(COMMAND_SERIAL, records, recordCount, method));
 #endif
 }
 
@@ -391,6 +409,7 @@ void sendFastTelemetryDiag(NMLHandExo& exo, const String& token) {
   for (uint8_t i = 0; i < recordCount; ++i) {
     info += "Motor " + String(i) + ": {id: " + String(records[i].id) +
             ", error: " + String(records[i].error) +
+            ", sources: " + String(records[i].sources) +
             ", current_mA: " + String(records[i].current_mA) +
             ", velocity_raw: " + String(records[i].velocity_raw) +
             ", position_ticks: " + String(records[i].position_ticks) +
@@ -430,7 +449,9 @@ void sendShadowTelemetryStatus(NMLHandExo& exo) {
   commandPrint(info);
 }
 
-void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token) {
+void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, String token,
+                  bool fromBluetooth) {
+  EXO_PROFILE(COMMAND);
 
   token.trim();        // Remove any trailing white space
   token.toLowerCase(); // Set all characters to lowercase
@@ -440,8 +461,125 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   int val = 0; // Default value for commands that require a value
 
   // ========== Supported high-level commands ==========
-  if (cmd == "get_telemetry_fast") {
-    sendFastTelemetry(exo, token);
+  if (cmd == "set_utc_time" || cmd == "get_utc_time") {
+    if (cmd == "set_utc_time") {
+      const String value = getArg(token, 1);
+      bool valid = value.length() > 0 && value.length() <= 15;
+      uint64_t epoch = 0;
+      for (unsigned int k = 0; k < value.length() && valid; ++k) {
+        if (!isDigit(value[k])) { valid = false; break; }
+        epoch = epoch * 10 + (value[k] - '0');
+      }
+      int delimiters = 0;
+      for (unsigned int k = 0; k < token.length(); ++k) if (token[k] == ':') ++delimiters;
+      if (!valid || delimiters != 1 || !exo.setUtcTime(epoch)) {
+        commandPrint("ERROR: set_utc_time requires Unix UTC milliseconds (1..253402300799999)");
+        return;
+      }
+    } else if (token != "get_utc_time") {
+      commandPrint("ERROR: get_utc_time takes no arguments");
+      return;
+    }
+    const uint64_t utc = exo.utcTime();
+    char stamp[24];
+    // Avoid AVR/newlib printf variants whose integer formatter lacks %llu.
+    uint64_t remainder = utc;
+    uint8_t length = 0;
+    do { stamp[length++] = '0' + remainder % 10; remainder /= 10; } while (remainder);
+    for (uint8_t k = 0; k < length / 2; ++k) {
+      const char c = stamp[k]; stamp[k] = stamp[length - 1 - k]; stamp[length - 1 - k] = c;
+    }
+    stamp[length] = '\0';
+    commandPrint(String(cmd == "set_utc_time" ? "OK: set_utc_time" : "UTC_TIME:") +
+        " utc_ms=" + String(stamp) + " synchronized=" + String(utc != 0 ? 1 : 0) +
+        " uptime_ms=" + String(millis()));
+    return;
+  } else if (cmd == "set_joint_model" || cmd == "get_joint_model" ||
+      cmd == "set_joint_trigger" || cmd == "clear_joint_trigger" ||
+      cmd == "set_estimate_holdoff") {
+    const int expected = cmd == "set_joint_model" ? 6 :
+        (cmd == "set_joint_trigger" ? 2 : 1);
+    int actual = 0;
+    for (unsigned int k = 0; k < token.length(); ++k) if (token[k] == ':') ++actual;
+    auto unsignedToken = [](const String& v) {
+      if (!v.length() || v.length() > 5) return false;
+      for (unsigned int k = 0; k < v.length(); ++k) if (!isDigit(v[k])) return false;
+      return true;
+    };
+    auto number = [](const String& v, float& out) {
+      if (!v.length()) return false;
+      char* end;
+      out = strtof(v.c_str(), &end);
+      return end != v.c_str() && *end == '\0' && isfinite(out);
+    };
+    const String idArg = getArg(token, 1);
+    if (actual != expected || !unsignedToken(idArg)) {
+      commandPrint("ERROR: " + cmd + " invalid arguments");
+      return;
+    }
+    if (cmd == "set_estimate_holdoff") {
+      const uint32_t ms = idArg.toInt();
+      commandPrint(exo.setEstimateHoldoff(ms) ?
+          "OK: set_estimate_holdoff ms=" + String(ms) :
+          "ERROR: set_estimate_holdoff requires 50..5000 ms");
+      return;
+    }
+    const long mid = idArg.toInt();
+    if (mid < 1 || mid > 253 || exo.getIndexById((uint8_t)mid) < 0) {
+      commandPrint("ERROR: " + cmd + " requires a configured explicit DXL ID");
+      return;
+    }
+    if (cmd == "get_joint_model") {
+      commandPrint(exo.getJointModel((uint8_t)mid));
+      return;
+    }
+    bool ok = false;
+    if (cmd == "set_joint_model") {
+      JointModelParams p;
+      ok = number(getArg(token, 2), p.gain) &&
+           number(getArg(token, 3), p.time_constant) &&
+           number(getArg(token, 4), p.max_velocity) &&
+           number(getArg(token, 5), p.stiffness) &&
+           number(getArg(token, 6), p.moment) && exo.setJointModel((uint8_t)mid, p);
+    } else if (cmd == "set_joint_trigger") {
+      float tau;
+      ok = number(getArg(token, 2), tau) && exo.setJointTrigger((uint8_t)mid, tau);
+    } else {
+      ok = exo.clearJointTrigger((uint8_t)mid);
+    }
+    commandPrint(ok ? "OK: " + cmd + " id=" + String(mid) :
+                     "ERROR: " + cmd + " parameter out of range");
+    return;
+  } else if (cmd == "get_angle" || cmd == "get_absolute_angle" ||
+             cmd == "get_current" || cmd == "get_torque" || cmd == "get_velocity") {
+    uint8_t ids[32];
+    FastTelemetryRecord records[32];
+    const uint8_t count = collectFastTelemetryIDs(exo, token, ids, 32);
+    uint8_t method;
+    exo.getFastTelemetryRecords(ids, count, records, method, 10);
+    const String key = cmd.substring(4);
+    String reply = "Motor telemetry:\n";
+    for (uint8_t i = 0; i < count; ++i) {
+      const FastTelemetryRecord& r = records[i];
+      const uint8_t shift = (cmd == "get_current" || cmd == "get_torque") ? 2 :
+                            (cmd == "get_velocity" ? 4 : 0);
+      const uint8_t source = r.error ? 0 : ((r.sources >> shift) & 3);
+      float value = NAN;
+      if (source) {
+        if (cmd == "get_current") value = r.current_mA;
+        else if (cmd == "get_torque") value = r.current_mA * XC330_T288_TORQUE_CONSTANT;
+        else if (cmd == "get_velocity") value = r.velocity_raw * 0.229f *
+            (exo.getFlipMotor(r.id) ? -1.0f : 1.0f);
+        else if (cmd == "get_absolute_angle") value = r.absolute_cdeg / 100.0f;
+        else value = r.relative_cdeg / 100.0f;
+      }
+      reply += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(r.id) +
+          ", id: " + String(r.id) + ", " + key + ": " + String(value, 4) +
+          ", source: " + String(source == 2 ? "estimated" : source == 1 ? "measured" : "unavailable") + "}\n";
+    }
+    commandPrint(reply);
+  } else if (cmd == "get_telemetry_fast") {
+    sendFastTelemetry(exo, token, fromBluetooth);
 
   } else if (cmd == "telemetry_diag") {
     sendFastTelemetryDiag(exo, token);
@@ -659,27 +797,6 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
                "ERROR: set_velocity requires velocity mode, a reachable ID, and a verified hardware velocity limit");
     }
 
-  } else if (cmd == "get_velocity") {
-    String arg = getArg(token, 1);
-    arg.trim(); arg.toUpperCase();
-    if (arg == "ALL") {
-      String info = "Motor present velocity: \n";
-      for (int i = 0; i < exo.getMotorCount(); ++i) {
-        uint8_t id = exo.getMotorIDByIndex(i);
-        float rpm = exo.getPresentVelocity(id);
-        info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-            ", velocity: " + String(rpm, 3) + " rpm}\n";
-      }
-      commandPrint(info);
-    } else {
-      id = getArgMotorID(exo, token, 1);
-      if (id != -1) {
-        float rpm = exo.getPresentVelocity(id);
-        commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-          ", velocity: " + String(rpm, 3) + " rpm}");
-      }
-    }
-
   } else if (cmd == "get_goal_acceleration") {
     String arg = getArg(token, 1);  // local copy
     arg.trim(); arg.toUpperCase();
@@ -716,27 +833,6 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       id = getArgMotorID(exo, token, 1);
       val = getArg(token, 2).toInt();
       if (id != -1) exo.setAccelerationLimit(id, val);
-    }
-
-  } else if (cmd == "get_angle") {
-    String arg = getArg(token, 1);  // local copy
-    arg.trim(); arg.toUpperCase();
-    if (arg == "ALL") {
-      String info = "Motor angles: \n";
-      for (int i = 0; i < exo.getMotorCount(); ++i) {
-        uint8_t id = exo.getMotorIDByIndex(i);
-        float val = exo.getRelativeAngle(id);
-        info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-            ", angle: " + String(val) + "}\n";
-      }
-      commandPrint(info);
-    } else {
-      id = getArgMotorID(exo, token, 1);
-      if (id != -1) {
-        float val = exo.getRelativeAngle(id);
-        commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-          ", angle: " + String(val, 3) + "}");
-      }
     }
 
   } else if (cmd == "set_angle") {
@@ -781,27 +877,6 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
 
     delay(1000);
 
-  } else if (cmd == "get_absolute_angle") {
-    String arg = getArg(token, 1);  // local copy
-    arg.trim(); arg.toUpperCase();
-    if (arg == "ALL") {
-      String info = "Motor absolute angles: \n";
-      for (int i = 0; i < exo.getMotorCount(); ++i) {
-        uint8_t id = exo.getMotorIDByIndex(i);
-        float val = exo.getAbsoluteAngle(id);
-        info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-            ", absolute_angle: " + String(val) + "}\n";
-      }
-      commandPrint(info);
-    } else {
-      id = getArgMotorID(exo, token, 1);
-      if (id != -1) {
-        float val = exo.getAbsoluteAngle(id);
-        commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-          ", absolute_angle: " + String(val, 3) + "}");
-      }
-    }
-
   } else if (cmd == "set_absolute_angle") {
     id = getArgMotorID(exo, token, 1);
     val = getArg(token, 2).toInt();
@@ -836,27 +911,6 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     } else {
       id = exo.getMotorID(target);
       if (id != -1) exo.setZeroOffset(id);
-    }
-
-  } else if (cmd == "get_current") {
-    String arg = getArg(token, 1);  // local copy
-    arg.trim(); arg.toUpperCase();
-    if (arg == "ALL") {
-      String info = "Motor absolute angles: \n";
-      for (int i = 0; i < exo.getMotorCount(); ++i) {
-        uint8_t id = exo.getMotorIDByIndex(i);
-        float current_mA = exo.getCurrent(id);
-        info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-            ", current: " + String(current_mA, 3) + " mA}\n";
-      }
-      commandPrint(info);
-    } else {
-    id = getArgMotorID(exo, token, 1);
-    if (id != -1) {
-      float current_mA = exo.getCurrent(id);
-        commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-          ", current: " + String(current_mA, 3) + " mA}");
-      }
     }
 
   } else if (cmd == "set_current_lim") {
@@ -982,27 +1036,6 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       }
     }
 
-  } else if (cmd == "get_torque") {
-    String arg = getArg(token, 1);  // local copy
-    arg.trim(); arg.toUpperCase();
-    if (arg == "ALL") {
-      String info = "Motor Torque: \n";
-      for (int i = 0; i < exo.getMotorCount(); ++i) {
-        uint8_t id = exo.getMotorIDByIndex(i);
-        float torque = exo.getTorque(id);
-        info += "Motor " + String(i) + ": {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-            ", torque: " + String(torque, 4) + "}\n";
-      }
-      commandPrint(info);
-    } else {
-      id = getArgMotorID(exo, token, 1);
-      if (id != -1) {
-        float torque = exo.getTorque(id);
-        commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
-          ", torque: " + String(torque, 4) + " N·m}");
-      }
-    }
-
   } else if (cmd == "get_motor_limits") {
     String arg = getArg(token, 1);  // local copy
     arg.trim(); arg.toUpperCase();
@@ -1120,6 +1153,29 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
              ", status: " + status + "}\n";
     }
     commandPrint(out);
+
+  } else if (cmd == "io_profile") {
+    const exo_io::Snapshot snap = exo_io::profile().snapshot(micros());
+    const char* names[] = {"other", "command", "control", "model", "dxl_read",
+                          "dxl_write", "nx_pack", "usb_tx", "bt_tx", "peripheral"};
+    char line[144];
+    char decimal[21];
+    snprintf(line, sizeof(line), "IO_PROFILE: version=1 window_us=%s",
+             exo_io::decimal(snap.window_us, decimal));
+    String result(line);
+    for (uint8_t i = 0; i < exo_io::COUNT; ++i) {
+      snprintf(line, sizeof(line), "\nIO_STAGE: name=%s calls=%lu exclusive_us=%s max_span_us=%lu",
+               names[i], (unsigned long)snap.stages[i].calls,
+               exo_io::decimal(snap.stages[i].exclusive_us, decimal),
+               (unsigned long)snap.stages[i].max_span_us);
+      result += line;
+    }
+    commandPrint(result);
+
+  } else if (cmd == "reset_io_profile") {
+    exo_io::profile().reset(micros());
+    loopStatsReset();
+    commandPrint("OK: io profile reset");
 
   } else if (cmd == "loop_stats") {
     // Loop period is the floor on command latency: a byte sitting in the USB
@@ -1704,6 +1760,8 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_reply_route       |  BOTH/TELEM/CMD      | // Route replies: both(legacy)/telem(decoupled)/cmd (dual-CDC)"));
     commandPrint(F(" get_reply_route       |                      | // Get current reply/telemetry CDC route"));
     commandPrint(F(" check_limits          |                      | // Per-motor gesture span; flags NO_TRAVEL / HOME_OUTSIDE joints"));
+    commandPrint(F(" io_profile            |                      | // Exclusive stage times and call maxima"));
+    commandPrint(F(" reset_io_profile      |                      | // Reset I/O and loop statistics"));
     commandPrint(F(" loop_stats            |                      | // Loop period: n / mean / max microseconds"));
     commandPrint(F(" reset_loop_stats      |                      | // Clear loop statistics"));
     commandPrint(F(" reboot                |  ID/NAME/ALL         | // Reboot motor"));
@@ -1743,6 +1801,13 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" release_hold          |  ID                  | // Disable held ID and restore global mode"));
     commandPrint(F(" set_command_timeout   |  MILLISECONDS        | // Set direct-control watchdog (50-5000 ms)"));
     commandPrint(F(" get_telemetry_fast    |  ID:ID:ID.../ALL     | // Binary current/velocity/position telemetry frame"));
+    commandPrint(F(" set_utc_time          | UNIX_MS | // Synchronize UTC; no effect on control timing"));
+    commandPrint(F(" get_utc_time          |         | // UTC ms, synchronization flag and uptime"));
+    commandPrint(F(" set_joint_model       | ID:GAIN:TAU:VMAX:STIFFNESS:MOMENT | // Tune telemetry model only"));
+    commandPrint(F(" get_joint_model       | ID | // Query model and trigger threshold"));
+    commandPrint(F(" set_estimate_holdoff  | MS | // Telemetry quiet period (50..5000)"));
+    commandPrint(F(" set_joint_trigger     | ID:NM | // Store future assistance threshold; no motion"));
+    commandPrint(F(" clear_joint_trigger   | ID | // Clear threshold"));
     commandPrint(F(" telemetry_diag        |  ID:ID:ID.../ALL     | // Text diagnostics for fast telemetry reads"));
     commandPrint(F(" shadow_config         |  INTERVAL:ID:ID...   | // Configure read-only contact evidence sampling"));
     commandPrint(F(" shadow_start          |  None                 | // Start sampling (VELOCITY mode only)"));

@@ -64,7 +64,7 @@ void resolveStateAngles(const GestureState& state,
 // Note: "pinch"/"keygrip" left as absolute dense to avoid breaking existing logic.
 // You can convert them to relative later if you want.
 
-GestureMap gestureLibrary[N_GESTURES] = {
+const GestureMap gestureLibrary[N_GESTURES] = {
 
     // --- GRASP: (relative + sparse, normalized 0.0–1.0) ---
     // Values are fraction of calibrated range: 0.0 = home/open, 1.0 = fully closed

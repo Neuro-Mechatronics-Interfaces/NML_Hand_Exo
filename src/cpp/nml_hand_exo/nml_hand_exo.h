@@ -9,6 +9,9 @@
 #define NML_HAND_EXO_H
 
 #include "config.h"
+#include "joint_state_model.h"
+#include "rom_pulse_fit.h"
+#include "utc_clock.h"
 #include <Dynamixel2Arduino.h>
 using namespace ControlTableItem;
 
@@ -51,7 +54,13 @@ struct __attribute__((packed)) FastTelemetryRecord {
   int32_t position_ticks;
   int32_t absolute_cdeg;
   int32_t relative_cdeg;
+  uint8_t sources; // two bits each: position, current, velocity; 0/1/2 = unavailable/measured/estimated
+  uint64_t utc_ms; // Unix UTC milliseconds; zero until synchronized
+  uint32_t sample_ms; // sample uptime (millis), independent of UTC adjustments
 };
+
+static constexpr uint8_t TELEM_SOURCE_ESTIMATED = 0x80;
+static_assert(sizeof(FastTelemetryRecord) == 33, "NX v2 wire record size");
 
 /// @brief One absolute motor target for a multi-motor Sync Write.
 struct MotorAngleTarget {
@@ -88,7 +97,8 @@ enum FastTelemetryMethod : uint8_t {
   FAST_TELEM_METHOD_FAILED = 0,
   FAST_TELEM_METHOD_FALLBACK_READ = 1,
   FAST_TELEM_METHOD_FAST_SYNC_READ = 2,
-  FAST_TELEM_METHOD_SYNC_READ = 3
+  FAST_TELEM_METHOD_SYNC_READ = 3,
+  FAST_TELEM_METHOD_MODEL = 4
 };
 
 /// @brief Direction of an impedance ROM calibration sweep.
@@ -105,7 +115,8 @@ enum RomCalDirection : uint8_t {
 /// @brief State of the non-blocking impedance ROM calibration state machine.
 enum RomCalPhase : uint8_t {
   ROM_CAL_IDLE = 0,   ///< No sweep running.
-  ROM_CAL_RAMP,       ///< Ramping current and tracking net travel until stall.
+  ROM_CAL_RAMP,       ///< Powered portion of one bounded current pulse.
+  ROM_CAL_REST,       ///< Zero current; wait for feedback before another pulse.
   ROM_CAL_RETURN,     ///< Endstop found (or sweep aborted); returning to home.
   ROM_CAL_DONE        ///< Terminal; result already reported. Cleared to IDLE.
 };
@@ -116,12 +127,22 @@ enum RomCalStatus : uint8_t {
   ROM_CAL_STATUS_OK,        ///< Endstop found by motion onset + resisted nudge.
   ROM_CAL_STATUS_CEILING,   ///< Reached the current ceiling without moving.
   ROM_CAL_STATUS_TIMEOUT,   ///< Overall watchdog fired before concluding.
-  ROM_CAL_STATUS_ABORTED    ///< Cancelled, or a precondition failed mid-sweep.
+  ROM_CAL_STATUS_ABORTED,   ///< Cancelled, or a precondition failed mid-sweep.
+  ROM_CAL_STATUS_LIMIT      ///< Stored joint boundary reached; not a physical endstop.
 };
 
 /// @brief Class to manage the NML Hand Exoskeleton, providing initialization, motor control, and telemetry.
 class NMLHandExo {
   public:
+    bool setUtcTime(uint64_t epochMs) { return utcClock_.set(epochMs, millis()); }
+    uint64_t utcTime() { return utcClock_.now(millis()); }
+    bool telemetryEstimated();
+    void serviceJointModels();
+    bool setJointModel(uint8_t id, const JointModelParams& params);
+    String getJointModel(uint8_t id);
+    bool setEstimateHoldoff(uint32_t ms);
+    bool setJointTrigger(uint8_t id, float torque);
+    bool clearJointTrigger(uint8_t id);
     /// @brief Constructor.
     /// @param ids Pointer to array of motor IDs.
     /// @param numMotors Number of motors in the device.
@@ -223,7 +244,7 @@ class NMLHandExo {
     /// @brief Fill one compact telemetry record for host streaming.
     /// @param id Motor ID.
     /// @param record Destination record.
-    /// @return True if the ID belongs to this exo firmware build.
+    /// @return True if the record has a usable position.
     bool getFastTelemetryRecord(uint8_t id, FastTelemetryRecord& record);
     // Read-only Axon sampler: one position transaction, bounded to 2 ms.
     // Returns raw encoder angle in tenths of a degree; no wrap/clamp or motion.
@@ -233,8 +254,8 @@ class NMLHandExo {
     /// @param ids Array of requested Dynamixel IDs.
     /// @param count Number of requested IDs.
     /// @param records Destination record array with at least count entries.
-    /// @param methodOut Method used to read telemetry.
-    /// @param timeoutMs Per-status-packet timeout for DXL sync/fallback reads.
+    /// @param methodOut Transport method in low bits, TELEM_SOURCE_ESTIMATED in bit 7.
+    /// @param timeoutMs Bounded timeout for the idle Sync Read; no fallback reads.
     /// @return Number of records filled.
     uint8_t getFastTelemetryRecords(
       const uint8_t* ids,
@@ -298,11 +319,11 @@ class NMLHandExo {
     // Impedance range-of-motion (ROM) calibration
     // -----------------------------------------------------------
     //
-    // Drives ONE joint in ONE direction under current-mode control, ramping
-    // current slowly (per the ROM_CAL_* constants in config.h) while polling
-    // the joint angle, until the joint starts to creep and then resists a small
-    // extra nudge -- that angle is the endstop. The joint is then returned to
-    // the angle it started from. The whole thing runs as a non-blocking state
+    // Drives ONE joint in ONE direction with bounded current pulses, zero-current
+    // rests, and measured feedback (per ROM_CAL_* in config.h). Repeated powered
+    // pulses without further progress after prior travel identify the endstop.
+    // Valid responses refine the directional pulse model and telemetry gain.
+    // Automatic return is disabled by default. This runs as a non-blocking state
     // machine serviced from update(): begin*() only arms it and returns.
     //
     // The host triggers this per joint/direction (calibrate_rom:<id>:<dir>) and
@@ -561,6 +582,9 @@ class NMLHandExo {
 
     /// @brief Command signed motor current in mA while in CURRENT mode.
     bool setGoalCurrent(uint8_t id, float current_mA);
+    /// Validate the whole request, then apply guarded per-motor current writes.
+    /// Bus failures may leave an applied prefix; this is not a DXL Sync Write.
+    bool setGoalCurrents(const uint8_t* ids, const float* currents, uint8_t count);
 
     /// @brief Read the currently configured goal current in mA.
     float getGoalCurrent(uint8_t id);
@@ -854,12 +878,20 @@ class NMLHandExo {
     /// 0xF212 so a driver expecting the 4-field 0xF211 layout rejects rather
     /// than misparses. No motion or actuation is added; readback only.
 #if EXO_AXON_USB
-    static constexpr const char* VERSION = "0.8.0-axon-0.3.0";
+    static constexpr const char* VERSION = "0.9.1-axon-0.3.0";
 #else
-    static constexpr const char* VERSION = "0.8.0";
+    static constexpr const char* VERSION = "0.9.1";
 #endif
 
   private:
+    ExoUtcClock utcClock_;
+    JointStateModel jointModels_[N_MOTORS];
+    JointTelemetryGate telemetryGate_;
+    bool torqueEnabled_[N_MOTORS] = {};
+    uint32_t lastPositionMonitorMs_ = 0;
+    bool motionActive() const;
+    void servicePositionMonitor();
+    void fillModelRecord(int index, FastTelemetryRecord& record);
     /// @brief Dynamixel2Arduino object for motor communication.
     Dynamixel2Arduino dxl_;              // Handle to Dynamixel object
 
@@ -1085,19 +1117,41 @@ class NMLHandExo {
     float romCalHomeAngle_ = 0.0f;       ///< Absolute angle to return to, deg.
     float romCalLastAngle_ = 0.0f;       ///< Absolute angle at the previous step, deg.
     float romCalEndstopAngle_ = 0.0f;    ///< Furthest advanced position, i.e. the endstop, deg.
-    // Sliding progress window: the endstop is where net travel over the window
-    // stalls while current is high. romCalWindowRefAngle_ is the position at the
-    // start of the current window; if the joint advances >= ROM_CAL_PROGRESS_DEG
-    // beyond it (in the drive direction) the window resets forward and the sweep
-    // keeps ramping. If it does not within ROM_CAL_PROGRESS_WINDOW_MS, that is a
-    // stall.
-    float romCalWindowRefAngle_ = 0.0f;  ///< Position at the start of the progress window, deg.
-    unsigned long romCalWindowStartMs_ = 0; ///< millis() the current progress window opened.
-    unsigned long romCalStartMs_ = 0;    ///< millis() when the sweep was armed.
-    unsigned long romCalLastStepMs_ = 0; ///< millis() of the last paced angle poll.
-    unsigned long romCalLastRampMs_ = 0; ///< millis() of the last continuous current update.
-    bool romCalAdvancing_ = false;       ///< Joint made progress on the last poll (-> travel ramp rate).
-    unsigned long romCalReturnStartMs_ = 0;      ///< millis() the return-home hold began.
+    unsigned long romCalStartMs_ = 0;
+    unsigned long romCalLastStepMs_ = 0;
+    unsigned long romCalPulseStartMs_ = 0;
+    unsigned long romCalRestStartMs_ = 0;
+    unsigned long romCalPulseOnMs_ = 0;
+    unsigned long romCalReturnStartMs_ = 0;
+    float romCalPulseStartAngle_ = 0;
+    float romCalPulseStartVelocity_ = NAN;
+    float romCalPulsePeakAngle_ = 0;
+    uint16_t romCalPulseCount_ = 0;
+    uint16_t romCalFitSamples_ = 0;
+    uint8_t romCalStallPulses_ = 0;
+    bool romCalSignReversed_ = false;
+    bool romCalStopRequested_ = false;
+    const char* romCalReason_ = "none";
+    unsigned long romCalMaxPulseOnMs_ = 0;
+    float romCalFeedbackAngle_ = NAN;
+    uint16_t romCalRecoveries_ = 0;
+    uint8_t romCalFeedbackFailures_ = 0;
+    bool romCalPulseValid_ = true;
+    bool romCalPulseLimited_ = false;
+    float romCalMaxExcursionDeg_ = 0;
+    const char* romCalPulseStop_ = "none";
+    const char* romCalFitReason_ = "no_completed_pulse";
+    float romCalPredictedDeg_ = NAN;
+    float romCalObservedDeg_ = NAN;
+    const char* romCalResponseReason_ = "no_completed_pulse";
+    void romCalReportPulse();
+    bool romCalCheckTravel(float angle);
+    void romCalEndPulse(const char* reason);
+    bool romCalReadPosition(float& angle);
+    void romCalRecoverFeedback();
+    bool romCalReadFeedback(float& angle, float& velocity);
+    bool romCalStartPulse(float angle, float velocity);
+    void romCalCompletePulse(float angle, float velocity);
 
     // Batch/gesture sweeps: a queue of motor IDs swept one at a time. Empty for
     // a single-joint calibrate_rom; populated by beginRomCalibrationBatch so a
@@ -1111,23 +1165,16 @@ class NMLHandExo {
     /// each step of a batch; assumes the queue has already been set as intended.
     bool romCalArmMotor(uint8_t id, RomCalDirection direction);
 
-    /// @brief Write the ROM sweep's goal current, WITHOUT the stored-limit
-    /// zeroing that setGoalCurrent() applies. The sweep exists to find the real
-    /// physical endstop, which may sit at or beyond the stored software limit;
-    /// letting setGoalCurrent() zero the current at that limit made the joint
-    /// bounce off it (drive -> zero -> spring back -> drive) instead of
-    /// approaching a true endstop. Safety here is the 910 mA magnitude clamp
-    /// (still applied), the impedance-stall detector, and the overall watchdog,
-    /// NOT the calibrated position window. Only ever used while a ROM sweep is
-    /// actively driving romCalId_.
+    /// @brief Apply the ROM-specific current cap. Pulse service enforces the
+    /// stored joint window with measured position and aborts on failed feedback.
     bool writeRomSweepCurrent(float current_mA);
 
     /// @brief Arm the next queued motor, or clear the queue when exhausted.
     /// Called after each sweep concludes. No-op if the queue is empty.
     void romCalAdvanceQueue();
 
-    /// @brief Zero current on the ROM target and switch it to CURRENT_POSITION
-    /// hold at the recorded home angle. Shared by the OK and abort paths.
+    /// @brief Finish without motion by default; optionally return after success.
+    /// Faults and cancellation never initiate a return move.
     void romCalBeginReturnHome();
 
     /// @brief Release the current target's hold, report it, and advance the

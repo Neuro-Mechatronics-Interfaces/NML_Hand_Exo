@@ -4,6 +4,64 @@ Hard-won knowledge. Read before touching firmware, the serial protocol, or the G
 
 ---
 
+## Connect stalls, then a retry cannot open the CDC port
+
+Connection attempts now disable Connect/Refresh/Probe until the attempt finishes.
+Every dual-CDC open/probe failure closes both acquired handles, including a failure
+opening the second port. Serial writes default to a 1-second timeout. Previously,
+a pending write could wait indefinitely and a partially opened pair could retain
+the first COM port. An already-running old GUI process must be exited to release
+its handles; loading updated Python files does not alter that process.
+
+The GUI logs each handshake phase before running it: port open/probe, reply routing,
+debug disable, `info`, UTC synchronization, and hand-calibration reads. It logs the
+failure before displaying a modal error dialog. Optional hand-calibration replies
+have a 0.5-second timeout each; a failure is logged and leaves that display data
+unavailable. Polling starts only after the handshake, including UTC sync on v0.9+.
+
+An Arduino Serial Monitor stall after `info` occurs outside GUI polling. `info`
+uses RAM metadata and has no dependency on UTC. The initial v0.9 build used 73%
+static RAM, including approximately 17 KB for a mutable gesture-definition table.
+The table is now `const` and stays in flash, reducing static RAM to 21% on the
+default OpenRB build. Large String replies still use heap memory; this removes a
+substantial RAM-pressure risk, but confirmation of the reported stall requires
+reflashing and checking `info` followed by `help` on the board, before UTC is set.
+
+---
+
+## Protobuf discovery succeeds, then the benchmark reports no firmware info
+
+With `send_delay=0`, a fire-and-forget `debug:off` could leave its acknowledgement
+in flight when the next `info` request was sent. Flushing the reply queue did not
+remove that future reply. The `info` parser then consumed `Debug state: false`
+and returned no version. `HandExo.set_debug()` now waits for and validates its
+acknowledgement before returning; the GUI handshake uses the same method. This
+fix needs a Python update, not a firmware reflash.
+
+An initial discovery timeout on one CDC can be normal: the Protobuf binary port
+does not answer ASCII `info`. Discovery tries the other sibling. Do not infer
+text/binary roles from COM number order.
+
+After editing this repository, a previous `pip install ".[protobuf,...]"` still
+uses the installed package copy. Reinstall, or use an editable install in the
+environment that runs the GUI/benchmark:
+
+```cmd
+python -m pip install -e ".[protobuf]"
+```
+
+Other already-installed extras remain available. A regression test exercises
+delayed acknowledgements with the real Protobuf text-reader thread and confirms
+that subsequent binary telemetry is read from the separate endpoint.
+
+The mixed-load benchmark's `unexpected keyword argument 'timeout'` at
+`set_joint_model()` is another sign of an older installed SDK. It occurs before
+the model write reaches firmware. The script now detects this signature mismatch
+before opening ports and reports the imported SDK path and editable-install
+command above. Run that command in the same activated environment as the test.
+
+---
+
 ## Firmware response: unit suffixes break float parsing
 
 `_parse_motor_data_block()` in `_hand_exo.py` calls `float(val)` on raw string values.

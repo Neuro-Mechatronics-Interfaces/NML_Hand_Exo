@@ -36,7 +36,9 @@ struct GestureMap {
 };
 
 /// @brief Number of gestures defined in the library.
-extern GestureMap gestureLibrary[N_GESTURES];
+// Read-only definitions stay in flash on the memory-mapped SAMD target.
+// A mutable table consumes ~17 KB of the OpenRB's 32 KB RAM before setup().
+extern const GestureMap gestureLibrary[N_GESTURES];
 
 int jointIndexByName(const char* jointName);
 /// @brief Resolve a gesture state into absolute per-motor angles.

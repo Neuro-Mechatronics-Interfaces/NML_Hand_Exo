@@ -1,3 +1,4 @@
+from ._auto_serial import AutoSerialComm
 from ._interfaces import BaseComm, SerialComm, TCPComm, DualSerialComm
 from ._hand_exo import HandExo, ProtocolResponseError
 from ._dual_hand_exo import DualHandExo
@@ -16,6 +17,7 @@ except Exception:
 	LSLNumericSubscriber = None
 
 __all__ = [
+    "AutoSerialComm",
 	"BaseComm",
 	"DualHandExo",
 	"DualSerialComm",

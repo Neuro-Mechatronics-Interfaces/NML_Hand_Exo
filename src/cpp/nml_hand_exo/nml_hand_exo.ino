@@ -22,6 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#include "io_profile.h"
+#include "io_profile.h"
 #include "config.h"
 #include "utils.h"
 #include "oled.h"
@@ -168,6 +170,8 @@ void setup() {
 }
 
 void loop() {
+  // Pulse cutoffs run before host traffic or peripheral work.
+  exo.serviceRomCalibration();
 #if EXO_AXON_USB
   gAxon.poll([](void* context, uint8_t id,
                 axon_exo::AxonUsbPeripheral::Field field,
@@ -178,6 +182,7 @@ void loop() {
     // so it never issues its own transaction.
     auto* exo = static_cast<NMLHandExo*>(context);
     using Field = axon_exo::AxonUsbPeripheral::Field;
+    if (exo->telemetryEstimated()) return false; // Axon has no estimated-source flag.
     if (exo->getIndexById(id) < 0) return false;  // not a motor of this build
     if (field == Field::kAngle) {
       // The angle register still reads in every mode, but it is only a
@@ -208,33 +213,41 @@ void loop() {
   // Handle data from the host COMMAND connection (primary USB CDC).
   // In dual-CDC mode CMD_SERIAL is the command port; in single-CDC fallback it
   // resolves to DEBUG_SERIAL (legacy behavior).
-  // Each while-loop drains every complete line already buffered on that
-  // interface, so a burst is handled in one pass instead of one line per
-  // iteration. None of these calls block.
+  // Handle at most one complete line per interface per pass. Parsing a command
+  // can perform I/O even though LineReader is non-blocking. Service ROM between
+  // replies so a continuous stream of requests cannot starve its deadlines.
   String input;
 
-  while (gCmdLines.poll(CMD_SERIAL, input)) {
+  if (gCmdLines.poll(CMD_SERIAL, input)) {
     debugPrint("Received: " + input);
     parseMessage(exo, gc, bno055, input);
+    exo.serviceRomCalibration();
   }
 
 #if defined(DUAL_CDC) && DUAL_CDC
   // Also accept commands on the telemetry CDC. This keeps a LEGACY single-port
   // host working no matter which of the two COM ports it opened: either CDC
   // accepts commands, and replies mirror back per the default BOTH route.
-  while (gTelemLines.poll(TELEM_SERIAL, input)) {
+#if EXO_USB_PROTOBUF
+  pollProtobufUsb(exo, gc);
+  exo.serviceRomCalibration();
+#else
+  if (gTelemLines.poll(TELEM_SERIAL, input)) {
     debugPrint("Received: " + input);
     parseMessage(exo, gc, bno055, input);
+    exo.serviceRomCalibration();
   }
+#endif
 #endif
 
   // Handle data from the BLE/command connection
 #if defined(BT_SKIP)
   // then we skip polling BT lines
 #else
-  while (gBtLines.poll(COMMAND_SERIAL, input)) {
+  if (gBtLines.poll(COMMAND_SERIAL, input)) {
     debugPrint("Received: " + input);
-    parseMessage(exo, gc, bno055, input);
+    parseMessage(exo, gc, bno055, input, true);
+    exo.serviceRomCalibration();
   }
 #endif
 
@@ -244,8 +257,11 @@ void loop() {
   exo.update();
 
   // Check for any updates needed with the gesture controller
-  gc.update();
-
-  oledTick();
+  if (!exo.isRomCalibrating()) {
+    EXO_PROFILE(PERIPHERAL);
+    EXO_PROFILE(PERIPHERAL);
+    gc.update();
+    oledTick();
+  }
 
 }

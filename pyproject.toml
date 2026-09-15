@@ -1,6 +1,6 @@
 [project]
 name = "nml_hand_exo"
-version = "0.2.17.1"
+version = "0.3.0.0"
 description = "Control, calibrate, and decode intent for the NML Hand Exoskeleton"
 authors = [
     { name="Jonathan Shulgach", email="jshulgac@andrew.cmu.edu" },
@@ -57,6 +57,7 @@ include = ["nml_hand_exo*"]
 "nml_hand_exo.applications" = ["favicon-32x32.svg"]
 
 [project.optional-dependencies]
+protobuf = ["protobuf>=7.35.1,<8"]
 analysis = [
     "matplotlib",
     "pandas",

@@ -5,6 +5,8 @@ Firmware for the NML Hand Exoskeleton, targeting the **ROBOTIS OpenRB-150**
 [`nml_hand_exo.ino`](nml_hand_exo.ino); the device is controlled over a serial
 command interface (USB, and optionally an HC-05 Bluetooth UART).
 
+**v0.9.0:** motion-time telemetry comes from a bounded per-joint model, with field-source flags and UTC/sample-uptime timestamps. The GUI synchronizes UTC on connection. See the [implementation and protocol contract](../../../docs/v0.9.0_implementation.md) for tuning, compatibility, safety-feedback exceptions, and bench validation.
+
 This document covers how to install `arduino-cli`, compile, and flash the board,
 plus a short tour of the serial command interface. For the full protocol
 reference see [`docs/serial_protocol.md`](../../../docs/serial_protocol.md).
@@ -148,13 +150,33 @@ Global variables use 15132 bytes (46%) of dynamic memory ...
 You may see `LITTLE_ENDIAN redefined` warnings from the SAMD core headers; those
 come from the platform, not this firmware, and are harmless.
 
-To override a build flag without editing `config.h` (e.g. force single CDC):
+To add a build flag without editing `config.h` (e.g. force single CDC), use
+`compiler.cpp.extra_flags`. Overriding `build.extra_flags` removes OpenRB MCU/USB
+definitions such as `__SAMD21G18A__` and causes missing `Sercom`/`TCC_INST_NUM` errors:
 
 ```bash
-arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 \
-  --build-property "build.extra_flags=-DSINGLE_CDC" \
-  src/cpp/nml_hand_exo
+arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DSINGLE_CDC" src/cpp/nml_hand_exo
 ```
+
+For example to compile and upload the optional `Protobuf` build (requires nanopb):
+
+Current firmware reports **0.9.1**, with measured 20-ms pulse-response calibration.
+See [the v0.9.1 defaults and diagnostics](../../../docs/v0.9.1_pulse_calibration.md).
+
+```bash
+arduino-cli compile --upload -p %COM% --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF=1" src/cpp/nml_hand_exo
+```
+
+The primary CDC retains `info`/`help`; the second carries typed Protobuf telemetry
+and direct motion/model-update requests. `info` advertises `USB Protocol: protobuf-v1` so the
+SDK/GUI discovers the layout automatically. See [USB diagnostics and protocol](../../../docs/usb_protocol_and_io_diagnostics.md)
+for compile-only commands, the Python extra, schema regeneration, and telemetry
+plus fixed-rate model-write benchmarks. `USB Features: joint_model_write`
+identifies builds supporting typed `set_joint_model` requests. The additional
+`batch_motion` feature enables ID-keyed angle/current batches, finger angles,
+and named gestures through Protobuf. Update both
+firmware and Python for this feature. The default ASCII/NX build is unchanged unless the flag
+is enabled.
 
 ---
 

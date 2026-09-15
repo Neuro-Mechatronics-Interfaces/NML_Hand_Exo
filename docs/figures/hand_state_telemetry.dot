@@ -1,0 +1,14 @@
+digraph hand_state_telemetry {
+  graph [rankdir=TB, bgcolor="transparent", label="GUI hand state from firmware telemetry", labelloc=t, fontname="Arial"];
+  node [shape=box, style="rounded,filled", fillcolor="#edf2f7", fontname="Arial"];
+  edge [fontname="Arial", fontsize=10];
+  nx [label="HandExo NX decoder\nPosition + source + UTC + uptime"];
+  worker [label="SerialWorker\nOne latest snapshot + host receipt time"];
+  mapping [label="Calibrated curl by DXL ID\nHome-to-flexion span; select side"];
+  main [label="Hand State tab\nPose + provenance + stale indication"];
+  inset [label="UDP inset\nSame pose, source and clocks"];
+  nx -> worker;
+  worker -> mapping [label="No pose averaging"];
+  mapping -> main;
+  mapping -> inset;
+}

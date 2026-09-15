@@ -10,6 +10,7 @@
 //#include "utils.h"
 #include "nml_hand_exo.h"
 #include <Dynamixel2Arduino.h>
+#include "io_profile.h"
 
 
 /// @brief Verbose output toggle for debugging.
@@ -92,6 +93,7 @@ NMLHandExo::NMLHandExo(const uint8_t* ids, uint8_t numMotors, const float jointL
   for (int i = 0; i < numMotors_; ++i) {
     flipMotor_[i] = DEFAULT_FLIPS[i];
     lastDirectCommandMs_[i] = 0;
+    torqueEnabled_[i] = false;
     directCommandActive_[i] = false;
     directCommandDirection_[i] = 0;
     directVelocityLimitBlock_[i] = 0;
@@ -127,19 +129,19 @@ void NMLHandExo::initializeMotors() {
   // Configure motor operating modes and torque, but DON'T move them yet
   for (int i = 0; i < numMotors_; i++) {
     uint8_t id = motorIds_[i];
-    dxl_.torqueOff(id);
+    EXO_PROFILE_CALL(DXL_WRITE, dxl_.torqueOff(id));
 
     // RETURN_DELAY_TIME is EEPROM-backed, so only write it when needed. Zero
     // removes the factory 500 us pause before every read response without
     // changing which commands produce responses.
-    uint32_t returnDelay = dxl_.readControlTableItem(RETURN_DELAY_TIME, id);
+    uint32_t returnDelay = EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(RETURN_DELAY_TIME, id));
     if (dxl_.getLastLibErrCode() == DXL_LIB_OK &&
         returnDelay != DYNAMIXEL_RETURN_DELAY) {
-      dxl_.writeControlTableItem(RETURN_DELAY_TIME, id,
-                                 DYNAMIXEL_RETURN_DELAY);
+      EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(RETURN_DELAY_TIME, id,
+                                 DYNAMIXEL_RETURN_DELAY));
     }
-    dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION);
-    dxl_.torqueOn(id);
+    EXO_PROFILE_CALL(DXL_WRITE, dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION));
+    EXO_PROFILE_CALL(DXL_WRITE, dxl_.torqueOn(id));
     // Ceiling stays at the part maximum so set_current_lim can raise effort at
     // runtime, but the COMMANDED effort starts low. Writing GOAL_CURRENT at
     // the ceiling makes every motor push at max whenever it is resisted, and
@@ -148,7 +150,7 @@ void NMLHandExo::initializeMotors() {
     // The register write goes direct rather than through setCurrentLimit(),
     // which now also owns the NOMINAL effort: the two are different numbers
     // here (part ceiling vs. working effort) and must not be conflated.
-    dxl_.writeControlTableItem(CURRENT_LIMIT, id, MOTOR_CURRENT_LIMIT);
+    EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(CURRENT_LIMIT, id, MOTOR_CURRENT_LIMIT));
     currentLimits_[i] = DEFAULT_GOAL_CURRENT_MA;   // nominal, not the ceiling
     motorMoving_[i] = false;                       // boots holding, not moving
   }
@@ -168,12 +170,11 @@ void NMLHandExo::initializeMotors() {
   // nearest equivalent of HOME_STATES modulo 360 degrees.
   for (int i = 0; i < numMotors_; i++) {
     uint8_t id = motorIds_[i];
-    float currentPos = dxl_.getPresentPosition(id, UNIT_DEGREE);
+    float currentPos = EXO_PROFILE_CALL(DXL_READ, dxl_.getPresentPosition(id, UNIT_DEGREE));
 
-    // Sanity check: if read returns exactly 0.0 but home is far away,
-    // assume the read failed and keep the original HOME_STATES offset.
-    if (currentPos == 0.0f && zeroOffsets_[i] > 10.0f) {
-      debugPrint("[WARN] Motor " + String(id) + " position read returned 0.0, "
+    // Zero is a valid angle. Seed the model only from a successful read.
+    if (dxl_.getLastLibErrCode() != DXL_LIB_OK || !isfinite(currentPos)) {
+      debugPrint("[WARN] Motor " + String(id) + " position read failed, "
                  "keeping HOME_STATES offset " + String(zeroOffsets_[i], 2));
       continue;
     }
@@ -195,6 +196,8 @@ void NMLHandExo::initializeMotors() {
     goalAngle_[i] = currentPos;
     goalAngleValid_[i] = true;
     motorReachable_[i] = true;
+    torqueEnabled_[i] = true;
+    jointModels_[i].correct(currentPos, 0, 0, false, millis());
 
     if (turns != 0.0f) {
       debugPrint("[INIT] Motor " + String(id) + " multi-turn correction: "
@@ -256,7 +259,7 @@ int NMLHandExo::angleToTicks(float angle_deg, int index) {
 void NMLHandExo::setZeroOffset(uint8_t id) {
   int index = getIndexById(id);
   if (index != -1) {
-    float current_angle = dxl_.getPresentPosition(id, UNIT_DEGREE);
+    float current_angle = EXO_PROFILE_CALL(DXL_READ, dxl_.getPresentPosition(id, UNIT_DEGREE));
     zeroOffsets_[index] = current_angle;
     char buffer[64];
     snprintf(buffer, sizeof(buffer), "Calibrated zero for motor %d: %f deg", id, current_angle);
@@ -271,203 +274,202 @@ float NMLHandExo::getZeroOffset(uint8_t id) {
   return (index != -1) ? zeroOffsets_[index] : 0.0f;
 }
 bool NMLHandExo::getFastTelemetryRecord(uint8_t id, FastTelemetryRecord& record) {
-  int index = getIndexById(id);
-  record.id = id;
-  record.error = 0;
-  record.current_mA = 0;
-  record.velocity_raw = 0;
-  record.position_ticks = 0;
-  record.absolute_cdeg = 0;
-  record.relative_cdeg = 0;
-  if (index == -1) {
-    record.error = 1;
-    return false;
-  }
-
-  int16_t current_mA = (int16_t)dxl_.readControlTableItem(PRESENT_CURRENT, id);
-  int32_t velocity_raw = (int32_t)dxl_.readControlTableItem(PRESENT_VELOCITY, id);
-  float absolute_deg = dxl_.getPresentPosition(id, UNIT_DEGREE);
-  float relative_deg = absolute_deg - zeroOffsets_[index];
-  if (flipMotor_[index]) {
-    relative_deg *= -1.0f;
-  }
-
-  record.current_mA = current_mA;
-  record.velocity_raw = velocity_raw;
-  record.position_ticks = (int32_t)round(absolute_deg * (float)PULSE_RESOLUTION / 360.0f);
-  record.absolute_cdeg = (int32_t)round(absolute_deg * 100.0f);
-  record.relative_cdeg = (int32_t)round(relative_deg * 100.0f);
-  return true;
+  uint8_t method;
+  getFastTelemetryRecords(&id, 1, &record, method, 10);
+  return record.error == 0;
 }
+
 uint8_t NMLHandExo::getFastTelemetryRecords(
-  const uint8_t* ids,
-  uint8_t count,
-  FastTelemetryRecord* records,
-  uint8_t& methodOut,
-  uint32_t timeoutMs
-) {
-  static constexpr uint8_t MAX_FAST_TELEM_IDS = 32;
-
-  if (count > MAX_FAST_TELEM_IDS) {
-    count = MAX_FAST_TELEM_IDS;
-  }
-
-  auto clearRecords = [&]() {
-    for (uint8_t i = 0; i < count; ++i) {
-      records[i].id = ids[i];
-      records[i].error = 0;
-      records[i].current_mA = 0;
-      records[i].velocity_raw = 0;
-      records[i].position_ticks = 0;
-      records[i].absolute_cdeg = 0;
-      records[i].relative_cdeg = 0;
-    }
-  };
-
-  auto clearDxlRx = [&]() {
-    while (DXL_SERIAL.available() > 0) {
-      DXL_SERIAL.read();
-    }
-  };
-
-  auto readItem = [&](uint8_t item, uint8_t id, bool& ok) -> int32_t {
-    clearDxlRx();
-    int32_t value = dxl_.readControlTableItem(item, id, timeoutMs);
-    if (dxl_.getLastLibErrCode() != DXL_LIB_OK) {
-      ok = false;
-    }
-    return value;
-  };
-
-  clearRecords();
+    const uint8_t* ids, uint8_t count, FastTelemetryRecord* records,
+    uint8_t& methodOut, uint32_t timeoutMs) {
   methodOut = FAST_TELEM_METHOD_FAILED;
-  if (count == 0) {
-    return 0;
-  }
-
-  // Fill one record's derived angle fields from its raw position ticks.
-  auto decodeAngles = [&](uint8_t i, int index, int32_t position_ticks) {
-    records[i].position_ticks = position_ticks;
-    float absolute_deg = position_ticks * 360.0f / (float)PULSE_RESOLUTION;
-    float relative_deg = absolute_deg - zeroOffsets_[index];
-    if (flipMotor_[index]) relative_deg *= -1.0f;
-    records[i].absolute_cdeg = (int32_t)round(absolute_deg * 100.0f);
-    records[i].relative_cdeg = (int32_t)round(relative_deg * 100.0f);
-  };
-
-  // --- Preferred path: ONE Sync Read for the whole fleet ---------------------
-  // PRESENT_CURRENT/VELOCITY/POSITION are contiguous (addr 126, len 10), so a
-  // single Sync Read returns all three for every motor in one bus transaction
-  // instead of count*3 sequential reads. That is the difference between the GUI
-  // poll costing ~1 round trip and ~27 (9 motors) or ~54 (dual) per frame --
-  // the earlier per-register loop is what made the GUI crawl once current and
-  // velocity were re-enabled.
-  {
-    DYNAMIXEL::XELInfoSyncRead_t xels[MAX_FAST_TELEM_IDS];
-    DYNAMIXEL::InfoSyncReadInst_t syncInfo = {};
-    uint8_t recvBufs[MAX_FAST_TELEM_IDS][DYNAMIXEL_PRESENT_BLOCK_LENGTH];
-    uint8_t packetBuffer[256];
-    int recIndex[MAX_FAST_TELEM_IDS];
-    uint8_t packed = 0;
-    for (uint8_t i = 0; i < count; ++i) {
-      int index = getIndexById(ids[i]);
-      if (index == -1) { records[i].error = 1; continue; }
-      // Skip IDs that were unreachable at startup. A dual build carries all 18
-      // IDs even with one hand attached; packing the 9 offline IDs into the
-      // Sync Read makes it wait out a per-ID timeout for each missing status
-      // packet, which stacks into a long bursty stall that can wedge the bus --
-      // the cause of the GUI-freeze-after-Home regression. Their records keep
-      // the zeroed position-only defaults with the error bit set.
-      if (!motorReachable_[index]) { records[i].error = 1; continue; }
-      xels[packed].id = ids[i];
-      xels[packed].p_recv_buf = recvBufs[packed];
-      recIndex[packed] = i;              // map packed slot -> records[] slot
-      ++packed;
-    }
-    if (packed > 0) {
-      clearDxlRx();
-      syncInfo.packet.p_buf = packetBuffer;
-      syncInfo.packet.buf_capacity = sizeof(packetBuffer);
-      syncInfo.packet.is_completed = false;
-      syncInfo.addr = DYNAMIXEL_PRESENT_BLOCK_ADDRESS;
-      syncInfo.addr_length = DYNAMIXEL_PRESENT_BLOCK_LENGTH;
-      syncInfo.p_xels = xels;
-      syncInfo.xel_count = packed;
-      syncInfo.is_info_changed = true;
-
-      uint8_t got = dxl_.syncRead(&syncInfo, timeoutMs);
-      if (got > 0) {
-        methodOut = FAST_TELEM_METHOD_SYNC_READ;
-        for (uint8_t p = 0; p < packed; ++p) {
-          const uint8_t i = recIndex[p];
-          const int index = getIndexById(ids[i]);
-          if (xels[p].error != 0) { records[i].error = 1; }
-          const uint8_t* b = recvBufs[p];
-          // Little-endian: current int16 @0, velocity int32 @2, position int32 @6.
-          int16_t current_mA;
-          int32_t velocity_raw, position_ticks;
-          memcpy(&current_mA,   b + DYNAMIXEL_PRESENT_CURRENT_OFFSET,  2);
-          memcpy(&velocity_raw, b + DYNAMIXEL_PRESENT_VELOCITY_OFFSET, 4);
-          memcpy(&position_ticks, b + DYNAMIXEL_PRESENT_POSITION_OFFSET, 4);
-          records[i].current_mA = current_mA;
-          records[i].velocity_raw = velocity_raw;
-          decodeAngles(i, index, position_ticks);
-        }
-        return count;
-      }
-    }
-  }
-
-  // --- Fallback: per-motor sequential reads ----------------------------------
-  // Only reached if the Sync Read transaction returned nothing (bus hiccup).
-  // Same three registers, read one at a time, each guarded independently so a
-  // single bad read degrades that motor to position-only rather than blanking
-  // the frame.
-  methodOut = FAST_TELEM_METHOD_FALLBACK_READ;
+  if (!ids || !records) return 0;
+  count = min(count, (uint8_t)32);
+  serviceJointModels();
+  const bool estimated = telemetryEstimated();
   for (uint8_t i = 0; i < count; ++i) {
-    uint8_t id = ids[i];
-    records[i].id = id;
-    records[i].error = 0;
-    int index = getIndexById(id);
-    if (index == -1) {
-      records[i].error = 1;
-      continue;
+    records[i] = {};
+    records[i].id = ids[i];
+    records[i].error = 1;
+    records[i].sample_ms = millis();
+    records[i].utc_ms = utcClock_.now(records[i].sample_ms);
+  }
+  if (estimated) {
+    methodOut = FAST_TELEM_METHOD_MODEL | TELEM_SOURCE_ESTIMATED;
+    for (uint8_t i = 0; i < count; ++i) {
+      const int index = getIndexById(ids[i]);
+      if (index >= 0 && motorReachable_[index]) fillModelRecord(index, records[i]);
     }
-    // Skip offline IDs here too: three per-ID timeouts each would otherwise
-    // stall the fallback badly on a one-hand dual build.
-    if (!motorReachable_[index]) {
-      records[i].error = 1;
-      continue;
-    }
+    return count; // No telemetry register reads, including idle-side requests.
+  }
 
-    bool posOk = true;
-    int32_t position_ticks = readItem(PRESENT_POSITION, id, posOk);
-    if (!posOk) records[i].error = 1;
-
-    bool curOk = true;
-    int16_t current_mA = (int16_t)readItem(PRESENT_CURRENT, id, curOk);
-    if (!curOk) {
-      records[i].error = 1;
-      current_mA = 0;
-    }
-
-    bool velOk = true;
-    int32_t velocity_raw = readItem(PRESENT_VELOCITY, id, velOk);
-    if (!velOk) {
-      records[i].error = 1;
-      velocity_raw = 0;
-    }
-
-    records[i].current_mA = current_mA;
-    records[i].velocity_raw = velocity_raw;
-    decodeAngles(i, index, position_ticks);
+  DYNAMIXEL::XELInfoSyncRead_t xels[32] = {};
+  DYNAMIXEL::InfoSyncReadInst_t info = {};
+  uint8_t buffers[32][DYNAMIXEL_PRESENT_BLOCK_LENGTH] = {};
+  uint8_t packet[256];
+  uint8_t slots[32];
+  uint8_t packed = 0;
+  for (uint8_t i = 0; i < count; ++i) {
+    const int index = getIndexById(ids[i]);
+    if (index < 0 || !motorReachable_[index]) continue;
+    xels[packed].id = ids[i];
+    xels[packed].p_recv_buf = buffers[packed];
+    slots[packed++] = i;
+  }
+  if (!packed) return count;
+  info.packet.p_buf = packet;
+  info.packet.buf_capacity = sizeof(packet);
+  info.addr = DYNAMIXEL_PRESENT_BLOCK_ADDRESS;
+  info.addr_length = DYNAMIXEL_PRESENT_BLOCK_LENGTH;
+  info.p_xels = xels;
+  info.xel_count = packed;
+  info.is_info_changed = true;
+  while (DXL_SERIAL.available() > 0) DXL_SERIAL.read();
+  const uint8_t got = EXO_PROFILE_CALL(DXL_READ, dxl_.syncRead(&info, timeoutMs));
+  methodOut = FAST_TELEM_METHOD_SYNC_READ;
+  // The library does not supply a reliable per-slot completion bitmap.
+  // A partial response must never decode unfilled buffers as physical zeros.
+  // Fail the whole sample closed; retry on the next poll, not N*3 fallbacks.
+  if (got != packed) return count;
+  const uint32_t now = millis();
+  for (uint8_t p = 0; p < packed; ++p) {
+    if (xels[p].error != 0) continue;
+    FastTelemetryRecord& r = records[slots[p]];
+    const int index = getIndexById(r.id);
+    memcpy(&r.current_mA, buffers[p] + DYNAMIXEL_PRESENT_CURRENT_OFFSET, 2);
+    memcpy(&r.velocity_raw, buffers[p] + DYNAMIXEL_PRESENT_VELOCITY_OFFSET, 4);
+    memcpy(&r.position_ticks, buffers[p] + DYNAMIXEL_PRESENT_POSITION_OFFSET, 4);
+    const float angle = r.position_ticks * 360.0f / PULSE_RESOLUTION;
+    if (!isfinite(angle) || fabsf(angle) > 36000.0f) continue;
+    r.absolute_cdeg = (int32_t)roundf(angle * 100.0f);
+    r.relative_cdeg = (int32_t)roundf((angle - zeroOffsets_[index]) *
+                                    (flipMotor_[index] ? -100.0f : 100.0f));
+    r.error = 0;
+    r.sample_ms = now;
+    r.utc_ms = utcClock_.now(now);
+    r.sources = 0x15; // position/current/velocity measured
+    jointModels_[index].correct(angle, r.velocity_raw * 0.229f * 6.0f,
+                                r.current_mA, true, now);
   }
   return count;
 }
+
+bool NMLHandExo::motionActive() const {
+  if (romCalPhase_ != ROM_CAL_IDLE && romCalPhase_ != ROM_CAL_DONE) return true;
+  for (int i = 0; i < numMotors_; ++i) {
+    if (motorReachable_[i] && torqueEnabled_[i] &&
+        (directCommandActive_[i] || motorMoving_[i])) return true;
+  }
+  return false;
+}
+
+bool NMLHandExo::telemetryEstimated() {
+  return telemetryGate_.estimated(millis(), motionActive());
+}
+
+void NMLHandExo::serviceJointModels() {
+  EXO_PROFILE(MODEL);
+  const uint32_t now = millis();
+  utcClock_.tick(now);
+  telemetryGate_.estimated(now, motionActive());
+  for (int i = 0; i < numMotors_; ++i) {
+    const bool positional = positionHoldActive_[i] || modeControlsPosition();
+    const bool currentKnown = positionHoldActive_[i] || modeControlsCurrent();
+    const bool moving = torqueEnabled_[i] &&
+        (directCommandActive_[i] || (motorMoving_[i] && goalAngleValid_[i] &&
+         (motorControlMode_ != "CURRENT_POSITION" || motorAdmitted_[i])));
+    float effort = motorControlMode_ == "CURRENT" && !positionHoldActive_[i] ?
+        directCommandDirection_[i] : appliedCurrents_[i];
+    if (!torqueEnabled_[i]) effort = 0.0f;
+    jointModels_[i].advance(now, jointLimits_[i][0], jointLimits_[i][1],
+        zeroOffsets_[i], moving, positional, goalAngle_[i], effort,
+        currentKnown, directCommandDirection_[i] * 6.0f,
+        XC330_T288_TORQUE_CONSTANT);
+  }
+}
+
+void NMLHandExo::fillModelRecord(int index, FastTelemetryRecord& r) {
+  const JointStateModel& m = jointModels_[index];
+  if (!m.valid) return;
+  r.error = 0;
+  r.sources = 0x22; // position and velocity estimated
+  if (m.currentValid) r.sources |= 0x08;
+  r.current_mA = m.currentValid ? (int16_t)roundf(m.current) : 0;
+  r.velocity_raw = (int32_t)roundf(m.velocity / (6.0f * 0.229f));
+  r.position_ticks = (int32_t)roundf(m.angle * PULSE_RESOLUTION / 360.0f);
+  r.absolute_cdeg = (int32_t)roundf(m.angle * 100.0f);
+  r.relative_cdeg = (int32_t)roundf((m.angle - zeroOffsets_[index]) *
+                                 (flipMotor_[index] ? -100.0f : 100.0f));
+}
+
+bool NMLHandExo::setJointModel(uint8_t id, const JointModelParams& params) {
+  const int index = getIndexById(id);
+  if (index < 0 || !params.valid()) return false;
+  serviceJointModels();
+  jointModels_[index].params = params;
+  return true;
+}
+String NMLHandExo::getJointModel(uint8_t id) {
+  const int index = getIndexById(id);
+  if (index < 0) return "ERROR: unknown joint ID";
+  const JointStateModel& m = jointModels_[index];
+  String out = "JOINT_MODEL: id=" + String(id) + " gain=" + String(m.params.gain, 6) +
+      " time_constant=" + String(m.params.time_constant, 6) +
+      " max_velocity=" + String(m.params.max_velocity, 6) +
+      " stiffness=" + String(m.params.stiffness, 6) +
+      " moment=" + String(m.params.moment, 6) +
+      " trigger=" + (isfinite(m.trigger) ? String(m.trigger, 6) : String("nan"));
+  for (uint8_t d = 0; d < 2; ++d) {
+    const auto& p = m.pulseResponses[d];
+    const String prefix = d == 0 ? " pulse_flex_" : " pulse_extend_";
+    out += prefix + "slope=" + String(p.slope, 6) + prefix + "samples=" + String(p.movingSamples) +
+           prefix + "no_motion=" + String(p.noMotionSamples) + prefix + "gradients=" + String(p.gradientSamples);
+  }
+  return out;
+}
+bool NMLHandExo::setEstimateHoldoff(uint32_t ms) {
+  if (ms < 50 || ms > 5000) return false;
+  telemetryGate_.holdoff = ms;
+  return true;
+}
+bool NMLHandExo::setJointTrigger(uint8_t id, float torque) {
+  const int index = getIndexById(id);
+  if (index < 0 || !isfinite(torque) || torque < 0 || torque > 1) return false;
+  jointModels_[index].trigger = torque;
+  return true;
+}
+bool NMLHandExo::clearJointTrigger(uint8_t id) {
+  const int index = getIndexById(id);
+  if (index < 0) return false;
+  jointModels_[index].trigger = NAN;
+  return true;
+}
+
+// Position-only feedback for modes/holds that the current governor does not
+// own. The model cannot declare physical arrival. One ID per 50 ms pass.
+void NMLHandExo::servicePositionMonitor() {
+  const uint32_t now = millis();
+  if (now - lastPositionMonitorMs_ < 50) return;
+  lastPositionMonitorMs_ = now;
+  for (int i = 0; i < numMotors_; ++i) {
+    if (!motorMoving_[i] || !torqueEnabled_[i] || !motorReachable_[i]) continue;
+    if (motorControlMode_ == "CURRENT_POSITION" && currentGovernorEnabled_) continue;
+    if (now - goalIssuedMs_[i] < MOVE_WINDOW_MS) continue;
+    int32_t ticks;
+    if (readPresentPositionTicks(motorIds_[i], ticks) &&
+        fabsf(ticks * 360.0f / PULSE_RESOLUTION - goalAngle_[i]) <= GESTURE_REACH_TOLERANCE_DEG) {
+      concludeMove(i, MOVE_VERDICT_REACHED);
+    } else if (now - goalIssuedMs_[i] >= MOVE_TIMEOUT_MS) {
+      concludeMove(i, MOVE_VERDICT_SHORT);
+    }
+    return;
+  }
+}
+
 void NMLHandExo::resetAllZeros() {
   for (int i = 0; i < numMotors_; ++i) {
     uint8_t id = motorIds_[i];
-    float current_angle = dxl_.getPresentPosition(id, UNIT_DEGREE);
+    float current_angle = EXO_PROFILE_CALL(DXL_READ, dxl_.getPresentPosition(id, UNIT_DEGREE));
     zeroOffsets_[i] = current_angle;
     debugPrint("[DEBUG] Zero offset set for motor " + String(id) + ": " + String(current_angle, 2) + " deg");
   }
@@ -477,10 +479,23 @@ const char* NMLHandExo::getSide() const {
 }
 
 String NMLHandExo::getDeviceInfo(bool includeLiveTelemetry) {
+  if (telemetryEstimated()) includeLiveTelemetry = false;
 
     // Need to return a single string with all the information
     String info = "Name: NMLHandExo\n";
     info += "Version: " + String(VERSION) + "\n";
+#if EXO_USB_PROTOBUF
+    info += "USB Protocol: protobuf-v1\nUSB CDC Count: 2\nUSB Text Port: primary\nUSB Binary Port: secondary\n";
+    info += "USB Features: joint_model_write batch_motion\n";
+#elif EXO_AXON_USB
+    info += "USB Protocol: axon-ascii\nUSB CDC Count: 1\n";
+#elif defined(DUAL_CDC) && DUAL_CDC
+    info += "USB Protocol: ascii-nx\nUSB CDC Count: 2\n";
+#else
+    info += "USB Protocol: ascii-nx\nUSB CDC Count: 1\n";
+#endif
+    info += "Model Step Ms: " + String(EXO_MODEL_STEP_MS) + "\n";
+    info += "I/O Profile: 1\n";
     info += "Side: " + String(HAND_SIDE) + "\n";
     info += "Number of Motors: " + String(numMotors_) + "\n";
     for (int i = 0; i < numMotors_; ++i) {
@@ -584,8 +599,8 @@ bool NMLHandExo::isExoCalibrating() {
 // NOT assume a fixed relationship between commanded-current sign and that axis;
 // instead we start the ramp with a best-guess sign and, at the first real
 // motion, check whether the joint actually moved the way we asked. If it went
-// the wrong way we flip the sign once and carry on. Because the probe current
-// at that point is tiny, a brief wrong-way micro-motion is harmless.
+// the wrong way we flip the sign and re-check. The probe uses the same bounded
+// ROM current range as the rest of the sweep.
 
 bool NMLHandExo::beginRomCalibration(uint8_t id, RomCalDirection direction) {
   // A sweep drives current directly, so the fleet must already be in CURRENT
@@ -612,7 +627,7 @@ bool NMLHandExo::romCalArmMotor(uint8_t id, RomCalDirection direction) {
   // that has since dropped off the bus. Only a read that both succeeds AND is
   // finite is trusted as the return-home reference.
   if (!motorReachable_[index]) return false;
-  const float startAngle = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  const float startAngle = EXO_PROFILE_CALL(DXL_READ, dxl_.getPresentPosition(id, UNIT_DEGREE));
   if (dxl_.getLastLibErrCode() != DXL_LIB_OK || !isfinite(startAngle)) {
     return false;
   }
@@ -624,7 +639,6 @@ bool NMLHandExo::romCalArmMotor(uint8_t id, RomCalDirection direction) {
   romCalHomeAngle_ = startAngle;
   romCalLastAngle_ = startAngle;
   romCalEndstopAngle_ = startAngle;
-  romCalWindowRefAngle_ = startAngle;
   romCalCurrentMa_ = ROM_CAL_START_CURRENT_MA;
   romCalDirLocked_ = false;
 
@@ -639,19 +653,34 @@ bool NMLHandExo::romCalArmMotor(uint8_t id, RomCalDirection direction) {
   const unsigned long now = millis();
   romCalStartMs_ = now;
   romCalLastStepMs_ = now;
-  romCalLastRampMs_ = now;
-  romCalWindowStartMs_ = now;
-  romCalAdvancing_ = false;
+  romCalPulseCount_ = 0;
+  romCalFitSamples_ = 0;
+  romCalStallPulses_ = 0;
+  romCalSignReversed_ = false;
+  romCalStopRequested_ = false;
+  romCalReason_ = "none";
+  romCalPulseOnMs_ = romCalMaxPulseOnMs_ = 0;
+  romCalFeedbackAngle_ = startAngle;
+  romCalRecoveries_ = romCalFeedbackFailures_ = 0;
+  romCalMaxExcursionDeg_ = 0;
+  romCalPulseStop_ = "none";
+  romCalFitReason_ = "no_completed_pulse";
+  romCalResponseReason_ = "no_completed_pulse";
+  romCalPredictedDeg_ = romCalObservedDeg_ = NAN;
+  // Begin each independently armed direction conservatively. Retain its final
+  // response for inspection until that direction is calibrated again.
+  jointModels_[index].pulseResponses[direction] = PulseResponseModel{};
 
-  // Write the initial (tiny) goal current BEFORE enabling torque, so a stale
-  // GOAL_CURRENT left in the register by a previous set_current cannot apply for
-  // the instant between torque-on and our write. With torque off the write is
-  // inert; enabling torque then applies exactly the small current we intend.
-  // Uses the sweep write (no stored-limit zeroing) like every ramp step; safe
-  // here because the current is tiny and torque is still off.
-  writeRomSweepCurrent(romCalSign_ * romCalCurrentMa_);
+  // Clear a stale goal before torque-on. A pulse starts only with valid feedback
+  // and room inside the stored joint limits.
+  if (!writeRomSweepCurrent(0)) return false;
   enableTorque(id, true);
-  romCalPhase_ = ROM_CAL_RAMP;
+  float angle, velocity;
+  if (!romCalReadFeedback(angle, velocity)) {
+    enableTorque(id, false);
+    return false;
+  }
+  romCalStartPulse(angle, velocity);
   debugPrint("[ROM] Calibration armed: id=" + String(id) + " dir=" +
              String(direction == ROM_CAL_DIR_FLEX ? "flex" : "extend"));
   return true;
@@ -707,6 +736,15 @@ void NMLHandExo::romCalAdvanceQueue() {
     romCalStatus_ = ROM_CAL_STATUS_ABORTED;
     romCalHomeAngle_ = NAN;
     romCalCurrentMa_ = 0.0f;
+    romCalPulseCount_ = romCalFitSamples_ = 0;
+    romCalIndex_ = getIndexById(id);
+    romCalReason_ = "unreachable";
+    romCalFeedbackAngle_ = NAN;
+    romCalPulseOnMs_ = romCalMaxPulseOnMs_ = romCalRecoveries_ = 0;
+    romCalMaxExcursionDeg_ = 0;
+    romCalPredictedDeg_ = romCalObservedDeg_ = NAN;
+    romCalFitReason_ = romCalResponseReason_ = "unreachable";
+    romCalPulseStop_ = "none";
     romCalReport();
   }
   romCalQueueCount_ = 0;
@@ -715,6 +753,13 @@ void NMLHandExo::romCalAdvanceQueue() {
 }
 
 void NMLHandExo::romCalBeginReturnHome() {
+  // A fault must never turn into another move. Automatic return is disabled
+  // by default even after success; the operator may choose Home explicitly.
+  if (!ROM_CAL_AUTO_RETURN_HOME || romCalStatus_ == ROM_CAL_STATUS_ABORTED ||
+      romCalStatus_ == ROM_CAL_STATUS_TIMEOUT) {
+    romCalFinish();
+    return;
+  }
   // Stop pushing, then hold the joint back to its start angle with a modest,
   // bounded current. holdRelativePosition switches only this ID to
   // CURRENT_POSITION and clamps to the calibrated window, so this cannot drive
@@ -728,11 +773,16 @@ void NMLHandExo::romCalBeginReturnHome() {
 }
 
 void NMLHandExo::romCalFinish() {
+  if (romCalStatus_ == ROM_CAL_STATUS_ABORTED || romCalStatus_ == ROM_CAL_STATUS_TIMEOUT) {
+    // A stop or fault ends the campaign; it must not arm the next queued ID.
+    romCalQueueCount_ = romCalQueueCursor_ = 0;
+  }
   // Release the return hold (restores the global CURRENT mode for this ID with
   // torque off) and report the outcome, then advance to the next queued motor
   // (for a gesture/batch sweep) or go idle (single-joint sweep).
   if (isPositionHoldActive(romCalId_)) releasePositionHold(romCalId_);
   stopDirectControl(romCalId_);
+  enableTorque(romCalId_, false);
   romCalReport();
   // Return to IDLE BEFORE advancing: romCalArmMotor refuses to arm unless the
   // machine is idle, so the next queued motor could never arm while this one's
@@ -753,6 +803,7 @@ void NMLHandExo::romCalReport() {
     case ROM_CAL_STATUS_OK:      statusStr = "ok";      break;
     case ROM_CAL_STATUS_CEILING: statusStr = "ceiling"; break;
     case ROM_CAL_STATUS_TIMEOUT: statusStr = "timeout"; break;
+    case ROM_CAL_STATUS_LIMIT:   statusStr = "limit";   break;
     default:                     statusStr = "aborted"; break;
   }
 
@@ -765,7 +816,26 @@ void NMLHandExo::romCalReport() {
     line += " endstop=nan";
   }
   line += " current_mA=" + String(romCalCurrentMa_, 0) +
-          " status=" + String(statusStr);
+          " status=" + String(statusStr) +
+          " pulses=" + String(romCalPulseCount_) +
+          " fit_samples=" + String(romCalFitSamples_) +
+          " model_gain=" + (romCalIndex_ >= 0 ?
+              String(jointModels_[romCalIndex_].params.gain, 6) : String("nan")) +
+          " reason=" + String(romCalReason_) +
+          " pulse_on_ms=" + String(romCalPulseOnMs_) +
+          " max_pulse_on_ms=" + String(romCalMaxPulseOnMs_) +
+          " pulse_stop=" + String(romCalPulseStop_) +
+          " max_excursion_deg=" + String(romCalMaxExcursionDeg_, 2) +
+          " fit_reason=" + String(romCalFitReason_) +
+          " predicted_deg=" + String(romCalPredictedDeg_, 3) +
+          " observed_deg=" + String(romCalObservedDeg_, 3) +
+          " response_reason=" + String(romCalResponseReason_) +
+          " recoveries=" + String(romCalRecoveries_) +
+          " angle=" + String(romCalFeedbackAngle_, 2);
+  if (romCalIndex_ >= 0) {
+    line += " limit_min=" + String(jointLimits_[romCalIndex_][0], 2) +
+            " limit_max=" + String(jointLimits_[romCalIndex_][1], 2);
+  }
   // Append the command delimiter so the line self-frames. This result is
   // emitted asynchronously with no following command, so under the dual-CDC
   // host transport it must terminate with the delimiter to be published as its
@@ -789,167 +859,371 @@ void NMLHandExo::cancelRomCalibration() {
   romCalQueueCount_ = 0;
   romCalQueueCursor_ = 0;
   romCalStatus_ = ROM_CAL_STATUS_ABORTED;
-  // Return the current joint home (best-effort), then report via the normal
-  // path. With the queue now empty, romCalFinish's advance leaves the machine
-  // idle.
+  romCalReason_ = "cancelled";
+  // Stop and report through the normal finish path. An aborted status never
+  // initiates a return, including builds that opt into return after success.
   stopDirectControl(romCalId_);
   romCalBeginReturnHome();
 }
 
-void NMLHandExo::serviceRomCalibration() {
-  if (romCalPhase_ == ROM_CAL_IDLE) return;
+void NMLHandExo::romCalReportPulse() {
+  const auto& p = jointModels_[romCalIndex_].pulseResponses[romCalDir_];
+  String line = "ROM_CAL_PULSE: id=" + String(romCalId_) +
+      " dir=" + String(romCalDir_ == ROM_CAL_DIR_FLEX ? "flex" : "extend") +
+      " pulse=" + String(romCalPulseCount_) + " current_mA=" + String(romCalCurrentMa_, 0) +
+      " on_ms=" + String(romCalPulseOnMs_) + " predicted_deg=" + String(romCalPredictedDeg_, 3) +
+      " observed_deg=" + String(romCalObservedDeg_, 3) + " target_deg=" + String(ROM_CAL_TARGET_TRAVEL_DEG, 3) +
+      " slope=" + String(p.slope, 6) + " response_samples=" + String(p.movingSamples) +
+      " no_motion_samples=" + String(p.noMotionSamples) + " gradients=" + String(p.gradientSamples) +
+      " response_reason=" + String(romCalResponseReason_) + " fit_reason=" + String(romCalFitReason_) +
+      " pulse_stop=" + String(romCalPulseStop_) + COMMAND_DELIMITER;
+  telemetryPrintln(line);
+}
 
-  const unsigned long now = millis();
+bool NMLHandExo::romCalReadPosition(float& angle) {
+  const int32_t ticks = EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(
+      (uint8_t)PRESENT_POSITION, romCalId_, (uint32_t)ROM_CAL_IO_TIMEOUT_MS));
+  if (dxl_.getLastLibErrCode() != DXL_LIB_OK) return false;
+  angle = ticks * (360.0f / PULSE_RESOLUTION);
+  if (!isfinite(angle) || fabsf(angle) > 36000.0f) return false;
+  romCalFeedbackAngle_ = angle;
+  return true;
+}
 
-  // The RETURN phase is the only one that runs after a conclusion; it waits for
-  // the hold to settle (or its own short timeout) and then reports.
-  if (romCalPhase_ == ROM_CAL_RETURN) {
-    const bool settled =
-        fabsf(getAbsoluteAngle(romCalId_) - romCalHomeAngle_) <=
-        GESTURE_REACH_TOLERANCE_DEG;
-    if (settled || now - romCalReturnStartMs_ >= ROM_CAL_RETURN_TIMEOUT_MS) {
-      romCalFinish();
-    }
-    return;
-  }
+bool NMLHandExo::romCalReadFeedback(float& angle, float& velocity) {
+  if (!romCalReadPosition(angle)) return false;
+  const int32_t raw = EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(
+      (uint8_t)PRESENT_VELOCITY, romCalId_, (uint32_t)ROM_CAL_IO_TIMEOUT_MS));
+  velocity = raw * (0.229f * 6.0f);
+  if (dxl_.getLastLibErrCode() != DXL_LIB_OK || !isfinite(velocity)) velocity = NAN;
+  return true; // velocity failure rejects fitting, never fabricates a speed
+}
 
-  // A precondition change out from under us (mode switch, host STOP zeroing the
-  // joint, torque dropped) makes the ramp meaningless. Bail safely.
-  if (motorControlMode_ != "CURRENT") {
+void NMLHandExo::romCalRecoverFeedback() {
+  // A missed read never leaves current applied while we retry. Discard the
+  // incomplete pulse, rest, and require fresh feedback before retrying at the
+  // SAME amplitude. No gain/stall update is based on the failed sample.
+  if (!writeRomSweepCurrent(0)) {
+    romCalReason_ = "stop_write";
     romCalStatus_ = ROM_CAL_STATUS_ABORTED;
-    romCalBeginReturnHome();
+    romCalFinish();
     return;
   }
+  if (++romCalFeedbackFailures_ > ROM_CAL_MAX_FEEDBACK_RECOVERIES) {
+    romCalReason_ = "position_read";
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalFinish();
+    return;
+  }
+  ++romCalRecoveries_;
+  romCalPulseValid_ = false;
+  romCalFitReason_ = "position_unavailable";
+  romCalRestStartMs_ = millis();
+  romCalPhase_ = ROM_CAL_REST;
+}
 
-  // Overall watchdog: bounds a jammed or noisy joint no matter which phase.
-  if (now - romCalStartMs_ >= ROM_CAL_TIMEOUT_MS) {
+bool NMLHandExo::romCalStartPulse(float angle, float velocity) {
+  if (romCalPhase_ != ROM_CAL_IDLE && millis() - romCalStartMs_ >= ROM_CAL_TIMEOUT_MS) {
+    romCalReason_ = "sweep_timeout";
     romCalStatus_ = ROM_CAL_STATUS_TIMEOUT;
+    romCalFinish();
+    return false;
+  }
+  // Diagnostic output and fitting occur at zero current. Refresh afterwards
+  // so a blocked text endpoint cannot make the next pulse use stale feedback.
+  if (!romCalReadFeedback(angle, velocity)) {
+    romCalReason_ = "position_read";
+    romCalFitReason_ = "position_unavailable";
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalFinish();
+    return false;
+  }
+  if (romCalPhase_ == ROM_CAL_REST && !romCalCheckTravel(angle)) return false;
+  const float physicalSign = romCalSign_ * (flipMotor_[romCalIndex_] ? -1.0f : 1.0f);
+  const float lo = jointLimits_[romCalIndex_][0], hi = jointLimits_[romCalIndex_][1];
+  if (!isfinite(angle) || !isfinite(lo) || !isfinite(hi) || lo > hi ||
+      angle < lo || angle > hi ||
+      (physicalSign < 0 && angle <= lo + DIRECT_LIMIT_MARGIN_DEG) ||
+      (physicalSign > 0 && angle >= hi - DIRECT_LIMIT_MARGIN_DEG)) {
+    romCalStatus_ = angle < lo || angle > hi ? ROM_CAL_STATUS_ABORTED : ROM_CAL_STATUS_LIMIT;
+    romCalReason_ = angle < lo || angle > hi ? "outside_limits" : "stored_limit";
+    // A rejected start has not driven a pulse. Do not turn it into an implicit
+    // return move (whose target would be clamped if the start is out of range).
+    if (romCalPhase_ == ROM_CAL_IDLE) romCalFinish();
+    else romCalBeginReturnHome();
+    return false;
+  }
+  if (!isfinite(velocity) || fabsf(velocity) > ROM_CAL_SETTLED_SPEED_DEG_S) {
+    romCalReason_ = isfinite(velocity) ? "not_settled" : "velocity_read";
+    romCalFitReason_ = isfinite(velocity) ? "not_settled" : "velocity_unavailable";
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalFinish();
+    return false;
+  }
+  romCalPulseStartAngle_ = romCalPulsePeakAngle_ = angle;
+  romCalPulseStartVelocity_ = velocity;
+  romCalPredictedDeg_ = jointModels_[romCalIndex_].pulseResponses[romCalDir_].predict(romCalCurrentMa_);
+  // This control feedback seeds the next estimate even though fleet telemetry
+  // remains estimated. Zero is the off-phase command, not measured consumption.
+  jointModels_[romCalIndex_].correct(angle, velocity, 0, true, millis());
+  if (!writeRomSweepCurrent(romCalSign_ * romCalCurrentMa_)) {
+    romCalReason_ = "current_write";
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalFinish();
+    return false;
+  }
+  romCalPulseStartMs_ = millis();
+  romCalLastStepMs_ = romCalPulseStartMs_;
+  romCalPhase_ = ROM_CAL_RAMP;
+  romCalPulseValid_ = true;
+  romCalPulseLimited_ = false;
+  romCalPulseStop_ = "powered";
+  return true;
+}
+
+bool NMLHandExo::romCalCheckTravel(float angle) {
+  const float excursion = fabsf(angle - romCalPulseStartAngle_);
+  romCalMaxExcursionDeg_ = fmaxf(romCalMaxExcursionDeg_, excursion);
+  const float lo = jointLimits_[romCalIndex_][0], hi = jointLimits_[romCalIndex_][1];
+  if (angle < lo || angle > hi || excursion >= ROM_CAL_MAX_EXCURSION_DEG) {
+    romCalReason_ = angle < lo || angle > hi ? "outside_limits" : "excursion_limit";
+    romCalFitReason_ = "excessive_travel";
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalFinish();
+    return false;
+  }
+  const float sign = romCalSign_ * (flipMotor_[romCalIndex_] ? -1.0f : 1.0f);
+  if ((sign < 0 && angle <= lo + DIRECT_LIMIT_MARGIN_DEG) ||
+      (sign > 0 && angle >= hi - DIRECT_LIMIT_MARGIN_DEG)) {
+    romCalStatus_ = ROM_CAL_STATUS_LIMIT;
+    romCalReason_ = "stored_limit";
+    romCalFitReason_ = "stored_limit";
+    romCalBeginReturnHome();
+    return false;
+  }
+  return true;
+}
+
+void NMLHandExo::romCalEndPulse(const char* reason) {
+  // Stop current before any read or reporting, including early travel cutoffs.
+  romCalPulseStop_ = reason;
+  if (!writeRomSweepCurrent(0)) {
+    romCalReason_ = "stop_write";
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalFinish();
+    return;
+  }
+  romCalPulseOnMs_ = millis() - romCalPulseStartMs_;
+  if (romCalPulseOnMs_ > ROM_CAL_PULSE_ON_MS + ROM_CAL_STEP_INTERVAL_MS) {
+    romCalReason_ = "pulse_overrun";
+    romCalFitReason_ = "pulse_overrun";
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalFinish();
+    return;
+  }
+  romCalRestStartMs_ = millis();
+  romCalPhase_ = ROM_CAL_REST;
+  float angle, velocity;
+  if (!romCalReadFeedback(angle, velocity)) {
+    romCalRecoverFeedback();
+    return;
+  }
+  romCalPulsePeakAngle_ = angle;
+  if (!romCalCheckTravel(angle)) return;
+  jointModels_[romCalIndex_].correct(angle, velocity, 0, true, millis());
+}
+
+void NMLHandExo::romCalCompletePulse(float angle, float velocity) {
+  romCalFeedbackFailures_ = 0;
+  ++romCalPulseCount_;
+  const float span = getGestureSpan(romCalId_);
+  const float wantSign = (romCalDir_ == ROM_CAL_DIR_FLEX ? 1.0f : -1.0f) *
+                         (span >= 0 ? 1.0f : -1.0f);
+  romCalObservedDeg_ = (angle - romCalPulseStartAngle_) * wantSign;
+  // Short pulses may travel mostly during coast. Count the measured response
+  // of a powered pulse, not a timer tick at zero command, as progress.
+  if ((angle - romCalPulsePeakAngle_) * wantSign > 0) romCalPulsePeakAngle_ = angle;
+  const float delta = romCalPulsePeakAngle_ - romCalPulseStartAngle_;
+  jointModels_[romCalIndex_].correct(angle, velocity, 0, true, millis());
+  if (fabsf(delta) >= ROM_CAL_ONSET_DEG && delta * wantSign < 0) {
+    romCalFitReason_ = "wrong_direction";
+    // One correction only, always after zero current and the rest interval.
+    // Never learn from the wrong-way probe or oscillate the sign indefinitely.
+    if (romCalSignReversed_ || romCalDirLocked_) {
+      romCalReason_ = "wrong_direction";
+      romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+      romCalFinish();
+      return;
+    }
+    romCalResponseReason_ = "wrong_direction";
+    romCalReportPulse();
+    romCalSignReversed_ = true;
+    romCalSign_ = -romCalSign_;
+    romCalCurrentMa_ = ROM_CAL_START_CURRENT_MA;
+    romCalStartPulse(angle, velocity);
+    return;
+  }
+  if (delta * wantSign >= ROM_CAL_ONSET_DEG) romCalDirLocked_ = true;
+  const float progress = (romCalPulsePeakAngle_ - romCalEndstopAngle_) * wantSign;
+  if (progress >= ROM_CAL_ONSET_DEG) {
+    romCalEndstopAngle_ = romCalPulsePeakAngle_;
+    romCalStallPulses_ = 0;
+    // Fit from the complete powered + unpowered response, compensating the
+    // measured starting velocity. Stalls, recoil and saturation are excluded.
+    JointModelParams& params = jointModels_[romCalIndex_].params;
+    const float physicalCurrent = romCalSign_ * romCalCurrentMa_ *
+                                  (flipMotor_[romCalIndex_] ? -1.0f : 1.0f);
+    const float gain = romPulseGain(params, angle - romCalPulseStartAngle_,
+        romCalPulseStartVelocity_, velocity, physicalCurrent,
+        romCalPulseOnMs_ * 0.001f, (millis() - romCalRestStartMs_) * 0.001f,
+        ROM_CAL_ONSET_DEG, &romCalFitReason_);
+    if (isfinite(gain) && ROM_CAL_UPDATE_MODEL_GAIN) {
+      const float bounded = JointStateModel::bound(gain,
+          params.gain * (1.0f - ROM_CAL_GAIN_CHANGE_FRAC),
+          params.gain * (1.0f + ROM_CAL_GAIN_CHANGE_FRAC));
+      params.gain += ROM_CAL_GAIN_BLEND * (bounded - params.gain);
+      ++romCalFitSamples_;
+    }
+  } else {
+    romCalFitReason_ = "insufficient_progress";
+    if (romCalPulseLimited_) romCalStallPulses_ = 0;
+    else if (romCalStallPulses_ < 255) ++romCalStallPulses_;
+  }
+  // Keep the actual furthest measured endpoint even when its final approach
+  // is smaller than the motion/noise threshold used for stall evidence.
+  if (progress > 0) romCalEndstopAngle_ = romCalPulsePeakAngle_;
+  auto& response = jointModels_[romCalIndex_].pulseResponses[romCalDir_];
+  // The displacement map is specific to the nominal 20-ms input. Do not learn
+  // a false amplitude slope from an early-cutoff pulse of a different duration.
+  if (romCalPulseLimited_ || romCalPulseOnMs_ < ROM_CAL_PULSE_ON_MS) {
+    romCalResponseReason_ = "pulse_limited";
+  } else if (response.observe(romCalCurrentMa_, romCalObservedDeg_, ROM_CAL_ONSET_DEG)) {
+    romCalResponseReason_ = romCalObservedDeg_ < ROM_CAL_ONSET_DEG ? "no_motion" :
+                           response.gradientSamples ? "local_gradient" : "ratio_seed";
+  } else {
+    romCalResponseReason_ = "invalid_response";
+  }
+  romCalReportPulse(); // zero current throughout this diagnostic write
+  if (romCalCurrentMa_ <= ROM_CAL_MIN_CURRENT_MA &&
+      (romCalPulseLimited_ || romCalObservedDeg_ >= ROM_CAL_PULSE_TRAVEL_DEG)) {
+    romCalReason_ = "pulse_too_large_at_min_current";
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalFinish();
+    return;
+  }
+  const bool travelled = (romCalEndstopAngle_ - romCalHomeAngle_) * wantSign >= ROM_CAL_PROGRESS_DEG;
+  const bool high = romCalCurrentMa_ >= ROM_CAL_STALL_MIN_CURRENT_FRAC * ROM_CAL_MAX_CURRENT_MA;
+  if (romCalStallPulses_ >= ROM_CAL_STALL_PULSES && high && travelled) {
+    romCalStatus_ = ROM_CAL_STATUS_OK;
+    romCalReason_ = "endstop";
     romCalBeginReturnHome();
     return;
   }
-
-  // --- Continuous current ramp (EVERY pass, not paced) -----------------------
-  // Ramping the current a little every loop pass -- interpolated by the actual
-  // elapsed time -- gives a smooth torque profile instead of the visible 40 ms
-  // staircase that made the joint jerk toward its endstop. The rate is higher
-  // while the joint is freely advancing (get to the endstop region quickly) and
-  // lower while it is stalled or has not started moving (gentle, finely-resolved
-  // final approach). Re-asserting the current every pass also keeps the
-  // direct-control watchdog (DIRECT_COMMAND_TIMEOUT_MS) fed.
-  {
-    const float rampRate = romCalAdvancing_ ? ROM_CAL_RAMP_RATE_TRAVEL_MA_S
-                                            : ROM_CAL_RAMP_RATE_APPROACH_MA_S;
-    const float dt_s = (now - romCalLastRampMs_) / 1000.0f;
-    romCalLastRampMs_ = now;
-    if (romCalCurrentMa_ < ROM_CAL_MAX_CURRENT_MA) {
-      romCalCurrentMa_ = min(romCalCurrentMa_ + rampRate * dt_s,
-                             (float)ROM_CAL_MAX_CURRENT_MA);
-    }
-    writeRomSweepCurrent(romCalSign_ * romCalCurrentMa_);
-  }
-
-  // --- Paced angle poll + progress/stall evaluation --------------------------
-  // The position read is the expensive bus transaction and does not need to run
-  // as fast as the current ramp, so it stays paced at ROM_CAL_STEP_INTERVAL_MS.
-  if (now - romCalLastStepMs_ < ROM_CAL_STEP_INTERVAL_MS) return;
-  romCalLastStepMs_ = now;
-
-  // Read with an explicit error check: a failed read returns 0.0 (finite),
-  // which would otherwise look like a large jump toward zero and false-trigger
-  // motion onset. On a bad read, hold the commanded current and retry next poll.
-  const float angle = dxl_.getPresentPosition(romCalId_, UNIT_DEGREE);
-  if (dxl_.getLastLibErrCode() != DXL_LIB_OK || !isfinite(angle)) return;
-  const float delta = angle - romCalLastAngle_;
-  const float moved = fabsf(delta);
-
-  // Drive direction in ABSOLUTE-angle space. FLEX advances in the same sign as
-  // getGestureSpan (signed travel toward flexion), EXTEND the opposite. Used
-  // both to lock the commanded-current sign and to measure NET progress.
-  const float span = getGestureSpan(romCalId_);
-  const float wantAbsSign = (romCalDir_ == ROM_CAL_DIR_FLEX)
-                              ? (span >= 0.0f ? 1.0f : -1.0f)
-                              : (span >= 0.0f ? -1.0f : 1.0f);
-
-  // Resolve the commanded-current sign the first time the joint moves for real.
-  if (!romCalDirLocked_ && moved >= ROM_CAL_ONSET_DEG) {
-    if (delta * wantAbsSign < 0.0f) {
-      // Moved opposite to intent -> our sign guess was wrong. Flip it once and
-      // re-measure next poll with the corrected sign. Reset the progress window
-      // so the wrong-way excursion is not counted as progress.
-      romCalSign_ = -romCalSign_;
-      writeRomSweepCurrent(romCalSign_ * romCalCurrentMa_);
-      romCalLastAngle_ = angle;
-      romCalWindowRefAngle_ = angle;
-      romCalWindowStartMs_ = now;
-      romCalAdvancing_ = false;
-      return;
-    }
-    romCalDirLocked_ = true;
-  }
-
-  // --- Ramp-and-track endstop detection --------------------------------------
-  // The endstop is where MORE current stops producing travel, not where the
-  // joint merely creeps slowly. Track NET progress in the drive direction over
-  // a sliding window: while the joint keeps advancing the window slides forward
-  // and the ramp stays at the fast travel rate. When it fails to advance for a
-  // full window -- and current is already high -- the joint has stalled against
-  // its endstop.
-
-  // Net progress since this window opened, measured in the drive direction.
-  const float progress = (angle - romCalWindowRefAngle_) * wantAbsSign;
-  if (progress >= ROM_CAL_PROGRESS_DEG) {
-    // Still advancing: fast ramp, record the furthest point as the running
-    // endstop, and slide the window forward from here.
-    romCalAdvancing_ = true;
-    romCalEndstopAngle_ = angle;
-    romCalWindowRefAngle_ = angle;
-    romCalWindowStartMs_ = now;
-    romCalLastAngle_ = angle;
+  if (romCalCurrentMa_ >= ROM_CAL_MAX_CURRENT_MA && !travelled &&
+      romCalStallPulses_ >= ROM_CAL_STALL_PULSES) {
+    romCalStatus_ = ROM_CAL_STATUS_CEILING;
+    romCalReason_ = "current_ceiling";
+    romCalBeginReturnHome();
     return;
   }
-  // Not advancing this poll -> switch to the slow approach ramp rate.
-  romCalAdvancing_ = false;
-
-  // Not enough net progress this window. Decide only once a full window has
-  // elapsed, and distinguish two stalls:
-  //   * a stall AFTER the joint has traveled from home, under high current, is
-  //     the real endstop (status=ok);
-  //   * a stall with the joint still essentially at home, even at the ceiling,
-  //     means it never yielded (status=ceiling).
-  if (now - romCalWindowStartMs_ >= ROM_CAL_PROGRESS_WINDOW_MS) {
-    const bool currentHigh =
-        romCalCurrentMa_ >= ROM_CAL_STALL_MIN_CURRENT_FRAC * ROM_CAL_MAX_CURRENT_MA;
-    const bool hasTraveled =
-        fabsf(romCalEndstopAngle_ - romCalHomeAngle_) >= ROM_CAL_PROGRESS_DEG;
-    const bool atCeiling = romCalCurrentMa_ >= ROM_CAL_MAX_CURRENT_MA;
-
-    if (hasTraveled && (currentHigh || atCeiling)) {
-      // Moved, then stalled against its endstop despite high/max current. Done.
-      romCalStatus_ = ROM_CAL_STATUS_OK;
-      romCalBeginReturnHome();
-      romCalLastAngle_ = angle;
-      return;
-    }
-    if (atCeiling) {
-      // Ran the current all the way to the ceiling and never traveled: the
-      // joint did not yield within the safe envelope.
-      romCalStatus_ = ROM_CAL_STATUS_CEILING;
-      romCalBeginReturnHome();
-      romCalLastAngle_ = angle;
-      return;
-    }
-    // Still ramping and not yet moved (or not yet at high current): open a
-    // fresh window and keep raising current.
-    romCalWindowRefAngle_ = angle;
-    romCalWindowStartMs_ = now;
+  if (romCalPulseLimited_ || fabsf(angle - romCalPulseStartAngle_) >= ROM_CAL_PULSE_TRAVEL_DEG) {
+    romCalCurrentMa_ = fmaxf(ROM_CAL_MIN_CURRENT_MA, romCalCurrentMa_ - ROM_CAL_CURRENT_STEP_MA);
+  } else {
+    romCalCurrentMa_ = roundf(response.nextCurrent(romCalCurrentMa_, romCalObservedDeg_,
+        ROM_CAL_TARGET_TRAVEL_DEG, ROM_CAL_ONSET_DEG, ROM_CAL_CURRENT_STEP_MA,
+        ROM_CAL_MIN_CURRENT_MA, ROM_CAL_MAX_CURRENT_MA));
   }
   romCalLastAngle_ = angle;
+  romCalStartPulse(angle, velocity);
+}
+
+void NMLHandExo::serviceRomCalibration() {
+  EXO_PROFILE(CONTROL);
+  if (romCalPhase_ == ROM_CAL_IDLE) return;
+  const unsigned long now = millis();
+  if (romCalPhase_ == ROM_CAL_RETURN) {
+    float angle, velocity;
+    if (now - romCalLastStepMs_ < ROM_CAL_STEP_INTERVAL_MS) return;
+    romCalLastStepMs_ = now;
+    const bool settled = romCalReadFeedback(angle, velocity) &&
+        fabsf(angle - romCalHomeAngle_) <= GESTURE_REACH_TOLERANCE_DEG;
+    if (settled || now - romCalReturnStartMs_ >= ROM_CAL_RETURN_TIMEOUT_MS) romCalFinish();
+    return;
+  }
+  // An explicit STOP, disable, mode change or watchdog stop must not be undone.
+  const float expectedCurrent = romCalSign_ * romCalCurrentMa_ *
+                                (flipMotor_[romCalIndex_] ? -1.0f : 1.0f);
+  if (motorControlMode_ != "CURRENT" || romCalStopRequested_ || !torqueEnabled_[romCalIndex_] ||
+      (romCalPhase_ == ROM_CAL_RAMP && (!directCommandActive_[romCalIndex_] ||
+          fabsf(directCommandDirection_[romCalIndex_] - expectedCurrent) > 0.5f)) ||
+      (romCalPhase_ == ROM_CAL_REST && directCommandActive_[romCalIndex_])) {
+    if (motorControlMode_ != "CURRENT") romCalReason_ = "mode_changed";
+    else if (!torqueEnabled_[romCalIndex_]) romCalReason_ = "disabled";
+    else if (!romCalStopRequested_) romCalReason_ = "command_changed";
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalFinish();
+    return;
+  }
+  if (now - romCalStartMs_ >= ROM_CAL_TIMEOUT_MS) {
+    romCalStatus_ = ROM_CAL_STATUS_TIMEOUT;
+    romCalReason_ = "sweep_timeout";
+    romCalBeginReturnHome();
+    return;
+  }
+  if (romCalPhase_ == ROM_CAL_RAMP && now - romCalPulseStartMs_ >= ROM_CAL_PULSE_ON_MS) {
+    romCalEndPulse("time");
+    return;
+  }
+  // Monitor real travel during BOTH power and coast. Zero current cannot brake
+  // inertia; a large excursion must end the campaign instead of re-arming.
+  if (now - romCalLastStepMs_ < ROM_CAL_STEP_INTERVAL_MS) return;
+  romCalLastStepMs_ = now;
+  float angle;
+  if (!romCalReadPosition(angle)) {
+    romCalRecoverFeedback();
+    return;
+  }
+  if (!romCalCheckTravel(angle)) return;
+  if (romCalPhase_ == ROM_CAL_REST) {
+    if (millis() - romCalRestStartMs_ < ROM_CAL_PULSE_OFF_MS) return;
+    float velocity;
+    if (!romCalReadFeedback(angle, velocity)) {
+      romCalRecoverFeedback();
+      return;
+    }
+    if (!romCalCheckTravel(angle)) return;
+    if (!isfinite(velocity) || fabsf(velocity) > ROM_CAL_SETTLED_SPEED_DEG_S) {
+      if (isfinite(velocity) && millis() - romCalRestStartMs_ < ROM_CAL_SETTLE_TIMEOUT_MS) return;
+      romCalReason_ = isfinite(velocity) ? "not_settled" : "velocity_read";
+      romCalFitReason_ = isfinite(velocity) ? "not_settled" : "velocity_unavailable";
+      romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+      romCalFinish();
+      return;
+    }
+    if (!romCalPulseValid_) {
+      romCalStartPulse(angle, velocity);
+      return;
+    }
+    romCalCompletePulse(angle, velocity);
+    return;
+  }
+  const float travel = fabsf(angle - romCalPulseStartAngle_);
+  const unsigned long elapsed = millis() - romCalPulseStartMs_;
+  const bool fast = elapsed && travel * 1000.0f / elapsed >= ROM_CAL_PULSE_SPEED_DEG_S;
+  if (travel >= ROM_CAL_PULSE_TRAVEL_DEG || fast) {
+    romCalPulseLimited_ = true;
+    romCalEndPulse(fast ? "speed" : "travel");
+  }
+
 }
 
 // ====================================================================================
 // ================================= Mode commands ====================================
 // ====================================================================================
 void NMLHandExo::update() {
+  EXO_PROFILE(CONTROL);
+    serviceJointModels();
+    servicePositionMonitor();
 
     serviceDirectControlSafety();
 
@@ -1078,7 +1352,7 @@ float NMLHandExo::getRelativeAngle(uint8_t id) {
   int index = getIndexById(id);
   if (index == -1) return -1;
 
-  float abs_angle = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  float abs_angle = EXO_PROFILE_CALL(DXL_READ, dxl_.getPresentPosition(id, UNIT_DEGREE));
   float rel_angle = abs_angle - zeroOffsets_[index];
 
   // Flip if necessary
@@ -1089,6 +1363,7 @@ float NMLHandExo::getRelativeAngle(uint8_t id) {
   return rel_angle;
 }
 void NMLHandExo::setRelativeAngle(uint8_t id, float relativeAngle) {
+  if (!isfinite(relativeAngle)) return;
   int index = getIndexById(id);
   if (index == -1) {
     debugPrint("Invalid motor ID: " + String(id));
@@ -1112,21 +1387,19 @@ void NMLHandExo::setRelativeAngle(uint8_t id, float relativeAngle) {
   // Register the move first: the budget pre-clamps effort before the motor
   // starts drawing, which is the whole point of the feed-forward half.
   noteGoalCommanded(index, abs_goal);
-  goalAngleValid_[index] = dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE);
+  goalAngleValid_[index] = EXO_PROFILE_CALL(DXL_WRITE, dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE));
 
   char buffer[128];
   snprintf(buffer, sizeof(buffer), "Motor %d set to relative angle %.2f deg (absolute: %.2f deg)", id, relativeAngle, abs_goal);
   debugPrint(buffer);
 }
 float NMLHandExo::getAbsoluteAngle(uint8_t id) {
-  int index = getIndexById(id);
-  if (index == -1) {
-    debugPrint("Invalid motor ID: " + String(id));
-    return -1;
-  }
-  return dxl_.getPresentPosition(id, UNIT_DEGREE);
+  if (getIndexById(id) < 0) return NAN;
+  int32_t ticks;
+  return readPresentPositionTicks(id, ticks) ? ticks * 360.0f / PULSE_RESOLUTION : NAN;
 }
 void NMLHandExo::setAbsoluteAngle(uint8_t id, float absoluteAngle) {
+  if (!isfinite(absoluteAngle)) return;
   int index = getIndexById(id);
   if (index == -1) {
     debugPrint("Invalid motor ID: " + String(id));
@@ -1142,7 +1415,7 @@ void NMLHandExo::setAbsoluteAngle(uint8_t id, float absoluteAngle) {
   clamped = applyShortestPath(index, clamped);
 
   noteGoalCommanded(index, clamped);
-  goalAngleValid_[index] = dxl_.setGoalPosition(id, clamped, UNIT_DEGREE);
+  goalAngleValid_[index] = EXO_PROFILE_CALL(DXL_WRITE, dxl_.setGoalPosition(id, clamped, UNIT_DEGREE));
   debugPrint("[NMLHandExo] Setting motor " + String(id) + " to absolute angle " + String(clamped, 2));
 }
 
@@ -1196,7 +1469,7 @@ bool NMLHandExo::setAbsoluteAnglesSync(const MotorAngleTarget* targets,
     if (goalAngleValid_[index]) {
       reference = goalAngle_[index];
     } else {
-      reference = dxl_.getPresentPosition(targets[k].id, UNIT_DEGREE);
+      reference = EXO_PROFILE_CALL(DXL_READ, dxl_.getPresentPosition(targets[k].id, UNIT_DEGREE));
       if (dxl_.getLastLibErrCode() != DXL_LIB_OK || !isfinite(reference) ||
           reference < -36000.0f || reference > 36000.0f) {
         // Skip this frame but keep retrying a motor that was online at boot;
@@ -1237,7 +1510,7 @@ bool NMLHandExo::setAbsoluteAnglesSync(const MotorAngleTarget* targets,
   syncInfo.xel_count = packedCount;
   syncInfo.is_info_changed = true;
 
-  if (!dxl_.syncWrite(&syncInfo)) {
+  if (!EXO_PROFILE_CALL(DXL_WRITE, dxl_.syncWrite(&syncInfo))) {
     if (libErrorOut) *libErrorOut = (int16_t)dxl_.getLastLibErrCode();
     return false;
   }
@@ -1266,13 +1539,13 @@ void NMLHandExo::setHome(uint8_t id){
   }
 
   // Command the motor to move to the stored zero offset position
-  float homeAngle = zeroOffsets_[index];
+  float homeAngle = constrain(zeroOffsets_[index], jointLimits_[index][0], jointLimits_[index][1]);
 
   // Shortest-path guard: avoid 360° rotations in extended position mode
   homeAngle = applyShortestPath(index, homeAngle);
 
   noteGoalCommanded(index, homeAngle);
-  goalAngleValid_[index] = dxl_.setGoalPosition(id, homeAngle, UNIT_DEGREE);
+  goalAngleValid_[index] = EXO_PROFILE_CALL(DXL_WRITE, dxl_.setGoalPosition(id, homeAngle, UNIT_DEGREE));
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "Motor %d homing to %.2f deg", id, homeAngle);
   debugPrint(buffer);
@@ -1284,6 +1557,7 @@ void NMLHandExo::homeAllMotors() {
   }
 }
 void NMLHandExo::setAngleById(uint8_t id, float angle_deg) {
+  if (!isfinite(angle_deg)) return;
   int index = getIndexById(id);
   if (index == -1) return;
 
@@ -1298,7 +1572,7 @@ void NMLHandExo::setAngleById(uint8_t id, float angle_deg) {
 
   // Set new goal tick position
   noteGoalCommanded(index, abs_goal);
-  goalAngleValid_[index] = dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE);
+  goalAngleValid_[index] = EXO_PROFILE_CALL(DXL_WRITE, dxl_.setGoalPosition(id, abs_goal, UNIT_DEGREE));
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "[NMLHandExo] Setting motor %d to abs angle %.2f deg", id, abs_goal);
   debugPrint(buffer);
@@ -1430,7 +1704,7 @@ float NMLHandExo::gestureAngleToFraction(uint8_t id, float angleDeg) {
 }
 float NMLHandExo::applyShortestPath(int index, float goal) {
   if (index < 0 || index >= (int)numMotors_) return goal;
-  const float present = dxl_.getPresentPosition(motorIds_[index], UNIT_DEGREE);
+  const float present = EXO_PROFILE_CALL(DXL_READ, dxl_.getPresentPosition(motorIds_[index], UNIT_DEGREE));
   return applyShortestPathFromReference(index, goal, present);
 }
 float NMLHandExo::applyShortestPathFromReference(int index, float goal,
@@ -1456,16 +1730,27 @@ float NMLHandExo::applyShortestPathFromReference(int index, float goal,
 
 bool NMLHandExo::getTorqueEnabledStatus(uint8_t id) {
   // Check if torque is enabled for the specified motor ID
-  return dxl_.getTorqueEnableStat(id);
+  return EXO_PROFILE_CALL(DXL_READ, dxl_.getTorqueEnableStat(id));
 }
 
 void NMLHandExo::enableTorque(uint8_t id, bool enable) {
+  const int index = getIndexById(id);
+  if (index < 0) return;
+  serviceJointModels();
+  telemetryGate_.note(millis());
   if (enable) {
-    dxl_.torqueOn(id);
-    debugPrint("Motor " + String(id) + " enabled");
+    if (EXO_PROFILE_CALL(DXL_WRITE, dxl_.torqueOn(id))) torqueEnabled_[index] = true;
   } else {
-    dxl_.torqueOff(id);
-    debugPrint("Motor " + String(id) + " disabled");
+    stopDirectControl(id);
+    if (EXO_PROFILE_CALL(DXL_WRITE, dxl_.torqueOff(id))) {
+      torqueEnabled_[index] = false;
+      motorMoving_[index] = false;
+      motorAdmitted_[index] = false;
+      directCommandActive_[index] = false;
+      directCommandDirection_[index] = 0;
+      verdictPending_[index] = false;
+      allocationDirty_ = true;
+    }
   }
 }
 
@@ -1488,9 +1773,9 @@ void NMLHandExo::setCurrentLimit(uint8_t id, uint16_t current_mA) {
   current_mA = min(current_mA, (uint16_t)MOTOR_CURRENT_LIMIT);
   currentLimits_[index] = current_mA;
   bool wasEnabled = getTorqueEnabledStatus(id);
-  if (wasEnabled) dxl_.torqueOff(id);
-  dxl_.writeControlTableItem(CURRENT_LIMIT, id, current_mA);
-  if (wasEnabled) dxl_.torqueOn(id);
+  if (wasEnabled) EXO_PROFILE_CALL(DXL_WRITE, dxl_.torqueOff(id));
+  EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(CURRENT_LIMIT, id, current_mA));
+  if (wasEnabled) EXO_PROFILE_CALL(DXL_WRITE, dxl_.torqueOn(id));
   if (motorControlMode_ == "CURRENT_POSITION") {
     // This sets the NOMINAL effort only. GOAL_CURRENT is owned by the combined
     // budget now, so writing it here directly would be overwritten on the next
@@ -1509,16 +1794,28 @@ void NMLHandExo::setCurrentLimit(uint8_t id, uint16_t current_mA) {
 }
 int16_t NMLHandExo::getCurrent(uint8_t id) {
   // XC330 PRESENT_CURRENT uses about 1 mA per raw unit.
-  return dxl_.readControlTableItem(PRESENT_CURRENT, id);
+  return EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(PRESENT_CURRENT, id));
 }
 float NMLHandExo::getTorque(uint8_t id) {
   float current_mA = NMLHandExo::getCurrent(id);
   float torque_Nm = current_mA * XC330_T288_TORQUE_CONSTANT;
   return torque_Nm;  // in N·m
 }
+bool NMLHandExo::setGoalCurrents(const uint8_t* ids, const float* currents, uint8_t count) {
+  if (!ids || !currents || count == 0 || count > N_MOTORS || motorControlMode_ != "CURRENT") return false;
+  for (uint8_t k = 0; k < count; ++k) {
+    const int index = getIndexById(ids[k]);
+    if (index < 0 || !isfinite(currents[k]) || positionHoldActive_[index]) return false;
+    for (uint8_t j = 0; j < k; ++j) if (ids[j] == ids[k]) return false;
+  }
+  for (uint8_t k = 0; k < count; ++k) {
+    if (!setGoalCurrent(ids[k], currents[k])) return false;
+  }
+  return true;
+}
 bool NMLHandExo::setGoalCurrent(uint8_t id, float current_mA) {
   int index = getIndexById(id);
-  if (index == -1 || motorControlMode_ != "CURRENT" || positionHoldActive_[index]) return false;
+  if (index == -1 || !isfinite(current_mA) || motorControlMode_ != "CURRENT" || positionHoldActive_[index]) return false;
 
   current_mA = constrain(
       current_mA,
@@ -1527,12 +1824,14 @@ bool NMLHandExo::setGoalCurrent(uint8_t id, float current_mA) {
   if (flipMotor_[index]) current_mA *= -1.0f;
 
   float position = getAbsoluteAngle(id);
-  if ((current_mA > 0 && position >= jointLimits_[index][1] - DIRECT_LIMIT_MARGIN_DEG) ||
+  if (!isfinite(position) || (current_mA > 0 && position >= jointLimits_[index][1] - DIRECT_LIMIT_MARGIN_DEG) ||
       (current_mA < 0 && position <= jointLimits_[index][0] + DIRECT_LIMIT_MARGIN_DEG)) {
     current_mA = 0;
   }
 
-  dxl_.writeControlTableItem(GOAL_CURRENT, id, (int16_t)round(current_mA));
+  serviceJointModels();
+  if (!EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(GOAL_CURRENT, id, (int16_t)round(current_mA)))) return false;
+  telemetryGate_.note(millis());
   lastDirectCommandMs_[index] = millis();
   directCommandActive_[index] = (current_mA != 0);
   directCommandDirection_[index] = current_mA;
@@ -1540,19 +1839,22 @@ bool NMLHandExo::setGoalCurrent(uint8_t id, float current_mA) {
 }
 bool NMLHandExo::writeRomSweepCurrent(float current_mA) {
   const int index = romCalIndex_;
-  if (index < 0 || motorControlMode_ != "CURRENT") return false;
+  if (index < 0 || !isfinite(current_mA) || motorControlMode_ != "CURRENT") return false;
 
-  // Magnitude clamp only -- NO stored-limit zeroing. Same 910 mA cap and flip
-  // handling as setGoalCurrent, but the joint-window check is deliberately
-  // absent so the sweep can drive to the real endstop instead of bouncing off
-  // the software limit. serviceDirectControlSafety() likewise skips its
-  // drive-into-limit stop for romCalId_ while a sweep is active.
-  current_mA = constrain(current_mA,
-                         -(float)DIRECT_CURRENT_LIMIT_MA,
-                         (float)DIRECT_CURRENT_LIMIT_MA);
+  // Pulse service checks the stored joint window using measured feedback.
+  // This final write independently enforces the ROM-specific current ceiling.
+  const float ceiling = min(ROM_CAL_MAX_CURRENT_MA, (float)DIRECT_CURRENT_LIMIT_MA);
+  current_mA = constrain(current_mA, -ceiling, ceiling);
   if (flipMotor_[index]) current_mA *= -1.0f;
 
-  dxl_.writeControlTableItem(GOAL_CURRENT, romCalId_, (int16_t)round(current_mA));
+  serviceJointModels();
+  if (!EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem((uint8_t)GOAL_CURRENT, romCalId_,
+        (int32_t)round(current_mA), (uint32_t)ROM_CAL_IO_TIMEOUT_MS))) return false;
+  if (current_mA == 0 && romCalPhase_ == ROM_CAL_RAMP) {
+    romCalPulseOnMs_ = millis() - romCalPulseStartMs_;
+    if (romCalPulseOnMs_ > romCalMaxPulseOnMs_) romCalMaxPulseOnMs_ = romCalPulseOnMs_;
+  }
+  telemetryGate_.note(millis());
   lastDirectCommandMs_[index] = millis();
   directCommandActive_[index] = (current_mA != 0);
   directCommandDirection_[index] = current_mA;
@@ -1561,7 +1863,7 @@ bool NMLHandExo::writeRomSweepCurrent(float current_mA) {
 float NMLHandExo::getGoalCurrent(uint8_t id) {
   int index = getIndexById(id);
   if (index == -1) return 0;
-  float current_mA = (int16_t)dxl_.readControlTableItem(GOAL_CURRENT, id);
+  float current_mA = (int16_t)EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(GOAL_CURRENT, id));
   return flipMotor_[index] ? -current_mA : current_mA;
 }
 // ====================================================================================
@@ -1667,8 +1969,9 @@ void NMLHandExo::applyGoalCurrent(int index, uint16_t current_mA) {
   current_mA = min(current_mA, currentLimits_[index]);
   current_mA = min(current_mA, (uint16_t)MOTOR_CURRENT_LIMIT);
   if (appliedCurrents_[index] == current_mA) return;   // skip no-op bus writes
-  appliedCurrents_[index] = current_mA;
-  dxl_.writeControlTableItem(GOAL_CURRENT, motorIds_[index], current_mA);
+  if (EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(GOAL_CURRENT, motorIds_[index], current_mA))) {
+    appliedCurrents_[index] = current_mA;
+  }
 }
 uint8_t NMLHandExo::maxConcurrentMovers() const {
   // Largest k for which k motors can each hold MIN_MOVE_CURRENT_MA while the
@@ -1743,7 +2046,9 @@ void NMLHandExo::refreshCurrentAllocation() {
 }
 void NMLHandExo::noteGoalCommanded(int index, float goalAngle) {
   if (index < 0 || index >= numMotors_) return;
+  serviceJointModels();
   unsigned long now = millis();
+  telemetryGate_.note(now);
   motorMoving_[index] = true;
   goalIssuedMs_[index] = now;
   stallSinceMs_[index] = 0;      // a fresh goal clears any stall demotion
@@ -1771,6 +2076,7 @@ void NMLHandExo::noteGoalCommanded(int index, float goalAngle) {
 void NMLHandExo::concludeMove(int index, uint8_t verdict) {
   // Single exit for a move, so every path that ends one -- arrival, stall,
   // load shedding, timeout -- records a verdict and frees its admission slot.
+  telemetryGate_.note(millis());
   motorMoving_[index] = false;
   motorAdmitted_[index] = false;
   stallSinceMs_[index] = 0;
@@ -1782,7 +2088,7 @@ void NMLHandExo::concludeMove(int index, uint8_t verdict) {
   if (verdict == MOVE_VERDICT_REACHED) {
     // "Settled" only means it stopped pulling; confirm it actually arrived.
     // This is the one extra position read per move, not per sample.
-    float present = dxl_.getPresentPosition(motorIds_[index], UNIT_DEGREE);
+    float present = EXO_PROFILE_CALL(DXL_READ, dxl_.getPresentPosition(motorIds_[index], UNIT_DEGREE));
     if (dxl_.getLastLibErrCode() == DXL_LIB_OK && isfinite(present)) {
       float error = present - goalAngle_[index];
       if (error < 0) error = -error;
@@ -1855,7 +2161,7 @@ int16_t NMLHandExo::readPresentCurrentMa(uint8_t id, bool& ok) {
   // read as this call's timeout or as the model-number form's id.
   const uint8_t item = (uint8_t)PRESENT_CURRENT;
   const uint32_t timeout_ms = 10;
-  int32_t raw = dxl_.readControlTableItem(item, id, timeout_ms);
+  int32_t raw = EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(item, id, timeout_ms));
   if (dxl_.getLastLibErrCode() != DXL_LIB_OK) {
     ok = false;
     return 0;
@@ -1866,7 +2172,7 @@ int16_t NMLHandExo::readPresentCurrentMa(uint8_t id, bool& ok) {
 bool NMLHandExo::readAxonAngle(uint8_t id, int16_t& angle) {
   angle = INT16_MIN;
   if (getIndexById(id) < 0) return false;
-  const int32_t ticks = dxl_.readControlTableItem((uint8_t)PRESENT_POSITION, id, 2);
+  const int32_t ticks = EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem((uint8_t)PRESENT_POSITION, id, 2));
   if (dxl_.getLastLibErrCode() != DXL_LIB_OK) return false;
   const float value = round(ticks * 3600.0f / (float)PULSE_RESOLUTION);
   if (!isfinite(value) || value <= INT16_MIN || value > INT16_MAX) return false;
@@ -1880,7 +2186,7 @@ bool NMLHandExo::readPresentPositionTicks(uint8_t id, int32_t& ticks) {
   }
   const uint8_t item = (uint8_t)PRESENT_POSITION;
   const uint32_t timeout_ms = 10;
-  ticks = dxl_.readControlTableItem(item, id, timeout_ms);
+  ticks = EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(item, id, timeout_ms));
   return dxl_.getLastLibErrCode() == DXL_LIB_OK;
 }
 
@@ -1959,6 +2265,7 @@ uint8_t NMLHandExo::copyShadowTelemetryRecords(
 }
 
 void NMLHandExo::serviceShadowTelemetry() {
+  if (telemetryEstimated()) return;
   if (!shadowTelemetryEnabled_) return;
   if (motorControlMode_ != "VELOCITY") {
     // Preserve the configuration for diagnostics, but stop bus traffic if a
@@ -2023,6 +2330,11 @@ void NMLHandExo::serviceCurrentGovernor() {
   if (numMotors_ == 0) return;
 
   unsigned long now = millis();
+  for (int i = 0; i < numMotors_; ++i) {
+    if (motorMoving_[i] && now - goalIssuedMs_[i] >= MOVE_TIMEOUT_MS) {
+      concludeMove(i, motorAdmitted_[i] ? MOVE_VERDICT_STALLED : MOVE_VERDICT_STARVED);
+    }
+  }
 
   // Sampling only runs while something is actually happening. An idle exo adds
   // no bus traffic at all, which matters because repeated per-motor telemetry
@@ -2227,11 +2539,11 @@ void NMLHandExo::setTorque(uint8_t id, float torque_Nm) {
 
 // Velocity commands
 void NMLHandExo::setVelocityLimit(uint8_t id, uint32_t vel) {
-  dxl_.writeControlTableItem(PROFILE_VELOCITY, id, vel);
+  EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(PROFILE_VELOCITY, id, vel));
   debugPrint("Velocity limit set for motor " + String(id) + ": " + String(vel));
 }
 uint32_t NMLHandExo::getVelocityLimit(uint8_t id) {
-  return dxl_.readControlTableItem(PROFILE_VELOCITY, id);
+  return EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(PROFILE_VELOCITY, id));
 }
 float NMLHandExo::limitDirectVelocity(
     int index, float velocity_rpm, float position) {
@@ -2276,7 +2588,7 @@ float NMLHandExo::limitDirectVelocity(
 }
 bool NMLHandExo::setGoalVelocity(uint8_t id, float velocity_rpm) {
   int index = getIndexById(id);
-  if (index == -1 || motorControlMode_ != "VELOCITY" ||
+  if (index == -1 || !isfinite(velocity_rpm) || motorControlMode_ != "VELOCITY" ||
       !directVelocityLimitVerified_[index] || positionHoldActive_[index]) return false;
 
   velocity_rpm = constrain(
@@ -2287,7 +2599,7 @@ bool NMLHandExo::setGoalVelocity(uint8_t id, float velocity_rpm) {
 
   float position = getAbsoluteAngle(id);
   float limited_velocity_rpm =
-      limitDirectVelocity(index, velocity_rpm, position);
+      isfinite(position) ? limitDirectVelocity(index, velocity_rpm, position) : 0.0f;
 
   int32_t raw = (int32_t)round(limited_velocity_rpm / 0.229f);
   const int32_t requestedRaw = (int32_t)round(velocity_rpm / 0.229f);
@@ -2297,20 +2609,32 @@ bool NMLHandExo::setGoalVelocity(uint8_t id, float velocity_rpm) {
     directVelocityLimitBlock_[index] = velocity_rpm > 0.0f ? 1 : -1;
   }
 
-  dxl_.writeControlTableItem(GOAL_VELOCITY, id, raw);
+  serviceJointModels();
+  if (!EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(GOAL_VELOCITY, id, raw))) return false;
+  telemetryGate_.note(millis());
   lastDirectCommandMs_[index] = millis();
   directCommandActive_[index] = (raw != 0);
-  directCommandDirection_[index] = velocity_rpm;
+  directCommandDirection_[index] = raw * 0.229f;
   return true;
 }
 float NMLHandExo::getPresentVelocity(uint8_t id) {
   int index = getIndexById(id);
   if (index == -1) return 0;
-  int32_t raw = (int32_t)dxl_.readControlTableItem(PRESENT_VELOCITY, id);
+  int32_t raw = (int32_t)EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(PRESENT_VELOCITY, id));
   float rpm = raw * 0.229f;
   return flipMotor_[index] ? -rpm : rpm;
 }
 void NMLHandExo::stopDirectControl(uint8_t id) {
+  if (id == romCalId_ && (romCalPhase_ == ROM_CAL_RAMP || romCalPhase_ == ROM_CAL_REST)) {
+    romCalStopRequested_ = true;
+    if (strcmp(romCalReason_, "none") == 0) romCalReason_ = "stop_requested";
+    if (romCalPhase_ == ROM_CAL_RAMP) {
+      romCalPulseOnMs_ = millis() - romCalPulseStartMs_;
+      if (romCalPulseOnMs_ > romCalMaxPulseOnMs_) romCalMaxPulseOnMs_ = romCalPulseOnMs_;
+    }
+  }
+  serviceJointModels();
+  telemetryGate_.note(millis());
   int index = getIndexById(id);
   if (index == -1) return;
   if (positionHoldActive_[index]) {
@@ -2319,9 +2643,9 @@ void NMLHandExo::stopDirectControl(uint8_t id) {
     lastDirectCommandMs_[index] = millis();
     return;
   } else if (motorControlMode_ == "VELOCITY") {
-    dxl_.writeControlTableItem(GOAL_VELOCITY, id, 0);
+    if (!EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(GOAL_VELOCITY, id, 0))) return;
   } else if (motorControlMode_ == "CURRENT") {
-    dxl_.writeControlTableItem(GOAL_CURRENT, id, 0);
+    if (!EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(GOAL_CURRENT, id, 0))) return;
   }
   directCommandActive_[index] = false;
   directCommandDirection_[index] = 0;
@@ -2361,8 +2685,8 @@ bool NMLHandExo::holdRelativePosition(
   hold_mA = min(hold_mA, currentLimits_[index]);
   hold_mA = min(hold_mA, (uint16_t)MOTOR_CURRENT_LIMIT);
   hold_mA = min(hold_mA, totalCurrentBudgetMa_);
+  if (!EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(GOAL_CURRENT, id, hold_mA))) return false;
   appliedCurrents_[index] = hold_mA;
-  dxl_.writeControlTableItem(GOAL_CURRENT, id, hold_mA);
   setRelativeAngle(id, relativeAngle);  // Existing joint-limit clamp applies.
   positionHoldActive_[index] = true;
   enableTorque(id, true);
@@ -2403,22 +2727,25 @@ void NMLHandExo::serviceDirectControlSafety() {
   for (int i = 0; i < numMotors_; ++i) {
     if (!directCommandActive_[i]) continue;
     uint8_t id = motorIds_[i];
-    // The active ROM sweep target is exempt from the calibrated-limit stop:
-    // the sweep is deliberately driving toward (and possibly past) the stored
-    // limit to find the real endstop, and stopping it there caused the joint to
-    // bounce off the software limit. It re-commands every ~40 ms so the timeout
-    // backstop below never fires in normal operation; its own stall detector,
-    // the 910 mA cap, and the overall ROM watchdog bound it instead.
+    // ROM owns paced, error-checked position limits and pulse deadlines.
+    // Keep the independent command watchdog, without duplicate unpaced reads.
     const bool isActiveRomTarget =
         (romCalPhase_ == ROM_CAL_RAMP) && (id == romCalId_);
+    if (isActiveRomTarget) {
+      if (now - lastDirectCommandMs_[i] > directCommandTimeoutMs_) {
+        romCalReason_ = "command_watchdog";
+        stopDirectControl(id);
+      }
+      continue;
+    }
     float position = getAbsoluteAngle(id);
     bool timedOut = now - lastDirectCommandMs_[i] > directCommandTimeoutMs_;
-    bool drivingIntoLimit = !isActiveRomTarget && (
+    bool drivingIntoLimit = (
         (directCommandDirection_[i] < 0 &&
          position <= jointLimits_[i][0] + DIRECT_LIMIT_MARGIN_DEG) ||
         (directCommandDirection_[i] > 0 &&
          position >= jointLimits_[i][1] - DIRECT_LIMIT_MARGIN_DEG));
-    if (timedOut || drivingIntoLimit) {
+    if (timedOut || drivingIntoLimit || !isfinite(position)) {
       if (drivingIntoLimit && motorControlMode_ == "VELOCITY") {
         directVelocityLimitBlock_[i] =
             directCommandDirection_[i] > 0 ? 1 : -1;
@@ -2430,32 +2757,32 @@ void NMLHandExo::serviceDirectControlSafety() {
 
 // Acceleration commands
 void NMLHandExo::setAccelerationLimit(uint8_t id, uint32_t acc) {
-  dxl_.writeControlTableItem(PROFILE_ACCELERATION, id, acc);
+  EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(PROFILE_ACCELERATION, id, acc));
   debugPrint("Acceleration limit set for motor " + String(id) + ": " + String(acc));
 }
 uint32_t NMLHandExo::getAccelerationLimit(uint8_t id) {
-  return dxl_.readControlTableItem(PROFILE_ACCELERATION, id);
+  return EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(PROFILE_ACCELERATION, id));
 }
 
 // Motor-specific commands
 void NMLHandExo::rebootMotor(uint8_t id) {
-  dxl_.reboot(id);
+  EXO_PROFILE_CALL(DXL_WRITE, dxl_.reboot(id));
   debugPrint("Motor ID:" + String(id) + " rebooted");
 }
 void NMLHandExo::getMotorInfo(uint8_t id) {
-  dxl_.ping(id);  // could be expanded to read Model Number, Version, etc.
+  EXO_PROFILE_CALL(DXL_READ, dxl_.ping(id));  // could be expanded to read Model Number, Version, etc.
   debugPrint("Pinged motor ID: " + String(id));
 }
 bool NMLHandExo::setBaudRate(uint8_t id, uint32_t baudrate) {
   // BAUD_RATE stores a model-specific index, not the literal bits-per-second
   // value. Let the library perform that mapping and reject unsupported rates.
-  const bool ok = dxl_.setBaudrate(id, baudrate);
+  const bool ok = EXO_PROFILE_CALL(DXL_WRITE, dxl_.setBaudrate(id, baudrate));
   debugPrint("Motor ID:" + String(id) + " baudrate " +
              (ok ? "set to " : "failed: ") + String(baudrate));
   return ok;
 }
 uint32_t NMLHandExo::getBaudRate(uint8_t id) {
-  const uint32_t baudIndex = dxl_.readControlTableItem(BAUD_RATE, id);
+  const uint32_t baudIndex = EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(BAUD_RATE, id));
   if (dxl_.getLastLibErrCode() != DXL_LIB_OK) return 0;
   // XL330/XC330 Protocol-2 baud indices. The old implementation exposed this
   // raw index even though the API and serial response both promise bit/s.
@@ -2473,9 +2800,9 @@ uint32_t NMLHandExo::getBaudRate(uint8_t id) {
 void NMLHandExo::setMotorLED(uint8_t id, bool state) {
   // Sets specified motor LED to the specified state
   if (state) {
-    dxl_.ledOn(id);
+    EXO_PROFILE_CALL(DXL_WRITE, dxl_.ledOn(id));
   } else {
-    dxl_.ledOff(id);
+    EXO_PROFILE_CALL(DXL_WRITE, dxl_.ledOff(id));
   }
 }
 void NMLHandExo::setAllMotorLED(bool state) {
@@ -2490,30 +2817,30 @@ void NMLHandExo::setMotorControlMode(uint8_t id, const String& mode){
   m.toUpperCase();
 
   if (m == "POSITION") {
-    dxl_.setOperatingMode(id, OP_POSITION);
+    EXO_PROFILE_CALL(DXL_WRITE, dxl_.setOperatingMode(id, OP_POSITION));
     debugPrint("Set motor " + String(id) + " to POSITION mode");
   } else if (m == "CURRENT_POSITION") {
-    dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION);
+    EXO_PROFILE_CALL(DXL_WRITE, dxl_.setOperatingMode(id, OP_CURRENT_BASED_POSITION));
     debugPrint("Set motor " + String(id) + " to CURRENT_POSITION mode");
   } else if (m == "VELOCITY") {
-    dxl_.setOperatingMode(id, OP_VELOCITY);
+    EXO_PROFILE_CALL(DXL_WRITE, dxl_.setOperatingMode(id, OP_VELOCITY));
     debugPrint("Set motor " + String(id) + " to VELOCITY mode");
   } else if (m == "CURRENT") {
-    dxl_.setOperatingMode(id, OP_CURRENT);
+    EXO_PROFILE_CALL(DXL_WRITE, dxl_.setOperatingMode(id, OP_CURRENT));
     debugPrint("Set motor " + String(id) + " to CURRENT mode");
   } else {
     debugPrint("[ERROR] Unknown operating mode: " + m);
   }
 }
 bool NMLHandExo::ensureDirectVelocityLimit(uint8_t id) {
-  uint32_t current = dxl_.readControlTableItem(VELOCITY_LIMIT, id);
+  uint32_t current = EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(VELOCITY_LIMIT, id));
   if (current != DIRECT_VELOCITY_LIMIT_RAW) {
-    if (!dxl_.writeControlTableItem(
-            VELOCITY_LIMIT, id, DIRECT_VELOCITY_LIMIT_RAW)) {
+    if (!EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem(
+            VELOCITY_LIMIT, id, DIRECT_VELOCITY_LIMIT_RAW))) {
       debugPrint("[ERROR] Could not write VELOCITY_LIMIT for motor " + String(id));
       return false;
     }
-    current = dxl_.readControlTableItem(VELOCITY_LIMIT, id);
+    current = EXO_PROFILE_CALL(DXL_READ, dxl_.readControlTableItem(VELOCITY_LIMIT, id));
   }
   if (current != DIRECT_VELOCITY_LIMIT_RAW) {
     debugPrint("[ERROR] VELOCITY_LIMIT readback mismatch for motor " +
@@ -2527,15 +2854,19 @@ bool NMLHandExo::setMotorControlMode(const String& mode) {
   String m = mode;
   m.toUpperCase();
   for (int i = 0; i < numMotors_; i++) {
-    dxl_.torqueOff(motorIds_[i]);
+    EXO_PROFILE_CALL(DXL_WRITE, dxl_.torqueOff(motorIds_[i]));
+    torqueEnabled_[i] = false;
+    motorMoving_[i] = false;
+    verdictPending_[i] = false;
   }
+  telemetryGate_.note(millis());
   if (m == "VELOCITY") {
     for (int i = 0; i < numMotors_; i++) {
       directVelocityLimitVerified_[i] = false;
       // Dual firmware can legitimately run with only one hand attached.
       // Missing configured IDs must not block the reachable side, but an ID
       // that was not verified is rejected later by setGoalVelocity().
-      if (dxl_.ping(motorIds_[i]) == 0) continue;
+      if (EXO_PROFILE_CALL(DXL_READ, dxl_.ping(motorIds_[i])) == 0) continue;
       if (!ensureDirectVelocityLimit(motorIds_[i])) {
         motorControlMode_ = "DISABLED";
         stopAllDirectControl();
@@ -2551,6 +2882,9 @@ bool NMLHandExo::setMotorControlMode(const String& mode) {
   for (int i = 0; i < numMotors_; i++) {
     uint8_t id = motorIds_[i];
     NMLHandExo::setMotorControlMode(id, m); // Set the mode for each motor
+    torqueEnabled_[i] = false;
+    motorMoving_[i] = false;
+    verdictPending_[i] = false;
     directCommandActive_[i] = false;
     directCommandDirection_[i] = 0;
     directVelocityLimitBlock_[i] = 0;

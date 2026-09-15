@@ -28,10 +28,19 @@ Key classes in `hand_exo_gui.py`:
 
 ## Connection modes `[VERIFIED]`
 
+Connect runs the handshake off the Qt thread and logs each phase. Connect,
+Refresh, Probe and port/mode controls remain disabled while it runs. Failed opens
+release the CDC handles. Firmware v0.9+ completes UTC synchronization before the
+handshake returns and before polling starts. Missing UTC never blocks `info` or
+`help` in firmware; unsynchronized telemetry reports UTC zero. See
+[connection troubleshooting](gotchas.md#connect-stalls-then-a-retry-cannot-open-the-cdc-port).
+
 The mode combo (Right Only / Left Only / Dual) is selected before connecting and locked
-while connected. All modes use one `HandExo` connection. The preferred USB path uses
-`DualSerialComm` over the command and telemetry CDC ports on one physical cable; the
-legacy compatibility path uses `SerialComm` over one CDC port.
+while connected. All modes use one `HandExo` connection. `AutoSerialComm` reads `info` before choosing `SerialComm`, `DualSerialComm`, or
+`ProtobufSerialComm`. The GUI no longer has a Dual USB CDC checkbox. Protobuf
+builds advertise the text and binary port roles; unsupported layouts fail with
+a connection error. The ASCII shadow-stream option is disabled on Protobuf
+builds; ordinary telemetry uses the binary RPC. See [USB discovery and diagnostics](usb_protocol_and_io_diagnostics.md).
 
 At connect time, `_connect()` builds:
 
@@ -236,3 +245,63 @@ The `_save_profile()` method does not need to change — it already iterates ove
 `motor_names` and computes per-motor values from the stored dicts.
 
 See [docs/calibration_flow.md](calibration_flow.md) for the full task checklist.
+
+## Monitor layout `[VERIFIED]`
+
+Monitor's telemetry table and torque plot share one horizontal splitter. Nested
+tabs report the current page's minimum height for the available width, including
+wrapped labels, so hidden Setup/Integrations pages cannot stretch the plot or
+force horizontal scrolling. This also overrides Qt's `heightForWidth` path used
+by the outer scroll area; overriding `sizeHint` alone is insufficient. The row
+shrinks with the window down to 160 pixels; smaller windows retain outer scrolling
+and the motor table has its own scrollbar for additional rows.
+
+## Hand State model integration `[VERIFIED]`
+
+`HandSkeletonWidget` in the Hand State tab and the UDP inset receive the same
+snapshot from `_apply_motor_angles`. On firmware >= 0.9.0, `SerialWorker` requests
+NX telemetry even for angle-only teleop polls. Buffered shadow samples remain
+available for recording but cannot replace the live NX pose. A failed NX poll
+produces unavailable hand samples; it does not fall back to scalar reads that
+discard provenance. UDP gesture acknowledgements no longer overwrite the inset.
+
+`_hand_state.motor_flexion_fraction` mirrors the firmware's gesture-axis mapping:
+reconstruct the absolute encoder position from the relative angle, home and flip;
+clamp home to the limit window; resolve the signed home-to-flexion span using the
+firmware's 2:1 opposite-span override and 2-degree minimum travel; then clip the
+fraction to [0, 1]. This handles reversed axes, home inside the limit window, and
+multi-turn wrists. Invalid or missing calibration yields an unavailable sample.
+
+The connection worker calls `HandExo.get_hand_visualization_calibration(info)` to
+read RAM home/flip settings and reuse `info` limits, all keyed by integer DXL ID.
+These existing metadata commands do not read motor registers or command motion.
+An applied host profile takes precedence over the connection snapshot. Editing
+calibration through raw serial commands requires reconnecting to refresh that
+snapshot. No loaded host profile is required for visualization.
+
+The display uses the latest position sample, independently of telemetry-table
+averaging, and preserves its position source, device sample uptime, device UTC,
+and host receipt time. Tooltips expose both device clocks. Red solid segments are
+measured, amber dashed segments are estimated, grey dash-dot segments have unknown
+legacy provenance, and grey dotted segments are unavailable. After the greater of
+one second or three configured poll intervals without a new frame, the pose turns
+grey. Missing joints keep their last shape in grey; switching sides or disconnecting
+clears that shape. Age uses the host monotonic clock, so UTC resynchronization does
+not change freshness. WebSocket teleop frames include the same telemetry metadata
+and use null for unavailable normalized values.
+
+Left-only mode mirrors the drawing. Dual mode shows the right hand when it has
+valid samples, otherwise the left when available, and labels the selected side.
+Both sides remain independently keyed by DXL ID for normalization and streaming.
+The drawing is a schematic curl, not a measured anatomical model: finger MCP/PIP
+angles and thumb geometry are visual mappings; wrist sets the assembly tilt, and
+the paired `wrist2` actuator has no independent visual axis. Firmware estimates
+are displayed directly; the GUI does not simulate another hand trajectory.
+
+Regression coverage: `tests/test_hand_state.py` exercises calibration mapping,
+ID routing, common snapshots, sources and clocks, stale rendering, v0.9 angle-only
+polling, shadow isolation, and legacy compatibility without hardware.
+
+<!-- graphviz:docs/figures/hand_state_telemetry.dot -->
+![GraphViz diagram](figures/hand_state_telemetry.svg)
+<!-- /graphviz:docs/figures/hand_state_telemetry.dot -->

@@ -172,6 +172,7 @@ def test_waiting_state_zeros_motor_but_keeps_control_loop_live():
 def test_direct_mode_keeps_live_polling_at_capped_rate():
     timer = _Timer()
     poll_calls = []
+    reset_calls = []
     gui = SimpleNamespace(
         exo_connected=True,
         _teleop_streaming=False,
@@ -179,11 +180,13 @@ def test_direct_mode_keeps_live_polling_at_capped_rate():
         _direct_mode="velocity",
         _telemetry_rate_spin=_SpinValue(50),
         _angle_timer=timer,
+        _serial_worker=SimpleNamespace(reset_poll_pending=lambda: reset_calls.append(True)),
         _request_device_poll=lambda **kwargs: poll_calls.append(kwargs),
     )
 
     HandExoGUI._start_device_polling(gui, force_refresh=True)
 
+    assert reset_calls == [True]
     assert timer.started_with == 100
     assert poll_calls == [{"force_telemetry": True}]
 

@@ -7,6 +7,31 @@ from pathlib import Path
 from nml_hand_exo._paths import ROM_OUTPUT_DIR
 
 
+def build_auto_rom_queue(gestures, directions, motors, mode):
+    """Expand GUI gesture groups into explicit active-side DXL ID commands.
+
+    ``motors`` contains (DXL ID, bare/display name) pairs from the connection.
+    A dual firmware's configured IDs do not imply that both sides are selected.
+    """
+    groups = {"thumb": {"thumbadd", "thumbrot", "thumbflex"},
+              "wrist": {"wrist", "wrist2"},
+              **{name: {name} for name in ("index", "middle", "ring", "pinky")}}
+    allowed = {"Left Only": set(range(1, 10)), "Right Only": set(range(11, 20)),
+               "Dual": set(range(1, 10)) | set(range(11, 20))}[mode]
+    selected = [(mid, name[2:] if name.startswith(("L:", "R:")) else name)
+                for mid, name in motors if mid in allowed]
+    result = []
+    for gesture in gestures:
+        for direction in directions:
+            if direction not in ("flex", "extend"):
+                raise ValueError("ROM direction must be flex or extend")
+            for mid, name in selected:
+                entry = (gesture, direction, mid)
+                if name in groups[gesture] and entry not in result:
+                    result.append(entry)
+    return result
+
+
 def build_motor_orientation(
     profile: dict | None, motor_names: list[str]
 ) -> dict[str, dict[str, float | bool]]:

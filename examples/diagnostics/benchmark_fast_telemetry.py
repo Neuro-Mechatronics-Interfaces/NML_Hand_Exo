@@ -1,227 +1,231 @@
-"""Benchmark the current exo firmware's fast telemetry serial command.
+"""Measure SDK telemetry throughput, sample provenance, and firmware I/O time.
 
-This script intentionally avoids the nml_hand_exo Python API. It talks to the
-OpenRB over pyserial only, sends read-only commands, parses the compact ``NX``
-telemetry frame, and reports timing.
-
-Close Arduino Serial Monitor, the GUI, and any other serial terminal before
-running this. Windows COM ports are exclusive, and two programs cannot safely
-own COM3 at the same time.
-
-Example:
-    python examples/diagnostics/benchmark_fast_telemetry.py --port COM3 --ids 11 12 13 14 15 16 17 18 19
+Close the GUI/Serial Monitor first. No enable or movement commands are sent.
+Optional fixed-rate model writes reapply the selected joint's current parameters.
+Test only IDs physically present. A rate of 0 polls telemetry without pacing.
 """
-
 from __future__ import annotations
-
 import argparse
+import inspect
+import json
+import math
+from pathlib import Path
 import statistics
-import struct
 import time
-from dataclasses import dataclass
-
-import serial
-
-
-HEADER_FMT = "<2sBBBHIH"
-RECORD_FMT = "<BBhiiii"
-HEADER_LEN = struct.calcsize(HEADER_FMT)
-RECORD_LEN = struct.calcsize(RECORD_FMT)
+from collections import Counter
+from nml_hand_exo.interface import HandExo, AutoSerialComm
 
 
-@dataclass
-class FastFrame:
-    elapsed_ms: float
-    flags: int
-    count: int
-    checksum_ok: bool
-    records: list[tuple[int, int, int, int, int, float, float]]
+def percentiles(values):
+    if not values:
+        return {}
+    ordered = sorted(values)
+    def percentile(p):
+        return ordered[min(len(ordered)-1, int((len(ordered)-1)*p + 0.5))]
+    return dict(min=min(values), median=statistics.median(values),
+                mean=statistics.mean(values), p95=percentile(.95),
+                p99=percentile(.99), max=max(values))
 
 
-def read_text_response(ser: serial.Serial, command: str, timeout: float) -> str:
-    ser.reset_input_buffer()
-    ser.write((command + "\r\n").encode("ascii"))
-    ser.flush()
+class ModelCommandWorkload:
+    """Prioritize scheduled model writes between complete telemetry transactions.
 
-    original_timeout = ser.timeout
-    ser.timeout = 0.02
-    deadline = time.monotonic() + timeout
-    data = bytearray()
-    try:
-        while time.monotonic() < deadline:
-            chunk = ser.read(1)
-            if chunk:
-                data += chunk
-                if chunk == b";":
-                    break
-            else:
-                time.sleep(0.001)
-    finally:
-        ser.timeout = original_timeout
-    return data.decode(errors="replace").replace(";", "").strip()
+    One owner serializes request/reply traffic, like the GUI's serial worker.
+    Expired command slots are skipped instead of accumulating a catch-up burst.
+    """
+    def __init__(self, exo, motor_id, parameters, rate, timeout, start):
+        self.exo, self.motor_id, self.parameters = exo, motor_id, dict(parameters)
+        self.transport = 'protobuf' if getattr(exo.device, 'usb_protocol', None) == 'protobuf-v1' else 'ascii'
+        self.rate, self.timeout, self.start = rate, timeout, start
+        self.slot = 0
+        self.attempts = self.successes = self.skipped_slots = 0
+        self.latencies, self.lateness = [], []
+        self.errors = Counter()
+
+    @property
+    def deadline(self):
+        return self.start + self.slot / self.rate
+
+    def run(self):
+        begin = time.perf_counter()
+        late = max(0, begin - self.deadline)
+        # Coalesce past deadlines into this single write, not multiple writes.
+        stale = int(late * self.rate)
+        self.slot += stale
+        self.skipped_slots += stale
+        self.lateness.append(late * 1000)
+        self.attempts += 1
+        try:
+            self.exo.set_joint_model(self.motor_id, **self.parameters, timeout=self.timeout)
+            self.successes += 1
+        except (RuntimeError, ValueError, ConnectionError, OSError) as exc:
+            self.errors[type(exc).__name__ + ': ' + str(exc)] += 1
+        end = time.perf_counter()
+        self.latencies.append((end-begin) * 1000)
+        next_slot = max(self.slot + 1, math.floor((end-self.start) * self.rate) + 1)
+        self.skipped_slots += next_slot - self.slot - 1
+        self.slot = next_slot
+
+    def summary(self, elapsed):
+        return dict(name='set_joint_model', transport=self.transport, motor_id=self.motor_id,
+                    parameters=self.parameters, requested_rate_hz=self.rate,
+                    attempts=self.attempts, successes=self.successes,
+                    acknowledged_hz=self.successes/elapsed, skipped_slots=self.skipped_slots,
+                    start_lateness_ms=percentiles(self.lateness),
+                    transaction_ms=percentiles(self.latencies), errors=dict(self.errors))
 
 
-def read_exact_until_deadline(
-    ser: serial.Serial, size: int, deadline: float
-) -> bytes:
-    data = bytearray()
-    while len(data) < size and time.monotonic() < deadline:
-        chunk = ser.read(size - len(data))
-        if chunk:
-            data += chunk
-        else:
-            time.sleep(0.0005)
-    return bytes(data)
-
-
-def read_fast_frame(ser: serial.Serial, ids: list[int], timeout: float) -> FastFrame:
-    command = "get_telemetry_fast:" + ":".join(str(mid) for mid in ids)
-    ser.reset_input_buffer()
+def measure(exo, ids, samples, timeout, rate, *, command_rate=0, command_id=None,
+            model_parameters=None, command_timeout=1.0):
+    latencies, errors = [], Counter()
+    complete = measured = estimated = 0
+    per_id = {mid: dict(valid=0, measured=0, estimated=0, missing=0, errors=0, unavailable=0, repeated_timestamp=0,
+                       fresh_measured=0, last=None, gaps=[]) for mid in ids}
     start = time.perf_counter()
-    ser.write((command + "\r\n").encode("ascii"))
-    ser.flush()
-
-    original_timeout = ser.timeout
-    ser.timeout = 0.005
-    deadline = time.monotonic() + timeout
-    prefix = bytearray()
-    try:
-        while time.monotonic() < deadline:
-            byte = ser.read(1)
-            if byte:
-                prefix += byte
-                if len(prefix) > 2:
-                    prefix = prefix[-2:]
-                if bytes(prefix) == b"NX":
+    workload = (ModelCommandWorkload(exo, command_id, model_parameters, command_rate,
+                                    command_timeout, start) if command_rate else None)
+    for i in range(samples):
+        if workload:
+            # Commands have their own schedule, including during paced telemetry
+            # sleeps. An in-flight telemetry read remains non-preemptible.
+            poll_deadline = start + i / rate if rate else time.perf_counter()
+            while True:
+                now = time.perf_counter()
+                if now >= workload.deadline:
+                    workload.run()
+                    if time.perf_counter() >= poll_deadline:
+                        break
+                    continue
+                if now >= poll_deadline:
                     break
+                time.sleep(max(0, min(poll_deadline, workload.deadline)-now))
+        elif rate:
+            time.sleep(max(0, start + i / rate - time.perf_counter()))
+        begin = time.perf_counter()
+        try:
+            records = exo.get_fast_telemetry(timeout=timeout, motor_ids=ids)
+        except (TimeoutError, ValueError, ConnectionError, OSError) as exc:
+            errors[type(exc).__name__ + ': ' + str(exc)] += 1
+            continue
+        latencies.append((time.perf_counter() - begin) * 1000)
+        good = [mid for mid in ids if mid in records and not records[mid]['error']
+                and records[mid]['position_source'] != 'unavailable']
+        for mid in ids:
+            stats = per_id[mid]
+            if mid not in records: stats['missing'] += 1
+            elif records[mid]['error']: stats['errors'] += 1
+            elif records[mid]['position_source'] == 'unavailable': stats['unavailable'] += 1
+        complete += len(good) == len(ids)
+        measured += len(good) == len(ids) and all(
+            records[mid]['position_source'] == 'measured' for mid in ids)
+        estimated += any(records[mid]['estimated'] for mid in good)
+        for mid in good:
+            r, stats = records[mid], per_id[mid]
+            stats['valid'] += 1
+            is_measured = r['position_source'] == 'measured'
+            stats['measured'] += is_measured
+            stats['estimated'] += r['position_source'] == 'estimated'
+            stamp = r['sample_timestamp_ms']
+            if stamp == stats['last']:
+                stats['repeated_timestamp'] += 1
             else:
-                time.sleep(0.0005)
-        else:
-            raise TimeoutError("Timed out waiting for NX frame")
-
-        rest = read_exact_until_deadline(ser, HEADER_LEN - 2, deadline)
-        if len(rest) != HEADER_LEN - 2:
-            raise TimeoutError(f"Timed out reading header ({len(rest)} bytes)")
-        header = b"NX" + rest
-        magic, version, flags, count, payload_len, _timestamp_ms, checksum = (
-            struct.unpack(HEADER_FMT, header)
-        )
-        if magic != b"NX" or version != 1:
-            raise ValueError(f"Unsupported frame magic/version: {magic!r}/{version}")
-
-        payload = read_exact_until_deadline(ser, payload_len, deadline)
-        if len(payload) != payload_len:
-            raise TimeoutError(f"Timed out reading payload ({len(payload)} bytes)")
-    finally:
-        ser.timeout = original_timeout
-
-    elapsed_ms = (time.perf_counter() - start) * 1000.0
-    checksum_ok = ((sum(header[: HEADER_LEN - 2]) + sum(payload)) & 0xFFFF) == checksum
-    records = []
-    for offset in range(0, payload_len, RECORD_LEN):
-        if offset + RECORD_LEN > len(payload):
-            break
-        mid, err, current_ma, velocity_raw, position_ticks, abs_cdeg, rel_cdeg = (
-            struct.unpack_from(RECORD_FMT, payload, offset)
-        )
-        records.append(
-            (
-                mid,
-                err,
-                current_ma,
-                velocity_raw,
-                position_ticks,
-                abs_cdeg / 100.0,
-                rel_cdeg / 100.0,
-            )
-        )
-    return FastFrame(elapsed_ms, flags, count, checksum_ok, records)
+                stats['fresh_measured'] += is_measured
+                if stats['last'] is not None:
+                    gap = (stamp - stats['last']) & 0xffffffff
+                    if gap < 0x80000000: stats['gaps'].append(gap)
+            stats['last'] = stamp
+    elapsed = time.perf_counter() - start
+    for stats in per_id.values():
+        stats.pop('last')
+        stats['device_sample_gap_ms'] = percentiles(stats.pop('gaps'))
+        stats['fresh_measured_hz'] = stats['fresh_measured'] / elapsed
+    result = dict(attempts=samples, frames=len(latencies), complete_frames=complete,
+                measured_position_frames=measured, frames_with_estimates=estimated,
+                elapsed_s=elapsed, frame_hz=len(latencies)/elapsed,
+                complete_frame_hz=complete/elapsed, measured_position_frame_hz=measured/elapsed,
+                round_trip_ms=percentiles(latencies), errors=dict(errors), per_id=per_id)
+    if workload:
+        result['commands'] = workload.summary(elapsed)
+    return result
 
 
-def method_name(flags: int) -> str:
-    return {
-        0: "failed",
-        1: "fallbackRead",
-        2: "fastSyncRead",
-        3: "syncRead",
-    }.get(flags, f"unknown({flags})")
-
-
-def summarize(values: list[float]) -> str:
-    return (
-        f"min={min(values):.2f} ms, mean={statistics.mean(values):.2f} ms, "
-        f"median={statistics.median(values):.2f} ms, max={max(values):.2f} ms, "
-        f"mean_rate={1000.0 / statistics.mean(values):.1f} Hz"
-    )
-
-
-def parse_args() -> argparse.Namespace:
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", default="COM3", help="OpenRB USB serial port")
-    parser.add_argument("--baud", type=int, default=2_000_000, help="USB baud rate")
-    parser.add_argument(
-        "--ids",
-        nargs="+",
-        type=int,
-        default=[11, 12, 13, 14, 15, 16, 17, 18, 19],
-        help="Dynamixel IDs to request",
-    )
-    parser.add_argument("--samples", type=int, default=50)
-    parser.add_argument("--timeout", type=float, default=2.0)
-    parser.add_argument(
-        "--skip-text-diag",
-        action="store_true",
-        help="Skip version/telemetry_diag text checks",
-    )
-    return parser.parse_args()
+    parser.add_argument('--port', required=True)
+    parser.add_argument('--telem-port', help='Optional explicit sibling CDC (otherwise discovered automatically)')
+    parser.add_argument('--baud', type=int, default=1_000_000)
+    parser.add_argument('--ids', nargs='+', type=int, default=list(range(11, 20)))
+    parser.add_argument('--samples', type=int, default=500)
+    parser.add_argument('--timeout', type=float, default=.5)
+    parser.add_argument('--rate', type=float, default=0, help='Target polls/s; 0 = saturation test')
+    parser.add_argument('--command-rate', type=float, default=0,
+                        help='Independent set_joint_model writes/s; 0 disables mixed load')
+    parser.add_argument('--command-id', type=int,
+                        help='Explicit DXL ID whose current model parameters are reapplied')
+    parser.add_argument('--command-timeout', type=float, default=1.0,
+                        help='Maximum model-write acknowledgement wait, seconds')
+    parser.add_argument('--json', type=Path, help='Save all statistics for comparison')
+    args = parser.parse_args()
+    if (args.samples < 1 or not math.isfinite(args.timeout) or args.timeout <= 0
+            or not math.isfinite(args.rate) or args.rate < 0):
+        parser.error('samples and timeout must be positive; rate must be nonnegative')
+    if (not math.isfinite(args.command_rate) or not 0 <= args.command_rate <= 1000
+            or not math.isfinite(args.command_timeout) or args.command_timeout <= 0):
+        parser.error('command-rate must be 0..1000 Hz and command-timeout must be positive')
+    if args.command_rate and args.command_id not in args.ids:
+        parser.error('--command-rate requires --command-id from the telemetry --ids list')
+    if args.command_id is not None and not args.command_rate:
+        parser.error('--command-id requires a positive --command-rate')
+    if len(set(args.ids)) != len(args.ids) or not all(1 <= mid <= 253 for mid in args.ids):
+        parser.error('Use unique explicit DXL IDs in 1..253')
+    if args.command_rate and 'timeout' not in inspect.signature(HandExo.set_joint_model).parameters:
+        parser.error('The benchmark imported an older SDK from '
+                     f'{inspect.getfile(HandExo)}. In this Python environment run: '
+                     'python -m pip install -e ".[protobuf]"')
+    comm = AutoSerialComm(args.port, args.baud, sibling=args.telem_port, timeout=.02, progress=print)
+    exo = HandExo(comm, send_delay=0)
+    try:
+        exo.connect()
+        exo.set_debug(False)
+        info = exo.info()
+        if not info.get('version'):
+            preview = repr(info.get('_raw', '')[:240])
+            raise ConnectionError(f'Expected firmware info on {comm.cmd_port if comm.is_split else comm.port}; '
+                                  f'received {preview}')
+        # Warm caches and exclude connection/version queries from the run.
+        exo.get_fast_telemetry(timeout=args.timeout, motor_ids=args.ids)
+        model_parameters = None
+        if args.command_rate:
+            model = exo.get_joint_model(args.command_id)
+            model_parameters = {key: model[key] for key in
+                                ('gain', 'time_constant', 'max_velocity', 'stiffness', 'moment')}
+            # Validate support and consume the ACK before the timed run.
+            exo.set_joint_model(args.command_id, **model_parameters, timeout=args.command_timeout)
+            command_transport = 'Protobuf' if comm.usb_protocol == 'protobuf-v1' else 'ASCII'
+            print(f'Mixed load: reapply joint model for ID {args.command_id} at '
+                  f'{args.command_rate:g} Hz over {command_transport}; parameters={model_parameters}')
+        profile_available = True
+        try:
+            exo.reset_io_profile()
+        except (RuntimeError, ValueError, ConnectionError) as exc:
+            profile_available = False
+            print('Firmware I/O profile unavailable:', exc)
+        result = measure(exo, args.ids, args.samples, args.timeout, args.rate,
+                         command_rate=args.command_rate, command_id=args.command_id,
+                         model_parameters=model_parameters, command_timeout=args.command_timeout)
+        result.update(firmware=info['version'], ids=args.ids, requested_rate=args.rate)
+        if profile_available:
+            try:
+                result['io_profile'] = exo.get_io_profile()
+            except (RuntimeError, ValueError, ConnectionError) as exc:
+                result['io_profile_error'] = str(exc)
+        print(json.dumps(result, indent=2))
+        if args.json:
+            args.json.parent.mkdir(parents=True, exist_ok=True)
+            args.json.write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
+    finally:
+        exo.close()
 
 
-def main() -> None:
-    args = parse_args()
-    print(f"Opening {args.port} at {args.baud} baud")
-    with serial.Serial(args.port, args.baud, timeout=0.02, write_timeout=1.0) as ser:
-        time.sleep(2.0)
-        ser.reset_input_buffer()
-
-        if not args.skip_text_diag:
-            for command in (
-                "version",
-                "telemetry_diag:" + ":".join(str(mid) for mid in args.ids),
-            ):
-                start = time.perf_counter()
-                response = read_text_response(ser, command, args.timeout)
-                elapsed_ms = (time.perf_counter() - start) * 1000.0
-                print(f"\n{command} ({elapsed_ms:.1f} ms)")
-                print(response or "<no response>")
-
-        print("\nFirst fast frame")
-        first = read_fast_frame(ser, args.ids, args.timeout)
-        print(
-            f"elapsed={first.elapsed_ms:.2f} ms, method={method_name(first.flags)}, "
-            f"count={first.count}, checksum_ok={first.checksum_ok}"
-        )
-        for record in first.records:
-            mid, err, current_ma, velocity_raw, position_ticks, abs_deg, rel_deg = record
-            print(
-                f"  id={mid:>2} err={err} current={current_ma:>5} mA "
-                f"velocity_raw={velocity_raw:>8} pos_ticks={position_ticks:>8} "
-                f"abs={abs_deg:>8.2f} rel={rel_deg:>8.2f}"
-            )
-
-        timings = []
-        flags = []
-        checksum_ok = 0
-        for _ in range(args.samples):
-            frame = read_fast_frame(ser, args.ids, args.timeout)
-            timings.append(frame.elapsed_ms)
-            flags.append(frame.flags)
-            checksum_ok += int(frame.checksum_ok)
-
-    print("\nBenchmark")
-    print(f"samples={len(timings)}, ids={len(args.ids)}, checksum_ok={checksum_ok}")
-    print(f"methods={', '.join(method_name(flag) for flag in sorted(set(flags)))}")
-    print(summarize(timings))
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

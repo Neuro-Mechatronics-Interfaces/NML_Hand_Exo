@@ -159,42 +159,39 @@ def format_set_finger_angles(
         ValueError: If no joint has a value, or a value is non-numeric,
             non-finite, or outside ``[-100, 100]``.
     """
-    fields: list[str] = []
-    have_value = False
-    for joint in order:
-        value = values.get(joint)
-        if value is None:
-            fields.append("")
-            continue
-        if isinstance(value, bool):
-            raise ValueError(
-                f"set_finger_angles value for {joint!r} must be numeric, got {value!r}"
-            )
-        try:
-            number = float(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"set_finger_angles value for {joint!r} must be numeric, got {value!r}"
-            ) from exc
-        if not math.isfinite(number):
-            raise ValueError(
-                f"set_finger_angles value for {joint!r} must be finite, got {value!r}"
-            )
-        rounded = round(number)
-        if not -SET_FINGER_ANGLES_MAX <= rounded <= SET_FINGER_ANGLES_MAX:
-            raise ValueError(
-                f"set_finger_angles value for {joint!r} must be in "
-                f"[-{SET_FINGER_ANGLES_MAX}, {SET_FINGER_ANGLES_MAX}], got {number:g}"
-            )
-        fields.append(str(int(rounded)))
-        have_value = True
-    if not have_value:
-        raise ValueError("set_finger_angles needs at least one joint with a value")
-    # Trailing empty (held) fields carry no information: an omitted field holds
-    # exactly like an empty one, so drop them to shorten the datagram.
+    normalized = normalize_finger_angles(values, order)
+    fields = [str(normalized[joint]) if joint in normalized else "" for joint in order]
     while fields and fields[-1] == "":
         fields.pop()
     return SET_FINGER_ANGLES_PREFIX + ":" + ":".join(fields)
+
+
+def normalize_finger_angles(values, order=SET_FINGER_ANGLES_ORDER):
+    """Validate once for both text and typed Protobuf transports."""
+    if not isinstance(values, dict):
+        raise ValueError("values must be a joint-name mapping")
+    normalized = {}
+    for joint, value in values.items():
+        name = str(joint).strip().lower()
+        if name not in order:
+            raise ValueError(f"set_finger_angles joint must be one of {order}, got {joint!r}")
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            raise ValueError(f"set_finger_angles value for {name!r} must be numeric")
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"set_finger_angles value for {name!r} must be numeric") from exc
+        if not math.isfinite(number):
+            raise ValueError(f"set_finger_angles value for {name!r} must be finite")
+        rounded = round(number)
+        if not -SET_FINGER_ANGLES_MAX <= rounded <= SET_FINGER_ANGLES_MAX:
+            raise ValueError(f"set_finger_angles value for {name!r} must be in [-100, 100]")
+        normalized[name] = int(rounded)
+    if not normalized:
+        raise ValueError("set_finger_angles needs at least one joint with a value")
+    return normalized
 
 
 def pack_continuous_ack(
