@@ -91,6 +91,34 @@ enum FastTelemetryMethod : uint8_t {
   FAST_TELEM_METHOD_SYNC_READ = 3
 };
 
+/// @brief Direction of an impedance ROM calibration sweep.
+///
+/// Expressed on the same home->flexion axis the gesture system uses
+/// (getGestureSpan): FLEX drives toward the flexion endstop, EXTEND toward the
+/// extension endstop. The routine resolves the physical current sign for each
+/// joint at runtime, so this stays flip-flag agnostic.
+enum RomCalDirection : uint8_t {
+  ROM_CAL_DIR_FLEX = 0,
+  ROM_CAL_DIR_EXTEND
+};
+
+/// @brief State of the non-blocking impedance ROM calibration state machine.
+enum RomCalPhase : uint8_t {
+  ROM_CAL_IDLE = 0,   ///< No sweep running.
+  ROM_CAL_RAMP,       ///< Ramping current and tracking net travel until stall.
+  ROM_CAL_RETURN,     ///< Endstop found (or sweep aborted); returning to home.
+  ROM_CAL_DONE        ///< Terminal; result already reported. Cleared to IDLE.
+};
+
+/// @brief Why an impedance ROM calibration sweep ended, reported to the host.
+enum RomCalStatus : uint8_t {
+  ROM_CAL_STATUS_NONE = 0,
+  ROM_CAL_STATUS_OK,        ///< Endstop found by motion onset + resisted nudge.
+  ROM_CAL_STATUS_CEILING,   ///< Reached the current ceiling without moving.
+  ROM_CAL_STATUS_TIMEOUT,   ///< Overall watchdog fired before concluding.
+  ROM_CAL_STATUS_ABORTED    ///< Cancelled, or a precondition failed mid-sweep.
+};
+
 /// @brief Class to manage the NML Hand Exoskeleton, providing initialization, motor control, and telemetry.
 class NMLHandExo {
   public:
@@ -265,6 +293,65 @@ class NMLHandExo {
     /// @brief Check if the exoskeleton is currently calibrating.
     /// @return True if in calibration mode, false otherwise.
     bool isExoCalibrating();
+
+    // -----------------------------------------------------------
+    // Impedance range-of-motion (ROM) calibration
+    // -----------------------------------------------------------
+    //
+    // Drives ONE joint in ONE direction under current-mode control, ramping
+    // current slowly (per the ROM_CAL_* constants in config.h) while polling
+    // the joint angle, until the joint starts to creep and then resists a small
+    // extra nudge -- that angle is the endstop. The joint is then returned to
+    // the angle it started from. The whole thing runs as a non-blocking state
+    // machine serviced from update(): begin*() only arms it and returns.
+    //
+    // The host triggers this per joint/direction (calibrate_rom:<id>:<dir>) and
+    // orchestrates a full six-joint, two-direction sweep itself. The firmware
+    // reports the discovered endstop but does NOT overwrite jointLimits_; the
+    // host decides whether to apply it via set_motor_limits.
+
+    /// @brief Arm an impedance ROM sweep for one joint and direction.
+    ///
+    /// Requires the global motor control mode to already be CURRENT and the ID
+    /// to be reachable; fails (returns false, arms nothing) otherwise. On
+    /// success it enables torque on the target only and records the present
+    /// angle as the return-home reference.
+    /// @param id Target Dynamixel ID.
+    /// @param direction FLEX or EXTEND on the gesture axis.
+    /// @return True if the sweep was armed.
+    bool beginRomCalibration(uint8_t id, RomCalDirection direction);
+
+    /// @brief Arm a sequence of ROM sweeps over several joints, one at a time.
+    ///
+    /// Used by the gesture-level calibration (calibrate_rom_gesture): a gesture
+    /// like "thumb" or "wrist" drives several motors, and this sweeps each of
+    /// them in the requested direction back to back. Each motor still emits its
+    /// own ROM_CAL_RESULT line as it concludes; the state machine advances to
+    /// the next queued motor automatically. The first motor is armed exactly as
+    /// beginRomCalibration() would, so the same CURRENT-mode / reachability
+    /// preconditions apply to it.
+    /// @param ids Motor IDs to sweep, in order.
+    /// @param count Number of IDs (bounded by N_MOTORS).
+    /// @param direction FLEX or EXTEND, applied to every motor in the batch.
+    /// @return True if at least the first reachable motor was armed.
+    bool beginRomCalibrationBatch(const uint8_t* ids, uint8_t count,
+                                  RomCalDirection direction);
+
+    /// @brief Service the ROM calibration state machine. Called from update().
+    /// Non-blocking: does at most a bounded amount of Dynamixel I/O per call.
+    void serviceRomCalibration();
+
+    /// @brief Whether an impedance ROM sweep is currently running.
+    bool isRomCalibrating() const;
+
+    /// @brief Side-effect-free precheck for whether a ROM sweep may start now
+    /// (global mode is CURRENT and no sweep is already running). Lets a caller
+    /// emit its acknowledgement before any ROM_CAL_RESULT line is produced.
+    bool canStartRomCalibration() const;
+
+    /// @brief Abort any running sweep immediately: zero current on the target,
+    /// return it home, and report status=aborted. Safe to call when idle.
+    void cancelRomCalibration();
 
     // -----------------------------------------------------------
     // Mode functions
@@ -749,15 +836,27 @@ class NMLHandExo {
     /// hand therefore moves normally while the other nine IDs are reported as
     /// skipped_offline instead of rejecting the whole frame.
     ///
+    /// 0.8.0 -- adds impedance-based range-of-motion calibration:
+    /// calibrate_rom:<id>:<flex|extend> drives one joint in one direction under
+    /// current-mode control, ramping current slowly until the joint just starts
+    /// to move and then resists a small extra nudge, marks that angle as the
+    /// endstop, and returns the joint to where it started. It runs as a
+    /// non-blocking on-device state machine (serviced from update()) with a hard
+    /// current ceiling well below MOTOR_CURRENT_LIMIT and an overall watchdog;
+    /// all sweep tuning lives in the ROM_CAL_* block of config.h. The endstop is
+    /// REPORTED (async ROM_CAL_RESULT line), not auto-applied -- the host writes
+    /// it back with set_motor_limits if it wants to. Requires the global mode to
+    /// be CURRENT first. Adds calibrate_rom and cancel_rom. Gate on >= 0.8.0.
+    ///
     /// axon-0.3.0 -- the read-only Axon telemetry block grows from 4 to 8
     /// channels per motor, adding current_mA (+status) and derived torque (N*m)
     /// alongside the existing angle/age/status. The reply schema id becomes
     /// 0xF212 so a driver expecting the 4-field 0xF211 layout rejects rather
     /// than misparses. No motion or actuation is added; readback only.
 #if EXO_AXON_USB
-    static constexpr const char* VERSION = "0.7.1-axon-0.3.0";
+    static constexpr const char* VERSION = "0.8.0-axon-0.3.0";
 #else
-    static constexpr const char* VERSION = "0.7.1";
+    static constexpr const char* VERSION = "0.8.0";
 #endif
 
   private:
@@ -970,6 +1069,75 @@ class NMLHandExo {
 
     /// @brief Duration for calibration in milliseconds.
     unsigned long calibrationDuration;
+
+    // -- Impedance ROM calibration state -------------------------------
+    // Single-joint, single-direction at a time, so scalar state is enough.
+    // The state machine reads only the ROM_CAL_* constants from config.h for
+    // its tuning; see serviceRomCalibration() in nml_hand_exo.cpp.
+    RomCalPhase romCalPhase_ = ROM_CAL_IDLE;
+    RomCalDirection romCalDir_ = ROM_CAL_DIR_FLEX;
+    RomCalStatus romCalStatus_ = ROM_CAL_STATUS_NONE;
+    uint8_t romCalId_ = 0;               ///< Target Dynamixel ID for the sweep.
+    int romCalIndex_ = -1;               ///< Cached motor index of romCalId_.
+    float romCalSign_ = 0.0f;            ///< Commanded-current sign (+/-1), locked at onset.
+    float romCalCurrentMa_ = 0.0f;       ///< Current magnitude the ramp has reached, mA.
+    bool romCalDirLocked_ = false;       ///< Whether romCalSign_ has been resolved.
+    float romCalHomeAngle_ = 0.0f;       ///< Absolute angle to return to, deg.
+    float romCalLastAngle_ = 0.0f;       ///< Absolute angle at the previous step, deg.
+    float romCalEndstopAngle_ = 0.0f;    ///< Furthest advanced position, i.e. the endstop, deg.
+    // Sliding progress window: the endstop is where net travel over the window
+    // stalls while current is high. romCalWindowRefAngle_ is the position at the
+    // start of the current window; if the joint advances >= ROM_CAL_PROGRESS_DEG
+    // beyond it (in the drive direction) the window resets forward and the sweep
+    // keeps ramping. If it does not within ROM_CAL_PROGRESS_WINDOW_MS, that is a
+    // stall.
+    float romCalWindowRefAngle_ = 0.0f;  ///< Position at the start of the progress window, deg.
+    unsigned long romCalWindowStartMs_ = 0; ///< millis() the current progress window opened.
+    unsigned long romCalStartMs_ = 0;    ///< millis() when the sweep was armed.
+    unsigned long romCalLastStepMs_ = 0; ///< millis() of the last paced angle poll.
+    unsigned long romCalLastRampMs_ = 0; ///< millis() of the last continuous current update.
+    bool romCalAdvancing_ = false;       ///< Joint made progress on the last poll (-> travel ramp rate).
+    unsigned long romCalReturnStartMs_ = 0;      ///< millis() the return-home hold began.
+
+    // Batch/gesture sweeps: a queue of motor IDs swept one at a time. Empty for
+    // a single-joint calibrate_rom; populated by beginRomCalibrationBatch so a
+    // multi-motor gesture (thumb, wrist) sweeps each of its joints in turn.
+    uint8_t romCalQueue_[N_MOTORS];
+    uint8_t romCalQueueCount_ = 0;   ///< IDs remaining in the queue.
+    uint8_t romCalQueueCursor_ = 0;  ///< Next queue slot to arm.
+    RomCalDirection romCalQueueDir_ = ROM_CAL_DIR_FLEX;
+
+    /// @brief Arm one motor's sweep. The shared core of beginRomCalibration and
+    /// each step of a batch; assumes the queue has already been set as intended.
+    bool romCalArmMotor(uint8_t id, RomCalDirection direction);
+
+    /// @brief Write the ROM sweep's goal current, WITHOUT the stored-limit
+    /// zeroing that setGoalCurrent() applies. The sweep exists to find the real
+    /// physical endstop, which may sit at or beyond the stored software limit;
+    /// letting setGoalCurrent() zero the current at that limit made the joint
+    /// bounce off it (drive -> zero -> spring back -> drive) instead of
+    /// approaching a true endstop. Safety here is the 910 mA magnitude clamp
+    /// (still applied), the impedance-stall detector, and the overall watchdog,
+    /// NOT the calibrated position window. Only ever used while a ROM sweep is
+    /// actively driving romCalId_.
+    bool writeRomSweepCurrent(float current_mA);
+
+    /// @brief Arm the next queued motor, or clear the queue when exhausted.
+    /// Called after each sweep concludes. No-op if the queue is empty.
+    void romCalAdvanceQueue();
+
+    /// @brief Zero current on the ROM target and switch it to CURRENT_POSITION
+    /// hold at the recorded home angle. Shared by the OK and abort paths.
+    void romCalBeginReturnHome();
+
+    /// @brief Release the current target's hold, report it, and advance the
+    /// queue (arm the next motor, or idle when the campaign is done).
+    void romCalFinish();
+
+    /// @brief Emit one ROM_CAL_RESULT line for the current target. Pure
+    /// reporting -- no motor I/O, no queue advance -- so romCalFinish() and the
+    /// skip path in romCalAdvanceQueue() can both use it without recursing.
+    void romCalReport();
 
 
     bool* flipMotor_;

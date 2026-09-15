@@ -345,10 +345,77 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
     return 0;
   }
 
-  // Keep this path conservative: diagnostics showed multi-register and repeated
-  // per-motor telemetry reads can corrupt or wedge the current bus. For the GUI
-  // fast path, read position only and leave current/velocity at zero until the
-  // bus is stable enough for those additional registers.
+  // Fill one record's derived angle fields from its raw position ticks.
+  auto decodeAngles = [&](uint8_t i, int index, int32_t position_ticks) {
+    records[i].position_ticks = position_ticks;
+    float absolute_deg = position_ticks * 360.0f / (float)PULSE_RESOLUTION;
+    float relative_deg = absolute_deg - zeroOffsets_[index];
+    if (flipMotor_[index]) relative_deg *= -1.0f;
+    records[i].absolute_cdeg = (int32_t)round(absolute_deg * 100.0f);
+    records[i].relative_cdeg = (int32_t)round(relative_deg * 100.0f);
+  };
+
+  // --- Preferred path: ONE Sync Read for the whole fleet ---------------------
+  // PRESENT_CURRENT/VELOCITY/POSITION are contiguous (addr 126, len 10), so a
+  // single Sync Read returns all three for every motor in one bus transaction
+  // instead of count*3 sequential reads. That is the difference between the GUI
+  // poll costing ~1 round trip and ~27 (9 motors) or ~54 (dual) per frame --
+  // the earlier per-register loop is what made the GUI crawl once current and
+  // velocity were re-enabled.
+  {
+    DYNAMIXEL::XELInfoSyncRead_t xels[MAX_FAST_TELEM_IDS];
+    DYNAMIXEL::InfoSyncReadInst_t syncInfo = {};
+    uint8_t recvBufs[MAX_FAST_TELEM_IDS][DYNAMIXEL_PRESENT_BLOCK_LENGTH];
+    uint8_t packetBuffer[256];
+    int recIndex[MAX_FAST_TELEM_IDS];
+    uint8_t packed = 0;
+    for (uint8_t i = 0; i < count; ++i) {
+      int index = getIndexById(ids[i]);
+      if (index == -1) { records[i].error = 1; continue; }
+      xels[packed].id = ids[i];
+      xels[packed].p_recv_buf = recvBufs[packed];
+      recIndex[packed] = i;              // map packed slot -> records[] slot
+      ++packed;
+    }
+    if (packed > 0) {
+      clearDxlRx();
+      syncInfo.packet.p_buf = packetBuffer;
+      syncInfo.packet.buf_capacity = sizeof(packetBuffer);
+      syncInfo.packet.is_completed = false;
+      syncInfo.addr = DYNAMIXEL_PRESENT_BLOCK_ADDRESS;
+      syncInfo.addr_length = DYNAMIXEL_PRESENT_BLOCK_LENGTH;
+      syncInfo.p_xels = xels;
+      syncInfo.xel_count = packed;
+      syncInfo.is_info_changed = true;
+
+      uint8_t got = dxl_.syncRead(&syncInfo, timeoutMs);
+      if (got > 0) {
+        methodOut = FAST_TELEM_METHOD_SYNC_READ;
+        for (uint8_t p = 0; p < packed; ++p) {
+          const uint8_t i = recIndex[p];
+          const int index = getIndexById(ids[i]);
+          if (xels[p].error != 0) { records[i].error = 1; }
+          const uint8_t* b = recvBufs[p];
+          // Little-endian: current int16 @0, velocity int32 @2, position int32 @6.
+          int16_t current_mA;
+          int32_t velocity_raw, position_ticks;
+          memcpy(&current_mA,   b + DYNAMIXEL_PRESENT_CURRENT_OFFSET,  2);
+          memcpy(&velocity_raw, b + DYNAMIXEL_PRESENT_VELOCITY_OFFSET, 4);
+          memcpy(&position_ticks, b + DYNAMIXEL_PRESENT_POSITION_OFFSET, 4);
+          records[i].current_mA = current_mA;
+          records[i].velocity_raw = velocity_raw;
+          decodeAngles(i, index, position_ticks);
+        }
+        return count;
+      }
+    }
+  }
+
+  // --- Fallback: per-motor sequential reads ----------------------------------
+  // Only reached if the Sync Read transaction returned nothing (bus hiccup).
+  // Same three registers, read one at a time, each guarded independently so a
+  // single bad read degrades that motor to position-only rather than blanking
+  // the frame.
   methodOut = FAST_TELEM_METHOD_FALLBACK_READ;
   for (uint8_t i = 0; i < count; ++i) {
     uint8_t id = ids[i];
@@ -360,21 +427,27 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
       continue;
     }
 
-    bool ok = true;
-    int32_t position_ticks = readItem(PRESENT_POSITION, id, ok);
-    if (!ok) {
+    bool posOk = true;
+    int32_t position_ticks = readItem(PRESENT_POSITION, id, posOk);
+    if (!posOk) records[i].error = 1;
+
+    bool curOk = true;
+    int16_t current_mA = (int16_t)readItem(PRESENT_CURRENT, id, curOk);
+    if (!curOk) {
       records[i].error = 1;
+      current_mA = 0;
     }
-    records[i].current_mA = 0;
-    records[i].velocity_raw = 0;
-    records[i].position_ticks = position_ticks;
-    float absolute_deg = records[i].position_ticks * 360.0f / (float)PULSE_RESOLUTION;
-    float relative_deg = absolute_deg - zeroOffsets_[index];
-    if (flipMotor_[index]) {
-      relative_deg *= -1.0f;
+
+    bool velOk = true;
+    int32_t velocity_raw = readItem(PRESENT_VELOCITY, id, velOk);
+    if (!velOk) {
+      records[i].error = 1;
+      velocity_raw = 0;
     }
-    records[i].absolute_cdeg = (int32_t)round(absolute_deg * 100.0f);
-    records[i].relative_cdeg = (int32_t)round(relative_deg * 100.0f);
+
+    records[i].current_mA = current_mA;
+    records[i].velocity_raw = velocity_raw;
+    decodeAngles(i, index, position_ticks);
   }
   return count;
 }
@@ -483,6 +556,384 @@ bool NMLHandExo::isExoCalibrating() {
 }
 
 // ====================================================================================
+// ==================== Impedance range-of-motion calibration =========================
+// ====================================================================================
+//
+// This is a non-blocking state machine, not a loop. beginRomCalibration() only
+// arms it; all of the work happens one bounded step at a time in
+// serviceRomCalibration(), which update() calls every pass. That is deliberate:
+// the control loop also services the direct-control watchdog and the current
+// governor, and a blocking ramp here would starve both. Every tuning value it
+// reads is a ROM_CAL_* constant from config.h -- see the block header there.
+//
+// Direction handling is flip-agnostic. The caller asks for FLEX or EXTEND on
+// the same home->flexion axis the gesture system uses (getGestureSpan). We do
+// NOT assume a fixed relationship between commanded-current sign and that axis;
+// instead we start the ramp with a best-guess sign and, at the first real
+// motion, check whether the joint actually moved the way we asked. If it went
+// the wrong way we flip the sign once and carry on. Because the probe current
+// at that point is tiny, a brief wrong-way micro-motion is harmless.
+
+bool NMLHandExo::beginRomCalibration(uint8_t id, RomCalDirection direction) {
+  // A sweep drives current directly, so the fleet must already be in CURRENT
+  // mode. Refusing here (rather than silently switching) keeps the mode change
+  // -- which turns torque off on every motor -- an explicit host decision.
+  // A fresh single-joint sweep replaces any queue a prior batch left behind.
+  romCalQueueCount_ = 0;
+  romCalQueueCursor_ = 0;
+  return romCalArmMotor(id, direction);
+}
+
+bool NMLHandExo::romCalArmMotor(uint8_t id, RomCalDirection direction) {
+  if (motorControlMode_ != "CURRENT") return false;
+  const int index = getIndexById(id);
+  if (index < 0) return false;
+  if (romCalPhase_ != ROM_CAL_IDLE) return false;   // one sweep at a time
+  if (positionHoldActive_[index]) return false;      // don't fight a held joint
+
+  // Reject an unreachable motor. A failed Dynamixel read returns 0.0 -- which is
+  // finite -- so an offline motor would otherwise arm, ramp to the ceiling
+  // against a phantom "0 deg that never moves," and report a bogus endstop. Two
+  // guards: motorReachable_ (set at startup by ping) rejects a never-connected
+  // ID, and re-reading the position with an explicit error check rejects one
+  // that has since dropped off the bus. Only a read that both succeeds AND is
+  // finite is trusted as the return-home reference.
+  if (!motorReachable_[index]) return false;
+  const float startAngle = dxl_.getPresentPosition(id, UNIT_DEGREE);
+  if (dxl_.getLastLibErrCode() != DXL_LIB_OK || !isfinite(startAngle)) {
+    return false;
+  }
+
+  romCalId_ = id;
+  romCalIndex_ = index;
+  romCalDir_ = direction;
+  romCalStatus_ = ROM_CAL_STATUS_NONE;
+  romCalHomeAngle_ = startAngle;
+  romCalLastAngle_ = startAngle;
+  romCalEndstopAngle_ = startAngle;
+  romCalWindowRefAngle_ = startAngle;
+  romCalCurrentMa_ = ROM_CAL_START_CURRENT_MA;
+  romCalDirLocked_ = false;
+
+  // First-guess commanded-current sign. getGestureSpan is signed travel toward
+  // flexion in ABSOLUTE degrees. setGoalCurrent/setRelativeAngle already apply
+  // the flip flag, so a positive commanded current is intended to increase the
+  // RELATIVE angle -- i.e. move toward flexion for a correctly-flagged joint.
+  // Hence +1 for FLEX and -1 for EXTEND as the guess; the runtime check below
+  // corrects it for any joint whose flag or wiring disagrees.
+  romCalSign_ = (direction == ROM_CAL_DIR_FLEX) ? 1.0f : -1.0f;
+
+  const unsigned long now = millis();
+  romCalStartMs_ = now;
+  romCalLastStepMs_ = now;
+  romCalLastRampMs_ = now;
+  romCalWindowStartMs_ = now;
+  romCalAdvancing_ = false;
+
+  // Write the initial (tiny) goal current BEFORE enabling torque, so a stale
+  // GOAL_CURRENT left in the register by a previous set_current cannot apply for
+  // the instant between torque-on and our write. With torque off the write is
+  // inert; enabling torque then applies exactly the small current we intend.
+  // Uses the sweep write (no stored-limit zeroing) like every ramp step; safe
+  // here because the current is tiny and torque is still off.
+  writeRomSweepCurrent(romCalSign_ * romCalCurrentMa_);
+  enableTorque(id, true);
+  romCalPhase_ = ROM_CAL_RAMP;
+  debugPrint("[ROM] Calibration armed: id=" + String(id) + " dir=" +
+             String(direction == ROM_CAL_DIR_FLEX ? "flex" : "extend"));
+  return true;
+}
+
+bool NMLHandExo::isRomCalibrating() const {
+  return romCalPhase_ != ROM_CAL_IDLE;
+}
+
+bool NMLHandExo::canStartRomCalibration() const {
+  // Cheap precheck the parser can gate its OK: ack on WITHOUT touching a motor.
+  // Keeping it side-effect-free is what lets the ack be emitted before any
+  // ROM_CAL_RESULT line: a batch that armed (and reported skips) first would
+  // put a result line on the wire ahead of its own ack, and a host reading the
+  // first framed reply would see the result instead of the OK. Per-motor
+  // reachability is deliberately NOT checked here -- an offline motor is
+  // reported as an aborted result in the async stream, after the ack.
+  return motorControlMode_ == "CURRENT" && romCalPhase_ == ROM_CAL_IDLE;
+}
+
+bool NMLHandExo::beginRomCalibrationBatch(const uint8_t* ids, uint8_t count,
+                                          RomCalDirection direction) {
+  if (!ids || count == 0 || count > N_MOTORS) return false;
+  if (!canStartRomCalibration()) return false;
+
+  // Load the queue and start it. romCalAdvanceQueue arms the first reachable
+  // motor and reports any offline motors ahead of it as aborted results. The
+  // CALLER (the parser) must already have emitted its OK: ack before calling
+  // this, so those result lines follow the ack on the wire rather than racing
+  // ahead of it.
+  for (uint8_t k = 0; k < count; ++k) romCalQueue_[k] = ids[k];
+  romCalQueueCount_ = count;
+  romCalQueueCursor_ = 0;
+  romCalQueueDir_ = direction;
+
+  romCalAdvanceQueue();
+  return true;
+}
+
+void NMLHandExo::romCalAdvanceQueue() {
+  // Arm the next queued motor. An unreachable queued motor is reported (as
+  // aborted) and skipped so the host still sees one result per requested motor
+  // and one offline joint does not abort the rest of a gesture. When the queue
+  // is exhausted the campaign is over and the machine is left idle.
+  while (romCalQueueCursor_ < romCalQueueCount_) {
+    const uint8_t id = romCalQueue_[romCalQueueCursor_++];
+    if (romCalArmMotor(id, romCalQueueDir_)) return;
+    // Report the skip. romCalReport() emits the line but, unlike romCalFinish(),
+    // does NOT itself advance the queue -- this loop does, so there is no mutual
+    // recursion between the two.
+    romCalId_ = id;
+    romCalDir_ = romCalQueueDir_;
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalHomeAngle_ = NAN;
+    romCalCurrentMa_ = 0.0f;
+    romCalReport();
+  }
+  romCalQueueCount_ = 0;
+  romCalQueueCursor_ = 0;
+  romCalPhase_ = ROM_CAL_IDLE;
+}
+
+void NMLHandExo::romCalBeginReturnHome() {
+  // Stop pushing, then hold the joint back to its start angle with a modest,
+  // bounded current. holdRelativePosition switches only this ID to
+  // CURRENT_POSITION and clamps to the calibrated window, so this cannot drive
+  // the joint past its limits.
+  stopDirectControl(romCalId_);
+  const float homeRelative = romCalHomeAngle_ - zeroOffsets_[romCalIndex_];
+  const float relative = flipMotor_[romCalIndex_] ? -homeRelative : homeRelative;
+  holdRelativePosition(romCalId_, relative, ROM_CAL_RETURN_CURRENT_MA);
+  romCalReturnStartMs_ = millis();
+  romCalPhase_ = ROM_CAL_RETURN;
+}
+
+void NMLHandExo::romCalFinish() {
+  // Release the return hold (restores the global CURRENT mode for this ID with
+  // torque off) and report the outcome, then advance to the next queued motor
+  // (for a gesture/batch sweep) or go idle (single-joint sweep).
+  if (isPositionHoldActive(romCalId_)) releasePositionHold(romCalId_);
+  stopDirectControl(romCalId_);
+  romCalReport();
+  // Return to IDLE BEFORE advancing: romCalArmMotor refuses to arm unless the
+  // machine is idle, so the next queued motor could never arm while this one's
+  // phase still read RETURN. romCalAdvanceQueue then arms the next motor or, if
+  // the queue is empty/spent (a single-joint sweep, or the campaign's end),
+  // leaves it idle.
+  romCalPhase_ = ROM_CAL_IDLE;
+  romCalAdvanceQueue();
+}
+
+void NMLHandExo::romCalReport() {
+  // Emit one ROM_CAL_RESULT line for the current target. Pure reporting: no
+  // motor I/O and no queue advance, so both romCalFinish() and the skip path
+  // in romCalAdvanceQueue() can call it without re-entering each other.
+  const char* dirStr = (romCalDir_ == ROM_CAL_DIR_FLEX) ? "flex" : "extend";
+  const char* statusStr = "aborted";
+  switch (romCalStatus_) {
+    case ROM_CAL_STATUS_OK:      statusStr = "ok";      break;
+    case ROM_CAL_STATUS_CEILING: statusStr = "ceiling"; break;
+    case ROM_CAL_STATUS_TIMEOUT: statusStr = "timeout"; break;
+    default:                     statusStr = "aborted"; break;
+  }
+
+  String line = "ROM_CAL_RESULT: id=" + String(romCalId_) +
+                " dir=" + String(dirStr) +
+                " home=" + String(romCalHomeAngle_, 2);
+  if (romCalStatus_ == ROM_CAL_STATUS_OK) {
+    line += " endstop=" + String(romCalEndstopAngle_, 2);
+  } else {
+    line += " endstop=nan";
+  }
+  line += " current_mA=" + String(romCalCurrentMa_, 0) +
+          " status=" + String(statusStr);
+  // Append the command delimiter so the line self-frames. This result is
+  // emitted asynchronously with no following command, so under the dual-CDC
+  // host transport it must terminate with the delimiter to be published as its
+  // own reply frame -- an unterminated line is held pending until the NEXT
+  // delimited reply, which for a standalone sweep result never comes. (The
+  // class emits via telemetryPrintln rather than the parser's commandPrint to
+  // avoid a dependency on utils.h; the delimiter is what the host frames on.)
+  line += COMMAND_DELIMITER;
+  telemetryPrintln(line);
+
+  // Clear only the per-sweep status. The PHASE is owned by the caller
+  // (romCalAdvanceQueue arms the next motor or idles), so it is not touched
+  // here -- that is what keeps report and advance from fighting over it.
+  romCalStatus_ = ROM_CAL_STATUS_NONE;
+}
+
+void NMLHandExo::cancelRomCalibration() {
+  if (romCalPhase_ == ROM_CAL_IDLE) return;
+  // Cancel the WHOLE campaign: drop any remaining queued motors so the sweep
+  // does not simply advance to the next joint after this one returns home.
+  romCalQueueCount_ = 0;
+  romCalQueueCursor_ = 0;
+  romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+  // Return the current joint home (best-effort), then report via the normal
+  // path. With the queue now empty, romCalFinish's advance leaves the machine
+  // idle.
+  stopDirectControl(romCalId_);
+  romCalBeginReturnHome();
+}
+
+void NMLHandExo::serviceRomCalibration() {
+  if (romCalPhase_ == ROM_CAL_IDLE) return;
+
+  const unsigned long now = millis();
+
+  // The RETURN phase is the only one that runs after a conclusion; it waits for
+  // the hold to settle (or its own short timeout) and then reports.
+  if (romCalPhase_ == ROM_CAL_RETURN) {
+    const bool settled =
+        fabsf(getAbsoluteAngle(romCalId_) - romCalHomeAngle_) <=
+        GESTURE_REACH_TOLERANCE_DEG;
+    if (settled || now - romCalReturnStartMs_ >= ROM_CAL_RETURN_TIMEOUT_MS) {
+      romCalFinish();
+    }
+    return;
+  }
+
+  // A precondition change out from under us (mode switch, host STOP zeroing the
+  // joint, torque dropped) makes the ramp meaningless. Bail safely.
+  if (motorControlMode_ != "CURRENT") {
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalBeginReturnHome();
+    return;
+  }
+
+  // Overall watchdog: bounds a jammed or noisy joint no matter which phase.
+  if (now - romCalStartMs_ >= ROM_CAL_TIMEOUT_MS) {
+    romCalStatus_ = ROM_CAL_STATUS_TIMEOUT;
+    romCalBeginReturnHome();
+    return;
+  }
+
+  // --- Continuous current ramp (EVERY pass, not paced) -----------------------
+  // Ramping the current a little every loop pass -- interpolated by the actual
+  // elapsed time -- gives a smooth torque profile instead of the visible 40 ms
+  // staircase that made the joint jerk toward its endstop. The rate is higher
+  // while the joint is freely advancing (get to the endstop region quickly) and
+  // lower while it is stalled or has not started moving (gentle, finely-resolved
+  // final approach). Re-asserting the current every pass also keeps the
+  // direct-control watchdog (DIRECT_COMMAND_TIMEOUT_MS) fed.
+  {
+    const float rampRate = romCalAdvancing_ ? ROM_CAL_RAMP_RATE_TRAVEL_MA_S
+                                            : ROM_CAL_RAMP_RATE_APPROACH_MA_S;
+    const float dt_s = (now - romCalLastRampMs_) / 1000.0f;
+    romCalLastRampMs_ = now;
+    if (romCalCurrentMa_ < ROM_CAL_MAX_CURRENT_MA) {
+      romCalCurrentMa_ = min(romCalCurrentMa_ + rampRate * dt_s,
+                             (float)ROM_CAL_MAX_CURRENT_MA);
+    }
+    writeRomSweepCurrent(romCalSign_ * romCalCurrentMa_);
+  }
+
+  // --- Paced angle poll + progress/stall evaluation --------------------------
+  // The position read is the expensive bus transaction and does not need to run
+  // as fast as the current ramp, so it stays paced at ROM_CAL_STEP_INTERVAL_MS.
+  if (now - romCalLastStepMs_ < ROM_CAL_STEP_INTERVAL_MS) return;
+  romCalLastStepMs_ = now;
+
+  // Read with an explicit error check: a failed read returns 0.0 (finite),
+  // which would otherwise look like a large jump toward zero and false-trigger
+  // motion onset. On a bad read, hold the commanded current and retry next poll.
+  const float angle = dxl_.getPresentPosition(romCalId_, UNIT_DEGREE);
+  if (dxl_.getLastLibErrCode() != DXL_LIB_OK || !isfinite(angle)) return;
+  const float delta = angle - romCalLastAngle_;
+  const float moved = fabsf(delta);
+
+  // Drive direction in ABSOLUTE-angle space. FLEX advances in the same sign as
+  // getGestureSpan (signed travel toward flexion), EXTEND the opposite. Used
+  // both to lock the commanded-current sign and to measure NET progress.
+  const float span = getGestureSpan(romCalId_);
+  const float wantAbsSign = (romCalDir_ == ROM_CAL_DIR_FLEX)
+                              ? (span >= 0.0f ? 1.0f : -1.0f)
+                              : (span >= 0.0f ? -1.0f : 1.0f);
+
+  // Resolve the commanded-current sign the first time the joint moves for real.
+  if (!romCalDirLocked_ && moved >= ROM_CAL_ONSET_DEG) {
+    if (delta * wantAbsSign < 0.0f) {
+      // Moved opposite to intent -> our sign guess was wrong. Flip it once and
+      // re-measure next poll with the corrected sign. Reset the progress window
+      // so the wrong-way excursion is not counted as progress.
+      romCalSign_ = -romCalSign_;
+      writeRomSweepCurrent(romCalSign_ * romCalCurrentMa_);
+      romCalLastAngle_ = angle;
+      romCalWindowRefAngle_ = angle;
+      romCalWindowStartMs_ = now;
+      romCalAdvancing_ = false;
+      return;
+    }
+    romCalDirLocked_ = true;
+  }
+
+  // --- Ramp-and-track endstop detection --------------------------------------
+  // The endstop is where MORE current stops producing travel, not where the
+  // joint merely creeps slowly. Track NET progress in the drive direction over
+  // a sliding window: while the joint keeps advancing the window slides forward
+  // and the ramp stays at the fast travel rate. When it fails to advance for a
+  // full window -- and current is already high -- the joint has stalled against
+  // its endstop.
+
+  // Net progress since this window opened, measured in the drive direction.
+  const float progress = (angle - romCalWindowRefAngle_) * wantAbsSign;
+  if (progress >= ROM_CAL_PROGRESS_DEG) {
+    // Still advancing: fast ramp, record the furthest point as the running
+    // endstop, and slide the window forward from here.
+    romCalAdvancing_ = true;
+    romCalEndstopAngle_ = angle;
+    romCalWindowRefAngle_ = angle;
+    romCalWindowStartMs_ = now;
+    romCalLastAngle_ = angle;
+    return;
+  }
+  // Not advancing this poll -> switch to the slow approach ramp rate.
+  romCalAdvancing_ = false;
+
+  // Not enough net progress this window. Decide only once a full window has
+  // elapsed, and distinguish two stalls:
+  //   * a stall AFTER the joint has traveled from home, under high current, is
+  //     the real endstop (status=ok);
+  //   * a stall with the joint still essentially at home, even at the ceiling,
+  //     means it never yielded (status=ceiling).
+  if (now - romCalWindowStartMs_ >= ROM_CAL_PROGRESS_WINDOW_MS) {
+    const bool currentHigh =
+        romCalCurrentMa_ >= ROM_CAL_STALL_MIN_CURRENT_FRAC * ROM_CAL_MAX_CURRENT_MA;
+    const bool hasTraveled =
+        fabsf(romCalEndstopAngle_ - romCalHomeAngle_) >= ROM_CAL_PROGRESS_DEG;
+    const bool atCeiling = romCalCurrentMa_ >= ROM_CAL_MAX_CURRENT_MA;
+
+    if (hasTraveled && (currentHigh || atCeiling)) {
+      // Moved, then stalled against its endstop despite high/max current. Done.
+      romCalStatus_ = ROM_CAL_STATUS_OK;
+      romCalBeginReturnHome();
+      romCalLastAngle_ = angle;
+      return;
+    }
+    if (atCeiling) {
+      // Ran the current all the way to the ceiling and never traveled: the
+      // joint did not yield within the safe envelope.
+      romCalStatus_ = ROM_CAL_STATUS_CEILING;
+      romCalBeginReturnHome();
+      romCalLastAngle_ = angle;
+      return;
+    }
+    // Still ramping and not yet moved (or not yet at high current): open a
+    // fresh window and keep raising current.
+    romCalWindowRefAngle_ = angle;
+    romCalWindowStartMs_ = now;
+  }
+  romCalLastAngle_ = angle;
+}
+
+// ====================================================================================
 // ================================= Mode commands ====================================
 // ====================================================================================
 void NMLHandExo::update() {
@@ -500,6 +951,12 @@ void NMLHandExo::update() {
     if (allocationDirty_) refreshCurrentAllocation();
     serviceCurrentGovernor();
     reportMoveVerdicts();
+
+    // Impedance ROM calibration is a non-blocking state machine that drives one
+    // joint under current control. It runs alongside the safety services above
+    // (which is why they precede it) and is independent of the button-driven
+    // GESTURE_CALIBRATION handled below.
+    serviceRomCalibration();
 
     // First check if we are calibrating
     if (isExoCalibrating()) {
@@ -1063,6 +1520,26 @@ bool NMLHandExo::setGoalCurrent(uint8_t id, float current_mA) {
   }
 
   dxl_.writeControlTableItem(GOAL_CURRENT, id, (int16_t)round(current_mA));
+  lastDirectCommandMs_[index] = millis();
+  directCommandActive_[index] = (current_mA != 0);
+  directCommandDirection_[index] = current_mA;
+  return true;
+}
+bool NMLHandExo::writeRomSweepCurrent(float current_mA) {
+  const int index = romCalIndex_;
+  if (index < 0 || motorControlMode_ != "CURRENT") return false;
+
+  // Magnitude clamp only -- NO stored-limit zeroing. Same 910 mA cap and flip
+  // handling as setGoalCurrent, but the joint-window check is deliberately
+  // absent so the sweep can drive to the real endstop instead of bouncing off
+  // the software limit. serviceDirectControlSafety() likewise skips its
+  // drive-into-limit stop for romCalId_ while a sweep is active.
+  current_mA = constrain(current_mA,
+                         -(float)DIRECT_CURRENT_LIMIT_MA,
+                         (float)DIRECT_CURRENT_LIMIT_MA);
+  if (flipMotor_[index]) current_mA *= -1.0f;
+
+  dxl_.writeControlTableItem(GOAL_CURRENT, romCalId_, (int16_t)round(current_mA));
   lastDirectCommandMs_[index] = millis();
   directCommandActive_[index] = (current_mA != 0);
   directCommandDirection_[index] = current_mA;
@@ -1913,9 +2390,17 @@ void NMLHandExo::serviceDirectControlSafety() {
   for (int i = 0; i < numMotors_; ++i) {
     if (!directCommandActive_[i]) continue;
     uint8_t id = motorIds_[i];
+    // The active ROM sweep target is exempt from the calibrated-limit stop:
+    // the sweep is deliberately driving toward (and possibly past) the stored
+    // limit to find the real endstop, and stopping it there caused the joint to
+    // bounce off the software limit. It re-commands every ~40 ms so the timeout
+    // backstop below never fires in normal operation; its own stall detector,
+    // the 910 mA cap, and the overall ROM watchdog bound it instead.
+    const bool isActiveRomTarget =
+        (romCalPhase_ == ROM_CAL_RAMP) && (id == romCalId_);
     float position = getAbsoluteAngle(id);
     bool timedOut = now - lastDirectCommandMs_[i] > directCommandTimeoutMs_;
-    bool drivingIntoLimit = (
+    bool drivingIntoLimit = !isActiveRomTarget && (
         (directCommandDirection_[i] < 0 &&
          position <= jointLimits_[i][0] + DIRECT_LIMIT_MARGIN_DEG) ||
         (directCommandDirection_[i] > 0 &&

@@ -329,6 +329,97 @@ shadow_stop
 
 See [shadow_contact_phase1.md](shadow_contact_phase1.md) for the bench workflow.
 
+### Impedance range-of-motion (ROM) calibration
+
+Firmware **0.8.0** adds an on-device impedance sweep that discovers a joint's
+endstop in one direction by pushing on it under current control and watching for
+motion, rather than by asking a wearer to move to their extremes:
+
+```text
+set_control_mode:all:current
+enable:11
+calibrate_rom:11:flex
+calibrate_rom:11:extend
+cancel_rom
+```
+
+- `calibrate_rom:<explicit ID>:<flex|extend>` arms a sweep for **one joint in
+  one direction**. The host orchestrates a full six-joint, two-direction sweep
+  itself; the firmware does one at a time. Bare motor names are accepted by the
+  parser but discouraged — they are ambiguous in dual firmware (use the ID).
+- The global mode must already be `current` before arming. The command fails
+  (returns `ERROR:`) if the mode is not `current`, the joint is unreachable, the
+  joint is in an auxiliary position hold, or a sweep is already running.
+- The sweep runs as a **non-blocking on-device state machine** serviced from the
+  main loop — it does not block command handling, the direct-control watchdog,
+  or the current governor. It ramps current slowly from a low start, watches the
+  joint angle, and at the first real motion resolves the commanded-current sign
+  for that joint (so it is flip-flag agnostic). When the joint begins to creep it
+  applies a small extra "nudge" current; if the joint then resists (stops moving)
+  the current angle is taken as the endstop. It then returns the joint to the
+  angle it started from via a bounded `CURRENT_POSITION` hold.
+- Hard safety bounds: an absolute current ceiling well below `MOTOR_CURRENT_LIMIT`
+  (`ROM_CAL_MAX_CURRENT_MA`, 350 mA default), an overall per-sweep watchdog
+  (`ROM_CAL_TIMEOUT_MS`, 15 s), and the existing per-command joint-limit clamp in
+  `setGoalCurrent`, which always stops current that would drive a joint past its
+  calibrated limit. All sweep tuning lives in the labeled `ROM_CAL_*` block in
+  `config.h`; that block's header documents which knob to turn for a faster,
+  gentler, or more/less sensitive sweep.
+- The endstop is **reported, not applied.** The firmware does not overwrite the
+  live joint limits; the host decides whether to adopt the result with
+  `set_motor_limits` / `set_upper_limit` / `set_lower_limit`.
+- `cancel_rom` aborts a running sweep, zeroes current, and returns the joint
+  home. Safe to call when idle.
+
+The endstop arrives asynchronously (after the arming `OK:` ack) on a single
+line:
+
+```text
+OK: calibrate_rom id=11 dir=flex
+ROM_CAL_RESULT: id=11 dir=flex home=228.45 endstop=262.10 current_mA=145 status=ok
+```
+
+`status` is one of `ok` (endstop found), `ceiling` (reached the current ceiling
+without moving — `endstop=nan`), `timeout` (watchdog fired — `endstop=nan`), or
+`aborted` (cancelled or a precondition changed mid-sweep — `endstop=nan`).
+
+Python: `HandExo.calibrate_rom(id, "flex"|"extend")` arms the sweep, waits for
+the `ROM_CAL_RESULT` line, and returns a parsed dict
+(`id`, `dir`, `home`, `endstop` (float or `None`), `current_mA`, `status`).
+`HandExo.cancel_rom()` aborts.
+
+**By gesture.** `calibrate_rom_gesture:<gesture>:<flex|extend>` calibrates a
+whole functional axis in one command. The gesture — `thumb`, `index`, `middle`,
+`ring`, `pinky`, `wrist`, or any angle-addressable gesture — is decomposed *by
+the firmware* into the motors its flex posture drives (the same motors
+`set_finger_angles` moves), and each is swept in turn. This keeps the
+gesture→motor map (thumb = thumbadd/thumbrot/thumbflex, wrist = wrist/wrist2,
+the fingers one motor each) a single firmware-side source of truth rather than
+duplicating it on the host. In a dual build a name present on both sides sweeps
+both. One `ROM_CAL_RESULT` line is emitted per motor; the arming ack reports how
+many:
+
+```text
+OK: calibrate_rom_gesture thumb dir=flex motors=3
+ROM_CAL_RESULT: id=13 dir=flex home=220.79 endstop=210.40 current_mA=150 status=ok
+ROM_CAL_RESULT: id=14 dir=flex home=232.23 endstop=248.10 current_mA=165 status=ok
+ROM_CAL_RESULT: id=15 dir=flex home=122.76 endstop=140.55 current_mA=150 status=ok
+```
+
+Each motor is swept sequentially with the same non-blocking state machine and
+the same safety bounds as the single-joint form; an unreachable motor in the set
+is reported (`status=aborted`) and skipped rather than aborting the rest.
+`cancel_rom` cancels the whole gesture campaign, not just the current motor.
+
+Python: `HandExo.calibrate_rom_gesture(gesture, "flex"|"extend")` returns a
+**list** of per-motor result dicts. `examples/09_auto_cal_rom/` drives the six
+axes wrist/thumb/index/middle/ring/pinky this way.
+
+> Safety: this endpoint deliberately drives current into a joint that is on a
+> participant's hand. Keep `ROM_CAL_MAX_CURRENT_MA` conservative, keep a hand on
+> `cancel_rom`, and confirm the reported `home` angle matches where the joint
+> actually started before adopting any endstop.
+
 ---
 
 ## Baud rate map `[VERIFIED]`
@@ -393,6 +484,7 @@ breaks the corresponding Python code.
 | `GESTURE_ANGLES: <name>=<code>,<degrees> ...` | `_hand_exo.py:parse_gesture_angle_pairs`, `udp_gesture_receiver.py` | Combined joint positions / NGA2 pose acks |
 | `GESTURE_RESULT: reached=N ...` | `udp_gesture_receiver.py`, `udp_gesture_gui.py` | Asynchronous move verdicts |
 | `SHADOW: {enabled: ...}` plus `Motor N: {...}` | `_hand_exo.py:get_shadow_telemetry` | Buffered read-only current/position/contact evidence |
+| `ROM_CAL_RESULT: id=N dir=.. home=.. endstop=.. current_mA=.. status=..` | `_hand_exo.py:_parse_rom_result` | Impedance ROM sweep endstop (async, firmware >= 0.8.0) |
 
 Regex used: `re.search(r"name:\s*(\w+)", line)` and `line.split("absolute_angle:")`.
 

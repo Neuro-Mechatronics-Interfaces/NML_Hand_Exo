@@ -168,7 +168,12 @@ constexpr bool DEFAULT_VERBOSE = true;
 // Both hands share ONE OpenRB-150 controller and one Dynamixel bus.
 // Left IDs: 1-9.  Right IDs: 11-19.
 // Calibration arrays are overwritten at runtime by apply_calibration.
-#define BUILD_LEFT_HAND 0
+//
+// Default is DUAL: a dual build enumerates every ID (1-9 + 11-19), and a hand
+// with only one side physically attached still works -- the unreachable IDs are
+// reported as skipped rather than blocking the attached side (see firmware
+// 0.7.1). Set to 0 (right) or 1 (left) only to build for a single fixed side.
+#define BUILD_LEFT_HAND 2
 
 // ---- Motor IDs (single-exo modes only — dual defines arrays directly) --------
 #if BUILD_LEFT_HAND == 0   // right only
@@ -244,9 +249,10 @@ constexpr float jointLimits[][2] = {
   // left (IDs 1-9) — placeholders
   {47.00, 168.00}, {182.00, 315.00}, {238.00, 291.00}, {196.00, 255.00}, {280.00, 408.00},
   {119.50, 184.00}, {159.00, 223.00}, {133.00, 208.00}, {63.00, 146.00},
-  // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  {201.17, 269.46}, {90.02, 163.42}, {198.09, 227.13}, {160.26, 260.86}, {106.74, 147.31},
-  {162.27, 231.35}, {49.54, 102.52}, {74.71, 127.78}, {14.96, 109.65}
+  // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex 
+  {201.17, 269.46}, {90.02, 163.42}, {190.0, 227.13}, {160.26, 260.86}, {106.74, 195.31},
+  // index, middle, ring, pinky
+  {162.27, 207.35}, {70.54, 119.52}, {50.71, 108.78}, {47.96, 113.65}
 };
 
 /// @brief Default flip direction per motor.
@@ -254,7 +260,7 @@ constexpr bool DEFAULT_FLIPS[] = {
   // left (IDs 1-9) — placeholders
   true, true, false, false, true, true, false, true, false,
   // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  false, false, false, true, false, false, true, false, true
+  true, true, false, true, false, true, false, true, false
 };
 
 #else  // ===== SINGLE-EXO MODE (BUILD_LEFT_HAND == 0 or 1) =====
@@ -440,6 +446,17 @@ constexpr uint8_t DYNAMIXEL_RETURN_DELAY = 0;
 /// @brief XL/XC-series Protocol 2.0 Goal Position control-table layout.
 constexpr uint16_t DYNAMIXEL_GOAL_POSITION_ADDRESS = 116;
 constexpr uint16_t DYNAMIXEL_GOAL_POSITION_LENGTH = 4;
+
+/// @brief XL/XC-series Protocol 2.0 present-feedback block: PRESENT_CURRENT
+/// (126, 2 bytes), PRESENT_VELOCITY (128, 4 bytes) and PRESENT_POSITION
+/// (132, 4 bytes) are CONTIGUOUS (126..135). One Sync Read of address 126,
+/// length 10, therefore returns all three for every motor in a single bus
+/// transaction -- the fast telemetry path relies on this contiguity.
+constexpr uint16_t DYNAMIXEL_PRESENT_BLOCK_ADDRESS = 126;
+constexpr uint16_t DYNAMIXEL_PRESENT_BLOCK_LENGTH = 10;
+constexpr uint8_t  DYNAMIXEL_PRESENT_CURRENT_OFFSET = 0;   // int16 @ 126
+constexpr uint8_t  DYNAMIXEL_PRESENT_VELOCITY_OFFSET = 2;  // int32 @ 128
+constexpr uint8_t  DYNAMIXEL_PRESENT_POSITION_OFFSET = 6;  // int32 @ 132
 
 /// @brief Total number of gesture contained in the library
 /// 6 postures (grasp, keygrip, pinch_index, pinch_middle, pinch_ring, peace),
@@ -727,6 +744,143 @@ constexpr unsigned long DIRECT_COMMAND_TIMEOUT_MS = 250;
 constexpr float DIRECT_VELOCITY_SOFT_ZONE_DEG = 10.0f;
 /// @brief Hard stop distance retained inside each calibrated joint limit.
 constexpr float DIRECT_LIMIT_MARGIN_DEG = 2.0f;
+
+// ======================================================================
+// ==== Impedance range-of-motion (ROM) calibration sweep tuning ========
+// ======================================================================
+//
+// These constants shape the `calibrate_rom:<id>:<flex|extend>` endpoint
+// (firmware >= 0.8.0). That routine drives ONE joint in ONE direction under
+// current-mode control, ramping current up while polling the joint angle. It
+// keeps raising current as long as the joint makes NET PROGRESS in the drive
+// direction; the endstop is where progress STALLS while current is high (or the
+// current ceiling is reached), i.e. where more torque no longer produces
+// travel. The furthest point reached is reported as the endstop, and the joint
+// is then returned to the angle it started from ("home").
+//
+// (This "stall against rising current" model replaced an earlier one that
+// declared the endstop the moment per-step motion dropped below a threshold --
+// which mistook a slow continuous creep for a stall and latched far short of
+// the real limit.)
+//
+// EVERYTHING you would touch to make the sweep faster / gentler / more or less
+// sensitive lives in THIS block. The routine itself (serviceRomCalibration in
+// nml_hand_exo.cpp) reads only these names, so tuning never means editing the
+// state machine. Rough guide to each knob:
+//
+//   Faster sweep      -> raise ROM_CAL_CURRENT_STEP_MA and/or lower
+//                        ROM_CAL_STEP_INTERVAL_MS (ramps to a given current in
+//                        fewer, larger steps). Both trade gentleness for speed.
+//   Stops too early    -> raise ROM_CAL_PROGRESS_WINDOW_MS (give a slow joint
+//                        longer to show progress) or lower ROM_CAL_PROGRESS_DEG
+//                        (accept smaller net travel as "still moving").
+//   Stops too late / overshoots -> the opposite: shorter window, larger
+//                        ROM_CAL_PROGRESS_DEG.
+//   Gentler endstop   -> lower ROM_CAL_MAX_CURRENT_MA (less peak force before
+//                        the sweep gives up).
+//
+// The absolute current ceiling ROM_CAL_MAX_CURRENT_MA is a HARD safety cap and
+// is deliberately far below MOTOR_CURRENT_LIMIT (910 mA). Raise it only with a
+// clear reason; it is the single most safety-relevant value here because it
+// bounds how hard the exo can ever push a participant's joint during the sweep.
+//
+// NOTE: the sweep can only find motion WITHIN the joint's current calibrated
+// [limit_min, limit_max] window. setGoalCurrent() always zeros current that
+// would drive a joint past that window (the existing direct-control clamp), so
+// a sweep against an already-tight stored limit reports status=ceiling at that
+// limit rather than pushing through it. Widen the stored limits first if you
+// intend the sweep to discover travel beyond them.
+
+/// @brief Milliseconds between angle POLLS and progress/stall evaluations.
+/// The current itself is now ramped CONTINUOUSLY (every loop pass, interpolated
+/// by elapsed time) for a smooth torque profile -- this interval only paces the
+/// Dynamixel position read (the expensive bus transaction) and the progress
+/// bookkeeping. Lower = finer progress tracking at more bus cost.
+constexpr unsigned long ROM_CAL_STEP_INTERVAL_MS = 40;
+
+/// @brief Ramp rate while the joint is FREELY ADVANCING, in mA/s.
+/// Applied continuously (not in discrete steps), so the torque climbs smoothly.
+/// Higher = reaches the endstop region faster. This is the "travel" rate: the
+/// joint is still moving, so climbing quickly here just gets to the interesting
+/// part sooner without slamming (the joint is not resisting yet).
+constexpr float ROM_CAL_RAMP_RATE_TRAVEL_MA_S = 250.0f;
+
+/// @brief Ramp rate while the joint has STALLED (approaching the endstop) or has
+/// not yet started moving, in mA/s. Slower for a gentle final approach and to
+/// resolve the stall point finely. This is the safety-relevant rate -- it sets
+/// how hard torque builds while the joint is resisting.
+constexpr float ROM_CAL_RAMP_RATE_APPROACH_MA_S = 60.0f;
+
+/// @brief Legacy per-step increment, retained for reference/back-compat. No
+/// longer used by the continuous ramp; the *_RATE_*_MA_S values above govern.
+constexpr float ROM_CAL_CURRENT_STEP_MA = 3.0f;
+
+/// @brief Current magnitude the ramp starts from, in mA.
+/// Starting near zero keeps the very first motion imperceptibly slow. A small
+/// non-zero start just skips the dead band where nothing moves at all.
+constexpr float ROM_CAL_START_CURRENT_MA = 10.0f;
+
+/// @brief HARD safety ceiling on applied current during the sweep, in mA.
+/// The ramp never commands beyond this. If the joint has not moved by the time
+/// the ramp reaches it, the sweep aborts with status=ceiling and NO endstop is
+/// recorded. Set here to the FULL part limit: setGoalCurrent() independently
+/// clamps every command to DIRECT_CURRENT_LIMIT_MA (== MOTOR_CURRENT_LIMIT,
+/// 910 mA on the XC330-T288), so this is the true maximum the motor can be
+/// driven to and nothing above it takes effect. This is the maximum torque the
+/// sweep can push into a participant's joint -- keep cancel_rom within reach.
+/// The sweep drives ONE motor at a time, so the fleet current budget
+/// (TOTAL_CURRENT_BUDGET_MA) is not a constraint. Worst-case ramp time is
+/// ~(ceiling - start)/ramp-rate, which ROM_CAL_TIMEOUT_MS must exceed.
+constexpr float ROM_CAL_MAX_CURRENT_MA = 910.0f;
+
+/// @brief Per-step angle change that counts as real motion (vs encoder noise),
+/// in degrees. Used only to resolve the drive direction at first movement; set
+/// just above the read noise floor. It is NOT the endstop criterion -- see the
+/// progress/stall model below.
+constexpr float ROM_CAL_ONSET_DEG = 0.30f;
+
+// ---- Endstop detection: "stall against rising current" ---------------------
+// The endstop is where MORE current stops producing travel -- not where the
+// joint merely moves slowly. A slow current ramp makes a compliant joint creep
+// continuously and slowly, so a per-step "is it still moving?" test latches the
+// endstop the instant the joint starts to creep, far short of its real limit.
+// Instead the sweep keeps raising current as long as the joint makes NET
+// progress over a sliding window, and only calls it done when progress stalls
+// while current is high (or the ceiling is reached with the joint still moving,
+// which is simply the furthest travel the motor can safely produce).
+
+/// @brief Sliding window over which net travel is measured, in ms.
+/// Long enough that a slow-but-real creep still clears ROM_CAL_PROGRESS_DEG
+/// within it; short enough that a true stall is detected promptly.
+constexpr unsigned long ROM_CAL_PROGRESS_WINDOW_MS = 600;
+
+/// @brief Net travel within one window that counts as "still advancing", deg.
+/// Below this for a full window (with current high) means the joint has stalled
+/// against its endstop. Set above cumulative encoder noise over the window but
+/// well below a real joint's travel.
+constexpr float ROM_CAL_PROGRESS_DEG = 1.0f;
+
+/// @brief Current must be at least this FRACTION of the ceiling before a stall
+/// is accepted as an endstop, in [0, 1]. Prevents latching during the early
+/// low-current ramp where the joint has simply not started moving yet: a true
+/// endstop is a stall under substantial torque, not the initial dead band.
+constexpr float ROM_CAL_STALL_MIN_CURRENT_FRAC = 0.5f;
+
+/// @brief Overall per-call watchdog, in ms. If the whole sweep (ramp + confirm)
+/// runs longer than this without concluding, it aborts with status=timeout,
+/// zeroes current, and returns the joint home. Bounds a jammed or noisy joint.
+/// Must exceed the worst-case ramp-to-ceiling time (see ROM_CAL_MAX_CURRENT_MA):
+/// at 75 mA/s a 10->910 mA ramp is ~12 s, so 20 s leaves room for the nudge and
+/// settle without cutting off a joint that only yields near the ceiling.
+constexpr unsigned long ROM_CAL_TIMEOUT_MS = 20000;
+
+/// @brief Bounded current used to drive the joint back to its start ("home")
+/// angle after the sweep, via CURRENT_POSITION hold, in mA. This is a return
+/// stroke, not a working effort, so keep it modest.
+constexpr uint16_t ROM_CAL_RETURN_CURRENT_MA = 120;
+
+/// @brief How long the return-to-home hold is allowed before releasing, in ms.
+constexpr unsigned long ROM_CAL_RETURN_TIMEOUT_MS = 4000;
 
 /// @brief Phase-1, read-only contact instrumentation.
 ///

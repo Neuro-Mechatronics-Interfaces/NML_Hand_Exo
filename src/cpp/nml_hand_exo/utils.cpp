@@ -1229,6 +1229,74 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     }
     commandPrint("OK: stop");
 
+  } else if (cmd == "calibrate_rom") {
+    // Impedance range-of-motion calibration for ONE joint in ONE direction.
+    // Usage: calibrate_rom:<id>:<flex|extend>
+    // Requires the global mode to already be CURRENT (set_control_mode:all:current).
+    // The endstop is reported asynchronously on a ROM_CAL_RESULT line; this ack
+    // only says the sweep was accepted and armed.
+    id = getArgMotorID(exo, token, 1);
+    String dirArg = getArg(token, 2);
+    dirArg.trim(); dirArg.toLowerCase();
+    if (id == -1) {
+      commandPrint(F("ERROR: calibrate_rom requires a valid motor ID"));
+    } else if (dirArg != "flex" && dirArg != "extend") {
+      commandPrint(F("ERROR: calibrate_rom direction must be flex or extend"));
+    } else {
+      RomCalDirection dir = (dirArg == "flex") ? ROM_CAL_DIR_FLEX
+                                               : ROM_CAL_DIR_EXTEND;
+      if (exo.beginRomCalibration((uint8_t)id, dir)) {
+        commandPrint("OK: calibrate_rom id=" + String(id) + " dir=" + dirArg);
+      } else {
+        commandPrint(F("ERROR: calibrate_rom needs CURRENT mode, a reachable "
+                       "idle joint, and no sweep already running"));
+      }
+    }
+
+  } else if (cmd == "calibrate_rom_gesture") {
+    // Impedance ROM calibration for a whole GESTURE axis in one direction.
+    // Usage: calibrate_rom_gesture:<gesture>:<flex|extend>
+    // The gesture (thumb/index/middle/ring/pinky/wrist, or any angle-addressable
+    // gesture) is decomposed into the motors its flex posture drives -- the same
+    // motors set_finger_angles moves -- and each is swept in turn. In a dual
+    // build a name that exists on both sides sweeps both. One ROM_CAL_RESULT
+    // line is emitted per motor. Requires the global mode to be CURRENT.
+    String gestureArg = getArg(token, 1);
+    gestureArg.trim();
+    String dirArg = getArg(token, 2);
+    dirArg.trim(); dirArg.toLowerCase();
+    if (gestureArg.length() == 0) {
+      commandPrint(F("ERROR: calibrate_rom_gesture requires a gesture name"));
+    } else if (dirArg != "flex" && dirArg != "extend") {
+      commandPrint(F("ERROR: calibrate_rom_gesture direction must be flex or extend"));
+    } else {
+      uint8_t gestureIds[N_MOTORS];
+      uint8_t gestureCount = gc.resolveGestureMotorIds(gestureArg, gestureIds, N_MOTORS);
+      RomCalDirection dir = (dirArg == "flex") ? ROM_CAL_DIR_FLEX
+                                               : ROM_CAL_DIR_EXTEND;
+      if (gestureCount == 0) {
+        commandPrint("ERROR: calibrate_rom_gesture unknown or non-addressable "
+                     "gesture: " + gestureArg);
+      } else if (!exo.canStartRomCalibration()) {
+        commandPrint(F("ERROR: calibrate_rom_gesture needs CURRENT mode and no "
+                       "sweep already running"));
+      } else {
+        // ACK FIRST, then start. beginRomCalibrationBatch emits one
+        // ROM_CAL_RESULT per motor (including aborted lines for offline motors)
+        // as it runs; the host reads exactly `motors` of those AFTER this ack,
+        // so the ack must reach the wire before the first result line. Ordering
+        // it after the batch would let an offline motor's result frame arrive
+        // before the ack and be misread as the reply.
+        commandPrint("OK: calibrate_rom_gesture " + gestureArg + " dir=" +
+                     dirArg + " motors=" + String(gestureCount));
+        exo.beginRomCalibrationBatch(gestureIds, gestureCount, dir);
+      }
+    }
+
+  } else if (cmd == "cancel_rom") {
+    exo.cancelRomCalibration();
+    commandPrint(F("OK: cancel_rom"));
+
   } else if (cmd == "set_command_timeout") {
     unsigned long timeoutMs = (unsigned long)getArg(token, 1).toInt();
     exo.setDirectCommandTimeout(timeoutMs);
@@ -1705,6 +1773,9 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" set_flip              |  ID/NAME:0/1         | // Set motor direction flip (1=inverted, 0=normal)"));
     commandPrint(F(" get_flip              |  ID/NAME/ALL         | // Get motor direction flip status"));
     commandPrint(F(" calibrate_exo         |  VALUE:VALUE         | // start the calibration routine for the exo"));
+    commandPrint(F(" calibrate_rom         |  ID:FLEX/EXTEND      | // Impedance ROM sweep of one joint (needs CURRENT mode); reports ROM_CAL_RESULT"));
+    commandPrint(F(" calibrate_rom_gesture |  NAME:FLEX/EXTEND    | // Impedance ROM sweep of every motor a gesture drives (thumb/wrist span several)"));
+    commandPrint(F(" cancel_rom            |                      | // Abort a running impedance ROM sweep and return the joint home"));
     commandPrint(F(" get_imu               |                      | // Returns list of accel & gyro values"));
     commandPrint(F(" set_yaw_angle         |  ID/NAME:ANGLE       | // Set motor angle via IMU wrist angle"));
     commandPrint(F(" oled                  |  VALUE               | // Turn OLED on/off, get status"));

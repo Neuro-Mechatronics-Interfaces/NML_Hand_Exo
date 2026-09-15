@@ -337,6 +337,18 @@ bool GestureController::resolveGestureSignedTargets(
   if (stuckOut) *stuckOut = stuck;
   return true;
 }
+uint8_t GestureController::resolveGestureMotorIds(const String& gesture,
+                                                  uint8_t* out,
+                                                  uint8_t maxIds) {
+  if (!out || maxIds == 0) return 0;
+  const int gIdx = findGestureIndex(gesture);
+  if (gIdx == -1) return 0;
+  GestureAxisPoint axis[N_MOTORS];
+  const uint8_t n = resolveGestureAxis(gIdx, axis,
+                                       maxIds < N_MOTORS ? maxIds : N_MOTORS);
+  for (uint8_t k = 0; k < n; ++k) out[k] = axis[k].id;
+  return n;
+}
 uint8_t GestureController::resolveGestureAxis(int gestureIndex,
                                              GestureAxisPoint* out,
                                              uint8_t maxPoints) {

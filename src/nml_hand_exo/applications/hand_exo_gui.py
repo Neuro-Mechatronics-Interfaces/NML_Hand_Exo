@@ -95,6 +95,18 @@ except ImportError:
     _ws_sync_client = None          # type: ignore[assignment]
     _WEBSOCKETS_AVAILABLE = False
 
+# pyqtgraph is optional; the Telemetry tab's live torque plot degrades to the
+# numeric table alone if it is missing.
+try:
+    import pyqtgraph as _pg
+    _PYQTGRAPH_AVAILABLE = True
+except ImportError:
+    _pg = None                      # type: ignore[assignment]
+    _PYQTGRAPH_AVAILABLE = False
+
+# How many seconds of torque history the live plot retains (scrolling window).
+TORQUE_PLOT_WINDOW_S = 15.0
+
 
 DIRECT_VELOCITY_LIMIT_RPM = 50.0
 DIRECT_CURRENT_LIMIT_MA = 910.0
@@ -1832,6 +1844,7 @@ class HandExoGUI(QWidget):
         self._serial_worker = SerialWorker(self)
         self._serial_worker.completed.connect(self._on_device_poll_completed)
         self._serial_worker.line_received.connect(self._log)
+        self._serial_worker.line_received.connect(self._on_rom_serial_line)
         self._serial_worker.pose_completed.connect(self._on_udp_pose_ack_ready)
         self._serial_worker.direct_failed.connect(self._on_emg_direct_failed)
         self._serial_worker.shadow_failed.connect(self._on_emg_shadow_failed)
@@ -2015,6 +2028,10 @@ class HandExoGUI(QWidget):
         ctrl_row.addWidget(self._telem_status_lbl)
         layout.addLayout(ctrl_row)
 
+        # Impedance ROM calibration controls (firmware >= 0.8.0). Runs the sweep
+        # and shows discovered endstops right next to the live torque plot below.
+        layout.addWidget(self._build_rom_cal_controls())
+
         self._telem_table = QTableWidget(0, 4)
         self._telem_table.setHorizontalHeaderLabels(
             ["Motor", "Position (°)", "Torque", "Current (mA)"]
@@ -2027,9 +2044,34 @@ class HandExoGUI(QWidget):
         self._telem_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._telem_table.setSelectionMode(QTableWidget.NoSelection)
         self._telem_table.setAlternatingRowColors(True)
-        self._telem_table.setMinimumHeight(200)
+        self._telem_table.setMinimumHeight(160)
 
         layout.addWidget(self._telem_table)
+
+        # Live scrolling torque plot. One curve per motor, torque (N*m) vs the
+        # last TORQUE_PLOT_WINDOW_S seconds. Fed from the same poll/render path
+        # as the table (see _apply_telemetry_result), so it costs no extra
+        # serial traffic or timers. Degrades to the table alone without pyqtgraph.
+        self._torque_plot = None
+        self._torque_curves = {}          # motor name -> PlotDataItem
+        self._torque_history = {}         # motor name -> (deque[t], deque[Nm])
+        self._torque_plot_t0 = None
+        if _PYQTGRAPH_AVAILABLE:
+            _pg.setConfigOptions(antialias=True)
+            plot = _pg.PlotWidget()
+            plot.setBackground(None)      # inherit the dark theme
+            plot.setLabel("left", "Torque", units="N·m")
+            plot.setLabel("bottom", "Time", units="s")
+            plot.showGrid(x=True, y=True, alpha=0.2)
+            plot.addLegend(offset=(-10, 10))
+            plot.setMinimumHeight(220)
+            self._torque_plot = plot
+            layout.addWidget(plot, stretch=1)
+        else:
+            note = QLabel("Install pyqtgraph to see the live torque plot.")
+            note.setStyleSheet("color: #888888; font-size: 10px;")
+            note.setAlignment(Qt.AlignCenter)
+            layout.addWidget(note)
         return widget
 
     def _build_visualization_tab(self) -> QWidget:
@@ -4768,6 +4810,266 @@ class HandExoGUI(QWidget):
                 item.setTextAlignment(Qt.AlignCenter)
                 self._telem_table.setItem(row, col, item)
 
+    def _build_rom_cal_controls(self) -> QWidget:
+        """Impedance ROM calibration controls for the Telemetry tab.
+
+        Fires the firmware `calibrate_rom_gesture` sweep and shows the endstops
+        it discovers, right beside the live torque plot so torque can be watched
+        climbing into each endstop. Report-only until Apply is pressed.
+        """
+        box = QGroupBox("Impedance ROM calibration (firmware ≥ 0.8.0)")
+        outer = QVBoxLayout(box)
+        outer.setSpacing(6)
+
+        warn = QLabel(
+            "Drives current into the selected joints to find their endstops. "
+            "Keep an emergency stop within reach. Nothing changes stored limits "
+            "until you press Apply."
+        )
+        warn.setWordWrap(True)
+        warn.setStyleSheet("color: #f39c12; font-size: 10px;")
+        outer.addWidget(warn)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Gesture:"))
+        self._rom_gesture_combo = QComboBox()
+        self._rom_gesture_combo.addItem("all")
+        for g in UDP_GESTURE_JOINTS:
+            self._rom_gesture_combo.addItem(g)
+        row.addWidget(self._rom_gesture_combo)
+
+        row.addWidget(QLabel("Direction:"))
+        self._rom_dir_combo = QComboBox()
+        self._rom_dir_combo.addItems(["both", "flex", "extend"])
+        row.addWidget(self._rom_dir_combo)
+
+        self._rom_start_btn = QPushButton("Start ROM sweep")
+        self._rom_start_btn.clicked.connect(self._start_rom_calibration)
+        row.addWidget(self._rom_start_btn)
+
+        self._rom_cancel_btn = QPushButton("Cancel")
+        self._rom_cancel_btn.clicked.connect(self._cancel_rom_calibration)
+        self._rom_cancel_btn.setEnabled(False)
+        row.addWidget(self._rom_cancel_btn)
+
+        self._rom_apply_btn = QPushButton("Apply discovered limits")
+        self._rom_apply_btn.clicked.connect(self._apply_rom_limits)
+        self._rom_apply_btn.setEnabled(False)
+        row.addWidget(self._rom_apply_btn)
+        row.addStretch()
+        outer.addLayout(row)
+
+        self._rom_status_lbl = QLabel("Idle.")
+        self._rom_status_lbl.setStyleSheet("color: #888888; font-size: 10px;")
+        outer.addWidget(self._rom_status_lbl)
+
+        # Per-run state.
+        self._rom_running = False
+        self._rom_current = None      # (gesture, direction) of the in-flight cmd
+        self._rom_queue = []          # list of (gesture, direction) still to send
+        self._rom_expected = 0        # ROM_CAL_RESULT lines expected for current cmd
+        self._rom_seen = 0            # lines seen for current cmd
+        self._rom_results = []        # list of parsed result dicts (all runs)
+        self._rom_result_timer = QTimer(self)
+        self._rom_result_timer.setSingleShot(True)
+        self._rom_result_timer.timeout.connect(self._rom_result_timeout)
+        return box
+
+    def _start_rom_calibration(self):
+        if not self.exo_connected:
+            self._rom_status_lbl.setText("Not connected.")
+            return
+        version = parse_firmware_version(str(self._firmware_version_text))
+        if version < (0, 8, 0):
+            QMessageBox.warning(
+                self, "Firmware too old",
+                "ROM calibration needs firmware ≥ 0.8.0; this device reports "
+                f"{self._firmware_version_text}. Reflash src/cpp/nml_hand_exo.",
+            )
+            return
+        if self._rom_running:
+            return
+        gesture = self._rom_gesture_combo.currentText()
+        direction = self._rom_dir_combo.currentText()
+        gestures = list(UDP_GESTURE_JOINTS) if gesture == "all" else [gesture]
+        directions = ["flex", "extend"] if direction == "both" else [direction]
+        self._rom_queue = [(g, d) for g in gestures for d in directions]
+        self._rom_results = []
+        self._rom_running = True
+        self._rom_start_btn.setEnabled(False)
+        self._rom_cancel_btn.setEnabled(True)
+        self._rom_apply_btn.setEnabled(False)
+        # Reset the torque plot history so the sweep starts on a clean trace.
+        self._rebuild_torque_plot()
+        # calibrate_rom_gesture requires CURRENT mode; set it once up front.
+        self._serial_worker.enqueue("set_control_mode:all:current", timeout=2.0)
+        self._rom_status_lbl.setText("Set CURRENT mode; starting sweep…")
+        self._rom_send_next()
+
+    def _rom_send_next(self):
+        """Send the next queued gesture/direction, or finish the run."""
+        if not self._rom_queue:
+            self._rom_finish_run()
+            return
+        gesture, direction = self._rom_queue.pop(0)
+        self._rom_current = (gesture, direction)
+        self._rom_expected = 0
+        self._rom_seen = 0
+        self._rom_status_lbl.setText(
+            f"Sweeping {gesture} {direction}…  ({len(self._rom_queue)} more queued)"
+        )
+        # The arming ack ("OK: calibrate_rom_gesture ... motors=N") and the async
+        # ROM_CAL_RESULT lines both arrive on line_received (see _on_serial_line).
+        self._serial_worker.enqueue(
+            f"calibrate_rom_gesture:{gesture}:{direction}", timeout=3.0
+        )
+        # Safety net: if results never complete, move on after the firmware's own
+        # per-motor watchdog would have fired for every motor in the gesture.
+        self._rom_result_timer.start(60_000)
+
+    def _on_rom_serial_line(self, line: str):
+        """Handle ROM-related firmware lines seen on the serial worker signal.
+
+        Wired from the existing line_received signal. Non-ROM lines are ignored
+        here (they are still logged by _log as before).
+        """
+        if not getattr(self, "_rom_running", False):
+            return
+        s = line.strip()
+        if s.startswith("OK: calibrate_rom_gesture"):
+            m = re.search(r"motors=(\d+)", s)
+            self._rom_expected = int(m.group(1)) if m else 1
+            self._rom_seen = 0
+            return
+        if s.startswith("ROM_CAL_RESULT:"):
+            result = HandExo._parse_rom_result(s)
+            if self._rom_current:
+                result["gesture"] = self._rom_current[0]
+            self._rom_results.append(result)
+            self._mark_rom_endstop(result)
+            self._rom_seen += 1
+            if self._rom_expected and self._rom_seen >= self._rom_expected:
+                self._rom_result_timer.stop()
+                self._rom_send_next()
+
+    def _rom_result_timeout(self):
+        """A gesture's results did not all arrive; log and move on."""
+        if not self._rom_running:
+            return
+        self._log(f"[rom] timed out waiting for results of {self._rom_current}")
+        self._rom_send_next()
+
+    def _rom_finish_run(self):
+        self._rom_running = False
+        self._rom_result_timer.stop()
+        self._rom_start_btn.setEnabled(True)
+        self._rom_cancel_btn.setEnabled(False)
+        ok = [r for r in self._rom_results
+              if r.get("status") == "ok" and r.get("endstop") is not None]
+        self._rom_apply_btn.setEnabled(bool(ok))
+        self._rom_status_lbl.setText(
+            f"Done. {len(ok)} endstop(s) found across "
+            f"{len(self._rom_results)} motor sweep(s). "
+            + ("Press Apply to write limits." if ok else "")
+        )
+        # Torque left the motors energized in CURRENT mode with zero goal; make
+        # sure nothing is driving.
+        self._serial_worker.enqueue("disable:all", timeout=2.0)
+
+    def _cancel_rom_calibration(self):
+        if not self._rom_running:
+            return
+        self._rom_queue = []
+        self._serial_worker.enqueue("cancel_rom", timeout=2.0)
+        self._serial_worker.enqueue("disable:all", timeout=2.0)
+        self._rom_finish_run()
+        self._rom_status_lbl.setText("Cancelled.")
+
+    def _mark_rom_endstop(self, result: dict):
+        """Draw a marker on the torque plot at a discovered endstop."""
+        if self._torque_plot is None or result.get("status") != "ok":
+            return
+        if result.get("endstop") is None or self._torque_plot_t0 is None:
+            return
+        t = time.monotonic() - self._torque_plot_t0
+        try:
+            line = _pg.InfiniteLine(
+                pos=t, angle=90,
+                pen=_pg.mkPen("#e74c3c", width=1, style=Qt.DashLine),
+                label=f"{result.get('gesture','')} {result.get('dir','')} "
+                      f"{result['endstop']:.1f}°",
+                labelOpts={"position": 0.9, "color": "#e74c3c", "fontsize": 8},
+            )
+            self._torque_plot.addItem(line)
+        except Exception:
+            pass
+
+    def _apply_rom_limits(self):
+        """Write discovered flex/extend endstops into each joint's limits."""
+        by_joint = {}
+        for r in self._rom_results:
+            if r.get("status") == "ok" and r.get("endstop") is not None \
+                    and r.get("id") is not None:
+                by_joint.setdefault(int(r["id"]), {})[r["dir"]] = r["endstop"]
+        wrote = 0
+        for motor_id, ends in sorted(by_joint.items()):
+            if "flex" not in ends or "extend" not in ends:
+                continue
+            lo, hi = sorted((ends["flex"], ends["extend"]))
+            self._serial_worker.enqueue(
+                f"set_motor_limits:{motor_id}:{lo:.2f}:{hi:.2f}", timeout=2.0
+            )
+            wrote += 1
+        self._rom_status_lbl.setText(
+            f"Applied limits to {wrote} joint(s) (runtime only; save a profile "
+            "to persist)."
+        )
+        self._rom_apply_btn.setEnabled(False)
+
+    def _rebuild_torque_plot(self):
+        """Create one torque curve per motor after connect, clearing history."""
+        if self._torque_plot is None:
+            return
+        self._torque_plot.clear()
+        # re-add the legend cleared by clear()
+        try:
+            self._torque_plot.addLegend(offset=(-10, 10))
+        except Exception:
+            pass
+        self._torque_curves = {}
+        self._torque_history = {}
+        self._torque_plot_t0 = time.monotonic()
+        # A distinct color per motor from pyqtgraph's intColor palette.
+        n = max(1, len(self.motor_names))
+        for i, name in enumerate(self.motor_names):
+            pen = _pg.mkPen(_pg.intColor(i, hues=n), width=2)
+            self._torque_curves[name] = self._torque_plot.plot([], [], pen=pen, name=name)
+            self._torque_history[name] = (deque(), deque())
+
+    def _push_torque_plot(self, torque_by_name: dict):
+        """Append one torque sample per motor and redraw the scrolling window.
+
+        Called from _apply_telemetry_result on the existing render cadence, so
+        it adds no serial traffic. torque_by_name maps motor name -> N·m (or
+        None when that motor did not report this cycle).
+        """
+        if self._torque_plot is None or self._torque_plot_t0 is None:
+            return
+        t = time.monotonic() - self._torque_plot_t0
+        cutoff = t - TORQUE_PLOT_WINDOW_S
+        for name, curve in self._torque_curves.items():
+            value = torque_by_name.get(name)
+            if value is None:
+                continue
+            times, values = self._torque_history[name]
+            times.append(t)
+            values.append(float(value))
+            # Drop samples older than the scrolling window.
+            while times and times[0] < cutoff:
+                times.popleft()
+                values.popleft()
+            curve.setData(list(times), list(values))
+
     def _poll_telemetry(self):
         self._request_device_poll(force_telemetry=True)
 
@@ -5040,6 +5342,8 @@ class HandExoGUI(QWidget):
             )
         self._telem_status_lbl.setText(status)
         self._telem_status_lbl.setStyleSheet("color: #27ae60;")
+        # Feed the live scrolling torque plot from the same values as the table.
+        self._push_torque_plot(torque_by_name)
         if publish:
             self._publish_telemetry(
                 positions_by_name, torque_by_name, current_by_name, telemetry_meta
@@ -6380,6 +6684,7 @@ class HandExoGUI(QWidget):
             self._sync_motor_enabled_states_after_connect()
             self._sync_motor_limits_after_connect()
             self._rebuild_telem_table()
+            self._rebuild_torque_plot()
             self._rebuild_teleop_table()
             self._rebuild_direct_motor_combo()
             self._configure_lsl_outlets()

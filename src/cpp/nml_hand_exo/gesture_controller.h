@@ -167,6 +167,21 @@ public:
     uint8_t readGestureAngles(GestureAngleRecord* out, uint8_t maxRecords,
                               const String& only = String());
 
+    /// @brief List the motor IDs a gesture's flex posture drives.
+    ///
+    /// The same membership resolveGestureAxis() uses, exposed as bare IDs for
+    /// the gesture-level impedance ROM calibration (calibrate_rom_gesture): a
+    /// gesture like "thumb" or "wrist" returns all of its sub-motors, and in a
+    /// dual build each name expands to both sides. Order follows the flex
+    /// state's named pairs, then motor index within a duplicated name.
+    /// @param gesture Angle-addressable gesture name.
+    /// @param out Destination ID array.
+    /// @param maxIds Capacity of @p out (N_MOTORS is always enough).
+    /// @return Number of IDs written; 0 if the gesture is unknown or not
+    ///         angle-addressable.
+    uint8_t resolveGestureMotorIds(const String& gesture, uint8_t* out,
+                                   uint8_t maxIds);
+
     /// @brief Resolve one gesture's percent axis and rest anchor per motor.
     ///
     /// Shared by setGestureAngle() and readGestureAngles() so the command and

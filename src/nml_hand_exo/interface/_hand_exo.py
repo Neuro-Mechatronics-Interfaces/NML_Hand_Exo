@@ -2255,6 +2255,194 @@ class HandExo(object):
         """
         self.send_command(f"calibrate_exo:{mode}:{duration}")
 
+    def calibrate_rom(
+        self,
+        motor_id: int,
+        direction: str,
+        *,
+        wait: bool = True,
+        timeout: float = 30.0,
+    ):
+        """Run an impedance range-of-motion sweep for one joint and direction.
+
+        Firmware >= 0.8.0. Drives a single joint under current-mode control,
+        ramping current slowly until the joint just starts to move and then
+        resists a small extra nudge; that angle is reported as the endstop for
+        the requested direction. The joint is returned to where it started.
+
+        The global control mode MUST already be ``current`` (call
+        :meth:`set_control_mode` with ``"current"`` first) and the joint must be
+        reachable and idle. The firmware only ARMS the sweep on this call; the
+        endstop arrives asynchronously on a ``ROM_CAL_RESULT`` line, which this
+        method waits for and parses when ``wait`` is True.
+
+        The endstop is reported, not applied. To adopt it, write it back with
+        :meth:`set_motor_limits` / :meth:`set_motor_upper_limit` /
+        :meth:`set_motor_lower_limit` yourself.
+
+        Use an explicit integer DXL ID, not a bare name: names are ambiguous in
+        dual-hand firmware (see docs/serial_protocol.md).
+
+        Args:
+            motor_id (int): Explicit Dynamixel ID of the joint to calibrate.
+            direction (str): ``"flex"`` or ``"extend"`` on the gesture axis.
+            wait (bool): If True, block until the ROM_CAL_RESULT line arrives
+                (or ``timeout``) and return the parsed result dict. If False,
+                return the arming acknowledgement string and read the result
+                later with :meth:`read_rom_result`.
+            timeout (float): Seconds to wait for the result when ``wait`` is
+                True. The firmware bounds a sweep with its own ROM_CAL_TIMEOUT_MS
+                watchdog (15 s by default), so allow headroom over that.
+
+        Returns:
+            dict | str: Parsed result dict when ``wait`` is True (keys ``id``,
+            ``dir``, ``home``, ``endstop`` (float or None), ``current_mA``,
+            ``status``); otherwise the raw arming acknowledgement string.
+
+        Raises:
+            ValueError: If ``direction`` is not "flex" or "extend".
+            ProtocolResponseError: If the firmware rejects the arming command
+                (wrong mode, unreachable joint, or a sweep already running).
+        """
+        normalized = str(direction).strip().lower()
+        if normalized not in ("flex", "extend"):
+            raise ValueError("direction must be 'flex' or 'extend'")
+        # Gate on firmware: pre-0.8.0 builds do not have calibrate_rom and would
+        # answer with "Unknown command" rather than a clean rejection.
+        self._require_firmware((0, 8, 0), "calibrate_rom")
+        command = f"calibrate_rom:{int(motor_id)}:{normalized}"
+        # The arming ack ("OK: calibrate_rom ...") is validated up front so a
+        # rejected sweep raises immediately instead of hanging in the wait loop.
+        self._command_transaction(command, expected="OK: calibrate_rom")
+        if not wait:
+            return f"OK: calibrate_rom id={int(motor_id)} dir={normalized}"
+        return self.read_rom_result(timeout=timeout)
+
+    def calibrate_rom_gesture(
+        self,
+        gesture: str,
+        direction: str,
+        *,
+        wait: bool = True,
+        per_motor_timeout: float = 30.0,
+    ):
+        """Impedance ROM sweep of every motor a gesture drives, one direction.
+
+        Firmware >= 0.8.0. The gesture (``thumb``, ``index``, ``middle``,
+        ``ring``, ``pinky``, ``wrist``, or any other angle-addressable gesture)
+        is decomposed *by the firmware* into the motors its flex posture drives
+        -- the same motors ``set_finger_angles`` moves -- and each is swept in
+        turn. Multi-motor gestures (``thumb`` spans thumbadd/thumbrot/thumbflex,
+        ``wrist`` spans wrist/wrist2) therefore calibrate several joints from one
+        command, and in a dual-hand build a name present on both sides sweeps
+        both. One ``ROM_CAL_RESULT`` line is produced per motor.
+
+        As with :meth:`calibrate_rom`, the global control mode must already be
+        ``current`` and the endstops are reported, not applied.
+
+        Args:
+            gesture (str): Gesture axis name (e.g. ``"thumb"``, ``"wrist"``).
+            direction (str): ``"flex"`` or ``"extend"``.
+            wait (bool): If True, collect and return one parsed result dict per
+                motor. If False, return the arming acknowledgement string; read
+                the per-motor results yourself with :meth:`read_rom_result`.
+            per_motor_timeout (float): Seconds to wait for each motor's result.
+
+        Returns:
+            list[dict] | str: One parsed result dict per motor when ``wait`` is
+            True (same keys as :meth:`calibrate_rom`); otherwise the raw arming
+            acknowledgement string.
+
+        Raises:
+            ValueError: If ``direction`` is not "flex" or "extend".
+            ProtocolResponseError: If the firmware rejects the command.
+        """
+        normalized = str(direction).strip().lower()
+        if normalized not in ("flex", "extend"):
+            raise ValueError("direction must be 'flex' or 'extend'")
+        self._require_firmware((0, 8, 0), "calibrate_rom_gesture")
+        command = f"calibrate_rom_gesture:{gesture}:{normalized}"
+        # The ack reports how many motors the gesture resolved to:
+        #   "OK: calibrate_rom_gesture thumb dir=flex motors=3"
+        ack = self._command_transaction(command, expected="OK: calibrate_rom_gesture")
+        if not wait:
+            return ack
+        n_motors = 1
+        m = re.search(r"motors=(\d+)", ack)
+        if m:
+            n_motors = int(m.group(1))
+        results = []
+        for _ in range(n_motors):
+            results.append(self.read_rom_result(timeout=per_motor_timeout))
+        return results
+
+    def cancel_rom(self) -> str:
+        """Abort a running impedance ROM sweep (single or gesture) and return
+        the joint home. Cancels the whole campaign, not just the current motor.
+
+        Safe to call when no sweep is running. Firmware >= 0.8.0.
+        """
+        return self._command_transaction("cancel_rom", expected="OK: cancel_rom")
+
+    def read_rom_result(self, timeout: float = 30.0) -> dict:
+        """Wait for and parse the asynchronous ``ROM_CAL_RESULT`` telemetry line.
+
+        See :meth:`calibrate_rom`. Returns a dict with keys ``id`` (int),
+        ``dir`` (str), ``home`` (float), ``endstop`` (float or None when no
+        endstop was found), ``current_mA`` (float), and ``status`` (one of
+        ``ok``, ``ceiling``, ``timeout``, ``aborted``).
+
+        Raises:
+            TimeoutError: If no ROM_CAL_RESULT line arrives within ``timeout``.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            raw = self._receive(
+                wait_until_return=True,
+                timeout=max(0.05, deadline - time.monotonic()),
+                warn_on_timeout=False,
+            )
+            if raw and "ROM_CAL_RESULT:" in raw:
+                for line in raw.splitlines():
+                    if "ROM_CAL_RESULT:" in line:
+                        return self._parse_rom_result(line)
+        raise TimeoutError(
+            f"No ROM_CAL_RESULT received within {timeout:.1f} s"
+        )
+
+    @staticmethod
+    def _parse_rom_result(line: str) -> dict:
+        """Parse one ``ROM_CAL_RESULT: k=v k=v ...`` line into a dict."""
+        # Strip a trailing command delimiter (the line self-frames with ';' so
+        # the dual-CDC transport publishes it as its own reply). SerialComm
+        # rewrites ';' to a newline, DualSerialComm consumes it as the frame
+        # terminator; strip either so the last field never keeps a stray ';'.
+        payload = line.split("ROM_CAL_RESULT:", 1)[1].strip().rstrip(";").strip()
+        fields: dict = {}
+        for token in payload.split():
+            if "=" not in token:
+                continue
+            key, value = token.split("=", 1)
+            fields[key] = value.rstrip(";")
+
+        def _as_float(value):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        endstop = fields.get("endstop")
+        return {
+            "id": int(fields["id"]) if "id" in fields else None,
+            "dir": fields.get("dir"),
+            "home": _as_float(fields.get("home")),
+            # "nan" (no endstop found) parses to None rather than float('nan')
+            # so callers can test `if result["endstop"] is None`.
+            "endstop": None if endstop in (None, "nan") else _as_float(endstop),
+            "current_mA": _as_float(fields.get("current_mA")),
+            "status": fields.get("status"),
+        }
+
     def enable_oled(self) -> str:
         """
         Enables the OLED display on the exoskeleton.
