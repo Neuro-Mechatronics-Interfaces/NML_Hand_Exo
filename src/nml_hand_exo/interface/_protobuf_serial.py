@@ -66,6 +66,17 @@ class ProtobufSerialComm(DualSerialComm):
         self._rpc_lock = threading.Lock()
         self._sequence = secrets.randbits(32)
 
+    def assist_command(self, command, ids=(), values=(), *, timeout=1.0):
+        names = {"assist_config": self.pb.ASSIST_CONFIG,
+                 "assist_calibrate": self.pb.ASSIST_CALIBRATE,
+                 "assist_start": self.pb.ASSIST_START,
+                 "assist_heartbeat": self.pb.ASSIST_HEARTBEAT,
+                 "assist_stop": self.pb.ASSIST_STOP}
+        if command not in names:
+            raise ValueError("Unknown assist command")
+        self._rpc(names[command], ids, values=values, timeout=timeout)
+        return f"OK: {command}"
+
     def _open_and_probe(self):
         # AutoSerialComm has identified the primary text port via info already.
         self._cmd = serial.Serial(self.cmd_port, self.baudrate, timeout=.02,

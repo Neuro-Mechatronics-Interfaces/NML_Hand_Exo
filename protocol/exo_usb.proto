@@ -17,6 +17,11 @@ enum Command {
   SET_FINGER_ANGLES = 11;
   SET_GESTURE = 12;
   SET_GESTURE_ANGLE = 13; // percent 0..100, gesture.name + value
+  ASSIST_CONFIG = 14;   // one ID; values=[threshold_mA, gain_deg_per_mA, current_cap_mA]
+  ASSIST_CALIBRATE = 15; // explicit IDs; already enabled in current-position mode
+  ASSIST_START = 16;    // no fields; requires completed bias calibration
+  ASSIST_HEARTBEAT = 17;
+  ASSIST_STOP = 18;
 }
 message FingerAngles {
   // Missing fields hold that joint; signed integers are rest-relative -100..100.

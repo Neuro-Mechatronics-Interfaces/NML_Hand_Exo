@@ -11,6 +11,8 @@
 #include "config.h"
 #include "joint_state_model.h"
 #include "rom_pulse_fit.h"
+#include "rom_settle_window.h"
+#include "assist_controller.h"
 #include "utc_clock.h"
 #include <Dynamixel2Arduino.h>
 using namespace ControlTableItem;
@@ -98,7 +100,8 @@ enum FastTelemetryMethod : uint8_t {
   FAST_TELEM_METHOD_FALLBACK_READ = 1,
   FAST_TELEM_METHOD_FAST_SYNC_READ = 2,
   FAST_TELEM_METHOD_SYNC_READ = 3,
-  FAST_TELEM_METHOD_MODEL = 4
+  FAST_TELEM_METHOD_MODEL = 4,
+  FAST_TELEM_METHOD_CONTROL_CACHE = 5
 };
 
 /// @brief Direction of an impedance ROM calibration sweep.
@@ -360,6 +363,14 @@ class NMLHandExo {
 
     /// @brief Service the ROM calibration state machine. Called from update().
     /// Non-blocking: does at most a bounded amount of Dynamixel I/O per call.
+    bool configureAssist(uint8_t id, float thresholdMa, float gainDegPerMa, float currentCapMa);
+    bool calibrateAssist(const uint8_t* ids, uint8_t count);
+    bool startAssist();
+    bool heartbeatAssist();
+    void stopAssist(const char* reason = "stopped");
+    bool isAssistBusy() const { return assistState_ != 0; }
+    void serviceAssist();
+    String assistStatus() const;
     void serviceRomCalibration();
 
     /// @brief Whether an impedance ROM sweep is currently running.
@@ -1106,6 +1117,15 @@ class NMLHandExo {
     // Single-joint, single-direction at a time, so scalar state is enough.
     // The state machine reads only the ROM_CAL_* constants from config.h for
     // its tuning; see serviceRomCalibration() in nml_hand_exo.cpp.
+    AssistJoint assistJoints_[N_MOTORS];
+    uint8_t assistState_ = 0; // off, calibrating, ready, active, stop unconfirmed
+    uint8_t assistCursor_ = 0;
+    unsigned long assistHeartbeatMs_ = 0, assistSampleMs_ = 0, assistBeginMs_ = 0;
+    const char* assistReason_ = "off";
+    int assistRejectId_ = -1;
+    float assistRejectAngle_ = NAN, assistRejectVelocity_ = NAN;
+    bool readAssistSample(uint8_t id, float& q, float& velocity, float& current, bool requireEnabled = true);
+    bool writeAssistGoal(int index);
     RomCalPhase romCalPhase_ = ROM_CAL_IDLE;
     RomCalDirection romCalDir_ = ROM_CAL_DIR_FLEX;
     RomCalStatus romCalStatus_ = ROM_CAL_STATUS_NONE;
@@ -1120,6 +1140,9 @@ class NMLHandExo {
     unsigned long romCalStartMs_ = 0;
     unsigned long romCalLastStepMs_ = 0;
     unsigned long romCalPulseStartMs_ = 0;
+    uint8_t romCalShapeSlot_ = 0;
+    RomPulseExposure romCalExposure_;
+    float romCalExpectedCurrent_ = 0;
     unsigned long romCalRestStartMs_ = 0;
     unsigned long romCalPulseOnMs_ = 0;
     unsigned long romCalReturnStartMs_ = 0;
@@ -1129,11 +1152,18 @@ class NMLHandExo {
     uint16_t romCalPulseCount_ = 0;
     uint16_t romCalFitSamples_ = 0;
     uint8_t romCalStallPulses_ = 0;
+    uint8_t romCalCeilingNoMotionPulses_ = 0;
+    float romCalPulseMaxExcursion_ = 0, romCalPulseEndDelta_ = NAN;
+    float romCalStallLow_ = 0, romCalStallHigh_ = 0;
     bool romCalSignReversed_ = false;
     bool romCalStopRequested_ = false;
     const char* romCalReason_ = "none";
     unsigned long romCalMaxPulseOnMs_ = 0;
     float romCalFeedbackAngle_ = NAN;
+    float romCalFeedbackVelocity_ = NAN;
+    int32_t romCalFeedbackVelocityRaw_ = 0;
+    const char* romCalSettleCheck_ = "none";
+    RomSettleWindow romCalSettleWindow_;
     uint16_t romCalRecoveries_ = 0;
     uint8_t romCalFeedbackFailures_ = 0;
     bool romCalPulseValid_ = true;

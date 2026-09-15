@@ -1,4 +1,5 @@
 #include "joint_state_model.h"
+#include "assist_controller.h"
 #include "utc_clock.h"
 #include <cassert>
 #include <cstring>
@@ -13,7 +14,7 @@ const int DYNAMIXEL_PRESENT_CURRENT_OFFSET = 0, DYNAMIXEL_PRESENT_VELOCITY_OFFSE
 const int DYNAMIXEL_PRESENT_POSITION_OFFSET = 6;
 const float XC330_T288_TORQUE_CONSTANT = 0.00115f;
 enum {FAST_TELEM_METHOD_FAILED, FAST_TELEM_METHOD_FALLBACK_READ,
-      FAST_TELEM_METHOD_FAST_SYNC_READ, FAST_TELEM_METHOD_SYNC_READ, FAST_TELEM_METHOD_MODEL};
+      FAST_TELEM_METHOD_FAST_SYNC_READ, FAST_TELEM_METHOD_SYNC_READ, FAST_TELEM_METHOD_MODEL, FAST_TELEM_METHOD_CONTROL_CACHE};
 enum {ROM_CAL_IDLE, ROM_CAL_RAMP, ROM_CAL_RETURN, ROM_CAL_DONE};
 // RECORD_DECLARATIONS
 namespace DYNAMIXEL {
@@ -48,6 +49,9 @@ struct Bus {
 };
 struct NMLHandExo {
   Bus dxl_;
+  bool assistBusy = false;
+  AssistJoint assistJoints_[3];
+  bool isAssistBusy() const { return assistBusy; }
   const int numMotors_ = N_MOTORS;
   uint8_t romCalPhase_ = ROM_CAL_IDLE;
   std::string motorControlMode_ = "CURRENT_POSITION";
@@ -125,4 +129,21 @@ int main() {
   testNow += 1000;
   sample();
   assert(exo.dxl_.reads == 4);
+  exo.assistBusy = true;
+  auto& assist = exo.assistJoints_[1];
+  assist.begin(150, testNow);
+  bool write = false;
+  assist.sample(150, 0, -11, testNow, true, false, write);
+  assist.measuredUtc = exo.utcClock_.now(testNow);
+  const auto stamp = testNow;
+  const auto reads = exo.dxl_.reads;
+  testNow += 100;
+  sample();
+  assert(exo.dxl_.reads == reads && method == FAST_TELEM_METHOD_CONTROL_CACHE);
+  assert(records[1].current_mA == -11 && records[1].absolute_cdeg == 15000);
+  assert(records[1].sources == 0x15 && records[1].sample_ms == stamp);
+  assert(records[1].utc_ms == assist.measuredUtc);
+  assert(records[0].error); // unselected IDs are unavailable, not fabricated
+  testNow += 501; sample(); assert(records[1].error);
+
 }

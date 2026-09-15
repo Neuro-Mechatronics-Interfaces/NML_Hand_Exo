@@ -305,3 +305,9 @@ polling, shadow isolation, and legacy compatibility without hardware.
 <!-- graphviz:docs/figures/hand_state_telemetry.dot -->
 ![GraphViz diagram](figures/hand_state_telemetry.svg)
 <!-- /graphviz:docs/figures/hand_state_telemetry.dot -->
+
+## Assist tab
+
+The Assist tab captures relaxed per-joint bias, displays measured effort and
+provides explicit enable/stop controls with per-joint sensitivity and gain.
+See [Assist mode](assist_mode.md) for prerequisites, limits and bench validation.

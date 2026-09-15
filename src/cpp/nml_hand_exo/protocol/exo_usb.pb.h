@@ -23,7 +23,12 @@ typedef enum _exo_usb_Command {
     exo_usb_Command_SET_CURRENTS = 10,
     exo_usb_Command_SET_FINGER_ANGLES = 11,
     exo_usb_Command_SET_GESTURE = 12,
-    exo_usb_Command_SET_GESTURE_ANGLE = 13
+    exo_usb_Command_SET_GESTURE_ANGLE = 13,
+    exo_usb_Command_ASSIST_CONFIG = 14,
+    exo_usb_Command_ASSIST_CALIBRATE = 15,
+    exo_usb_Command_ASSIST_START = 16,
+    exo_usb_Command_ASSIST_HEARTBEAT = 17,
+    exo_usb_Command_ASSIST_STOP = 18
 } exo_usb_Command;
 
 typedef enum _exo_usb_Status {
@@ -111,8 +116,8 @@ extern "C" {
 
 /* Helper constants for enums */
 #define _exo_usb_Command_MIN exo_usb_Command_GET_TELEMETRY_FAST
-#define _exo_usb_Command_MAX exo_usb_Command_SET_GESTURE_ANGLE
-#define _exo_usb_Command_ARRAYSIZE ((exo_usb_Command)(exo_usb_Command_SET_GESTURE_ANGLE+1))
+#define _exo_usb_Command_MAX exo_usb_Command_ASSIST_STOP
+#define _exo_usb_Command_ARRAYSIZE ((exo_usb_Command)(exo_usb_Command_ASSIST_STOP+1))
 
 #define _exo_usb_Status_MIN exo_usb_Status_OK
 #define _exo_usb_Status_MAX exo_usb_Status_REJECTED

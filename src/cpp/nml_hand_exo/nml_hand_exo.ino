@@ -172,6 +172,7 @@ void setup() {
 void loop() {
   // Pulse cutoffs run before host traffic or peripheral work.
   exo.serviceRomCalibration();
+  exo.serviceAssist();
 #if EXO_AXON_USB
   gAxon.poll([](void* context, uint8_t id,
                 axon_exo::AxonUsbPeripheral::Field field,
@@ -257,7 +258,7 @@ void loop() {
   exo.update();
 
   // Check for any updates needed with the gesture controller
-  if (!exo.isRomCalibrating()) {
+  if (!exo.isRomCalibrating() && !exo.isAssistBusy()) {
     EXO_PROFILE(PERIPHERAL);
     EXO_PROFILE(PERIPHERAL);
     gc.update();

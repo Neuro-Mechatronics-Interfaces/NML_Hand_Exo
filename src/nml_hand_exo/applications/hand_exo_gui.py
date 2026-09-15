@@ -1298,6 +1298,7 @@ class SerialWorker(QThread):
     backlog if the board needs longer than one timer interval to answer.
     """
 
+    assist_completed = pyqtSignal(str, object, str)
     completed = pyqtSignal(object)
     line_received = pyqtSignal(str)
     pose_completed = pyqtSignal(int, str, int, object, str)
@@ -1308,6 +1309,8 @@ class SerialWorker(QThread):
         super().__init__(parent)
         self._exo = None
         self._urgent_q = queue.Queue()
+        self._assist_q = queue.Queue()
+        self._assist_generation = 0
         self._poll_q = queue.Queue()
         self._run = True
         self._poll_pending = False
@@ -1321,6 +1324,7 @@ class SerialWorker(QThread):
         self._state_lock = threading.Lock()
 
     def set_exo(self, exo):
+        self._assist_generation += 1
         self._exo = exo
 
     def set_motor_ids(self, motor_ids):
@@ -1338,6 +1342,70 @@ class SerialWorker(QThread):
     def set_shadow_telemetry(self, enabled: bool):
         with self._state_lock:
             self._shadow_telemetry = bool(enabled)
+
+    def request_assist(self, operation, payload=None):
+        if operation == "calibrate":
+            # Cancel queued regular work before handing actuator ownership to
+            # assist; it must not replay after assist is subsequently stopped.
+            with self._state_lock:
+                self._direct_actions.clear()
+                self._direct_pending = False
+            retained = []
+            while True:
+                try:
+                    item = self._urgent_q.get_nowait()
+                except queue.Empty:
+                    break
+                if item[0] == "stop" or (item[0] in {"command", "send"} and
+                        item[1].split(":", 1)[0] in {"stop", "disable", "cancel_rom"}):
+                    retained.append(item)
+            for item in retained:
+                self._urgent_q.put(item)
+        if operation == "stop":
+            self._assist_generation += 1
+        self._assist_q.put((self._assist_generation, operation, payload))
+
+    def _handle_assist(self, generation, operation, payload):
+        if generation != self._assist_generation:
+            return
+        try:
+            def apply(exo):
+                if generation != self._assist_generation:
+                    return None
+                if operation == "calibrate":
+                    for mid, config in payload.items():
+                        if generation != self._assist_generation:
+                            return None
+                        exo.configure_assist(mid, **config)
+                    if generation != self._assist_generation:
+                        return None
+                    # Mode switching leaves every motor torque-off. Firmware
+                    # captures a fresh capped hold before enabling selected IDs.
+                    exo.set_control_mode("current_position")
+                    if generation != self._assist_generation:
+                        return None
+                    exo.calibrate_assist(list(payload))
+                elif operation == "start":
+                    exo.start_assist()
+                elif operation == "heartbeat":
+                    try:
+                        exo.heartbeat_assist()
+                    except Exception:
+                        state = exo.get_assist_status()
+                        if state["state"] == 0:
+                            return state
+                        raise
+                elif operation == "stop":
+                    exo.stop_assist()
+                else:
+                    raise ValueError("Unknown assist operation")
+                return exo.get_assist_status()
+            status = self._with_raw_exo(apply)
+            if generation == self._assist_generation:
+                self.assist_completed.emit(operation, status, "")
+        except Exception as exc:
+            if generation == self._assist_generation:
+                self.assist_completed.emit(operation, {}, str(exc))
 
     def request_poll(self, include_telemetry: bool = True):
         with self._state_lock:
@@ -1412,6 +1480,13 @@ class SerialWorker(QThread):
 
     def run(self):
         while self._run:
+            try:
+                assist_request = self._assist_q.get_nowait()
+            except queue.Empty:
+                pass
+            else:
+                self._handle_assist(*assist_request)
+                continue
             self._drain_async_events()
             try:
                 item = self._urgent_q.get_nowait()
@@ -2166,6 +2241,12 @@ class HandExoGUI(QWidget):
         self.main_tabs.addTab(monitor_tabs, "Monitor")
         self.main_tabs.addTab(direct_control_page, "Advanced")
         self.main_tabs.addTab(integrations_tabs, "Integrations")
+        from ._assist_panel import AssistPanel
+        self._assist_panel = AssistPanel(self._serial_worker, self)
+        self._assist_panel.preparing.connect(self._prepare_assist_ui)
+        self._assist_panel.busy_changed.connect(self._assist_busy_changed)
+        self._assist_panel.log_line.connect(self._log)
+        self.main_tabs.addTab(self._assist_panel, "Assist")
 
         self._build_log_section()
         for button in self.findChildren(QPushButton):
@@ -2178,6 +2259,24 @@ class HandExoGUI(QWidget):
         ):
             input_widget.installEventFilter(self)
         self._update_enabled_state()
+
+    def _prepare_assist_ui(self):
+        self._finish_home_sequence(resume_polling=True)
+        if self._teleop_streaming:
+            self._on_teleop_stop()
+        self._stop_emg_control("assist selected", stop_timer=True, release_deadman=True)
+        self._stop_udp_binding_output(disable_motors=False)
+        self._udp_stream_pending.clear()
+        self._serial_worker.set_realtime_control(False)
+        self._serial_worker.set_shadow_telemetry(False)
+        self._direct_command_timer.stop()
+        self._emg_control_timer.stop()
+
+    def _assist_busy_changed(self, busy):
+        for index in (0, 1, 3, 4):
+            self.main_tabs.setTabEnabled(index, not busy)
+        if hasattr(self, "_rom_start_btn"):
+            self._rom_start_btn.setEnabled(not busy and self.exo_connected)
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Wheel and isinstance(obj, QTabBar):
@@ -4702,6 +4801,8 @@ class HandExoGUI(QWidget):
         )
 
     def _on_udp_command(self, payload: str, sender: str):
+        if getattr(self, "_assist_panel", None) is not None and self._assist_panel.busy:
+            return
         self._record_udp_queue_length()
         try:
             self._process_udp_command(payload, sender)
@@ -4925,6 +5026,8 @@ class HandExoGUI(QWidget):
             self._log(f"[UDP command] Failed from {sender}: {exc}")
 
     def _flush_udp_stream_commands(self):
+        if getattr(self, "_assist_panel", None) is not None and self._assist_panel.busy:
+            return
         if not self.exo_connected or not self._udp_stream_pending:
             return
         pending_items = list(self._udp_stream_pending.values())
@@ -5008,7 +5111,7 @@ class HandExoGUI(QWidget):
         warn = QLabel(
             "Drives current into the selected joints to find their endstops. "
             "Keep an emergency stop within reach. Nothing changes stored limits "
-            "until you press Apply. Firmware v0.9.1 starts at 20 mA / 20 ms, "
+            "until you press Apply. Updated firmware v0.9.1 uses 40-160 mA peaks / 40 ms, "
             "learns a local pulse response, and leaves return-home to the operator."
         )
         warn.setWordWrap(True)
@@ -5117,7 +5220,7 @@ class HandExoGUI(QWidget):
         self._serial_worker.enqueue(
             f"calibrate_rom:{motor_id}:{direction}", timeout=3.0
         )
-        # Covers the firmware's 20 s sweep + 4 s return + command transit.
+        # Covers the firmware's 45 s sweep + optional 4 s return + command transit.
         self._rom_result_timer.start(55_000)
 
     def _on_rom_serial_line(self, line: str):
@@ -5144,6 +5247,16 @@ class HandExoGUI(QWidget):
                 return  # stale result, inactive side, or another consumer's sweep
             result["gesture"] = gesture
             self._rom_results.append(result)
+            travel = result.get("net_travel_deg")
+            if travel is None and result.get("angle") is not None and result.get("home") is not None:
+                travel = result["angle"] - result["home"]
+            if travel is not None:
+                self._log(
+                    f"[rom] ID {motor_id} {direction}: {travel:+.2f} motor-encoder degrees "
+                    f"net travel, {result.get('pulses', '?')} completed pulses, "
+                    f"{result.get('response_samples', '?')} moving samples; "
+                    f"{result.get('reason', result.get('status'))}."
+                )
             if result.get("status") in ("aborted", "timeout"):
                 self._cancel_rom_calibration()
                 self._rom_status_lbl.setText(
@@ -5157,6 +5270,15 @@ class HandExoGUI(QWidget):
                     f"angle={result.get('angle')}°, limits="
                     f"[{result.get('limit_min')}, {result.get('limit_max')}]°. "
                     "No new endstop; check the calibration profile for this joint."
+                )
+            elif result.get("status") == "ceiling":
+                detail = ("repeated low-response pulses at the ceiling; no endstop established"
+                          if result.get("reason") == "response_saturated" else
+                          "not enough moving evidence for an endstop")
+                self._log(
+                    f"[rom] ID {motor_id} {direction}: reached the "
+                    f"{result.get('current_mA')} mA pulse ceiling: {detail}. "
+                    "Limits were not changed."
                 )
             self._mark_rom_endstop(result)
             self._rom_seen += 1
@@ -5699,6 +5821,8 @@ class HandExoGUI(QWidget):
 
     def _global_stop_all_motion(self):
         """Stop every GUI command source and torque-off active-side IDs."""
+        if hasattr(self, "_assist_panel") and self._assist_panel.busy:
+            self._assist_panel.stop_session()
         self._finish_home_sequence(resume_polling=False)
         if self._teleop_streaming:
             self._on_teleop_stop()
@@ -6989,6 +7113,7 @@ class HandExoGUI(QWidget):
             self._rebuild_torque_plot()
             self._rebuild_teleop_table()
             self._rebuild_direct_motor_combo()
+            self._assist_panel.set_connection(True, list(zip(self._motor_dxl_id, self.motor_names)), info)
             self._configure_lsl_outlets()
             self._last_telemetry_update_monotonic = None
             self._telemetry_rate_ema = None
@@ -7017,6 +7142,9 @@ class HandExoGUI(QWidget):
             self._update_enabled_state()
 
     def _disconnect(self):
+        if hasattr(self, "_assist_panel"):
+            self._assist_panel.stop_session()
+            self._assist_panel.set_connection(False)
         self._finish_home_sequence(resume_polling=False)
         # Stop teleop streaming first so the tick timer doesn't fire after
         # the serial port closes.  Also signal the WebSocket worker to exit
@@ -9264,6 +9392,8 @@ class HandExoGUI(QWidget):
             )
 
     def _emg_control_tick(self):
+        if getattr(self, "_assist_panel", None) is not None and self._assist_panel.busy:
+            return
         if not self._emg_live or not self._emg_deadman_active:
             return
         reason = self._emg_ready_reason()
@@ -10079,6 +10209,8 @@ class HandExoGUI(QWidget):
 
     def _teleop_tick(self):
         """Queue a relative-angle read; worker results publish the teleop frame."""
+        if getattr(self, "_assist_panel", None) is not None and self._assist_panel.busy:
+            return
         if not self.exo_connected:
             return
         self._serial_worker.set_exo(self.exo)

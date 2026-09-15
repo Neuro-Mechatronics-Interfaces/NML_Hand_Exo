@@ -294,6 +294,26 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
     records[i].sample_ms = millis();
     records[i].utc_ms = utcClock_.now(records[i].sample_ms);
   }
+  if (isAssistBusy()) {
+    // Reuse control measurements without competing for the Dynamixel bus or
+    // relabelling the current limit / last model prediction as measured effort.
+    methodOut = FAST_TELEM_METHOD_CONTROL_CACHE;
+    for (uint8_t k = 0; k < count; ++k) {
+      const int i = getIndexById(ids[k]);
+      if (i < 0) continue;
+      const auto& j = assistJoints_[i];
+      if (!j.selected || !j.measuredValid || millis()-j.lastSample > 500) continue;
+      auto& r = records[k];
+      r.position_ticks = (int32_t)roundf(j.angle*PULSE_RESOLUTION/360.0f);
+      r.absolute_cdeg = (int32_t)roundf(j.angle*100);
+      r.relative_cdeg = (int32_t)roundf((j.angle-zeroOffsets_[i])*(flipMotor_[i] ? -100 : 100));
+      r.current_mA = (int16_t)roundf(j.measuredCurrent);
+      r.velocity_raw = (int32_t)roundf(j.measuredVelocity/(.229f*6));
+      r.sources = 0x15; r.error = 0;
+      r.sample_ms = j.lastSample; r.utc_ms = j.measuredUtc;
+    }
+    return count;
+  }
   if (estimated) {
     methodOut = FAST_TELEM_METHOD_MODEL | TELEM_SOURCE_ESTIMATED;
     for (uint8_t i = 0; i < count; ++i) {
@@ -486,7 +506,7 @@ String NMLHandExo::getDeviceInfo(bool includeLiveTelemetry) {
     info += "Version: " + String(VERSION) + "\n";
 #if EXO_USB_PROTOBUF
     info += "USB Protocol: protobuf-v1\nUSB CDC Count: 2\nUSB Text Port: primary\nUSB Binary Port: secondary\n";
-    info += "USB Features: joint_model_write batch_motion\n";
+    info += "USB Features: joint_model_write batch_motion assist_v1\n";
 #elif EXO_AXON_USB
     info += "USB Protocol: axon-ascii\nUSB CDC Count: 1\n";
 #elif defined(DUAL_CDC) && DUAL_CDC
@@ -494,6 +514,7 @@ String NMLHandExo::getDeviceInfo(bool includeLiveTelemetry) {
 #else
     info += "USB Protocol: ascii-nx\nUSB CDC Count: 1\n";
 #endif
+    info += "Assist Protocol: assist-v1\n";
     info += "Model Step Ms: " + String(EXO_MODEL_STEP_MS) + "\n";
     info += "I/O Profile: 1\n";
     info += "Side: " + String(HAND_SIDE) + "\n";
@@ -594,13 +615,9 @@ bool NMLHandExo::isExoCalibrating() {
 // governor, and a blocking ramp here would starve both. Every tuning value it
 // reads is a ROM_CAL_* constant from config.h -- see the block header there.
 //
-// Direction handling is flip-agnostic. The caller asks for FLEX or EXTEND on
-// the same home->flexion axis the gesture system uses (getGestureSpan). We do
-// NOT assume a fixed relationship between commanded-current sign and that axis;
-// instead we start the ramp with a best-guess sign and, at the first real
-// motion, check whether the joint actually moved the way we asked. If it went
-// the wrong way we flip the sign and re-check. The probe uses the same bounded
-// ROM current range as the rest of the sweep.
+// FLEX/EXTEND use the resolved absolute axis from getGestureSpan, compensating
+// the current writer's flip once. Measured wrong-way motion permits one bounded
+// sign correction after settling; a second mismatch aborts the campaign.
 
 bool NMLHandExo::beginRomCalibration(uint8_t id, RomCalDirection direction) {
   // A sweep drives current directly, so the fleet must already be in CURRENT
@@ -642,13 +659,13 @@ bool NMLHandExo::romCalArmMotor(uint8_t id, RomCalDirection direction) {
   romCalCurrentMa_ = ROM_CAL_START_CURRENT_MA;
   romCalDirLocked_ = false;
 
-  // First-guess commanded-current sign. getGestureSpan is signed travel toward
-  // flexion in ABSOLUTE degrees. setGoalCurrent/setRelativeAngle already apply
-  // the flip flag, so a positive commanded current is intended to increase the
-  // RELATIVE angle -- i.e. move toward flexion for a correctly-flagged joint.
-  // Hence +1 for FLEX and -1 for EXTEND as the guess; the runtime check below
-  // corrects it for any joint whose flag or wiring disagrees.
-  romCalSign_ = (direction == ROM_CAL_DIR_FLEX) ? 1.0f : -1.0f;
+  // Use the same resolved absolute flexion axis as gestures. That axis can
+  // override a flip flag when home leaves only a short stub on its preferred
+  // side. Undo the writer's flip here so the physical current follows the axis.
+  const float span = getGestureSpan(id);
+  if (!isfinite(span) || fabsf(span) < ROM_CAL_ONSET_DEG) return false;
+  romCalSign_ = (direction == ROM_CAL_DIR_FLEX ? 1.0f : -1.0f) *
+                (span >= 0 ? 1.0f : -1.0f) * (flipMotor_[index] ? -1.0f : 1.0f);
 
   const unsigned long now = millis();
   romCalStartMs_ = now;
@@ -656,13 +673,20 @@ bool NMLHandExo::romCalArmMotor(uint8_t id, RomCalDirection direction) {
   romCalPulseCount_ = 0;
   romCalFitSamples_ = 0;
   romCalStallPulses_ = 0;
+  romCalCeilingNoMotionPulses_ = 0;
   romCalSignReversed_ = false;
   romCalStopRequested_ = false;
   romCalReason_ = "none";
   romCalPulseOnMs_ = romCalMaxPulseOnMs_ = 0;
   romCalFeedbackAngle_ = startAngle;
+  romCalFeedbackVelocity_ = NAN;
+  romCalFeedbackVelocityRaw_ = 0;
+  romCalSettleCheck_ = "none";
+  romCalSettleWindow_.reset();
   romCalRecoveries_ = romCalFeedbackFailures_ = 0;
   romCalMaxExcursionDeg_ = 0;
+  romCalPulseMaxExcursion_ = 0;
+  romCalPulseEndDelta_ = NAN;
   romCalPulseStop_ = "none";
   romCalFitReason_ = "no_completed_pulse";
   romCalResponseReason_ = "no_completed_pulse";
@@ -680,7 +704,13 @@ bool NMLHandExo::romCalArmMotor(uint8_t id, RomCalDirection direction) {
     enableTorque(id, false);
     return false;
   }
-  romCalStartPulse(angle, velocity);
+  // The prior direction can still be coasting when the host arms this one.
+  // Observe a full zero-current rest before the FIRST pulse as well.
+  romCalPulseStartAngle_ = romCalPulsePeakAngle_ = angle;
+  romCalPulseValid_ = false;
+  romCalRestStartMs_ = millis();
+  romCalSettleWindow_.reset();
+  romCalPhase_ = ROM_CAL_REST;
   debugPrint("[ROM] Calibration armed: id=" + String(id) + " dir=" +
              String(direction == ROM_CAL_DIR_FLEX ? "flex" : "extend"));
   return true;
@@ -831,8 +861,18 @@ void NMLHandExo::romCalReport() {
           " observed_deg=" + String(romCalObservedDeg_, 3) +
           " response_reason=" + String(romCalResponseReason_) +
           " recoveries=" + String(romCalRecoveries_) +
-          " angle=" + String(romCalFeedbackAngle_, 2);
+          " angle=" + String(romCalFeedbackAngle_, 2) +
+          " velocity_deg_s=" + String(romCalFeedbackVelocity_, 3) +
+          " velocity_raw=" + String(romCalFeedbackVelocityRaw_) +
+          " settle_check=" + String(romCalSettleCheck_) +
+          " settle_span_deg=" + String(romCalSettleWindow_.span(), 3) +
+          " settle_quiet_ms=" + String(romCalSettleWindow_.quietMs()) +
+          " net_travel_deg=" + String(romCalFeedbackAngle_ - romCalHomeAngle_, 3);
+  line += " ceiling_no_motion_pulses=" + String(romCalCeilingNoMotionPulses_);
   if (romCalIndex_ >= 0) {
+    const auto& response = jointModels_[romCalIndex_].pulseResponses[romCalDir_];
+    line += " response_samples=" + String(response.movingSamples) +
+            " no_motion_samples=" + String(response.noMotionSamples);
     line += " limit_min=" + String(jointLimits_[romCalIndex_][0], 2) +
             " limit_max=" + String(jointLimits_[romCalIndex_][1], 2);
   }
@@ -871,12 +911,18 @@ void NMLHandExo::romCalReportPulse() {
   String line = "ROM_CAL_PULSE: id=" + String(romCalId_) +
       " dir=" + String(romCalDir_ == ROM_CAL_DIR_FLEX ? "flex" : "extend") +
       " pulse=" + String(romCalPulseCount_) + " current_mA=" + String(romCalCurrentMa_, 0) +
+      " shape=" + String(ROM_CAL_SHAPE_STEP_MS == 5 ? "gaussian" : "triangle") +
+      " shape_step_ms=" + String(ROM_CAL_SHAPE_STEP_MS) +
+      " exposure_mA_ms=" + String(romCalExposure_.impulse * 1000.0f, 2) +
       " on_ms=" + String(romCalPulseOnMs_) + " predicted_deg=" + String(romCalPredictedDeg_, 3) +
       " observed_deg=" + String(romCalObservedDeg_, 3) + " target_deg=" + String(ROM_CAL_TARGET_TRAVEL_DEG, 3) +
       " slope=" + String(p.slope, 6) + " response_samples=" + String(p.movingSamples) +
       " no_motion_samples=" + String(p.noMotionSamples) + " gradients=" + String(p.gradientSamples) +
       " response_reason=" + String(romCalResponseReason_) + " fit_reason=" + String(romCalFitReason_) +
-      " pulse_stop=" + String(romCalPulseStop_) + COMMAND_DELIMITER;
+      " pulse_stop=" + String(romCalPulseStop_) +
+      " peak_excursion_deg=" + String(romCalPulseMaxExcursion_, 3) +
+      " pulse_end_delta_deg=" + String(romCalPulseEndDelta_, 3) +
+      " ceiling_no_motion_pulses=" + String(romCalCeilingNoMotionPulses_) + COMMAND_DELIMITER;
   telemetryPrintln(line);
 }
 
@@ -887,6 +933,9 @@ bool NMLHandExo::romCalReadPosition(float& angle) {
   angle = ticks * (360.0f / PULSE_RESOLUTION);
   if (!isfinite(angle) || fabsf(angle) > 36000.0f) return false;
   romCalFeedbackAngle_ = angle;
+  if (romCalPhase_ == ROM_CAL_REST) {
+    romCalSettleWindow_.observe(angle, millis(), ROM_CAL_SETTLED_POSITION_DEG, ROM_CAL_SETTLED_MAX_GAP_MS);
+  }
   return true;
 }
 
@@ -896,6 +945,8 @@ bool NMLHandExo::romCalReadFeedback(float& angle, float& velocity) {
       (uint8_t)PRESENT_VELOCITY, romCalId_, (uint32_t)ROM_CAL_IO_TIMEOUT_MS));
   velocity = raw * (0.229f * 6.0f);
   if (dxl_.getLastLibErrCode() != DXL_LIB_OK || !isfinite(velocity)) velocity = NAN;
+  romCalFeedbackVelocityRaw_ = raw;
+  romCalFeedbackVelocity_ = velocity;
   return true; // velocity failure rejects fitting, never fabricates a speed
 }
 
@@ -919,6 +970,7 @@ void NMLHandExo::romCalRecoverFeedback() {
   romCalPulseValid_ = false;
   romCalFitReason_ = "position_unavailable";
   romCalRestStartMs_ = millis();
+  romCalSettleWindow_.reset();
   romCalPhase_ = ROM_CAL_REST;
 }
 
@@ -953,7 +1005,18 @@ bool NMLHandExo::romCalStartPulse(float angle, float velocity) {
     else romCalBeginReturnHome();
     return false;
   }
-  if (!isfinite(velocity) || fabsf(velocity) > ROM_CAL_SETTLED_SPEED_DEG_S) {
+  romCalSettleCheck_ = "pulse_start";
+  const bool quietPosition = romCalPhase_ != ROM_CAL_REST ||
+      romCalSettleWindow_.quietMs() >= ROM_CAL_SETTLED_WINDOW_MS;
+  if (!isfinite(velocity) || fabsf(velocity) > ROM_CAL_SETTLED_SPEED_DEG_S || !quietPosition) {
+    if (isfinite(velocity) && romCalPhase_ == ROM_CAL_REST &&
+        millis()-romCalRestStartMs_ < ROM_CAL_SETTLE_TIMEOUT_MS) {
+      // A completed pulse has already been counted/fitted. Wait at zero without
+      // processing that observation again or increasing amplitude again.
+      romCalPulseValid_ = false;
+      if (fabsf(velocity) > ROM_CAL_SETTLED_SPEED_DEG_S) romCalSettleWindow_.reset();
+      return false;
+    }
     romCalReason_ = isfinite(velocity) ? "not_settled" : "velocity_read";
     romCalFitReason_ = isfinite(velocity) ? "not_settled" : "velocity_unavailable";
     romCalStatus_ = ROM_CAL_STATUS_ABORTED;
@@ -962,17 +1025,24 @@ bool NMLHandExo::romCalStartPulse(float angle, float velocity) {
   }
   romCalPulseStartAngle_ = romCalPulsePeakAngle_ = angle;
   romCalPulseStartVelocity_ = velocity;
+  romCalPulseMaxExcursion_ = 0;
+  romCalPulseEndDelta_ = NAN;
   romCalPredictedDeg_ = jointModels_[romCalIndex_].pulseResponses[romCalDir_].predict(romCalCurrentMa_);
   // This control feedback seeds the next estimate even though fleet telemetry
   // remains estimated. Zero is the off-phase command, not measured consumption.
   jointModels_[romCalIndex_].correct(angle, velocity, 0, true, millis());
-  if (!writeRomSweepCurrent(romCalSign_ * romCalCurrentMa_)) {
+  if (!writeRomSweepCurrent(romCalSign_ * romCalCurrentMa_ * romPulseShape(0, ROM_CAL_SHAPE_STEP_MS))) {
     romCalReason_ = "current_write";
     romCalStatus_ = ROM_CAL_STATUS_ABORTED;
     romCalFinish();
     return false;
   }
   romCalPulseStartMs_ = millis();
+  romCalSettleWindow_.reset();
+  romCalShapeSlot_ = 0;
+  romCalExpectedCurrent_ = directCommandDirection_[romCalIndex_];
+  romCalExposure_.reset(romCalPulseStartMs_, jointModels_[romCalIndex_].params.time_constant);
+  romCalExposure_.command(romCalExpectedCurrent_, romCalPulseStartMs_);
   romCalLastStepMs_ = romCalPulseStartMs_;
   romCalPhase_ = ROM_CAL_RAMP;
   romCalPulseValid_ = true;
@@ -984,6 +1054,7 @@ bool NMLHandExo::romCalStartPulse(float angle, float velocity) {
 bool NMLHandExo::romCalCheckTravel(float angle) {
   const float excursion = fabsf(angle - romCalPulseStartAngle_);
   romCalMaxExcursionDeg_ = fmaxf(romCalMaxExcursionDeg_, excursion);
+  romCalPulseMaxExcursion_ = fmaxf(romCalPulseMaxExcursion_, excursion);
   const float lo = jointLimits_[romCalIndex_][0], hi = jointLimits_[romCalIndex_][1];
   if (angle < lo || angle > hi || excursion >= ROM_CAL_MAX_EXCURSION_DEG) {
     romCalReason_ = angle < lo || angle > hi ? "outside_limits" : "excursion_limit";
@@ -1021,7 +1092,14 @@ void NMLHandExo::romCalEndPulse(const char* reason) {
     romCalFinish();
     return;
   }
+  if (strcmp(reason, "time") == 0 && romCalShapeSlot_ + 1 < ROM_CAL_PULSE_ON_MS / ROM_CAL_SHAPE_STEP_MS) {
+    romCalReason_ = romCalFitReason_ = "shape_overrun";
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalFinish();
+    return;
+  }
   romCalRestStartMs_ = millis();
+  romCalSettleWindow_.reset();
   romCalPhase_ = ROM_CAL_REST;
   float angle, velocity;
   if (!romCalReadFeedback(angle, velocity)) {
@@ -1029,6 +1107,7 @@ void NMLHandExo::romCalEndPulse(const char* reason) {
     return;
   }
   romCalPulsePeakAngle_ = angle;
+  romCalPulseEndDelta_ = angle - romCalPulseStartAngle_;
   if (!romCalCheckTravel(angle)) return;
   jointModels_[romCalIndex_].correct(angle, velocity, 0, true, millis());
 }
@@ -1045,7 +1124,7 @@ void NMLHandExo::romCalCompletePulse(float angle, float velocity) {
   if ((angle - romCalPulsePeakAngle_) * wantSign > 0) romCalPulsePeakAngle_ = angle;
   const float delta = romCalPulsePeakAngle_ - romCalPulseStartAngle_;
   jointModels_[romCalIndex_].correct(angle, velocity, 0, true, millis());
-  if (fabsf(delta) >= ROM_CAL_ONSET_DEG && delta * wantSign < 0) {
+  if (romCalObservedDeg_ <= -ROM_CAL_ONSET_DEG) {
     romCalFitReason_ = "wrong_direction";
     // One correction only, always after zero current and the rest interval.
     // Never learn from the wrong-way probe or oscillate the sign indefinitely.
@@ -1071,12 +1150,9 @@ void NMLHandExo::romCalCompletePulse(float angle, float velocity) {
     // Fit from the complete powered + unpowered response, compensating the
     // measured starting velocity. Stalls, recoil and saturation are excluded.
     JointModelParams& params = jointModels_[romCalIndex_].params;
-    const float physicalCurrent = romCalSign_ * romCalCurrentMa_ *
-                                  (flipMotor_[romCalIndex_] ? -1.0f : 1.0f);
-    const float gain = romPulseGain(params, angle - romCalPulseStartAngle_,
-        romCalPulseStartVelocity_, velocity, physicalCurrent,
-        romCalPulseOnMs_ * 0.001f, (millis() - romCalRestStartMs_) * 0.001f,
-        ROM_CAL_ONSET_DEG, &romCalFitReason_);
+    const float gain = romShapedPulseGain(params, angle - romCalPulseStartAngle_,
+        romCalPulseStartVelocity_, velocity, romCalExposure_,
+        (millis() - romCalRestStartMs_) * 0.001f, ROM_CAL_ONSET_DEG, &romCalFitReason_);
     if (isfinite(gain) && ROM_CAL_UPDATE_MODEL_GAIN) {
       const float bounded = JointStateModel::bound(gain,
           params.gain * (1.0f - ROM_CAL_GAIN_CHANGE_FRAC),
@@ -1086,14 +1162,12 @@ void NMLHandExo::romCalCompletePulse(float angle, float velocity) {
     }
   } else {
     romCalFitReason_ = "insufficient_progress";
-    if (romCalPulseLimited_) romCalStallPulses_ = 0;
-    else if (romCalStallPulses_ < 255) ++romCalStallPulses_;
   }
   // Keep the actual furthest measured endpoint even when its final approach
   // is smaller than the motion/noise threshold used for stall evidence.
   if (progress > 0) romCalEndstopAngle_ = romCalPulsePeakAngle_;
   auto& response = jointModels_[romCalIndex_].pulseResponses[romCalDir_];
-  // The displacement map is specific to the nominal 20-ms input. Do not learn
+  // The displacement map is specific to the nominal 40-ms shaped input. Do not learn
   // a false amplitude slope from an early-cutoff pulse of a different duration.
   if (romCalPulseLimited_ || romCalPulseOnMs_ < ROM_CAL_PULSE_ON_MS) {
     romCalResponseReason_ = "pulse_limited";
@@ -1102,6 +1176,30 @@ void NMLHandExo::romCalCompletePulse(float angle, float velocity) {
                            response.gradientSamples ? "local_gradient" : "ratio_seed";
   } else {
     romCalResponseReason_ = "invalid_response";
+  }
+  // A small pulse can fail to overcome friction away from an endstop. Require
+  // repeated full-ceiling pulses at a stable endpoint, not merely <0.3 deg per
+  // pulse or a few accumulated encoder counts since starting the campaign.
+  const float low = fminf(angle, fminf(romCalPulseStartAngle_, romCalPulsePeakAngle_));
+  const float high = fmaxf(angle, fmaxf(romCalPulseStartAngle_, romCalPulsePeakAngle_));
+  if (romCalCurrentMa_ < ROM_CAL_MAX_CURRENT_MA || romCalPulseLimited_ ||
+      high - low > ROM_CAL_SETTLED_POSITION_DEG) {
+    romCalStallPulses_ = 0;
+  } else {
+    if (!romCalStallPulses_ ||
+        fmaxf(romCalStallHigh_, high) - fminf(romCalStallLow_, low) > ROM_CAL_SETTLED_POSITION_DEG) {
+      romCalStallLow_ = low; romCalStallHigh_ = high; romCalStallPulses_ = 0;
+    }
+    romCalStallLow_ = fminf(romCalStallLow_, low);
+    romCalStallHigh_ = fmaxf(romCalStallHigh_, high);
+    if (romCalStallPulses_ < 255) ++romCalStallPulses_;
+  }
+  if (!romCalPulseLimited_ && romCalPulseOnMs_ >= ROM_CAL_PULSE_ON_MS &&
+      romCalCurrentMa_ >= ROM_CAL_MAX_CURRENT_MA &&
+      fabsf(romCalObservedDeg_) < ROM_CAL_ONSET_DEG) {
+    if (romCalCeilingNoMotionPulses_ < 255) ++romCalCeilingNoMotionPulses_;
+  } else {
+    romCalCeilingNoMotionPulses_ = 0;
   }
   romCalReportPulse(); // zero current throughout this diagnostic write
   if (romCalCurrentMa_ <= ROM_CAL_MIN_CURRENT_MA &&
@@ -1112,17 +1210,23 @@ void NMLHandExo::romCalCompletePulse(float angle, float velocity) {
     return;
   }
   const bool travelled = (romCalEndstopAngle_ - romCalHomeAngle_) * wantSign >= ROM_CAL_PROGRESS_DEG;
-  const bool high = romCalCurrentMa_ >= ROM_CAL_STALL_MIN_CURRENT_FRAC * ROM_CAL_MAX_CURRENT_MA;
-  if (romCalStallPulses_ >= ROM_CAL_STALL_PULSES && high && travelled) {
+  const bool movingEvidence = response.movingSamples >= ROM_CAL_MIN_MOVING_PULSES;
+  if (romCalStallPulses_ >= ROM_CAL_STALL_PULSES && travelled && movingEvidence) {
     romCalStatus_ = ROM_CAL_STATUS_OK;
     romCalReason_ = "endstop";
     romCalBeginReturnHome();
     return;
   }
-  if (romCalCurrentMa_ >= ROM_CAL_MAX_CURRENT_MA && !travelled &&
+  if (romCalCurrentMa_ >= ROM_CAL_MAX_CURRENT_MA && (!travelled || !movingEvidence) &&
       romCalStallPulses_ >= ROM_CAL_STALL_PULSES) {
     romCalStatus_ = ROM_CAL_STATUS_CEILING;
     romCalReason_ = "current_ceiling";
+    romCalBeginReturnHome();
+    return;
+  }
+  if (romCalCeilingNoMotionPulses_ >= ROM_CAL_CEILING_NO_MOTION_PULSES) {
+    romCalStatus_ = ROM_CAL_STATUS_CEILING;
+    romCalReason_ = "response_saturated";
     romCalBeginReturnHome();
     return;
   }
@@ -1151,10 +1255,9 @@ void NMLHandExo::serviceRomCalibration() {
     return;
   }
   // An explicit STOP, disable, mode change or watchdog stop must not be undone.
-  const float expectedCurrent = romCalSign_ * romCalCurrentMa_ *
-                                (flipMotor_[romCalIndex_] ? -1.0f : 1.0f);
+  const float expectedCurrent = romCalExpectedCurrent_;
   if (motorControlMode_ != "CURRENT" || romCalStopRequested_ || !torqueEnabled_[romCalIndex_] ||
-      (romCalPhase_ == ROM_CAL_RAMP && (!directCommandActive_[romCalIndex_] ||
+      (romCalPhase_ == ROM_CAL_RAMP && ((expectedCurrent != 0 && !directCommandActive_[romCalIndex_]) ||
           fabsf(directCommandDirection_[romCalIndex_] - expectedCurrent) > 0.5f)) ||
       (romCalPhase_ == ROM_CAL_REST && directCommandActive_[romCalIndex_])) {
     if (motorControlMode_ != "CURRENT") romCalReason_ = "mode_changed";
@@ -1192,8 +1295,13 @@ void NMLHandExo::serviceRomCalibration() {
       return;
     }
     if (!romCalCheckTravel(angle)) return;
-    if (!isfinite(velocity) || fabsf(velocity) > ROM_CAL_SETTLED_SPEED_DEG_S) {
-      if (isfinite(velocity) && millis() - romCalRestStartMs_ < ROM_CAL_SETTLE_TIMEOUT_MS) return;
+    romCalSettleCheck_ = "rest";
+    if (!isfinite(velocity) || fabsf(velocity) > ROM_CAL_SETTLED_SPEED_DEG_S ||
+        romCalSettleWindow_.quietMs() < ROM_CAL_SETTLED_WINDOW_MS) {
+      if (isfinite(velocity) && millis() - romCalRestStartMs_ < ROM_CAL_SETTLE_TIMEOUT_MS) {
+        if (fabsf(velocity) > ROM_CAL_SETTLED_SPEED_DEG_S) romCalSettleWindow_.reset();
+        return;
+      }
       romCalReason_ = isfinite(velocity) ? "not_settled" : "velocity_read";
       romCalFitReason_ = isfinite(velocity) ? "not_settled" : "velocity_unavailable";
       romCalStatus_ = ROM_CAL_STATUS_ABORTED;
@@ -1213,6 +1321,28 @@ void NMLHandExo::serviceRomCalibration() {
   if (travel >= ROM_CAL_PULSE_TRAVEL_DEG || fast) {
     romCalPulseLimited_ = true;
     romCalEndPulse(fast ? "speed" : "travel");
+    return;
+  }
+  // A read can cross the pulse deadline. Never write a late nonzero sample.
+  if (elapsed >= ROM_CAL_PULSE_ON_MS) { romCalEndPulse("time"); return; }
+  const uint8_t slot = elapsed / ROM_CAL_SHAPE_STEP_MS;
+  if (slot > romCalShapeSlot_ + 1) {
+    romCalReason_ = romCalFitReason_ = "shape_overrun";
+    romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+    romCalFinish();
+    return;
+  }
+  if (slot != romCalShapeSlot_) {
+    if (!writeRomSweepCurrent(romCalSign_ * romCalCurrentMa_ * romPulseShape(slot, ROM_CAL_SHAPE_STEP_MS))) {
+      romCalReason_ = "current_write";
+      romCalStatus_ = ROM_CAL_STATUS_ABORTED;
+      romCalFinish();
+      return;
+    }
+    romCalShapeSlot_ = slot;
+    romCalExpectedCurrent_ = directCommandDirection_[romCalIndex_];
+    // The write itself can block, too. Cut off before yielding to other work.
+    if (millis() - romCalPulseStartMs_ >= ROM_CAL_PULSE_ON_MS) romCalEndPulse("time");
   }
 
 }
@@ -1222,6 +1352,7 @@ void NMLHandExo::serviceRomCalibration() {
 // ====================================================================================
 void NMLHandExo::update() {
   EXO_PROFILE(CONTROL);
+  if (isAssistBusy()) { serviceJointModels(); serviceAssist(); return; }
     serviceJointModels();
     servicePositionMonitor();
 
@@ -1363,6 +1494,7 @@ float NMLHandExo::getRelativeAngle(uint8_t id) {
   return rel_angle;
 }
 void NMLHandExo::setRelativeAngle(uint8_t id, float relativeAngle) {
+  if (isAssistBusy()) return;
   if (!isfinite(relativeAngle)) return;
   int index = getIndexById(id);
   if (index == -1) {
@@ -1399,6 +1531,7 @@ float NMLHandExo::getAbsoluteAngle(uint8_t id) {
   return readPresentPositionTicks(id, ticks) ? ticks * 360.0f / PULSE_RESOLUTION : NAN;
 }
 void NMLHandExo::setAbsoluteAngle(uint8_t id, float absoluteAngle) {
+  if (isAssistBusy()) return;
   if (!isfinite(absoluteAngle)) return;
   int index = getIndexById(id);
   if (index == -1) {
@@ -1423,6 +1556,7 @@ bool NMLHandExo::setAbsoluteAnglesSync(const MotorAngleTarget* targets,
                                        uint8_t count, uint8_t* writtenOut,
                                        uint8_t* skippedOut,
                                        int16_t* libErrorOut) {
+  if (isAssistBusy()) return false;
   if (writtenOut) *writtenOut = 0;
   if (skippedOut) *skippedOut = 0;
   if (libErrorOut) *libErrorOut = DXL_LIB_OK;
@@ -1734,6 +1868,7 @@ bool NMLHandExo::getTorqueEnabledStatus(uint8_t id) {
 }
 
 void NMLHandExo::enableTorque(uint8_t id, bool enable) {
+  if (isAssistBusy()) { if (enable) return; stopAssist("disabled"); }
   const int index = getIndexById(id);
   if (index < 0) return;
   serviceJointModels();
@@ -1814,6 +1949,7 @@ bool NMLHandExo::setGoalCurrents(const uint8_t* ids, const float* currents, uint
   return true;
 }
 bool NMLHandExo::setGoalCurrent(uint8_t id, float current_mA) {
+  if (isAssistBusy()) return false;
   int index = getIndexById(id);
   if (index == -1 || !isfinite(current_mA) || motorControlMode_ != "CURRENT" || positionHoldActive_[index]) return false;
 
@@ -1847,9 +1983,11 @@ bool NMLHandExo::writeRomSweepCurrent(float current_mA) {
   current_mA = constrain(current_mA, -ceiling, ceiling);
   if (flipMotor_[index]) current_mA *= -1.0f;
 
+  current_mA = roundf(current_mA);
   serviceJointModels();
   if (!EXO_PROFILE_CALL(DXL_WRITE, dxl_.writeControlTableItem((uint8_t)GOAL_CURRENT, romCalId_,
         (int32_t)round(current_mA), (uint32_t)ROM_CAL_IO_TIMEOUT_MS))) return false;
+  if (romCalPhase_ == ROM_CAL_RAMP) romCalExposure_.command(current_mA, millis());
   if (current_mA == 0 && romCalPhase_ == ROM_CAL_RAMP) {
     romCalPulseOnMs_ = millis() - romCalPulseStartMs_;
     if (romCalPulseOnMs_ > romCalMaxPulseOnMs_) romCalMaxPulseOnMs_ = romCalPulseOnMs_;
@@ -2587,6 +2725,7 @@ float NMLHandExo::limitDirectVelocity(
   return velocity_rpm * smoothScale;
 }
 bool NMLHandExo::setGoalVelocity(uint8_t id, float velocity_rpm) {
+  if (isAssistBusy()) return false;
   int index = getIndexById(id);
   if (index == -1 || !isfinite(velocity_rpm) || motorControlMode_ != "VELOCITY" ||
       !directVelocityLimitVerified_[index] || positionHoldActive_[index]) return false;
@@ -2625,6 +2764,7 @@ float NMLHandExo::getPresentVelocity(uint8_t id) {
   return flipMotor_[index] ? -rpm : rpm;
 }
 void NMLHandExo::stopDirectControl(uint8_t id) {
+  if (isAssistBusy()) stopAssist("external_stop");
   if (id == romCalId_ && (romCalPhase_ == ROM_CAL_RAMP || romCalPhase_ == ROM_CAL_REST)) {
     romCalStopRequested_ = true;
     if (strcmp(romCalReason_, "none") == 0) romCalReason_ = "stop_requested";
@@ -2851,6 +2991,7 @@ bool NMLHandExo::ensureDirectVelocityLimit(uint8_t id) {
 }
 
 bool NMLHandExo::setMotorControlMode(const String& mode) {
+  if (isAssistBusy()) { stopAssist("mode_changed"); if (isAssistBusy()) return false; }
   String m = mode;
   m.toUpperCase();
   for (int i = 0; i < numMotors_; i++) {

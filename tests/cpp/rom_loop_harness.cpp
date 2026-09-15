@@ -19,6 +19,8 @@ struct Reader {
 struct Exo {
   bool rom = true, powered = true;
   uint32_t cutoff = 0;
+  bool isAssistBusy() const { return false; }
+  void serviceAssist() {}
   void serviceRomCalibration() {
     if (powered && nowMs >= 150) { powered = false; cutoff = nowMs; }
   }

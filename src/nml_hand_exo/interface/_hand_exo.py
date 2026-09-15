@@ -708,6 +708,108 @@ class HandExo(object):
             params[name] = value
         return params
 
+    def _assist_command(self, command, ids=(), values=(), *, timeout=1.0):
+        if getattr(self.device, "usb_protocol", None) == "protobuf-v1":
+            return self.device.assist_command(command, ids, values, timeout=timeout)
+        suffix = [str(mid) for mid in ids] + [format(v, ".9g") for v in values]
+        text = command + (":" + ":".join(suffix) if suffix else "")
+        return self._command_transaction(text, expected=f"OK: {command}", timeout=timeout)
+
+    def configure_assist(self, motor_id: int, *, threshold_mA=10.0,
+                         gain_deg_per_mA=0.01, current_cap_mA=40.0):
+        """Configure one joint while assist is off; lower threshold is more sensitive.
+
+        Effort is a measured holding-current residual, not calibrated external torque.
+        This configuration never enables torque or initiates motion.
+        """
+        mid = self._joint_model_id(motor_id)
+        values = (threshold_mA, gain_deg_per_mA, current_cap_mA)
+        for value, lo, hi in zip(values, (5, .001, 10), (60, .05, 80)):
+            if isinstance(value, bool) or not math.isfinite(float(value)) or not lo <= float(value) <= hi:
+                raise ValueError("Invalid assist threshold, gain, or current cap")
+        values = tuple(float(v) for v in values)
+        if values[0] >= values[2]:
+            raise ValueError("Assist threshold must be below current cap")
+        return self._assist_command("assist_config", [mid], values)
+
+    def calibrate_assist(self, motor_ids):
+        """Capture bias at the current pose in current-position mode. Updated
+        firmware installs a capped hold before enabling selected IDs; all
+        unselected motors must be disabled. The GUI sets the mode automatically. Keep
+        heartbeat_assist running at 250 ms through calibration, ready and active.
+        """
+        ids = [self._joint_model_id(mid) for mid in motor_ids]
+        if not ids or len(ids) > 18 or len(set(ids)) != len(ids):
+            raise ValueError("Use 1..18 unique explicit motor IDs")
+        try:
+            return self._assist_command("assist_calibrate", ids, timeout=2.0)
+        except RuntimeError as exc:
+            if not isinstance(exc, ProtocolResponseError) and not str(exc).startswith("Firmware rejected"):
+                raise
+            # The binary reply carries a status enum. Fetch the existing slow
+            # status endpoint before GUI cleanup can obscure the rejection.
+            try:
+                status = self.get_assist_status()
+            except Exception:
+                raise exc
+            reason = status["reason"]
+            hints = {
+                "requires_current_position": "In Setup select current-position mode, then enable the selected joints.",
+                "motor_requires_current_position": "Select current-position mode and re-enable the selected joints.",
+                "motor_disabled": "Enable this selected joint in Setup before calibrating assist.",
+                "unselected_motor_enabled": "Disable this joint in Setup or include it in the assist selection.",
+                "not_settled": "Wait for this joint to stop moving before calibrating bias.",
+                "stored_limit": "The selected pose is within 2 motor degrees of a stored limit; reposition inside the range.",
+                "motor_current_limit": "Reduce the assist current cap to fit this motor's configured limit.",
+                "current_budget": "The sum of selected assist caps exceeds the total current budget.",
+                "feedback_or_torque_read": "Check the motor connection and that torque is enabled.",
+                "position_hold_active": "Release the existing position-hold control before assist calibration.",
+                "calibration_busy": "Finish or cancel the other calibration first.",
+            }
+            detail = f"assist calibration rejected: {reason}"
+            if "reject_id" in status:
+                detail += f" (ID {status['reject_id']}"
+                for key, label in (("reject_angle_deg", "angle"), ("reject_velocity_deg_s", "velocity")):
+                    value = status.get(key)
+                    if value is not None and math.isfinite(value):
+                        detail += f", {label}={value:.3f}"
+                detail += ")"
+            raise ProtocolResponseError(command="assist_calibrate", expected="OK: assist_calibrate",
+                                        raw_response=f"{detail}. {hints.get(reason, 'Check assist_status for details.')}") from exc
+
+    def start_assist(self):
+        """Enable measured-effort assistance after successful bias calibration."""
+        return self._assist_command("assist_start")
+
+    def heartbeat_assist(self):
+        """Renew the firmware's 1-second lease; an expired session stays off."""
+        return self._assist_command("assist_heartbeat", timeout=.4)
+
+    def stop_assist(self):
+        """Disarm and torque-off the selected assist IDs; invalidate bias."""
+        return self._assist_command("assist_stop", timeout=.5)
+
+    def get_assist_status(self):
+        """Read measured effort/deflection, bias/noise, progress and fault reason."""
+        reply = self._command_transaction("assist_status", expected="ASSIST:", timeout=.4)
+        header = re.search(r"ASSIST: state=(\d+) reason=(\w+)", reply)
+        if not header or int(header[1]) not in range(5):
+            raise ValueError("Invalid assist status reply")
+        result = dict(state=int(header[1]), reason=header[2], joints={})
+        details = dict(re.findall(r"(reject_\w+)=\s*([^\s;]+)", reply.splitlines()[0]))
+        if "reject_id" in details:
+            result["reject_id"] = int(details["reject_id"])
+        for key in ("reject_angle_deg", "reject_velocity_deg_s"):
+            if key in details:
+                result[key] = float(details[key])
+        for line in reply.splitlines():
+            if not line.strip().startswith("ASSIST_JOINT:"):
+                continue
+            fields = dict(re.findall(r"(\w+)=([^\s;]+)", line))
+            mid = self._joint_model_id(int(fields.pop("id")))
+            result["joints"][mid] = {key: float(value) for key, value in fields.items()}
+        return result
+
     def set_joint_model(self, motor_id: int, *, gain=0.1, time_constant=0.15,
                         max_velocity=60.0, stiffness=0.0, moment=0.0,
                         timeout: float = 1.0) -> str:
@@ -1266,6 +1368,7 @@ class HandExo(object):
                 ("USB Text Port", "usb_text_port", str), ("USB Binary Port", "usb_binary_port", str),
                 ("Model Step Ms", "model_step_ms", int), ("I/O Profile", "io_profile_version", int),
                 ("USB Features", "usb_features", str.split),
+                ("Assist Protocol", "assist_protocol", str),
             ):
                 if ln.startswith(label + ":"):
                     info[key] = convert(ln.partition(":")[2].strip())
@@ -2630,8 +2733,9 @@ class HandExo(object):
         Firmware >= 0.8.0. Drives a single joint under current-mode control,
         increasing effort while tracking measured net progress. A moved-then-stalled
         joint reports its furthest measured angle as an endstop candidate.
-        v0.9.1 starts at 20 mA with 20-ms pulses and at least 400 ms of rest,
-        adjusting amplitude by at most 2 mA toward a 0.5-degree response.
+        Updated v0.9.1 starts at 40 mA with 40-ms shaped pulses, a 160-mA ceiling,
+        and at least 250 ms of rest,
+        adjusting amplitude by at most 6 mA toward a 0.65-degree response.
         A per-direction response model and telemetry gain learn in RAM from
         valid observations. Excess travel aborts; automatic return is disabled
         by default. Current/travel bounds come from firmware ROM_CAL_* settings.
@@ -2828,15 +2932,18 @@ class HandExo(object):
             "current_mA": _as_float(fields.get("current_mA")),
             "status": fields.get("status"),
         }
-        for key in ("pulses", "fit_samples", "pulse_on_ms", "max_pulse_on_ms", "recoveries"):
+        for key in ("pulses", "fit_samples", "pulse_on_ms", "max_pulse_on_ms", "recoveries",
+                    "response_samples", "no_motion_samples", "velocity_raw", "settle_quiet_ms",
+                    "ceiling_no_motion_pulses"):
             if key in fields:
                 result[key] = int(fields[key])
         if "model_gain" in fields:
             result["model_gain"] = _as_float(fields["model_gain"])
-        for key in ("reason", "fit_reason", "pulse_stop", "response_reason"):
+        for key in ("reason", "fit_reason", "pulse_stop", "response_reason", "settle_check"):
             if key in fields:
                 result[key] = fields[key]
-        for key in ("angle", "limit_min", "limit_max", "max_excursion_deg", "predicted_deg", "observed_deg"):
+        for key in ("angle", "limit_min", "limit_max", "max_excursion_deg", "predicted_deg", "observed_deg",
+                    "velocity_deg_s", "settle_span_deg", "net_travel_deg"):
             if key in fields:
                 result[key] = _as_float(fields[key])
         return result

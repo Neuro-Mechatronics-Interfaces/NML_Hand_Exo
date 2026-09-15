@@ -167,3 +167,38 @@ def test_rom_diagnostics_explain_the_abort_and_survive_parsing():
     assert result['fit_reason'] == 'velocity_limit' and result['pulse_stop'] == 'speed'
     assert result['max_excursion_deg'] == 1.25 and result['predicted_deg'] is None
     assert result['observed_deg'] == 1.25 and result['response_reason'] == 'pulse_limited'
+
+
+def test_ceiling_summary_reports_encoder_travel_without_an_endstop():
+    gui = SimpleNamespace(_rom_running=True, _rom_current=("thumb", "extend", 14),
+                          _rom_expected=1, _rom_seen=0, _rom_results=[], _log=Mock(),
+                          _mark_rom_endstop=Mock(), _rom_result_timer=Mock(), _rom_send_next=Mock())
+    line = ("ROM_CAL_RESULT: id=14 dir=extend home=236.02 endstop=nan current_mA=80 "
+            "status=ceiling pulses=33 fit_samples=0 reason=current_ceiling angle=236.95 "
+            "net_travel_deg=0.930 response_samples=0 no_motion_samples=33 "
+            "velocity_deg_s=1.374 velocity_raw=1 settle_check=rest "
+            "settle_span_deg=0.088 settle_quiet_ms=200;")
+    HandExoGUI._on_rom_serial_line(gui, line)
+    result = gui._rom_results[0]
+    assert result['endstop'] is None and result['response_samples'] == 0
+    assert result['velocity_raw'] == 1 and result['velocity_deg_s'] == 1.374
+    assert result['settle_check'] == 'rest' and result['settle_quiet_ms'] == 200
+    messages = [call.args[0] for call in gui._log.call_args_list]
+    assert any('+0.93 motor-encoder degrees' in message for message in messages)
+    assert any('pulse ceiling' in message for message in messages)
+    gui._rom_send_next.assert_called_once()
+
+
+def test_saturation_result_retains_prior_motion_but_never_claims_an_endstop():
+    gui = SimpleNamespace(_rom_running=True, _rom_current=("thumb", "flex", 15),
+                          _rom_expected=1, _rom_seen=0, _rom_results=[], _log=Mock(),
+                          _mark_rom_endstop=Mock(), _rom_result_timer=Mock(), _rom_send_next=Mock())
+    HandExoGUI._on_rom_serial_line(gui,
+        "ROM_CAL_RESULT: id=15 dir=flex home=122.85 endstop=nan current_mA=160 "
+        "status=ceiling reason=response_saturated net_travel_deg=23.666 "
+        "response_samples=36 ceiling_no_motion_pulses=6;")
+    result = gui._rom_results[0]
+    assert result['endstop'] is None and result['ceiling_no_motion_pulses'] == 6
+    assert result['response_samples'] == 36
+    assert any('repeated low-response pulses' in call.args[0] for call in gui._log.call_args_list)
+    gui._rom_send_next.assert_called_once()

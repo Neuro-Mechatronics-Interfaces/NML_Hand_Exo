@@ -1,8 +1,7 @@
 # AGENTS.md — NML Hand Exoskeleton
 
 Dual-stack: Arduino C++ on OpenRB-150 + Python SDK on host PC.
-9 Dynamixel XL330 motors per side. USB and Dynamixel links default to 1 Mbps;
-HC-05 Bluetooth uses Serial3 on D13/D14 at 115200 baud.
+9 Dynamixel XL330 motors per side. USB and Dynamixel links default to 1 Mbps; HC-05 Bluetooth uses Serial3 on D13/D14 at 115200 baud.
 
 ## Agent quickstart (do first)
 

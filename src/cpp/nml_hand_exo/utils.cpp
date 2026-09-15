@@ -460,6 +460,43 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   int id = -1; // Default to -1 if not found
   int val = 0; // Default value for commands that require a value
 
+  // Assist owns all actuators, including READY while the operator enables it.
+  // Heavy bus queries and every competing setter are rejected during ownership.
+  if (exo.isAssistBusy() && !(cmd.startsWith("assist_") || cmd == "stop" || cmd == "disable" ||
+      cmd == "info" || cmd == "help" || cmd == "get_telemetry_fast" ||
+      cmd == "get_utc_time" || cmd == "io_profile" || cmd == "loop_stats")) {
+    commandPrint(F("ERROR: assist owns motor control; stop assist first")); return;
+  }
+  if (cmd.startsWith("assist_")) {
+    int fields = 0;
+    for (unsigned k = 0; k < token.length(); ++k) if (token[k] == ':') ++fields;
+    auto number = [](const String& text, float& result) {
+      if (!text.length()) return false;
+      char* end = nullptr; result = strtof(text.c_str(), &end);
+      return end && *end == '\0' && isfinite(result);
+    };
+    bool ok = false;
+    if (cmd == "assist_status" && fields == 0) { commandPrint(exo.assistStatus()); return; }
+    if (cmd == "assist_stop" && fields == 0) { exo.stopAssist(); ok = true; }
+    else if (cmd == "assist_start" && fields == 0) ok = exo.startAssist();
+    else if (cmd == "assist_heartbeat" && fields == 0) ok = exo.heartbeatAssist();
+    else if (cmd == "assist_config" && fields == 4) {
+      float mid, threshold, gain, cap;
+      if (number(getArg(token, 1), mid) && mid >= 1 && mid <= 253 && mid == floorf(mid) &&
+          number(getArg(token, 2), threshold) && number(getArg(token, 3), gain) && number(getArg(token, 4), cap))
+        ok = exo.configureAssist((uint8_t)mid, threshold, gain, cap);
+    } else if (cmd == "assist_calibrate" && fields >= 1 && fields <= N_MOTORS) {
+      uint8_t ids[N_MOTORS]; bool valid = true;
+      for (int k = 0; k < fields; ++k) {
+        float mid;
+        if (!number(getArg(token, k+1), mid) || mid < 1 || mid > 253 || mid != floorf(mid)) { valid = false; break; }
+        ids[k] = (uint8_t)mid;
+      }
+      if (valid) ok = exo.calibrateAssist(ids, fields);
+    }
+    commandPrint(String(ok ? "OK: " : "ERROR: rejected ") + cmd); return;
+  }
+
   // ========== Supported high-level commands ==========
   if (cmd == "set_utc_time" || cmd == "get_utc_time") {
     if (cmd == "set_utc_time") {
@@ -1803,6 +1840,9 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" get_telemetry_fast    |  ID:ID:ID.../ALL     | // Binary current/velocity/position telemetry frame"));
     commandPrint(F(" set_utc_time          | UNIX_MS | // Synchronize UTC; no effect on control timing"));
     commandPrint(F(" get_utc_time          |         | // UTC ms, synchronization flag and uptime"));
+    commandPrint(F(" assist_config         | ID:THRESHOLD_MA:GAIN_DEG_PER_MA:CAP_MA | // Configure bounded assistance while off"));
+    commandPrint(F(" assist_calibrate      | ID[:ID...]           | // Relaxed bias capture; selected motors enabled in CURRENT_POSITION"));
+    commandPrint(F(" assist_start / assist_stop / assist_heartbeat / assist_status | // Explicit assist, 1-second lease, measured status"));
     commandPrint(F(" set_joint_model       | ID:GAIN:TAU:VMAX:STIFFNESS:MOMENT | // Tune telemetry model only"));
     commandPrint(F(" get_joint_model       | ID | // Query model and trigger threshold"));
     commandPrint(F(" set_estimate_holdoff  | MS | // Telemetry quiet period (50..5000)"));

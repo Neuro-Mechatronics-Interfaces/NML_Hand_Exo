@@ -1,0 +1,18 @@
+digraph assist {
+  rankdir=TB;
+  node [shape=box, style="rounded,filled", fillcolor="#eef4fb", fontname="Helvetica", fontsize=11];
+  edge [fontname="Helvetica", fontsize=9];
+  OFF [label="OFF\nSelect IDs; configure sensitivity and cap"];
+  BIAS [label="CALIBRATING\nCapture pose; cap current; set goal; enable selected IDs\n50 stationary measured samples per joint"];
+  READY [label="READY\nHold pose; heartbeat required\nWait for explicit Assist on"];
+  ACTIVE [label="ACTIVE\nSense agreeing load + deflection\nBounded step; ignore effort while settling"];
+  STOP [label="STOP / FAULT\nZero current and torque off selected IDs\nRetain ownership and retry if unconfirmed"];
+  OFF -> BIAS [label="explicit calibration; GUI sets current-position mode\nfirmware checks IDs, pose, budget before enabling"];
+  BIAS -> READY [label="valid bias + noise + headroom"];
+  READY -> ACTIVE [label="explicit Assist on"];
+  ACTIVE -> ACTIVE [label="settled feedback, then new effort evidence"];
+  BIAS -> STOP [label="fault / stop / lost heartbeat"];
+  READY -> STOP [label="fault / stop / lost heartbeat"];
+  ACTIVE -> STOP [label="fault / stop / lost heartbeat"];
+  STOP -> OFF [label="torque-off confirmed; bias invalidated"];
+}

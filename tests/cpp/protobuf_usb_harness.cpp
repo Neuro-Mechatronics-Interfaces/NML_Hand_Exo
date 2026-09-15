@@ -27,7 +27,13 @@ constexpr int N_MOTORS = 18;
 struct NMLHandExo {
   int writes = 0, reads = 0, stops = 0;
   float value = 0;
-  bool accept = true;
+  bool accept = true, assistBusy = false;
+  bool isAssistBusy() const { return assistBusy; }
+  bool configureAssist(uint8_t, float t, float g, float cap) { value = cap; return accept && isfinite(t) && isfinite(g) && isfinite(cap); }
+  bool calibrateAssist(const uint8_t*, uint8_t) { ++writes; return accept; }
+  bool startAssist() { ++writes; return accept; }
+  bool heartbeatAssist() { return accept; }
+  void stopAssist(const char* = "stopped") { ++stops; assistBusy = false; }
   std::string motorControlMode_ = "CURRENT";
   bool positionHoldActive_[9] = {};
   bool setGoalCurrents(const uint8_t*, const float*, uint8_t);
@@ -87,6 +93,7 @@ int main(int argc, char** argv) {
   std::string hex = argv[1];
   for (size_t i=0;i<hex.size();i+=2) usb.input.push_back(std::stoul(hex.substr(i,2),nullptr,16));
   NMLHandExo exo;
+  if (argc > 2 && std::string(argv[2]) == "assist") exo.assistBusy = true;
   GestureController gc(exo);
   exo.accept = argc < 3 || std::string(argv[2]) != "reject";
   if (argc >= 3 && std::string(argv[2]) == "hold") exo.positionHoldActive_[6] = true; // ID 17

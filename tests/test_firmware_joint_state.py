@@ -68,10 +68,11 @@ def test_usb_nx_stays_on_primary_without_blocking_bluetooth_copy(tmp_path):
     build_and_run(source, tmp_path)
 
 
-def test_real_rom_pulses_adapt_and_stop_excessive_travel(tmp_path):
+@pytest.mark.parametrize("shape_step", [5, 10])
+def test_real_rom_pulses_adapt_and_stop_excessive_travel(tmp_path, shape_step):
     implementation = (FIRMWARE / "nml_hand_exo.cpp").read_text(encoding="utf-8")
     config = (FIRMWARE / "config.h").read_text(encoding="utf-8")
-    constants = "\n".join(re.findall(r"^constexpr [^\n]*ROM_CAL_[^\n]*;", config, re.MULTILINE))
+    constants = f"#define EXO_ROM_SHAPE_STEP_MS {shape_step}\n" + "\n".join(re.findall(r"^constexpr [^\n]*ROM_CAL_[^\n]*;", config, re.MULTILINE))
     start = implementation.index("bool NMLHandExo::romCalReadPosition(")
     end = implementation.index("// ====================================================================================", start)
     writer_start = implementation.index("bool NMLHandExo::writeRomSweepCurrent(")
@@ -86,7 +87,19 @@ def test_real_rom_pulses_adapt_and_stop_excessive_travel(tmp_path):
                       .replace("// ROM_IMPLEMENTATION", implementation[start:end] +
                                implementation[implementation.index('void NMLHandExo::romCalBeginReturnHome()'):
                                               implementation.index('void NMLHandExo::romCalFinish()')])
+                      .replace("// ROM_ARM", implementation[implementation.index('bool NMLHandExo::romCalArmMotor('):
+                                                            implementation.index('bool NMLHandExo::isRomCalibrating()')])
                       .replace("// ROM_WRITER", implementation[writer_start:writer_end])
                       .replace("// ROM_STOP", implementation[stop_start:stop_end])
                       .replace("// ROM_SAFETY", implementation[safety_start:safety_end]), encoding="utf-8")
+    build_and_run(source, tmp_path)
+
+
+def test_real_assist_calibration_and_guarded_control(tmp_path):
+    implementation = (FIRMWARE / "assist_controller.cpp").read_text(encoding="utf-8")
+    implementation = implementation[implementation.index("bool NMLHandExo::configureAssist("):
+                                    implementation.index("String NMLHandExo::assistStatus()")]
+    harness = (ROOT / "tests/cpp/assist_harness.cpp").read_text(encoding="utf-8")
+    source = tmp_path / "assist.cpp"
+    source.write_text(harness.replace("// ASSIST_IMPLEMENTATION", implementation), encoding="utf-8")
     build_and_run(source, tmp_path)

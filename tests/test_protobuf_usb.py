@@ -334,3 +334,34 @@ def test_current_batch_stops_after_first_bus_failure(firmware):
     counts, output = firmware(encode_frame(request.SerializeToString()), reject=True)
     assert counts == [1,0,0,80]
     assert pb.Response.FromString(read_frame(io.BytesIO(output), .1)).status == pb.REJECTED
+
+
+@pytest.mark.parametrize("command,ids,values", [
+    (pb.ASSIST_CONFIG, [16], [10, .01, 40]),
+    (pb.ASSIST_CALIBRATE, [16, 17], []),
+    (pb.ASSIST_START, [], []), (pb.ASSIST_HEARTBEAT, [], []), (pb.ASSIST_STOP, [], []),
+])
+def test_assist_binary_dispatch(firmware, command, ids, values):
+    request = pb.Request(sequence=22, command=command, motor_ids=ids, values=values)
+    _, output = firmware(encode_frame(request.SerializeToString()))
+    assert pb.Response.FromString(read_frame(io.BytesIO(output), .1)).status == pb.OK
+
+
+@pytest.mark.parametrize("command,ids,values", [
+    (pb.ASSIST_CONFIG, [], [10, .01, 40]), (pb.ASSIST_CONFIG, [16], [10, .01]),
+    (pb.ASSIST_CALIBRATE, [16, 16], []), (pb.ASSIST_CALIBRATE, [1], []),
+    (pb.ASSIST_CALIBRATE, [], []), (pb.ASSIST_START, [16], []),
+    (pb.ASSIST_HEARTBEAT, [], [1]), (pb.ASSIST_STOP, [16], []),
+])
+def test_malformed_assist_requests_have_no_effect(firmware, command, ids, values):
+    request = pb.Request(sequence=23, command=command, motor_ids=ids, values=values)
+    counts, output = firmware(encode_frame(request.SerializeToString()))
+    assert counts[:3] == [0, 0, 0]
+    assert pb.Response.FromString(read_frame(io.BytesIO(output), .1)).status == pb.INVALID_REQUEST
+
+
+def test_assist_excludes_other_binary_motion(firmware):
+    request = pb.Request(sequence=24, command=pb.SET_CURRENT, motor_ids=[16], value=50)
+    counts, output = firmware(encode_frame(request.SerializeToString()), guard="assist")
+    assert counts[:3] == [0, 0, 0]
+    assert pb.Response.FromString(read_frame(io.BytesIO(output), .1)).status == pb.REJECTED

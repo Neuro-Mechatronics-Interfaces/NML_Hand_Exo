@@ -302,3 +302,14 @@ request parsing/formatting and keeping binary traffic off the text reader.
 <!-- graphviz:docs/figures/usb_protocol_discovery.dot -->
 ![GraphViz diagram](figures/usb_protocol_discovery.svg)
 <!-- /graphviz:docs/figures/usb_protocol_discovery.dot -->
+
+## Assist protocol extension
+
+`assist_v1` in `USB Features` and `Assist Protocol: assist-v1` identify
+[Assist mode](assist_mode.md). Protobuf opcodes 14?18 configure, calibrate, start,
+renew and stop assistance. All control operations use the binary endpoint in
+Protobuf builds; `assist_status` remains a low-rate text diagnostic.
+
+Fast telemetry method 5 identifies cached assist-control measurements. Per-field
+source flags remain measured; per-sample timestamps retain acquisition time,
+independent of request time. This adds no fields to NX v2 or the Protobuf envelope.

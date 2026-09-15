@@ -160,7 +160,7 @@ arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler
 
 For example to compile and upload the optional `Protobuf` build (requires nanopb):
 
-Current firmware reports **0.9.1**, with measured 20-ms pulse-response calibration.
+Current firmware reports **0.9.1**, with measured 30-ms shaped pulse-response calibration.
 See [the v0.9.1 defaults and diagnostics](../../../docs/v0.9.1_pulse_calibration.md).
 
 ```bash

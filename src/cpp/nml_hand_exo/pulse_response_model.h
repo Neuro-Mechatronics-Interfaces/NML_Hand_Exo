@@ -11,6 +11,7 @@ struct PulseResponseModel {
   float previousCurrent = NAN, previousTravel = NAN;
   float lastNoMotionCurrent = NAN;
   uint16_t movingSamples = 0, noMotionSamples = 0, gradientSamples = 0;
+  uint8_t noMotionStreak = 0;
   static float bound(float v, float lo, float hi) { return fminf(hi, fmaxf(lo, v)); }
 
   bool observe(float current, float travel, float noiseFloor) {
@@ -18,12 +19,14 @@ struct PulseResponseModel {
     if (travel < noiseFloor) {
       // Censored observation: insufficient motion, not zero gain/infinite stiffness.
       if (noMotionSamples < 65535) ++noMotionSamples;
+      if (noMotionStreak < 255) ++noMotionStreak;
       lastNoMotionCurrent = current;
       // Do not use a censored zero as an exact point in the secant gradient.
       previousCurrent = previousTravel = NAN;
       return true;
     }
     if (movingSamples < 65535) ++movingSamples;
+    noMotionStreak = 0;
     if (isfinite(previousCurrent) && fabsf(current - previousCurrent) >= 1.9f) {
       const float dy = travel - previousTravel;
       const float gradient = dy / (current - previousCurrent);
@@ -40,7 +43,9 @@ struct PulseResponseModel {
     return true;
   }
   float predict(float current) const {
-    if (!isfinite(slope) || !isfinite(current)) return NAN;
+    // Repeated censored responses invalidate the old local prediction. Keep
+    // the learned slope as a prior, but do not display it as current evidence.
+    if (noMotionStreak >= 3 || !isfinite(slope) || !isfinite(current)) return NAN;
     return fmaxf(0.0f, anchorTravel + slope * (current - anchorCurrent));
   }
   float nextCurrent(float current, float observed, float target, float noiseFloor,

@@ -20,6 +20,34 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
                            exo_usb_Response& response) {
   response.sequence = request.sequence;
   response.status = exo_usb_Status_INVALID_REQUEST;
+  const bool assist = request.command >= exo_usb_Command_ASSIST_CONFIG && request.command <= exo_usb_Command_ASSIST_STOP;
+  if (assist) {
+    if (request.has_value || request.has_joint_model || request.has_finger_angles || request.has_gesture) return;
+    for (uint8_t k = 0; k < request.motor_ids_count; ++k) {
+      if (request.motor_ids[k] > 253 || exo.getIndexById(request.motor_ids[k]) < 0) return;
+      for (uint8_t j = 0; j < k; ++j) if (request.motor_ids[k] == request.motor_ids[j]) return;
+    }
+    bool ok = false;
+    if (request.command == exo_usb_Command_ASSIST_CONFIG) {
+      if (request.motor_ids_count != 1 || request.values_count != 3) return;
+      ok = exo.configureAssist(request.motor_ids[0], request.values[0], request.values[1], request.values[2]);
+    } else if (request.command == exo_usb_Command_ASSIST_CALIBRATE) {
+      if (!request.motor_ids_count || request.values_count) return;
+      uint8_t ids[N_MOTORS];
+      if (request.motor_ids_count > N_MOTORS) return;
+      for (uint8_t k = 0; k < request.motor_ids_count; ++k) ids[k] = request.motor_ids[k];
+      ok = exo.calibrateAssist(ids, request.motor_ids_count);
+    } else {
+      if (request.motor_ids_count || request.values_count) return;
+      if (request.command == exo_usb_Command_ASSIST_START) ok = exo.startAssist();
+      else if (request.command == exo_usb_Command_ASSIST_HEARTBEAT) ok = exo.heartbeatAssist();
+      else { exo.stopAssist(); ok = true; }
+    }
+    response.status = ok ? exo_usb_Status_OK : exo_usb_Status_REJECTED;
+    return;
+  }
+  if (exo.isAssistBusy() && request.command != exo_usb_Command_GET_TELEMETRY_FAST &&
+      request.command != exo_usb_Command_STOP) { response.status = exo_usb_Status_REJECTED; return; }
   const bool telemetry = request.command == exo_usb_Command_GET_TELEMETRY_FAST;
   const bool stop = request.command == exo_usb_Command_STOP;
   const bool model = request.command == exo_usb_Command_SET_JOINT_MODEL;

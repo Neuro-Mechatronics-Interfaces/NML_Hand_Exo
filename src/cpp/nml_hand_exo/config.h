@@ -756,17 +756,30 @@ constexpr float DIRECT_LIMIT_MARGIN_DEG = 2.0f;
 //
 // One explicit ID at a time: pulse, zero current, read feedback, then decide.
 // Increase only after non-moving pulses; hold/reduce amplitude once moving.
-constexpr float ROM_CAL_START_CURRENT_MA = 20.0f;
+constexpr float ROM_CAL_START_CURRENT_MA = 40.0f;
 constexpr float ROM_CAL_MIN_CURRENT_MA = 5.0f;
-constexpr float ROM_CAL_MAX_CURRENT_MA = 80.0f;
-constexpr float ROM_CAL_CURRENT_STEP_MA = 2.0f;
-constexpr unsigned long ROM_CAL_PULSE_ON_MS = 20;
-constexpr unsigned long ROM_CAL_PULSE_OFF_MS = 400;
+constexpr float ROM_CAL_MAX_CURRENT_MA = 160.0f;
+constexpr float ROM_CAL_CURRENT_STEP_MA = 6.0f;
+constexpr unsigned long ROM_CAL_PULSE_ON_MS = 40;
+// 5-ms Gaussian bins by default; set to 10 for a four-bin triangle.
+#ifndef EXO_ROM_SHAPE_STEP_MS
+#define EXO_ROM_SHAPE_STEP_MS 5
+#endif
+constexpr unsigned long ROM_CAL_SHAPE_STEP_MS = EXO_ROM_SHAPE_STEP_MS;
+static_assert(ROM_CAL_PULSE_ON_MS == 40, "ROM shape tables describe a 40-ms pulse");
+static_assert(EXO_ROM_SHAPE_STEP_MS == 5 || EXO_ROM_SHAPE_STEP_MS == 10,
+              "ROM shape step must be 5 or 10 ms");
+constexpr unsigned long ROM_CAL_PULSE_OFF_MS = 250;
 constexpr float ROM_CAL_PULSE_TRAVEL_DEG = 1.0f;
-constexpr float ROM_CAL_TARGET_TRAVEL_DEG = 0.5f;
+constexpr float ROM_CAL_TARGET_TRAVEL_DEG = 0.65f;
 constexpr float ROM_CAL_MAX_EXCURSION_DEG = 3.0f;
 constexpr float ROM_CAL_PULSE_SPEED_DEG_S = 40.0f;
-constexpr float ROM_CAL_SETTLED_SPEED_DEG_S = 1.0f;
+// One velocity-register step is 0.229 rpm = 1.374 deg/s. Accept that
+// quantization only with a measured quiet position interval during rest.
+constexpr float ROM_CAL_SETTLED_SPEED_DEG_S = 1.5f;
+constexpr float ROM_CAL_SETTLED_POSITION_DEG = 0.18f; // about two encoder ticks
+constexpr unsigned long ROM_CAL_SETTLED_WINDOW_MS = 200;
+constexpr unsigned long ROM_CAL_SETTLED_MAX_GAP_MS = 50;
 constexpr unsigned long ROM_CAL_SETTLE_TIMEOUT_MS = 1500;
 // Paced position checks while powered; feedback failure stops the sweep.
 constexpr unsigned long ROM_CAL_STEP_INTERVAL_MS = 5;
@@ -774,10 +787,13 @@ constexpr uint32_t ROM_CAL_IO_TIMEOUT_MS = 10;
 constexpr uint8_t ROM_CAL_MAX_FEEDBACK_RECOVERIES = 3;
 constexpr float ROM_CAL_ONSET_DEG = 0.30f;
 constexpr float ROM_CAL_PROGRESS_DEG = 1.0f;
-// Require repeated non-advancing powered pulses after prior travel. Rest time
-// alone never counts as a stall; at the ceiling, continued travel may continue.
+// Require full-ceiling pulses at a stable endpoint after clear moving pulses.
+// Rest time and accumulated sub-threshold drift cannot establish an endstop.
 constexpr uint8_t ROM_CAL_STALL_PULSES = 3;
-constexpr float ROM_CAL_STALL_MIN_CURRENT_FRAC = 0.8f;
+constexpr uint8_t ROM_CAL_MIN_MOVING_PULSES = 3;
+// A bounded current ceiling must not cause endless identical low-response
+// pulses. This outcome is not evidence of a physical endstop.
+constexpr uint8_t ROM_CAL_CEILING_NO_MOTION_PULSES = 6;
 constexpr unsigned long ROM_CAL_TIMEOUT_MS = 45000;
 constexpr bool ROM_CAL_AUTO_RETURN_HOME = false;
 constexpr uint16_t ROM_CAL_RETURN_CURRENT_MA = 20;
@@ -792,7 +808,8 @@ static_assert(ROM_CAL_MIN_CURRENT_MA > 0.0f && ROM_CAL_MIN_CURRENT_MA <= ROM_CAL
               ROM_CAL_MAX_CURRENT_MA <= DIRECT_CURRENT_LIMIT_MA,
               "ROM current range must fit inside the direct-control ceiling");
 static_assert(ROM_CAL_PULSE_ON_MS > 0 && ROM_CAL_PULSE_OFF_MS > 0 &&
-              ROM_CAL_CURRENT_STEP_MA > 0 && ROM_CAL_STALL_PULSES > 0 &&
+              ROM_CAL_CURRENT_STEP_MA > 0 && ROM_CAL_STALL_PULSES > 0 && ROM_CAL_MIN_MOVING_PULSES > 0 &&
+              ROM_CAL_CEILING_NO_MOTION_PULSES > ROM_CAL_STALL_PULSES &&
               ROM_CAL_RETURN_CURRENT_MA <= ROM_CAL_MAX_CURRENT_MA,
               "ROM pulse timings and current settings must be bounded");
 static_assert(ROM_CAL_PULSE_TRAVEL_DEG > ROM_CAL_ONSET_DEG &&

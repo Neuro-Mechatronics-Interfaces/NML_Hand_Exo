@@ -643,7 +643,7 @@ Upload → board flashes LED 4× and prints `"Exo device ready to receive comman
 
 ### Optional Protobuf USB and I/O profiling
 
-Firmware v0.9.1 adds adaptive 20-ms Auto-ROM pulses and asynchronous
+Firmware v0.9.1 adds adaptive 40-ms shaped Auto-ROM pulses and asynchronous
 `ROM_CAL_PULSE` observations. `get_joint_model` also reports per-direction pulse
 response statistics; see [the v0.9.1 procedure](v0.9.1_pulse_calibration.md).
 
@@ -661,3 +661,9 @@ The additional `batch_motion` feature enables typed `set_angles`,
 batches retain sequential guarded writes. Gestures retain firmware-wide scope.
 `io_profile` and `reset_io_profile` expose exclusive wall time by firmware stage.
 See [the complete contract and benchmark commands](usb_protocol_and_io_diagnostics.md).
+
+## Assist control
+
+Firmware with `Assist Protocol: assist-v1` supports explicit-ID bias calibration,
+sensitivity configuration and bounded effort assistance. See [Assist mode](assist_mode.md)
+for ASCII commands, Protobuf opcodes 14?18, states and heartbeat requirements.
