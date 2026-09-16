@@ -7,106 +7,11 @@ command interface (USB, and optionally an HC-05 Bluetooth UART).
 
 **v0.9.0:** motion-time telemetry comes from a bounded per-joint model, with field-source flags and UTC/sample-uptime timestamps. The GUI synchronizes UTC on connection. See the [implementation and protocol contract](../../../docs/v0.9.0_implementation.md) for tuning, compatibility, safety-feedback exceptions, and bench validation.
 
-This document covers how to install `arduino-cli`, compile, and flash the board,
-plus a short tour of the serial command interface. For the full protocol
-reference see [`docs/serial_protocol.md`](../../../docs/serial_protocol.md).
-
----
-
-## What you need
-
-- An **OpenRB-150** connected over USB.
-- The **OpenRB-150 SAMD board package** and five Arduino libraries (listed
-  below). Either the Arduino IDE or `arduino-cli` can provide them.
-- One controller drives the whole hand (or both hands); a single Dynamixel bus
-  carries all motor IDs.
-
-You can build with the Arduino IDE (open the `.ino`, pick the board, upload) or
-with `arduino-cli`. The `arduino-cli` walkthrough is below because it is
-scriptable and does not need the GUI.
-
----
-
-## Install `arduino-cli`
-
-`arduino-cli` is a single self-contained binary.
-
-**Windows (PowerShell):** download the latest release and put it somewhere on
-your `PATH`. Chocolatey and Scoop also package it:
-
-```powershell
-# Scoop
-scoop install arduino-cli
-# or Chocolatey (elevated shell)
-choco install arduino-cli
-```
-
-**macOS / Linux:**
-
-```bash
-# macOS (Homebrew)
-brew install arduino-cli
-
-# Linux / macOS (official install script -> ./bin/arduino-cli)
-curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
-```
-
-Verify it runs:
-
-```bash
-arduino-cli version
-```
-
-Full install docs: <https://arduino.github.io/arduino-cli/latest/installation/>.
-
----
-
-## One-time setup: board package + libraries
-
-The OpenRB-150 core is not in the default Arduino index, so add ROBOTIS's
-package URL first, then install the core and the libraries.
-
-```bash
-# 1. Initialize a config file (creates ~/.arduino15/arduino-cli.yaml or the
-#    Windows equivalent) if you do not already have one.
-arduino-cli config init
-
-# 2. Add the OpenRB-150 board-manager package URL.
-arduino-cli config add board_manager.additional_urls \
-  https://raw.githubusercontent.com/ROBOTIS-GIT/OpenRB-150/master/package_openrb_index.json
-
-# 3. Refresh the index and install the OpenRB-150 SAMD core.
-arduino-cli core update-index
-arduino-cli core install OpenRB-150:samd
-
-# 4. Install the required libraries.
-arduino-cli lib install \
-  "Dynamixel2Arduino" \
-  "Adafruit BNO055" \
-  "Adafruit Unified Sensor" \
-  "Adafruit SSD1306" \
-  "Adafruit GFX Library"
-```
-
-Confirm the core and libraries are present:
-
-```bash
-arduino-cli core list      # expect: OpenRB-150:samd
-arduino-cli lib list        # expect the five libraries above
-```
-
-The board's fully-qualified board name (FQBN) is:
-
-```
-OpenRB-150:samd:OpenRB-150
-```
-
----
+This [document](../../../docs/arduino_cli_setup.md) covers how to install `arduino-cli`. Below are steps to use the `arduino-cli` tool to compile, and flash the board, plus a short tour of the serial command interface. For the full protocol reference see [`docs/serial_protocol.md`](../../../docs/serial_protocol.md).
 
 ## Choose the build variant
 
-Two build-time selectors in [`config.h`](config.h) change what the firmware is
-built for. Set them before compiling.
+Two build-time selectors in [`config.h`](config.h) change what the firmware is built for. Set them before compiling.
 
 **Hand side** — `BUILD_LEFT_HAND` (near the top of `config.h`):
 
@@ -116,19 +21,9 @@ built for. Set them before compiling.
 | `0`       | right hand only  | 11-19          |
 | `1`       | left hand only   | 1-9            |
 
-The default is **dual**: it enumerates every ID, and a hand with only one side
-physically attached still works — the unreachable IDs are reported as skipped
-rather than blocking the attached side. Build for a single fixed side (`0`/`1`)
-only when you want exactly those motors. In single-hand builds the `ENABLE_*`
-flags below the selector can exclude a motor that is not physically connected.
+The default is **dual**: it enumerates every ID, and a hand with only one side physically attached still works — the unreachable IDs are reported as skipped rather than blocking the attached side. Build for a single fixed side (`0`/`1`) only when you want exactly those motors. In single-hand builds the `ENABLE_*` flags below the selector can exclude a motor that is not physically connected.
 
-**USB layout** — by default an OpenRB build exposes **two USB CDC serial ports**
-on one cable (`DUAL_CDC`): the first carries host commands, the second carries
-replies and telemetry. This decouples command writes from telemetry reads. A
-legacy single-port host still works because either port accepts commands and
-replies mirror to both by default. Define `SINGLE_CDC` at build time to force
-one port. The opt-in `EXO_AXON_USB` composite build (for the SciFi/Axon
-integration) is mutually exclusive with dual CDC.
+**USB layout** — by default an OpenRB build exposes **two USB CDC serial ports** on one cable (`DUAL_CDC`): the first carries host commands, the second carries replies and telemetry. This decouples command writes from telemetry reads. A legacy single-port host still works because either port accepts commands and replies mirror to both by default. Define `SINGLE_CDC` at build time to force one port. The opt-in `EXO_AXON_USB` composite build (for the SciFi/Axon integration) is mutually exclusive with dual CDC.
 
 ---
 
@@ -147,11 +42,9 @@ Sketch uses 149852 bytes (57%) of program storage space. Maximum is 262144 bytes
 Global variables use 15132 bytes (46%) of dynamic memory ...
 ```
 
-You may see `LITTLE_ENDIAN redefined` warnings from the SAMD core headers; those
-come from the platform, not this firmware, and are harmless.
+You may see `LITTLE_ENDIAN redefined` warnings from the SAMD core headers; those come from the platform, not this firmware, and are harmless.
 
-To add a build flag without editing `config.h` (e.g. force single CDC), use
-`compiler.cpp.extra_flags`. Overriding `build.extra_flags` removes OpenRB MCU/USB
+To add a build flag without editing `config.h` (e.g. force single CDC), use `compiler.cpp.extra_flags`. Overriding `build.extra_flags` removes OpenRB MCU/USB
 definitions such as `__SAMD21G18A__` and causes missing `Sercom`/`TCC_INST_NUM` errors:
 
 ```bash

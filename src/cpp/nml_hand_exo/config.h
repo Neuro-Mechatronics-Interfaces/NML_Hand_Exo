@@ -243,29 +243,38 @@ constexpr const char* MOTOR_NAMES[] = {
 };
 
 constexpr float HOME_STATES[] = {
-  // left (IDs 1-9) — placeholders, calibrate before use
-  102.6, 252.03, 251.15, 226.78, 331.76, 169.58, 173.01, 172.24, 80.96,
-  // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  228.45, 132.70, 220.79, 232.23, 122.76, 193.34, 80.26, 98.21, 63.80
+  // left (IDs 1-5) — wrist, wrist2, thumbadd, thumbrot, thumbflex
+  102.6, 252.03, 251.15, 226.78, 331.76, 
+  // left (IDs 6-9) - index, middle, ring, pinky
+  169.58, 173.01, 172.24, 80.96,
+  // right (IDs 11-15) — wrist, wrist2, thumbadd, thumbrot, thumbflex
+  228.45, 132.70, 220.79, 232.23, 122.76, 
+  // right (IDs 16-19) - index, middle, ring, pinky
+  193.34, 80.26, 98.21, 63.80
 };
 
 /// @brief Physical joint limits [min, max] for each motor.
 constexpr float jointLimits[][2] = {
-  // left (IDs 1-9) — placeholders
+  // left (IDs 1-5) — wrist, wrist2, thumbadd, thumbrot, thumbflex
   {47.00, 168.00}, {182.00, 315.00}, {238.00, 291.00}, {196.00, 255.00}, {280.00, 408.00},
+  // left (IDs 6-9) - index, middle, ring, pinky
   {119.50, 184.00}, {159.00, 223.00}, {133.00, 208.00}, {63.00, 146.00},
-  // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex 
+  // right (IDs 11-15) — wrist, wrist2, thumbadd, thumbrot, thumbflex 
   {201.17, 269.46}, {90.02, 163.42}, {190.0, 227.13}, {160.26, 260.86}, {106.74, 195.31},
-  // index, middle, ring, pinky
+  // right (IDs 16-19) - index, middle, ring, pinky
   {162.27, 207.35}, {70.54, 119.52}, {50.71, 108.78}, {47.96, 113.65}
 };
 
 /// @brief Default flip direction per motor.
 constexpr bool DEFAULT_FLIPS[] = {
-  // left (IDs 1-9) — placeholders
-  true, true, false, false, true, true, false, true, false,
-  // right (IDs 11-19) — wrist, wrist2, thumbadd, thumbrot, thumbflex, index, middle, ring, pinky
-  true, true, false, true, false, true, false, true, false
+  // left (IDs 1-5) — wrist, wrist2, thumbadd, thumbrot, thumbflex
+  true, true, false, false, true, 
+  // left (IDs 6-9) - index, middle, ring, pinky
+  true, true, false, true,
+  // right (IDs 11-15) — wrist, wrist2, thumbadd, thumbrot, thumbflex
+  true, true, false, true, false, 
+  // right (IDs 16-19) - index, middle, ring, pinky
+  false, false, true, false
 };
 
 #else  // ===== SINGLE-EXO MODE (BUILD_LEFT_HAND == 0 or 1) =====

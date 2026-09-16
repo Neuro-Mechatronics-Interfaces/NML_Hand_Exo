@@ -889,9 +889,9 @@ class NMLHandExo {
     /// 0xF212 so a driver expecting the 4-field 0xF211 layout rejects rather
     /// than misparses. No motion or actuation is added; readback only.
 #if EXO_AXON_USB
-    static constexpr const char* VERSION = "0.9.1-axon-0.3.0";
+    static constexpr const char* VERSION = "0.9.2-axon-0.3.0";
 #else
-    static constexpr const char* VERSION = "0.9.1";
+    static constexpr const char* VERSION = "0.9.2";
 #endif
 
   private:
