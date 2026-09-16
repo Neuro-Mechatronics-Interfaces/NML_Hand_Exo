@@ -57,7 +57,11 @@ Current firmware reports **0.9.1**, with measured 30-ms shaped pulse-response ca
 See [the v0.9.1 defaults and diagnostics](../../../docs/v0.9.1_pulse_calibration.md).
 
 ```bash
-arduino-cli compile --upload -p %COM% --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF=1" src/cpp/nml_hand_exo
+arduino-cli compile --upload -p %COM% --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF=1 -I{build.source.path}" src/cpp/nml_hand_exo
+```
+on Mac:
+```bash
+arduino-cli compile --upload -p $COM --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF=1 -I{build.source.path}" src/cpp/nml_hand_exo
 ```
 
 The primary CDC retains `info`/`help`; the second carries typed Protobuf telemetry

@@ -250,7 +250,7 @@ constexpr float HOME_STATES[] = {
   // right (IDs 11-15) — wrist, wrist2, thumbadd, thumbrot, thumbflex
   228.45, 132.70, 220.79, 232.23, 122.76, 
   // right (IDs 16-19) - index, middle, ring, pinky
-  193.34, 80.26, 98.21, 63.80
+  183.34, 100.26, 75.21, 70.80
 };
 
 /// @brief Physical joint limits [min, max] for each motor.
@@ -270,11 +270,11 @@ constexpr bool DEFAULT_FLIPS[] = {
   // left (IDs 1-5) — wrist, wrist2, thumbadd, thumbrot, thumbflex
   true, true, false, false, true, 
   // left (IDs 6-9) - index, middle, ring, pinky
-  true, true, false, true,
+  false, true, false, true,
   // right (IDs 11-15) — wrist, wrist2, thumbadd, thumbrot, thumbflex
   true, true, false, true, false, 
   // right (IDs 16-19) - index, middle, ring, pinky
-  false, false, true, false
+  false, true, false, true
 };
 
 #else  // ===== SINGLE-EXO MODE (BUILD_LEFT_HAND == 0 or 1) =====
