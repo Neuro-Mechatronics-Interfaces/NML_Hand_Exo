@@ -379,6 +379,9 @@ class HandExo(object):
         """
         self.device.connect()
 
+    def _is_protobuf_transport(self) -> bool:
+        return str(getattr(self.device, "usb_protocol", "")).startswith("protobuf-")
+
     def send_command(self, cmd: str):
         """
         Sends a command to the exoskeleton over the serial connection.
@@ -470,7 +473,7 @@ class HandExo(object):
         per-field sources and per-sample UTC/uptime; unavailable values are None.
         """
         binary_reader = getattr(self.device, "get_fast_frame", None)
-        if getattr(self.device, "usb_protocol", None) == "protobuf-v1" and callable(binary_reader):
+        if self._is_protobuf_transport() and callable(binary_reader):
             import io
             serial_dev = io.BytesIO(binary_reader(motor_ids, timeout=timeout))
         else:
@@ -709,7 +712,7 @@ class HandExo(object):
         return params
 
     def _assist_command(self, command, ids=(), values=(), *, timeout=1.0):
-        if getattr(self.device, "usb_protocol", None) == "protobuf-v1":
+        if self._is_protobuf_transport():
             return self.device.assist_command(command, ids, values, timeout=timeout)
         id_fields = [str(mid) for mid in ids]
         value_fields = [format(v, ".9g") for v in values]
@@ -777,7 +780,7 @@ class HandExo(object):
             raise ValueError("Invalid assist threshold, velocity gain, current cap, or observer terms")
         # Binary discovery already established capabilities. No text info
         # transaction, per-joint config RPC, or all-motor mode switch here.
-        if getattr(self.device, "usb_protocol", None) != "protobuf-v1":
+        if not self._is_protobuf_transport():
             if self.info().get("assist_protocol") != "assist-v3":
                 raise RuntimeError("Enable Torque-Assist requires assist-v3 firmware; reflash the current build")
         try:
@@ -870,7 +873,7 @@ class HandExo(object):
 
     def get_assist_status(self):
         """Read measured effort/deflection, bias/noise, progress and fault reason."""
-        if getattr(self.device, "usb_protocol", None) == "protobuf-v1":
+        if self._is_protobuf_transport():
             return self.device.get_assist_status(timeout=.4)
         reply = self._command_transaction("assist_status", expected="ASSIST:", timeout=.4)
         header = re.search(r"ASSIST: state=(\d+) reason=(\w+)", reply)
@@ -901,7 +904,7 @@ class HandExo(object):
         mid = self._joint_model_id(motor_id)
         params = self._joint_model_params(gain, time_constant, max_velocity, stiffness, moment)
         self._require_joint_model()
-        if getattr(self.device, "usb_protocol", None) == "protobuf-v1":
+        if self._is_protobuf_transport():
             self.device.write_joint_model(mid, params, timeout=timeout)
             return f"OK: set_joint_model id={mid}"
         command = f"set_joint_model:{mid}:" + ":".join(format(v, ".9g") for v in params.values())
@@ -1547,6 +1550,11 @@ class HandExo(object):
             info['n_motors'] = len(motors)
 
         info['motors'] = motors
+        # Protobuf-v2 discovery starts before the text-compatible info payload
+        # is known. Refresh the typed telemetry target list once info supplies
+        # the actual DXL IDs.
+        if hasattr(self.device, 'motor_ids') and motors:
+            self.device.motor_ids = sorted(motors)
         return info
 
 
@@ -1816,6 +1824,33 @@ class HandExo(object):
         """
         self.send_command(f"set_current_lim:{motor_id}:{current_limit}")
 
+    def set_current_limits(self, limits: dict[int, float]) -> dict[int, float]:
+        """Apply nominal current limits to explicit motors and return readback.
+
+        Protobuf-v2 sends the active-side mapping as one typed RPC. Older
+        transports use the established per-motor command as a safe fallback;
+        neither path invokes the firmware's combined current budget.
+        """
+        targets = self._motor_targets(limits)
+        for value in targets.values():
+            if value < 0 or value > 910:
+                raise ValueError('Per-motor current limits must be finite values in [0, 910] mA')
+        sender = getattr(self.device, 'send_current_limit_batch', None)
+        if self._is_protobuf_transport() and callable(sender) and getattr(
+                self.device, 'current_limit_batch_supported', False):
+            self.device.flush_input()
+            sender(targets)
+        else:
+            for motor_id, value in targets.items():
+                self.set_current_limit(motor_id, value)
+        readback = self.get_motor_current_limit('all')
+        if not isinstance(readback, dict):
+            raise ProtocolResponseError(
+                command='get_current_lim', expected='per-motor current-limit mapping',
+                raw_response=str(readback),
+            )
+        return {int(mid): float(readback[mid]) for mid in targets if mid in readback}
+
     def set_total_current_limit(self, budget_mA: float, *, timeout: float = 2.0) -> float:
         """
         Set the COMBINED current budget across all motors, in mA.
@@ -2010,7 +2045,7 @@ class HandExo(object):
         )
 
     def _send_binary_motor_command(self, command, motor_id, value=None):
-        if getattr(self.device, "usb_protocol", None) != "protobuf-v1":
+        if not self._is_protobuf_transport():
             return False
         sender = getattr(self.device, "send_motor_command", None)
         if not callable(sender):
@@ -2042,7 +2077,7 @@ class HandExo(object):
 
     def _send_motor_batch(self, command, targets):
         targets = self._motor_targets(targets)
-        if getattr(self.device, 'usb_protocol', None) != 'protobuf-v1':
+        if not self._is_protobuf_transport():
             raise RuntimeError('Batch motor commands require Protobuf firmware with batch_motion')
         self.device.flush_input()
         self.device.send_batch_command(command, targets)
@@ -2104,7 +2139,7 @@ class HandExo(object):
         if not normalized:
             return
 
-        if getattr(self.device, "usb_protocol", None) == "protobuf-v1":
+        if self._is_protobuf_transport():
             modes = {mode for mode, _ in normalized.values()}
             if modes == {"current"} and getattr(
                 self.device, "batch_motion_supported", False
@@ -2383,7 +2418,7 @@ class HandExo(object):
         if str(state).strip().lower() == "rest":
             self._require_firmware(FW_PER_JOINT_REST, "The per-joint 'rest' state")
         self._require_gesture_firmware(gesture)
-        if getattr(self.device, 'usb_protocol', None) == 'protobuf-v1':
+        if self._is_protobuf_transport():
             self.device.flush_input()
             self.device.send_gesture(gesture, state)
             return
@@ -2479,7 +2514,7 @@ class HandExo(object):
                 "firmware will clamp it.",
                 warning=True,
             )
-        if getattr(self.device, 'usb_protocol', None) == 'protobuf-v1':
+        if self._is_protobuf_transport():
             self.device.flush_input()
             self.device.send_gesture(name, percent=pct)
             return
@@ -2535,7 +2570,7 @@ class HandExo(object):
         # malformed request fails the same way regardless of the device version.
         normalized = normalize_finger_angles(normalized)
         self._require_firmware(FW_SET_FINGER_ANGLES, "set_finger_angles")
-        if getattr(self.device, 'usb_protocol', None) == 'protobuf-v1':
+        if self._is_protobuf_transport():
             self.device.flush_input()
             self.device.send_finger_angles(normalized)
             return

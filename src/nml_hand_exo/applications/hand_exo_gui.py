@@ -6202,26 +6202,39 @@ class HandExoGUI(QWidget):
         self.motor_layout.addLayout(btn_row)
 
         limits_grid = QGridLayout()
+        self._current_limit_all_spin = QSpinBox()
+        self._current_limit_all_spin.setRange(0, int(DIRECT_CURRENT_LIMIT_MA))
+        self._current_limit_all_spin.setValue(300)
+        self._current_limit_all_spin.setSuffix(" mA")
+        self._current_limit_all_spin.setToolTip(
+            "Nominal per-motor current limit applied to every motor in the active GUI side. "
+            "This is not a combined bus-current budget."
+        )
+        self._apply_current_limit_all_btn = QPushButton("Apply to Active Motors")
+        self._apply_current_limit_all_btn.clicked.connect(
+            self._apply_current_limit_to_active_motors
+        )
+
+        # Retain the aggregate budget as an internal safety/readback value for
+        # EMG allocation, but do not expose the misleading fleet-wide control
+        # in the operator UI. In particular, the firmware's 18-motor floor
+        # (18 * 300 = 5400 mA) must never become a setup-field value.
         self._total_current_spin = QSpinBox()
         self._total_current_spin.setRange(1, 65535)
         self._total_current_spin.setValue(800)
         self._applied_total_current_mA = None
-        self._total_current_spin.setSuffix(" mA")
-        self._total_current_spin.setToolTip(
-            "Combined current budget across every motor on the shared bus. "
-            "Click Set Total to apply and read back the firmware budget. "
-            "Editing alone does not change the budget used by EMG current control."
-        )
+        self._total_current_spin.hide()
         self._set_total_current_btn = QPushButton("Set Total")
         self._set_total_current_btn.clicked.connect(
             self._set_total_current_limit
         )
+        self._set_total_current_btn.hide()
 
-        limits_grid.addWidget(QLabel("Combined current budget:"), 0, 0)
-        limits_grid.addWidget(self._total_current_spin, 0, 1)
-        limits_grid.addWidget(self._set_total_current_btn, 0, 2)
+        limits_grid.addWidget(QLabel("Per-motor current limit (active GUI side):"), 0, 0)
+        limits_grid.addWidget(self._current_limit_all_spin, 0, 1)
+        limits_grid.addWidget(self._apply_current_limit_all_btn, 0, 2)
         limits_grid.addWidget(
-            QLabel("Apply each row's current limit and direct/EMG speed ceiling below."),
+            QLabel("Bulk-applies to active IDs; use each row below for a motor-specific override."),
             0,
             3,
         )
@@ -6466,7 +6479,7 @@ class HandExoGUI(QWidget):
 
         current_limit_spin = QSpinBox()
         current_limit_spin.setRange(0, int(DIRECT_CURRENT_LIMIT_MA))
-        current_limit_spin.setValue(150)
+        current_limit_spin.setValue(300)
         current_limit_spin.setSuffix(" mA")
         current_limit_spin.setToolTip(
             "Configured per-motor current ceiling / nominal position effort. "
@@ -7337,7 +7350,47 @@ class HandExoGUI(QWidget):
         self._log("Disconnected.")
         self._update_enabled_state()
 
+    def _apply_current_limit_to_active_motors(self):
+        """Set one nominal limit on every ID visible in the active GUI mode."""
+        if not self.exo_connected or not HandExoGUI._setup_limits_change_allowed(self):
+            return
+        current_mA = int(self._current_limit_all_spin.value())
+        active_ids = [int(mid) for mid in self._motor_dxl_id]
+        if not active_ids:
+            self._log("No active motor IDs are available for the bulk current-limit update.")
+            return
+        try:
+            def _apply(raw_exo):
+                return raw_exo.set_current_limits({mid: current_mA for mid in active_ids})
+
+            readback = self._run_bulk_serial_action(
+                lambda: self.exo.run_locked(_apply)
+            )
+            if readback is None:
+                return
+            missing = [mid for mid in active_ids if mid not in readback]
+            mismatched = {
+                mid: readback[mid] for mid in active_ids
+                if mid in readback and round(float(readback[mid])) != current_mA
+            }
+            if missing or mismatched:
+                raise RuntimeError(
+                    f"per-motor readback mismatch (missing={missing}, values={mismatched})"
+                )
+            for motor in self.motor_widgets:
+                mid = motor.get("dxl_id")
+                if mid in readback:
+                    applied = float(readback[mid])
+                    motor["current_limit_spin"].setValue(int(round(applied)))
+                    motor["current_limit_mA"] = applied
+            self._log(
+                f"Applied per-motor current limit: {current_mA} mA to active IDs {active_ids}."
+            )
+        except Exception as exc:
+            self._log(f"Per-motor current-limit update failed: {exc}")
+
     def _set_total_current_limit(self):
+        """Compatibility path for scripts/tests; not exposed in the GUI."""
         if not self.exo_connected:
             return
         if not HandExoGUI._setup_limits_change_allowed(self):
@@ -7541,9 +7594,8 @@ class HandExoGUI(QWidget):
             if not math.isfinite(budget) or not 0 < budget <= 65535:
                 raise RuntimeError(f"invalid readback: {budget}")
             self._applied_total_current_mA = float(budget)
-            self._total_current_spin.setValue(int(round(budget)))
         except Exception as exc:
-            self._log(f"Warning: combined current budget unavailable; EMG current capped at zero: {exc}")
+            self._log(f"Warning: internal current budget unavailable; EMG current capped at zero: {exc}")
 
     def _motor_side(self, action: str, side: str):
         """Enable or disable all motors belonging to one exo side.
@@ -8028,8 +8080,10 @@ class HandExoGUI(QWidget):
         self.enable_all_btn.setEnabled(on)
         self.disable_all_btn.setEnabled(on)
         self.home_all_btn.setEnabled(on)
-        self._total_current_spin.setEnabled(on)
-        self._set_total_current_btn.setEnabled(on)
+        self._current_limit_all_spin.setEnabled(on)
+        self._apply_current_limit_all_btn.setEnabled(on)
+        self._total_current_spin.setEnabled(False)
+        self._set_total_current_btn.setEnabled(False)
         protocol = getattr(self.exo.device, "usb_protocol", "ASCII serial") if on else ""
         self._terminal.set_connection(on, protocol)
         self._global_stop_btn.setEnabled(on)
@@ -9448,13 +9502,7 @@ class HandExoGUI(QWidget):
 
     def _available_emg_current_budget_ma(self, target_ids) -> float:
         """Return the GUI fleet budget left for direct-current EMG targets."""
-        budget_spin = getattr(self, "_total_current_spin", None)
-        budget = (
-            float(budget_spin.value())
-            if budget_spin is not None else 800.0
-        )
-        if hasattr(self, "_applied_total_current_mA"):
-            budget = float(self._applied_total_current_mA or 0.0)
+        budget = float(getattr(self, "_applied_total_current_mA", 0.0) or 0.0)
         hold_id = (
             self._configured_emg_hold_id()
             if hasattr(self, "_configured_emg_hold_id") else None

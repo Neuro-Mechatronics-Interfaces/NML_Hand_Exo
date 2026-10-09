@@ -5,11 +5,14 @@ digraph usb_protocol {
   DISCOVER [label="AutoSerialComm: open candidate CDC\nRead info and USB capabilities"];
   LEGACY [label="ascii-nx: SerialComm / DualSerialComm\nText commands; NX on primary CDC"];
   BINARY [label="protobuf-v1: ProtobufSerialComm\nPrimary text / secondary binary RPC\nFeatures gate model, batch, typed assist + one-click Enable"];
+  V2 [label="protobuf-v2: ProtobufV2SerialComm\nCommand CDC: framed Request\nResponse CDC: framed Response\nTEXT_COMMAND keeps maintenance surface typed"];
   REJECT [label="Unknown protocol / missing sibling\nClose ports; no fallback guess", fillcolor="#fbeeee"];
   SDK [label="HandExo API / GUI / benchmark\nTyped motor/model calls and common NX decoder\nAssist heartbeat includes numeric status snapshot"];
   DISCOVER -> LEGACY [label="legacy metadata or ascii-nx"];
   DISCOVER -> BINARY [label="explicit metadata + compatible runtime"];
+  DISCOVER -> V2 [label="framed HELLO on either CDC orientation"];
   DISCOVER -> REJECT [label="unsupported or incomplete layout"];
   LEGACY -> SDK;
   BINARY -> SDK [label="typed telemetry/motion RPCs\nprimary-text maintenance + shadow"];
+  V2 -> SDK [label="typed telemetry/motion/current-limit RPCs\nall inbound results on response CDC"];
 }

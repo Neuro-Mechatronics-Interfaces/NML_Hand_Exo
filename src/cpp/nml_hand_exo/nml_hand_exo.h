@@ -595,6 +595,7 @@ class NMLHandExo {
     /// @param id Motor ID.
     /// @param current_mA Current limit in milliamps.
     void setCurrentLimit(uint8_t id, uint16_t current_mA);
+    bool setCurrentLimits(const uint8_t* ids, const float* current_mA, uint8_t count);
 
     /// @brief Command signed motor current in mA while in CURRENT mode.
     bool setGoalCurrent(uint8_t id, float current_mA);
@@ -888,16 +889,10 @@ class NMLHandExo {
     /// it back with set_motor_limits if it wants to. Requires the global mode to
     /// be CURRENT first. Adds calibrate_rom and cancel_rom. Gate on >= 0.8.0.
     ///
-    /// axon-0.3.0 -- the read-only Axon telemetry block grows from 4 to 8
-    /// channels per motor, adding current_mA (+status) and derived torque (N*m)
-    /// alongside the existing angle/age/status. The reply schema id becomes
-    /// 0xF212 so a driver expecting the 4-field 0xF211 layout rejects rather
-    /// than misparses. No motion or actuation is added; readback only.
-#if EXO_AXON_USB
-    static constexpr const char* VERSION = "0.9.2-axon-0.3.0";
-#else
-    static constexpr const char* VERSION = "0.9.2";
-#endif
+    /// 0.9.1 -- implements the EXO_USB_PROTOBUF_V1
+    ///
+    /// 0.9.3 -- implements the EXO_USB_PROTOBUF_V2
+    static constexpr const char* VERSION = "0.9.3";
 
   private:
     ExoUtcClock utcClock_;

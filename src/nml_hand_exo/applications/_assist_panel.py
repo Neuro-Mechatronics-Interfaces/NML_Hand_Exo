@@ -101,7 +101,7 @@ class AssistPanel(QWidget):
         self.timer.stop()
         self.connected = bool(connected)
         self.supported = bool(info and info.get("assist_protocol") == "assist-v3")
-        if info and info.get("usb_protocol") == "protobuf-v1":
+        if info and str(info.get("usb_protocol", "")).startswith("protobuf-"):
             self.supported = self.supported and {'assist_binary', 'assist_enable'}.issubset(info.get('usb_features', []))
         self.pending = self.stopping = False
         self.last_error = ""

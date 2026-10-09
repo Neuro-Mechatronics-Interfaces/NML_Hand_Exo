@@ -504,7 +504,10 @@ String NMLHandExo::getDeviceInfo(bool includeLiveTelemetry) {
     // Need to return a single string with all the information
     String info = "Name: NMLHandExo\n";
     info += "Version: " + String(VERSION) + "\n";
-#if EXO_USB_PROTOBUF
+#if EXO_USB_PROTOBUF_V2
+    info += "USB Protocol: protobuf-v2\nUSB CDC Count: 2\nUSB Text Port: primary\nUSB Binary Port: secondary\n";
+    info += "USB Features: joint_model_write batch_motion current_limit_batch assist_v2 assist_binary assist_enable\n";
+#elif EXO_USB_PROTOBUF
     info += "USB Protocol: protobuf-v1\nUSB CDC Count: 2\nUSB Text Port: primary\nUSB Binary Port: secondary\n";
     info += "USB Features: joint_model_write batch_motion assist_v2 assist_binary assist_enable\n";
 #elif EXO_AXON_USB
@@ -1926,6 +1929,18 @@ void NMLHandExo::setCurrentLimit(uint8_t id, uint16_t current_mA) {
   snprintf(buffer, sizeof(buffer), "Set current limit for motor %u: %u mA",
            (unsigned)id, (unsigned)current_mA);
   debugPrint(buffer);
+}
+
+bool NMLHandExo::setCurrentLimits(const uint8_t* ids, const float* current_mA, uint8_t count) {
+  if (!ids || !current_mA || count == 0 || count > N_MOTORS) return false;
+  for (uint8_t i = 0; i < count; ++i) {
+    if (getIndexById(ids[i]) < 0 || !isfinite(current_mA[i]) || current_mA[i] < 0.0f ||
+        current_mA[i] > MOTOR_CURRENT_LIMIT) return false;
+    for (uint8_t j = 0; j < i; ++j) if (ids[j] == ids[i]) return false;
+  }
+  for (uint8_t i = 0; i < count; ++i)
+    setCurrentLimit(ids[i], (uint16_t)lroundf(current_mA[i]));
+  return true;
 }
 int16_t NMLHandExo::getCurrent(uint8_t id) {
   // XC330 PRESENT_CURRENT uses about 1 mA per raw unit.

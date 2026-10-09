@@ -161,6 +161,18 @@ RPC interface explicitly for **all C++ translation units**:
 arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 --build-path build/firmware-protobuf --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF=1" src/cpp/nml_hand_exo
 ```
 
+For the fully framed split-CDC transport, compile the v2 route instead:
+
+```powershell
+arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 --build-path build/firmware-protobuf-v2 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF_V2=1" src/cpp/nml_hand_exo
+```
+
+Protobuf-v2 uses version-2 `PB` envelopes on both CDCs: the command CDC accepts
+Requests and the response CDC emits Responses. Discovery sends a side-effect-free
+`HELLO` in both physical orientations. Existing maintenance commands are carried
+inside the `TEXT_COMMAND` opcode, while motion, telemetry, assist, and the
+per-motor `SET_CURRENT_LIMITS` operation remain typed protobuf messages.
+
 Use `compiler.cpp.extra_flags`, not `build.extra_flags`: the latter replaces
 OpenRB's MCU and USB definitions and causes missing `Sercom`/`TCC_INST_NUM` errors.
 
@@ -186,6 +198,10 @@ USB Features: joint_model_write batch_motion
 Model Step Ms: 1
 I/O Profile: 1
 ```
+
+The v2 image reports `USB Protocol: protobuf-v2` and adds the
+`current_limit_batch` feature. The GUI's 300 mA bulk action sends one explicit
+ID/value pair per active motor; it does not send `set_total_current_lim`.
 
 The GUI replaces the Dual USB CDC checkbox with automatic discovery. Old builds
 without metadata use physical sibling discovery and the existing direction probe.

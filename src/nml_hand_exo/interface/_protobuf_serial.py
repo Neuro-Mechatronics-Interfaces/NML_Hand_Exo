@@ -1,4 +1,4 @@
-"""Opt-in USB Protobuf transport. Primary CDC is text; secondary is binary.
+"""Opt-in USB Protobuf transports.
 
 Never retries a motion RPC: a missing acknowledgement does not prove that the
 device failed to act. Schema and engineering units live in protocol/exo_usb.proto.
@@ -35,8 +35,9 @@ class AssistRejected(RuntimeError):
 class ProtobufFrameReader:
     """Keep partial replies across RPC deadlines and resynchronize by CRC."""
 
-    def __init__(self):
+    def __init__(self, expected_version=1):
         self.buffer = bytearray()
+        self.expected_version = int(expected_version)
 
     def read(self, stream, timeout):
         deadline = time.monotonic() + timeout
@@ -55,7 +56,7 @@ class ProtobufFrameReader:
                 needed = 7 - len(self.buffer)
                 if len(self.buffer) >= 7:
                     version, size, crc = struct.unpack_from('<BHH', self.buffer, 2)
-                    if version != 1 or not 0 < size <= MAX_RESPONSE:
+                    if version != self.expected_version or not 0 < size <= MAX_RESPONSE:
                         discarded += 1
                         del self.buffer[0]
                         continue
@@ -83,15 +84,15 @@ class ProtobufFrameReader:
                 self.buffer.extend(chunk)
 
 
-def encode_frame(payload: bytes) -> bytes:
+def encode_frame(payload: bytes, version=1) -> bytes:
     if not 0 < len(payload) <= MAX_RESPONSE:
         raise ValueError("Invalid Protobuf frame length")
-    prefix = struct.pack('<BH', 1, len(payload))
+    prefix = struct.pack('<BH', int(version), len(payload))
     crc = binascii.crc_hqx(prefix + payload, 0xffff)
     return b'PB' + prefix + struct.pack('<H', crc) + payload
 
 
-def read_frame(stream, timeout: float) -> bytes:
+def read_frame(stream, timeout: float, version=1) -> bytes:
     deadline = time.monotonic() + timeout
     def exact(size):
         result = bytearray()
@@ -104,8 +105,8 @@ def read_frame(stream, timeout: float) -> bytes:
     while prefix != b'PB':
         prefix = (prefix + exact(1))[-2:]
     header = exact(5)
-    version, size, crc = struct.unpack('<BHH', header)
-    if version != 1 or not 0 < size <= MAX_RESPONSE:
+    frame_version, size, crc = struct.unpack('<BHH', header)
+    if frame_version != int(version) or not 0 < size <= MAX_RESPONSE:
         raise ValueError('Unsupported Protobuf envelope')
     payload = exact(size)
     if binascii.crc_hqx(header[:3] + payload, 0xffff) != crc:
@@ -115,6 +116,8 @@ def read_frame(stream, timeout: float) -> bytes:
 
 class ProtobufSerialComm(DualSerialComm):
     usb_protocol = 'protobuf-v1'
+    frame_version = 1
+    max_request_frame = 135
     is_split = True
     supports_legacy_fast_telemetry = False
     # Shadow configuration/status remain valid maintenance-plane commands on
@@ -123,7 +126,8 @@ class ProtobufSerialComm(DualSerialComm):
     MOTOR_COMMANDS = {'set_current', 'set_velocity', 'set_absolute_angle', 'set_angle', 'stop'}
 
     def __init__(self, *args, motor_ids=None, model_write_supported=False,
-                 batch_motion_supported=False, assist_binary_supported=False, assist_enable_supported=False, **kwargs):
+                 batch_motion_supported=False, assist_binary_supported=False,
+                 assist_enable_supported=False, current_limit_batch_supported=False, **kwargs):
         super().__init__(*args, **kwargs)
         # Loaded only after discovery identifies a Protobuf build.
         try:
@@ -136,11 +140,12 @@ class ProtobufSerialComm(DualSerialComm):
         self.batch_motion_supported = bool(batch_motion_supported)
         self.assist_binary_supported = bool(assist_binary_supported)
         self.assist_enable_supported = bool(assist_enable_supported)
+        self.current_limit_batch_supported = bool(current_limit_batch_supported)
         self._assist_reasons = {number: name.removeprefix('ASSIST_REASON_').lower()
                                for name, number in self.pb.AssistReason.items()}
         self._rpc_lock = threading.Lock()
         self._sequence = secrets.randbits(32)
-        self._frame_reader = ProtobufFrameReader()
+        self._frame_reader = ProtobufFrameReader(self.frame_version)
 
     def assist_command(self, command, ids=(), values=(), *, timeout=1.0):
         if command == 'assist_enable' and not self.assist_enable_supported:
@@ -190,7 +195,7 @@ class ProtobufSerialComm(DualSerialComm):
                                     write_timeout=self.write_timeout)
         self._cmd.reset_input_buffer()
         self._telem.reset_input_buffer()
-        self._frame_reader = ProtobufFrameReader()
+        self._frame_reader = ProtobufFrameReader(self.frame_version)
         self._reader_error = None
         self._start_reader()
 
@@ -199,6 +204,47 @@ class ProtobufSerialComm(DualSerialComm):
 
     def fast_telemetry_device(self):
         raise RuntimeError('Legacy NX serial polling is disabled for Protobuf firmware')
+
+    def _request_device(self):
+        return self._telem
+
+    def _response_device(self):
+        return self._telem
+
+    def _exchange(self, request, label, timeout):
+        frame = encode_frame(request.SerializeToString(), self.frame_version)
+        if len(frame) > self.max_request_frame:
+            raise ValueError('Request exceeds firmware frame limit')
+        request_device = self._request_device()
+        response_device = self._response_device()
+        if request_device.write(frame) != len(frame):
+            raise ConnectionError('Incomplete Protobuf request write')
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                payload = self._frame_reader.read(response_device, deadline-time.monotonic())
+            except TimeoutError as exc:
+                raise TimeoutError(f'{label} on {self.telem_port} '
+                                   f'(sequence={request.sequence}): {exc}') from exc
+            response = self.pb.Response.FromString(payload)
+            if not response.IsInitialized():
+                raise ValueError('Incomplete Protobuf response')
+            # Sequence zero is reserved for unsolicited v2 events. It must not
+            # steal the response belonging to the transaction being awaited.
+            if response.sequence == 0:
+                if response.HasField('text_reply'):
+                    self._publish_reply(response.text_reply)
+                continue
+            if response.sequence != request.sequence:
+                continue # delayed response to an earlier timed-out request
+            if response.status != self.pb.OK:
+                message = (f'Firmware rejected {label}: '
+                           f'{self.pb.Status.Name(response.status)}')
+                if response.HasField('assist'):
+                    raise AssistRejected(message, self._decode_assist(response))
+                raise RuntimeError(message)
+            return response
+        raise TimeoutError('No matching Protobuf response; command was not retried')
 
     def _rpc(self, command, ids, value=None, *, timeout=.5, joint_model=None,
              values=None, finger_angles=None, gesture=None):
@@ -222,31 +268,7 @@ class ProtobufSerialComm(DualSerialComm):
                 request.finger_angles.CopyFrom(self.pb.FingerAngles(**finger_angles))
             if gesture is not None:
                 request.gesture.CopyFrom(self.pb.Gesture(**gesture))
-            frame = encode_frame(request.SerializeToString())
-            if len(frame) > 135:
-                raise ValueError('Request exceeds firmware frame limit')
-            if self._telem.write(frame) != len(frame):
-                raise ConnectionError('Incomplete Protobuf request write')
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
-                try:
-                    payload = self._frame_reader.read(self._telem, deadline-time.monotonic())
-                except TimeoutError as exc:
-                    raise TimeoutError(f'{self.pb.Command.Name(command)} on {self.telem_port} '
-                                       f'(sequence={request.sequence}): {exc}') from exc
-                response = self.pb.Response.FromString(payload)
-                if not response.IsInitialized():
-                    raise ValueError('Incomplete Protobuf response')
-                if response.sequence != request.sequence:
-                    continue # delayed response to an earlier timed-out request
-                if response.status != self.pb.OK:
-                    message = (f'Firmware rejected {self.pb.Command.Name(command)}: '
-                               f'{self.pb.Status.Name(response.status)}')
-                    if response.HasField('assist'):
-                        raise AssistRejected(message, self._decode_assist(response))
-                    raise RuntimeError(message)
-                return response
-            raise TimeoutError('No matching Protobuf response; command was not retried')
+            return self._exchange(request, self.pb.Command.Name(command), timeout)
 
     def get_fast_frame(self, motor_ids=None, *, timeout=.5):
         response = self._rpc(self.pb.GET_TELEMETRY_FAST,
@@ -295,6 +317,24 @@ class ProtobufSerialComm(DualSerialComm):
         targets = HandExo._motor_targets(targets)
         response = self._rpc(self.pb.Command.Value(command.upper()), list(targets), values=list(targets.values()))
         self._publish_reply(self._batch_reply('OK: ' + command, response))
+
+    def send_current_limit_batch(self, targets, *, timeout=2.0):
+        """Set explicit per-motor nominal current limits in one RPC.
+
+        Protobuf-v1 firmware does not advertise this opcode, so callers should
+        use their per-motor command fallback unless this capability is present.
+        """
+        if not getattr(self, 'current_limit_batch_supported', False):
+            raise RuntimeError('This Protobuf firmware lacks current_limit_batch')
+        from ._hand_exo import HandExo
+        targets = HandExo._motor_targets(targets)
+        values = list(targets.values())
+        if any(isinstance(value, bool) or not math.isfinite(float(value)) or not 0 <= float(value) <= 910
+               for value in values):
+            raise ValueError('Per-motor current limits must be finite values in [0, 910] mA')
+        response = self._rpc(self.pb.SET_CURRENT_LIMITS, list(targets), values=values, timeout=timeout)
+        self._publish_reply(self._batch_reply('OK: set_current_lim batch', response))
+        return response
 
     @staticmethod
     def _batch_reply(prefix, response):
@@ -417,3 +457,100 @@ class ProtobufSerialComm(DualSerialComm):
             # Unknown commands still go to firmware so it can produce its
             # canonical error and forward-compatible additions can be probed.
             self._write_line(self._cmd, message)
+
+
+class ProtobufV2SerialComm(ProtobufSerialComm):
+    """Fully framed split-CDC transport.
+
+    The command CDC accepts version-2 Request frames and the response CDC is
+    the only source of Response frames. There is no ASCII reader or writer in
+    this backend; maintenance commands are carried in ``TEXT_COMMAND`` so the
+    existing firmware command surface remains available without duplicating
+    all 80+ legacy parser commands in the schema.
+    """
+
+    usb_protocol = 'protobuf-v2'
+    frame_version = 2
+    max_request_frame = 512
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('current_limit_batch_supported', True)
+        super().__init__(*args, **kwargs)
+
+    def _open_and_probe(self):
+        self._cmd = serial.Serial(self.cmd_port, self.baudrate, timeout=.02,
+                                  write_timeout=self.write_timeout)
+        self._telem = serial.Serial(self.telem_port, self.baudrate, timeout=.02,
+                                    write_timeout=self.write_timeout)
+        self._cmd.reset_input_buffer()
+        self._telem.reset_input_buffer()
+        self._frame_reader = ProtobufFrameReader(self.frame_version)
+        self._reader_error = None
+        # Unlike the ASCII/v1 backend, the transaction owns response reads.
+        # This keeps request/response pairing deterministic while retaining
+        # the response CDC as the sole inbound result path.
+
+    def _request_device(self):
+        return self._cmd
+
+    def _response_device(self):
+        return self._telem
+
+    def _text_command(self, message, *, timeout=2.0):
+        message = str(message).strip()
+        if not message or len(message.encode('utf-8')) > 192:
+            raise ValueError('protobuf-v2 text command must contain 1..192 bytes')
+        with self._rpc_lock:
+            self._sequence = (self._sequence + 1) & 0xffffffff
+            request = self.pb.Request(sequence=self._sequence,
+                                      command=self.pb.TEXT_COMMAND,
+                                      text_command=message)
+            response = self._exchange(request, 'TEXT_COMMAND', timeout)
+        if not response.HasField('text_reply'):
+            raise ValueError('Protobuf-v2 text command response has no text_reply')
+        return response.text_reply
+
+    def _send_one(self, message: str):
+        command = message.strip().split(':', 1)[0].lower()
+        if command not in {
+            'set_angles', 'set_absolute_angles', 'set_currents',
+            'set_finger_angles', 'set_gesture', 'set_gesture_angle',
+            'set_joint_model', *self.MOTOR_COMMANDS, 'get_telemetry_fast',
+        }:
+            reply = self._text_command(message)
+            self._publish_reply(reply)
+            return
+        super()._send_one(message)
+
+
+def probe_protobuf_v2_ports(port_a, port_b, baudrate, *, timeout=.4):
+    """Return ``(command_port, response_port)`` after a side-effect-free HELLO.
+
+    USB CDC enumeration order is not stable, so both orientations are tested.
+    A trailing newline is intentional: it lets a v1 line parser discard the
+    probe cleanly if discovery is run against an older image.
+    """
+    from . import exo_usb_pb2
+    for command_port, response_port in ((port_a, port_b), (port_b, port_a)):
+        command = response = None
+        try:
+            command = serial.Serial(command_port, baudrate, timeout=.02, write_timeout=1.0)
+            response = serial.Serial(response_port, baudrate, timeout=.02, write_timeout=1.0)
+            command.reset_input_buffer(); response.reset_input_buffer()
+            request = exo_usb_pb2.Request(sequence=1, command=exo_usb_pb2.HELLO)
+            command.write(encode_frame(request.SerializeToString(), version=2) + b'\n')
+            payload = ProtobufFrameReader(2).read(response, timeout)
+            result = exo_usb_pb2.Response.FromString(payload)
+            if result.IsInitialized() and result.sequence == 1 and result.status == exo_usb_pb2.OK:
+                if result.HasField('text_reply') and result.text_reply == 'protobuf-v2':
+                    return command_port, response_port
+        except (OSError, serial.SerialException, TimeoutError, ValueError):
+            pass
+        finally:
+            for device in (command, response):
+                if device is not None:
+                    try:
+                        device.close()
+                    except Exception:
+                        pass
+    return None

@@ -21,11 +21,10 @@ PB_BIND(exo_usb_JointModel, exo_usb_JointModel, AUTO)
 PB_BIND(exo_usb_Request, exo_usb_Request, 2)
 
 
+PB_BIND(exo_usb_AssistJointStatus, exo_usb_AssistJointStatus, AUTO)
+
+
+PB_BIND(exo_usb_AssistStatus, exo_usb_AssistStatus, 2)
+
+
 PB_BIND(exo_usb_Response, exo_usb_Response, 2)
-
-
-
-
-
-
-

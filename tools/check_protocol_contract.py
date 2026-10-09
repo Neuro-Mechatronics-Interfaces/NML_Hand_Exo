@@ -124,7 +124,11 @@ def protobuf_contract_errors(root: Path) -> list[str]:
             f"{sorted(declared_parser - parser_commands)}"
         )
     schema = protobuf_schema_commands(root / "protocol/exo_usb.proto")
-    expected_schema = PROTOBUF_RPC_COMMANDS | PROTOBUF_ONLY_COMMANDS
+    # HELLO and TEXT_COMMAND are transport control opcodes rather than
+    # parseMessage() commands; they exist only for protobuf-v2 framing.
+    expected_schema = PROTOBUF_RPC_COMMANDS | PROTOBUF_ONLY_COMMANDS | {
+        "hello", "text_command", "set_current_limits"
+    }
     if schema != expected_schema:
         errors.append(
             "schema/route mismatch: missing="

@@ -56,11 +56,10 @@ handshake returns and before polling starts. Missing UTC never blocks `info` or
 
 The mode combo (Right Only / Left Only / Dual) is selected before connecting and locked
 while connected. All modes use one `HandExo` connection. `AutoSerialComm` reads `info` before choosing `SerialComm`, `DualSerialComm`, or
-`ProtobufSerialComm`. The GUI no longer has a Dual USB CDC checkbox. Protobuf
-builds advertise the text and binary port roles; unsupported layouts fail with
-a connection error. Ordinary telemetry uses the binary RPC; the optional
-read-only shadow recorder continues to use its maintenance commands and status
-replies on the primary text CDC. See [USB discovery and diagnostics](usb_protocol_and_io_diagnostics.md).
+`ProtobufSerialComm`; protobuf-v2 additionally discovers the command/response
+orientation with a framed `HELLO`. The GUI no longer has a Dual USB CDC checkbox.
+Protobuf-v1 keeps its primary-text/secondary-binary split; protobuf-v2 frames
+both CDCs. See [USB discovery and diagnostics](usb_protocol_and_io_diagnostics.md).
 
 At connect time, `_connect()` builds:
 
@@ -114,7 +113,12 @@ calibration commands, particularly with dual firmware.
 
 ## Setup motor limits `[VERIFIED]`
 
-Each motor row exposes an explicit-ID **Current limit** in mA and **Direct max**
+The Setup tab also exposes a bulk **Per-motor current limit (active GUI side)**
+control, defaulting to **300 mA**. Apply sends the same nominal limit to each
+active GUI-side DXL ID (one typed batch RPC on protobuf-v2, or explicit per-ID
+commands on older transports). It never edits the firmware's combined bus
+budget, so a dual-firmware floor such as 5400 mA is not shown in this control.
+Each motor row still exposes an explicit-ID **Current limit** in mA and **Direct max**
 in rpm (up to **71 rpm**). **Apply** writes the current limit only to that row's Dynamixel ID; it
 retains the velocity value as that motor's host-side ceiling for GUI direct and
 EMG teleoperation commands. The current limit remains subject to the shared
@@ -132,12 +136,10 @@ at 52/65/71 rpm no-load at 9/11.1/12 V respectively
 ([ROBOTIS specifications](https://emanual.robotis.com/docs/en/dxl/x/xc330-t288/)).
 Position/gesture profile speed remains a separate firmware setting.
 
-On connection the GUI reads the per-ID configured current limits and the
-shared-bus combined budget. **Set Total** waits for the firmware's acknowledgement
-and uses its applied budget directly, rather than sending an immediate second
-query. The applied budget can differ from the request because of its hold-current floor
-and fleet maximum. Direct current and EMG budgeting use these confirmed
-values; editing a spinbox does not change the applied limits. Zero current
+On connection the GUI reads the per-ID configured current limits and retains the
+shared-bus budget only as an internal EMG safety value. Direct current and EMG
+budgeting use these confirmed values; editing a spinbox does not change the
+applied limits. Zero current
 is represented as zero. Missing or failed readback caps the corresponding
 direct/EMG current at zero until a successful read/apply. A skipped serial
 action leaves the last confirmed values intact and reports no success.

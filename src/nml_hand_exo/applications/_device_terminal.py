@@ -149,6 +149,8 @@ class DeviceTerminal(QDialog):
             text = "Disconnected — connect a device to send commands"
         elif protocol == "protobuf-v1":
             text = "Protobuf USB — binary RPC commands and replies; text endpoint for maintenance commands"
+        elif protocol == "protobuf-v2":
+            text = "Protobuf USB — framed command and response CDCs"
         else:
             text = f"{protocol or 'ASCII serial'} — firmware text commands; decoded binary telemetry"
         self.protocol_label.setText(text)

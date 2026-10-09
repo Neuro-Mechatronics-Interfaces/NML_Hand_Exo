@@ -48,6 +48,12 @@ void debugPrint(const String& msg);
 /// @param msg The message to print
 void commandPrint(const String& msg);
 
+/// Capture parser replies for protobuf-v2 TEXT_COMMAND without writing raw
+/// bytes to either USB CDC endpoint.
+void protobufReplyCaptureBegin(String& capture);
+void protobufReplyCaptureEnd();
+bool protobufReplyCaptureActive();
+
 /// @brief Flashes a pin on and off for a specified duration and number of repetitions
 /// @param pin The pin number to flash
 /// @param durationMs The duration in milliseconds for which the pin should be on and off

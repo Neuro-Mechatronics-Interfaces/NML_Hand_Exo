@@ -25,6 +25,9 @@ enum Command {
   ASSIST_STATUS = 19;   // no fields; controller-memory snapshot only
   ASSIST_OBSERVER = 20; // one ID; values=[inertia_Nm_s2_per_deg, viscous_Nm_s_per_deg, coulomb_Nm]
   ASSIST_ENABLE = 21;   // explicit IDs; shared [threshold_mA, gain_deg_s_per_mA, cap_mA, inertia, viscous, coulomb]
+  TEXT_COMMAND = 22;    // protobuf-v2 maintenance command; text_command contains the ASCII payload
+  SET_CURRENT_LIMITS = 23; // explicit IDs + per-motor nominal current limits in values[]
+  HELLO = 24;            // side-effect-free transport discovery
 }
 message FingerAngles {
   // Missing fields hold that joint; signed integers are rest-relative -100..100.
@@ -63,6 +66,7 @@ message Request {
   repeated float values = 6 [packed = true];
   optional FingerAngles finger_angles = 7;
   optional Gesture gesture = 8;
+  optional string text_command = 9;
 }
 enum Status { OK = 0; INVALID_REQUEST = 1; REJECTED = 2; }
 enum AssistState { ASSIST_OFF = 0; ASSIST_CALIBRATING = 1; ASSIST_READY = 2; ASSIST_ACTIVE = 3; ASSIST_STOP_FAULT = 4; }
@@ -149,4 +153,5 @@ message Response {
   optional bytes nx_frame = 3;
   optional BatchResult batch = 4;
   optional AssistStatus assist = 5;
+  optional string text_reply = 6;
 }

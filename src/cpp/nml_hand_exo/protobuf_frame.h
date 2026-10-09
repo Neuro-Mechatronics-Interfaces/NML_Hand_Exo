@@ -4,7 +4,7 @@
 
 namespace exo_pb {
 static constexpr size_t MAX_RESPONSE = 2048;
-// Envelope: 'PB', version=1, little-endian length and CRC16-CCITT-FALSE.
+// Envelope: 'PB', version, little-endian length and CRC16-CCITT-FALSE.
 // CRC covers version + length + payload; it excludes magic and CRC itself.
 inline uint16_t crc(const uint8_t* data, size_t size, uint16_t value = 0xffff) {
   while (size--) {
@@ -15,10 +15,12 @@ inline uint16_t crc(const uint8_t* data, size_t size, uint16_t value = 0xffff) {
   return value;
 }
 struct Reader {
-  static constexpr size_t MAX_REQUEST = 128;
+  static constexpr size_t MAX_REQUEST = 512;
   uint8_t bytes[MAX_REQUEST + 7] = {};
   size_t used = 0, size = 0;
   uint32_t last = 0;
+  uint8_t expected_version = 1;
+  explicit Reader(uint8_t version = 1) : expected_version(version) {}
   bool feed(uint8_t byte, uint32_t now) {
     if (used && uint32_t(now - last) > 50) used = 0;
     last = now;
@@ -27,7 +29,7 @@ struct Reader {
     bytes[used++] = byte;
     if (used == 7) {
       size = bytes[3] | uint16_t(bytes[4]) << 8;
-      if (bytes[2] != 1 || size == 0 || size > MAX_REQUEST) { used = 0; return false; }
+      if (bytes[2] != expected_version || size == 0 || size > MAX_REQUEST) { used = 0; return false; }
     }
     if (used >= 7 && used == size + 7) {
       used = 0;

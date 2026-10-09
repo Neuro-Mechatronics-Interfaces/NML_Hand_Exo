@@ -44,25 +44,45 @@ class AutoSerialComm(BaseComm):
             finally:
                 exo.close()
         else:
-            raise ConnectionError('USB discovery failed: ' + '; '.join(failures))
+            # protobuf-v2 deliberately has no ASCII discovery path. Probe the
+            # two CDC endpoints with a side-effect-free framed HELLO after the
+            # legacy line probes have failed.
+            if pair and len(pair) == 2:
+                from ._protobuf_serial import probe_protobuf_v2_ports
+                v2_ports = probe_protobuf_v2_ports(pair[0], pair[1], self.baudrate)
+                if v2_ports:
+                    primary, secondary = v2_ports
+                    self.info = {
+                        'usb_protocol': 'protobuf-v2', 'usb_cdc_count': 2,
+                        'usb_text_port': 'primary', 'usb_binary_port': 'secondary',
+                        'usb_features': ['joint_model_write', 'batch_motion',
+                                         'current_limit_batch', 'assist_binary',
+                                         'assist_enable'],
+                    }
+                else:
+                    raise ConnectionError('USB discovery failed: ' + '; '.join(failures))
+            else:
+                raise ConnectionError('USB discovery failed: ' + '; '.join(failures))
         protocol = self.info.get('usb_protocol', 'ascii-nx')
         count = self.info.get('usb_cdc_count', 2 if pair else 1)
-        if protocol not in ('ascii-nx', 'axon-ascii', 'protobuf-v1') or count not in (1, 2):
+        if protocol not in ('ascii-nx', 'axon-ascii', 'protobuf-v1', 'protobuf-v2') or count not in (1, 2):
             raise ConnectionError(f'Unsupported USB capabilities: {protocol}, CDC count {count}')
         if count == 2 and not pair:
             raise ConnectionError('Firmware reports two CDC ports but its sibling is unavailable')
-        if protocol == 'protobuf-v1':
+        if protocol in ('protobuf-v1', 'protobuf-v2'):
             if count != 2 or self.info.get('usb_text_port') != 'primary' or self.info.get('usb_binary_port') != 'secondary':
                 raise ConnectionError('Unsupported Protobuf USB layout')
-            from ._protobuf_serial import ProtobufSerialComm
+            from ._protobuf_serial import ProtobufSerialComm, ProtobufV2SerialComm
             secondary = next(p for p in pair if p != primary)
-            backend = ProtobufSerialComm(primary, secondary, self.baudrate,
-                                         motor_ids=sorted(self.info['motors']),
-                                         model_write_supported='joint_model_write' in self.info.get('usb_features', []),
-                                         batch_motion_supported='batch_motion' in self.info.get('usb_features', []),
-                                         assist_binary_supported='assist_binary' in self.info.get('usb_features', []),
-                                         assist_enable_supported='assist_enable' in self.info.get('usb_features', []),
-                                         **self.kwargs)
+            comm_type = ProtobufV2SerialComm if protocol == 'protobuf-v2' else ProtobufSerialComm
+            backend = comm_type(primary, secondary, self.baudrate,
+                                 motor_ids=sorted(self.info.get('motors', {})),
+                                 model_write_supported='joint_model_write' in self.info.get('usb_features', []),
+                                 batch_motion_supported='batch_motion' in self.info.get('usb_features', []),
+                                 assist_binary_supported='assist_binary' in self.info.get('usb_features', []),
+                                 assist_enable_supported='assist_enable' in self.info.get('usb_features', []),
+                                 current_limit_batch_supported='current_limit_batch' in self.info.get('usb_features', []),
+                                 **self.kwargs)
         elif count == 2:
             backend = DualSerialComm(*pair, self.baudrate, **self.kwargs)
         else:

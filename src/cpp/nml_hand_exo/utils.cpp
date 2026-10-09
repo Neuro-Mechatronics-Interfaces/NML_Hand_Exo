@@ -14,6 +14,7 @@
 #include <chrono>
 #include <thread>
 #include "io_profile.h"
+#include "protobuf_usb.h"
 
 
 // IMU variables (print delay logic currently disabled)
@@ -22,6 +23,16 @@ uint16_t PRINT_DELAY_MS = 500; // how often to print the data
 uint16_t printCount = 0; //counter to avoid printing every 10MS sample
 
 sensors_event_t orientationData, linearAccelData;
+
+static String* gProtobufReplyCapture = nullptr;
+
+void protobufReplyCaptureBegin(String& capture) {
+  capture = "";
+  gProtobufReplyCapture = &capture;
+}
+
+void protobufReplyCaptureEnd() { gProtobufReplyCapture = nullptr; }
+bool protobufReplyCaptureActive() { return gProtobufReplyCapture != nullptr; }
 
 
 
@@ -61,7 +72,10 @@ uint32_t loopStatsMeanUs() {
 void telemetryPrintln(const String& msg) {
   EXO_PROFILE(USB_TX);
   // The Protobuf build reserves the second CDC exclusively for binary data.
-#if EXO_USB_PROTOBUF
+#if EXO_USB_PROTOBUF_V2
+  if (!protobufReplyCaptureActive()) protobufV2EmitEvent(msg);
+  return;
+#elif EXO_USB_PROTOBUF
   CMD_SERIAL.println(msg);
 #elif defined(DUAL_CDC) && DUAL_CDC
   // Legacy-safe: default route BOTH mirrors to the command CDC so a single-port
@@ -89,6 +103,13 @@ void commandPrint(const String& msg) {
   if (!cmdMsg.endsWith(cmdDelimiter)) {
     cmdMsg += cmdDelimiter;
   }
+
+#if EXO_USB_PROTOBUF_V2
+  if (gProtobufReplyCapture) {
+    *gProtobufReplyCapture += cmdMsg;
+    return;
+  }
+#endif
 
   // Emit command replies / sensor-request responses regardless of VERBOSE mode.
   // The Bluetooth command path (COMMAND_SERIAL) always mirrors the reply; the

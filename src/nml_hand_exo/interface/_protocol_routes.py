@@ -131,7 +131,7 @@ PROTOBUF_PRIMARY_TEXT_COMMANDS = frozenset(
 
 # Typed-only batch operations have no parseMessage() equivalent.
 PROTOBUF_ONLY_COMMANDS = frozenset(
-    {"set_angles", "set_absolute_angles", "set_currents"}
+    {"set_angles", "set_absolute_angles", "set_currents", "set_current_limits"}
 )
 
 
