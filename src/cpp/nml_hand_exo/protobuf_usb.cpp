@@ -14,13 +14,55 @@
 
 static exo_pb::Reader reader;
 
+static void packAssistStatus(NMLHandExo& exo, exo_usb_Response& response) {
+  AssistStatusSnapshot snapshot;
+  exo.getAssistSnapshot(snapshot);
+  response.has_assist = true;
+  auto& status = response.assist;
+  status.state = static_cast<exo_usb_AssistState>(snapshot.state);
+  status.reason = static_cast<exo_usb_AssistReason>(snapshot.reason);
+  status.has_reject_id = snapshot.reject_id >= 0;
+  if (status.has_reject_id) status.reject_id = snapshot.reject_id;
+  status.has_reject_angle_deg = status.has_reject_id && isfinite(snapshot.reject_angle_deg);
+  status.has_reject_velocity_deg_s = status.has_reject_id && isfinite(snapshot.reject_velocity_deg_s);
+  status.reject_angle_deg = snapshot.reject_angle_deg;
+  status.reject_velocity_deg_s = snapshot.reject_velocity_deg_s;
+  status.joints_count = snapshot.count;
+  status.has_total_current_budget_mA = true;
+  status.total_current_budget_mA = snapshot.total_current_budget_mA;
+  for (uint8_t i = 0; i < snapshot.count; ++i) {
+    const auto& source = snapshot.joints[i]; auto& target = status.joints[i];
+    target.id = source.id;
+    target.samples = source.samples;
+    target.bias_mA = source.bias_mA;
+    target.noise_mA = source.noise_mA;
+    target.deadzone_mA = source.deadzone_mA;
+    target.effort_mA = source.effort_mA;
+    target.deflection_deg = source.deflection_deg;
+    target.angle = source.angle;
+    target.goal = source.goal;
+    target.moving = source.moving;
+    target.secondary_goal = source.secondary_goal;
+    target.intent_deg_s = source.intent_deg_s;
+    target.lead_deg = source.lead_deg;
+    target.rearm_blocked = source.rearm_blocked;
+    target.steps = source.steps;
+    target.age_ms = source.age_ms;
+    target.has_current_cap_mA = true;
+    target.current_cap_mA = source.current_cap_mA;
+  }
+}
+static_assert(exo_usb_AssistStatus_size + 16 <= exo_pb::MAX_RESPONSE,
+              "Assist status must fit the bounded response envelope");
+
+
 // Fixed-size wire messages, no ASCII serialization or parseMessage dispatch.
 // Gesture resolution retains the existing controller's String-based name API.
 static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb_Request& request,
                            exo_usb_Response& response) {
   response.sequence = request.sequence;
   response.status = exo_usb_Status_INVALID_REQUEST;
-  const bool assist = request.command >= exo_usb_Command_ASSIST_CONFIG && request.command <= exo_usb_Command_ASSIST_STOP;
+  const bool assist = request.command >= exo_usb_Command_ASSIST_CONFIG && request.command <= exo_usb_Command_ASSIST_ENABLE;
   if (assist) {
     if (request.has_value || request.has_joint_model || request.has_finger_angles || request.has_gesture) return;
     for (uint8_t k = 0; k < request.motor_ids_count; ++k) {
@@ -28,22 +70,29 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
       for (uint8_t j = 0; j < k; ++j) if (request.motor_ids[k] == request.motor_ids[j]) return;
     }
     bool ok = false;
-    if (request.command == exo_usb_Command_ASSIST_CONFIG) {
+    if (request.command == exo_usb_Command_ASSIST_CONFIG || request.command == exo_usb_Command_ASSIST_OBSERVER) {
       if (request.motor_ids_count != 1 || request.values_count != 3) return;
-      ok = exo.configureAssist(request.motor_ids[0], request.values[0], request.values[1], request.values[2]);
-    } else if (request.command == exo_usb_Command_ASSIST_CALIBRATE) {
-      if (!request.motor_ids_count || request.values_count) return;
+      ok = request.command == exo_usb_Command_ASSIST_CONFIG
+          ? exo.configureAssist(request.motor_ids[0], request.values[0], request.values[1], request.values[2])
+          : exo.configureAssistObserver(request.motor_ids[0], request.values[0], request.values[1], request.values[2]);
+    } else if (request.command == exo_usb_Command_ASSIST_CALIBRATE || request.command == exo_usb_Command_ASSIST_ENABLE) {
+      const bool enable = request.command == exo_usb_Command_ASSIST_ENABLE;
+      if (!request.motor_ids_count || request.values_count != (enable ? 6 : 0)) return;
       uint8_t ids[N_MOTORS];
       if (request.motor_ids_count > N_MOTORS) return;
       for (uint8_t k = 0; k < request.motor_ids_count; ++k) ids[k] = request.motor_ids[k];
-      ok = exo.calibrateAssist(ids, request.motor_ids_count);
+      ok = enable ? exo.enableTorqueAssist(ids, request.motor_ids_count,
+          request.values[0], request.values[1], request.values[2], request.values[3], request.values[4], request.values[5])
+          : exo.calibrateAssist(ids, request.motor_ids_count);
     } else {
       if (request.motor_ids_count || request.values_count) return;
       if (request.command == exo_usb_Command_ASSIST_START) ok = exo.startAssist();
       else if (request.command == exo_usb_Command_ASSIST_HEARTBEAT) ok = exo.heartbeatAssist();
-      else { exo.stopAssist(); ok = true; }
+      else if (request.command == exo_usb_Command_ASSIST_STOP) { exo.stopAssist(); ok = true; }
+      else if (request.command == exo_usb_Command_ASSIST_STATUS) ok = true;
     }
     response.status = ok ? exo_usb_Status_OK : exo_usb_Status_REJECTED;
+    packAssistStatus(exo, response);
     return;
   }
   if (exo.isAssistBusy() && request.command != exo_usb_Command_GET_TELEMETRY_FAST &&
@@ -221,7 +270,7 @@ void pollProtobufUsb(NMLHandExo& exo, GestureController& gc) {
     exo_usb_Response response = exo_usb_Response_init_zero;
     executeRequest(exo, gc, request, response);
     exo.serviceRomCalibration();
-    uint8_t output[640 + 7]; // same bounded response envelope, including batch metadata
+    uint8_t output[exo_pb::MAX_RESPONSE + 7]; // bounded 18-joint status or NX response
     pb_ostream_t stream = pb_ostream_from_buffer(output + 7, sizeof(output) - 7);
     if (!pb_encode(&stream, exo_usb_Response_fields, &response)) return;
     uint16_t size = stream.bytes_written;

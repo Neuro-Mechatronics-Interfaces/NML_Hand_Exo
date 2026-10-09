@@ -1,0 +1,12 @@
+digraph setup_torque {
+  graph [rankdir=LR, bgcolor="transparent", nodesep=0.35, ranksep=0.55];
+  node [shape=box, style="rounded,filled", fillcolor="#edf3fa", fontname="Arial", fontsize=11];
+  edge [fontname="Arial", fontsize=10];
+  enable [label="Setup Enable All / Left / Right\nPause polling; wait for pending read\nSkip before changing torque if busy"];
+  stop [label="Stop direct / EMG\nRelease position hold"];
+  mode [label="Restore CURRENT_POSITION\nWait for matching ACK, up to 10 s\nFailure aborts before enable\nFirmware: torque off globally\nGUI: all rows OFF, arming cleared"];
+  targets [label="Enable requested DXL IDs\nOnly their rows become ON\nThen resume telemetry"];
+  disable [label="Setup Disable All / Left / Right\nDisable requested IDs\nRemove those IDs from arming"];
+  enable -> stop -> mode -> targets;
+  targets -> disable [label="later disable"];
+}

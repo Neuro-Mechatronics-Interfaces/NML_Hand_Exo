@@ -265,10 +265,10 @@ hold_position:14:22.5
 release_hold:14
 ```
 
-- `set_velocity` uses signed rpm and is clamped to `DIRECT_VELOCITY_LIMIT_RPM` (50 rpm in the current validated firmware source).
+- `set_velocity` uses signed rpm and is clamped to `DIRECT_VELOCITY_LIMIT_RPM` (71 rpm in the updated firmware source). Reflash to replace the older 50 rpm ceiling.
 - Before entering Velocity mode, firmware turns torque off, reads each motor's
-  hardware `VELOCITY_LIMIT` register, conditionally writes raw `218`
-  (approximately 49.9 rpm at 0.229 rpm/unit), and verifies readback. A failed
+  hardware `VELOCITY_LIMIT` register, conditionally writes raw `310`
+  (70.99 rpm at 0.229 rpm/unit), and verifies readback. A failed
   verification aborts the mode change with torque remaining off. The EEPROM
   register is not rewritten when it already matches. Dual firmware skips IDs
   that are not physically reachable, but records verification per ID and
@@ -651,7 +651,8 @@ response statistics; see [the v0.9.1 procedure](v0.9.1_pulse_calibration.md).
 frames. Primary USB retains ASCII maintenance commands, `info`, `help` and ROM
 events. `info` advertises the protocol, CDC count/roles, model integration step,
 and I/O profile version. The SDK/GUI discovers this automatically; legacy NX
-polling and ASCII shadow streaming are disabled on the Protobuf backend.
+polling is disabled on the Protobuf backend. Shadow configuration and buffered
+status queries remain primary-CDC text commands.
 `USB Features: joint_model_write` advertises binary `SET_JOINT_MODEL` support;
 the SDK sends one explicit ID and five typed float parameters through this path.
 Older Protobuf builds require a reflash for model writes through the updated SDK.
@@ -664,6 +665,29 @@ See [the complete contract and benchmark commands](usb_protocol_and_io_diagnosti
 
 ## Assist control
 
-Firmware with `Assist Protocol: assist-v1` supports explicit-ID bias calibration,
+Firmware with `Assist Protocol: assist-v3` supports one-click explicit-ID enable,
+automatic initial bias collection/activation, and the legacy bias-calibration API,
 sensitivity configuration and bounded effort assistance. See [Assist mode](assist_mode.md)
-for ASCII commands, Protobuf opcodes 14?18, states and heartbeat requirements.
+for ASCII commands, Protobuf opcodes 14–21, states and heartbeat requirements.
+
+### Binary assist status (Protobuf builds)
+
+With `EXO_USB_PROTOBUF=1`, the secondary CDC accepts `ASSIST_STATUS` (19,
+no arguments) and `ASSIST_OBSERVER` (20, one explicit motor ID and three
+`values`: inertia, viscous friction, Coulomb friction, in the same units as
+`assist_observer`). Commands 14–20 return a typed `Response.assist` snapshot
+on success or controller rejection. State and reason are numeric enums;
+rejection diagnostics and up to 18 joint records are numeric fields. Snapshots
+read controller memory and cause no additional Dynamixel traffic. Heartbeat
+replies carry status, avoiding a second status request in the GUI.
+
+The `PB` version-1 envelope and 128-byte request limit remain unchanged.
+The response payload limit is 2048 bytes to accommodate 18 joint records;
+firmware advertises `assist_binary` in `USB Features`. The SDK uses binary
+status and observer operations on Protobuf connections without an ASCII
+fallback. Primary CDC discovery and unrelated maintenance commands remain text.
+
+All `parseMessage()` routes are explicitly classified in
+`interface/_protocol_routes.py`: 18 typed Protobuf RPCs and 85 primary-text
+commands. `python tools/check_protocol_contract.py --matrix` verifies that the
+103-command parser set, Protobuf schema, and C++ RPC dispatch stay synchronized.

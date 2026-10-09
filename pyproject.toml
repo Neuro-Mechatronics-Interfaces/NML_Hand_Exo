@@ -1,6 +1,6 @@
 [project]
 name = "nml_hand_exo"
-version = "0.3.0.0"
+version = "0.3.1.5"
 description = "Control, calibrate, and decode intent for the NML Hand Exoskeleton"
 authors = [
     { name="Jonathan Shulgach", email="jshulgac@andrew.cmu.edu" },
@@ -17,10 +17,12 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Operating System :: Microsoft :: Windows",
+    "Operating System :: Apple :: MacOS Tahoe 26.1+", 
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: C++ :: Arduino-IDE", 
     "Topic :: Scientific/Engineering :: Human Machine Interfaces",
 ]
 dependencies = [

@@ -1,0 +1,19 @@
+digraph setup_limits {
+  graph [rankdir=LR, bgcolor="transparent", nodesep=0.35, ranksep=0.55];
+  node [shape=box, style="rounded,filled", fillcolor="#edf3fa", fontname="Arial", fontsize=11];
+  edge [fontname="Arial", fontsize=10];
+  request [label="Setup editors\nRequested values"];
+  gate [shape=diamond, label="Connected, idle\nand serial available?"];
+  write [label="Per-ID current: write then read\nBudget: wait for setter ACK\nACK carries applied mA"];
+  applied [label="Confirmed current/budget\nApplied GUI direct ceiling\n(maximum 71 rpm)"];
+  commands [label="Direct / EMG commands\nUse confirmed limits\nFirmware clamps separately"];
+  failure [label="Failed readback\nCurrent capped at zero\nReport failure"];
+  request -> gate [label="Apply / Set Total"];
+  gate -> request [label="busy / skipped\nkeep confirmed limits"];
+  gate -> write [label="yes"];
+  write -> applied [label="valid current readback\nor budget ACK"];
+  write -> failure [label="missing / invalid"];
+  applied -> commands;
+  failure -> commands;
+  { rank=same; applied; failure; }
+}

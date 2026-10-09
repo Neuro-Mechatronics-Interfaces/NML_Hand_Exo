@@ -190,13 +190,20 @@ I/O Profile: 1
 The GUI replaces the Dual USB CDC checkbox with automatic discovery. Old builds
 without metadata use physical sibling discovery and the existing direction probe.
 New unknown protocol identifiers fail closed. Protobuf builds disable legacy NX
-serial polling and the ASCII shadow stream. Fast-read failures do not trigger
-text fallback. Slow configuration, home operations, calibration events,
+serial polling; fast-read failures do not trigger text fallback. The read-only
+shadow configuration/status commands remain available on the primary text CDC.
+Slow configuration, home operations, calibration events,
 `info`, `help`, and manual text diagnostics remain on the primary CDC. The binary
 interface covers `get_telemetry_fast`, `set_current`, `set_velocity`, `set_angle`,
 `set_absolute_angle`, `stop`, `set_joint_model`, `set_angles`,
 `set_absolute_angles`, `set_currents`, `set_finger_angles`, `set_gesture`, and
 `set_gesture_angle`. Other maintenance and calibration commands remain text.
+
+The route contract is exhaustive: all 103 commands in `parseMessage()` are
+classified as either a typed Protobuf RPC (18 commands) or a primary-CDC text
+command (85 commands). The three typed-only batch operations have no ASCII
+parser equivalent. Run `python tools/check_protocol_contract.py --matrix` to
+print every route and cross-check the parser, schema enum, and C++ dispatch.
 
 The public `HandExo` setters and telemetry getter route automatically. Typed SDK
 motor calls bypass string formatting and the legacy send delay. Existing GUI
@@ -268,6 +275,11 @@ new batch commands, the explicit-ID string form is `set_angles:16=5:17=-5`
 (relative degrees), `set_absolute_angles:16=180:17=180`, or
 `set_currents:16=80:17=-60`. Prefer the typed SDK methods in new decoder code.
 
+The GUI real-time worker also switches as one action set: homogeneous current
+updates use one `SET_CURRENTS` request, multi-ID stop uses one `STOP` request,
+and velocity/mixed updates use the corresponding typed single-motor RPCs. It
+never concatenates ASCII motion lines into a Protobuf request.
+
 The schema is [exo_usb.proto](../protocol/exo_usb.proto), with bounded allocation
 specified in [exo_usb.options](../protocol/exo_usb.options). Generated C files
 live under the sketch's `protocol/`; Python bindings live in `interface/`.
@@ -281,7 +293,7 @@ is not self-delimiting. See [the official Protobuf guidance](https://protobuf.de
 Each message has a seven-byte envelope: `PB`, version byte 1, uint16 little-endian
 payload length, uint16 little-endian CRC16-CCITT-FALSE. CRC covers version,
 length and payload. Requests are bounded to 128 bytes and 18 unique IDs;
-responses are bounded to 640 bytes. Required sequence numbers correlate replies.
+responses are bounded to 2048 bytes for full 18-joint assist status. Required sequence numbers correlate replies.
 Malformed, truncated, CRC-invalid or oversized frames cannot dispatch a motor
 command. Partial request assembly expires after a 50 ms inter-byte gap. At most
 128 bytes and one complete request are processed per main-loop pass.
@@ -290,6 +302,13 @@ The SDK never automatically retries a motion command after a timeout: a lost ACK
 does not establish that the device failed to act. It discards replies with a
 different sequence. Firmware does not provide persistent deduplication; clients
 must not resend motion messages as a recovery strategy.
+
+The host keeps partial response bytes across RPC timeouts instead of resetting
+the binary input on every request. Complete late responses are rejected by
+sequence; bad headers/CRCs resynchronize to the next valid envelope. Timeout
+errors distinguish no reply, a partial seven-byte header and a partial payload,
+and identify the command and binary CDC port. This recovery does not replay
+the timed-out operation or add retries to a telemetry poll.
 
 Telemetry responses carry the existing NX v2 packed frame in a Protobuf `bytes`
 field. That preserves its compact fixed-size records, units, provenance and
@@ -305,10 +324,18 @@ request parsing/formatting and keeping binary traffic off the text reader.
 
 ## Assist protocol extension
 
-`assist_v1` in `USB Features` and `Assist Protocol: assist-v1` identify
-[Assist mode](assist_mode.md). Protobuf opcodes 14?18 configure, calibrate, start,
-renew and stop assistance. All control operations use the binary endpoint in
-Protobuf builds; `assist_status` remains a low-rate text diagnostic.
+`assist_v2` in `USB Features` and `Assist Protocol: assist-v3` identify
+[Assist mode](assist_mode.md). Protobuf opcodes 14–18 configure, calibrate, start,
+renew and stop assistance. `assist_binary` adds opcode 19 for status and opcode 20
+for the per-ID observer model setter. `assist_enable` adds opcode 21: explicit
+IDs plus six shared parameter floats, grouped mode/hold setup and automatic
+baseline-to-ACTIVE transition. Status includes the existing combined current
+budget and each effective current cap. All assist operations use the secondary
+binary endpoint. Replies include a typed `Response.assist` snapshot with numeric
+state/reason enums and up to 18 joint records. Heartbeat replies carry status,
+so the GUI needs one exchange and no ASCII status parsing while running.
+Opcode 14 retains three floats, but its gain now has units deg/s/mA; update
+firmware and SDK together. Discovery and unrelated maintenance remain text.
 
 Fast telemetry method 5 identifies cached assist-control measurements. Per-field
 source flags remain measured; per-sample timestamps retain acquisition time,

@@ -1,4 +1,5 @@
 #include "rom_pulse_fit.h"
+#include "assist_controller.h"
 #include "rom_settle_window.h"
 #include <algorithm>
 #include <cassert>
@@ -59,7 +60,7 @@ struct Bus {
 struct NMLHandExo {
   Bus dxl_;
   bool isAssistBusy() const { return false; }
-  void stopAssist(const char*) {}
+  void stopAssist(AssistReason) {}
   uint8_t romCalShapeSlot_ = 0;
   RomPulseExposure romCalExposure_;
   float romCalExpectedCurrent_ = 0;

@@ -2,7 +2,7 @@ syntax = "proto2";
 package exo_usb;
 
 // High-rate equivalents retain the ASCII command names and engineering units.
-// Slow configuration, help, info and ROM events stay on the primary text CDC.
+// Discovery, help, info, unrelated maintenance and ROM events use primary text CDC.
 enum Command {
   GET_TELEMETRY_FAST = 1;
   SET_CURRENT = 2;        // signed mA, one explicit ID
@@ -17,11 +17,14 @@ enum Command {
   SET_FINGER_ANGLES = 11;
   SET_GESTURE = 12;
   SET_GESTURE_ANGLE = 13; // percent 0..100, gesture.name + value
-  ASSIST_CONFIG = 14;   // one ID; values=[threshold_mA, gain_deg_per_mA, current_cap_mA]
-  ASSIST_CALIBRATE = 15; // explicit IDs; already enabled in current-position mode
+  ASSIST_CONFIG = 14;   // one ID; values=[threshold_mA, gain_deg_s_per_mA, current_cap_mA]
+  ASSIST_CALIBRATE = 15; // explicit IDs; capped hold enables selected motors
   ASSIST_START = 16;    // no fields; requires completed bias calibration
   ASSIST_HEARTBEAT = 17;
   ASSIST_STOP = 18;
+  ASSIST_STATUS = 19;   // no fields; controller-memory snapshot only
+  ASSIST_OBSERVER = 20; // one ID; values=[inertia_Nm_s2_per_deg, viscous_Nm_s_per_deg, coulomb_Nm]
+  ASSIST_ENABLE = 21;   // explicit IDs; shared [threshold_mA, gain_deg_s_per_mA, cap_mA, inertia, viscous, coulomb]
 }
 message FingerAngles {
   // Missing fields hold that joint; signed integers are rest-relative -100..100.
@@ -62,6 +65,82 @@ message Request {
   optional Gesture gesture = 8;
 }
 enum Status { OK = 0; INVALID_REQUEST = 1; REJECTED = 2; }
+enum AssistState { ASSIST_OFF = 0; ASSIST_CALIBRATING = 1; ASSIST_READY = 2; ASSIST_ACTIVE = 3; ASSIST_STOP_FAULT = 4; }
+enum AssistReason {
+  ASSIST_REASON_NONE = 0;
+  ASSIST_REASON_OFF = 1;
+  ASSIST_REASON_STOPPED = 2;
+  ASSIST_REASON_FEEDBACK_INVALID = 3;
+  ASSIST_REASON_FEEDBACK_STALE = 4;
+  ASSIST_REASON_SPEED_LIMIT = 5;
+  ASSIST_REASON_TRACKING_ERROR = 6;
+  ASSIST_REASON_CURRENT_LIMIT = 7;
+  ASSIST_REASON_CALIBRATION_MOVING = 8;
+  ASSIST_REASON_INSUFFICIENT_CURRENT_HEADROOM = 9;
+  ASSIST_REASON_CALIBRATION_BUSY = 10;
+  ASSIST_REASON_REQUIRES_CURRENT_POSITION = 11;
+  ASSIST_REASON_INVALID_TARGETS = 12;
+  ASSIST_REASON_UNKNOWN_MOTOR = 13;
+  ASSIST_REASON_DUPLICATE_MOTOR = 14;
+  ASSIST_REASON_NOT_CONFIGURED = 15;
+  ASSIST_REASON_POSITION_HOLD_ACTIVE = 16;
+  ASSIST_REASON_MOTOR_CURRENT_LIMIT = 17;
+  ASSIST_REASON_UNSELECTED_MOTOR_ENABLED = 18;
+  ASSIST_REASON_CURRENT_BUDGET = 19;
+  ASSIST_REASON_FEEDBACK_OR_TORQUE_READ = 20;
+  ASSIST_REASON_NOT_SETTLED = 21;
+  ASSIST_REASON_STORED_LIMIT = 22;
+  ASSIST_REASON_OPERATING_MODE_READ = 23;
+  ASSIST_REASON_MOTOR_REQUIRES_CURRENT_POSITION = 24;
+  ASSIST_REASON_UNSUPPORTED_DRIVE_MODE = 25;
+  ASSIST_REASON_UNSELECTED_TORQUE_READ = 26;
+  ASSIST_REASON_CALIBRATING = 27;
+  ASSIST_REASON_START_TORQUE_OFF_FAILED = 28;
+  ASSIST_REASON_START_POSE_CHANGED = 29;
+  ASSIST_REASON_START_WRITE_FAILED = 30;
+  ASSIST_REASON_HEARTBEAT_TIMEOUT = 31;
+  ASSIST_REASON_START_TORQUE_ON_FAILED = 32;
+  ASSIST_REASON_ACTIVE = 33;
+  ASSIST_REASON_TORQUE_OFF_UNCONFIRMED = 34;
+  ASSIST_REASON_STOP_RETRIED = 35;
+  ASSIST_REASON_MODE_CHANGED = 36;
+  ASSIST_REASON_CALIBRATION_TIMEOUT = 37;
+  ASSIST_REASON_DISABLED = 38;
+  ASSIST_REASON_NO_TARGETS = 39;
+  ASSIST_REASON_FEEDBACK_READ = 40;
+  ASSIST_REASON_GOAL_WRITE_OR_LIMIT = 41;
+  ASSIST_REASON_READY = 42;
+  ASSIST_REASON_UNKNOWN = 43;
+  ASSIST_REASON_EXTERNAL_STOP = 44;
+}
+message AssistJointStatus {
+  required uint32 id = 1;
+  required uint32 samples = 2;
+  required float bias_mA = 3;
+  required float noise_mA = 4;
+  required float deadzone_mA = 5;
+  required float effort_mA = 6;
+  required float deflection_deg = 7;
+  required float angle = 8;
+  required float goal = 9;
+  required bool moving = 10;
+  required float secondary_goal = 11;
+  required float intent_deg_s = 12;
+  required float lead_deg = 13;
+  required bool rearm_blocked = 14;
+  required uint32 steps = 15;
+  required uint32 age_ms = 16;
+  optional float current_cap_mA = 17;
+}
+message AssistStatus {
+  required AssistState state = 1;
+  required AssistReason reason = 2;
+  optional uint32 reject_id = 3;
+  optional float reject_angle_deg = 4;
+  optional float reject_velocity_deg_s = 5;
+  repeated AssistJointStatus joints = 6;
+  optional uint32 total_current_budget_mA = 7;
+}
 message Response {
   required uint32 sequence = 1;
   required Status status = 2;
@@ -69,4 +148,5 @@ message Response {
   // Avoid varint expansion and preserve the existing SDK's validated decoder.
   optional bytes nx_frame = 3;
   optional BatchResult batch = 4;
+  optional AssistStatus assist = 5;
 }

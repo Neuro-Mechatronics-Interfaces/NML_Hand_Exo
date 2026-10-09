@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 namespace exo_pb {
+static constexpr size_t MAX_RESPONSE = 2048;
 // Envelope: 'PB', version=1, little-endian length and CRC16-CCITT-FALSE.
 // CRC covers version + length + payload; it excludes magic and CRC itself.
 inline uint16_t crc(const uint8_t* data, size_t size, uint16_t value = 0xffff) {

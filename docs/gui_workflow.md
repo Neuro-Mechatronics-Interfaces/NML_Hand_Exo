@@ -12,7 +12,7 @@ python src/nml_hand_exo/applications/hand_exo_gui.py
 
 ## Architecture
 
-The GUI is a single-file PyQt5 application. It owns the `HandExo` connection and passes it
+The GUI is a PyQt5 application. It owns the `HandExo` connection and passes it
 into modal `QDialog` subclasses for calibration and ROM assessment. It does **not** call
 or subprocess `calibrate_exo.py` — calibration logic is implemented inline. `[VERIFIED]`
 
@@ -25,6 +25,25 @@ Key classes in `hand_exo_gui.py`:
 | `ROMDialog` | ROM assessment — 4-phase recording with QTimer polling |
 
 ---
+
+## Staged Home and telemetry handoff `[VERIFIED]`
+
+Home All uses active-side, enabled integer IDs. Wrist axes and the three thumb
+axes form coupled groups; other fingers are separate stages. The serial worker
+sends all commands in a group as one newline-delimited SDK batch before waiting
+for their `OK: home <id>` replies. Input is cleared once before the whole group;
+clearing before each motor could discard an earlier motor's ACK. On
+`protobuf-v1`, Home commands and replies still use the primary text CDC.
+It ignores older enable replies and aborts the sequence if an acknowledgement
+is missing after two seconds or the firmware reports an error. No home command
+is retried. Qt remains responsive; cancellation is checked every 50 ms while
+waiting and invalidates unsent stages and late completion signals.
+
+After acknowledgement, the GUI waits 750 ms before the next stage, including
+after the final stage before resuming telemetry. The ACK verifies command
+dispatch; the settle timer is a pacing heuristic, not measured arrival at home.
+Cleanup only logs a sequence ending when a home sequence was actually active.
+
 
 ## Connection modes `[VERIFIED]`
 
@@ -39,8 +58,9 @@ The mode combo (Right Only / Left Only / Dual) is selected before connecting and
 while connected. All modes use one `HandExo` connection. `AutoSerialComm` reads `info` before choosing `SerialComm`, `DualSerialComm`, or
 `ProtobufSerialComm`. The GUI no longer has a Dual USB CDC checkbox. Protobuf
 builds advertise the text and binary port roles; unsupported layouts fail with
-a connection error. The ASCII shadow-stream option is disabled on Protobuf
-builds; ordinary telemetry uses the binary RPC. See [USB discovery and diagnostics](usb_protocol_and_io_diagnostics.md).
+a connection error. Ordinary telemetry uses the binary RPC; the optional
+read-only shadow recorder continues to use its maintenance commands and status
+replies on the primary text CDC. See [USB discovery and diagnostics](usb_protocol_and_io_diagnostics.md).
 
 At connect time, `_connect()` builds:
 
@@ -59,17 +79,100 @@ nothing is disabled.
 
 ---
 
+## Global device terminal `[VERIFIED]`
+
+The terminal icon beside **STOP ALL MOTION** opens a nonmodal window from any
+tab or scroll position. It replaces the Setup **Raw Serial Command** group and
+the bottom **Session Log** checkbox. Its command line stays above read-only
+plain-text output; Enter or **Send** submits one command, and Up/Down recall
+previous commands. Sending is disabled while disconnected, but the terminal
+remains available to inspect connection errors and session messages. Closing
+and reopening it preserves output and command history; logging continues while
+it is hidden. The output retains the latest 10,000 lines.
+
+Hovering over output reveals three icon buttons with tooltips: **Copy** copies
+all displayed output to the system clipboard, **Clear** removes it, and the
+checkable **Clock** toggles timestamps on every retained line. Timestamps default
+to enabled and use host-local `HH:MM:SS.mmm` time. Hiding them preserves their
+original values, including for messages received while timestamps are hidden.
+
+`_device_terminal.py` owns presentation. Commands run on `SerialWorker` under
+the existing connection lock and use the auto-detected communication adapter.
+Protobuf motion commands use framed binary requests and validated binary
+responses; commands supported only by the firmware's maintenance text endpoint
+(such as `info` and `help`) continue to use that endpoint. Unsupported binary
+capabilities report an error without falling back to ASCII motion commands.
+`get_telemetry_fast[:all|:<id>:<id>...]` uses the SDK's binary telemetry decoder
+and prints the decoded result for both Protobuf and ASCII/NX firmware. Unsent
+terminal commands are tied to their connection and cannot replay after reconnect.
+
+As with the previous raw command entry, terminal commands bypass GUI targeting
+and safety-state bookkeeping. Use explicit integer Dynamixel IDs for motor and
+calibration commands, particularly with dual firmware.
+
+---
+
 ## Setup motor limits `[VERIFIED]`
 
-Each motor row exposes an explicit-ID current limit in mA and velocity limit in
-rpm. **Apply** writes the current limit only to that row's Dynamixel ID; it
+Each motor row exposes an explicit-ID **Current limit** in mA and **Direct max**
+in rpm (up to **71 rpm**). **Apply** writes the current limit only to that row's Dynamixel ID; it
 retains the velocity value as that motor's host-side ceiling for GUI direct and
 EMG teleoperation commands. The current limit remains subject to the shared
 combined-current budget. The GUI deliberately does not derive this ceiling from
 `PROFILE_VELOCITY`: raw zero means an unlimited position profile and that
 register is not used in Velocity Control Mode. Firmware independently clamps
-direct commands to 50 rpm and verifies each motor's hardware `VELOCITY_LIMIT`
+direct commands to 71 rpm and verifies each motor's hardware `VELOCITY_LIMIT`
 register before entering Velocity mode.
+
+Reflash the updated firmware to use more than 50 rpm; older firmware still
+clamps at 50 rpm even with the updated GUI. The verified hardware register is
+raw **310**, or **70.99 rpm** at 0.229 rpm/unit. This is a command ceiling;
+actual speed depends on the motor, supply and load. The XC330-T288 is specified
+at 52/65/71 rpm no-load at 9/11.1/12 V respectively
+([ROBOTIS specifications](https://emanual.robotis.com/docs/en/dxl/x/xc330-t288/)).
+Position/gesture profile speed remains a separate firmware setting.
+
+On connection the GUI reads the per-ID configured current limits and the
+shared-bus combined budget. **Set Total** waits for the firmware's acknowledgement
+and uses its applied budget directly, rather than sending an immediate second
+query. The applied budget can differ from the request because of its hold-current floor
+and fleet maximum. Direct current and EMG budgeting use these confirmed
+values; editing a spinbox does not change the applied limits. Zero current
+is represented as zero. Missing or failed readback caps the corresponding
+direct/EMG current at zero until a successful read/apply. A skipped serial
+action leaves the last confirmed values intact and reports no success.
+Limit changes are blocked during direct/EMG motion, position hold, staged Home,
+ROM calibration, UDP output, streaming, and torque assist. Budget setters and
+queries wait up to two seconds and report the failed command and actual reply
+on missing/malformed responses; they no longer hide these failures as `nan`.
+
+<!-- graphviz:docs/figures/setup_limits.dot -->
+![GraphViz diagram](figures/setup_limits.svg)
+<!-- /graphviz:docs/figures/setup_limits.dot -->
+
+Setup **Enable All** and **Enable Left/Right** stop direct/EMG output and
+restore current-based position control before enabling the requested integer
+IDs. Polling stays paused under one serial lock across restoration and enabling;
+telemetry resumes only afterward. The busy-device check happens before either
+step, so a skipped operation cannot turn motors off without enabling them.
+Global mode changes allow up to ten seconds for their successful acknowledgement:
+firmware visits all configured IDs, including an unattached hand, and individual
+bus operations can wait 100 ms. An error or missing/wrong acknowledgement still
+aborts before enabling any requested ID.
+That mode change turns torque off globally, so both hands' rows are first
+marked OFF and direct arming is cleared. Only the requested hand is then shown
+ON. Setup **Disable All** / **Disable Left/Right** remove the disabled IDs from
+direct arming. A skipped bulk action cannot mark motors enabled or disabled.
+
+The per-motor current readback is the firmware's configured nominal setting,
+not a measurement of actual current or an independent verification of the
+Dynamixel EEPROM write. The raw serial terminal remains an advanced escape
+hatch that bypasses GUI targeting and bookkeeping; reconnect/read back after
+using it to change settings.
+
+<!-- graphviz:docs/figures/setup_torque.dot -->
+![GraphViz diagram](figures/setup_torque.svg)
+<!-- /graphviz:docs/figures/setup_torque.dot -->
 
 For EMG teleoperation, **Current / Torque** can also drive an explicit motor or
 custom finger group. The signed decoder effort scales the configured maximum
@@ -308,6 +411,18 @@ polling, shadow isolation, and legacy compatibility without hardware.
 
 ## Assist tab
 
-The Assist tab captures relaxed per-joint bias, displays measured effort and
-provides explicit enable/stop controls with per-joint sensitivity and gain.
+The Assist tab has **Enable Torque-Assist**, shared effort threshold/velocity
+gain/current-cap settings, optional identified hardware dynamics, and a read-only
+joint table. It targets the active GUI side(s) by integer ID. Before enabling,
+the serial worker waits up to five seconds for 500 ms of fresh measured,
+stationary feedback from every selected joint. Stop cancels this read-only wait;
+unavailable/estimated/stale feedback cannot qualify. One firmware request
+performs grouped mode/hold setup and automatic baseline collection, then starts
+assistance without a separate per-joint calibration or Start action. Keep relaxed
+and still for the initial baseline. The table displays installed current caps
+after sharing the existing combined budget, measured effort, goals and state.
 See [Assist mode](assist_mode.md) for prerequisites, limits and bench validation.
+
+<!-- graphviz:docs/figures/home_stages.dot -->
+![GraphViz diagram](figures/home_stages.svg)
+<!-- /graphviz:docs/figures/home_stages.dot -->

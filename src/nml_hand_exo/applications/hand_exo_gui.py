@@ -25,9 +25,9 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTextEdit, QGridLayout, QMessageBox, QGroupBox, QComboBox,
     QDialog, QInputDialog, QScrollArea, QFrame, QSizePolicy, QSpacerItem,
     QTabWidget, QTabBar, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QSpinBox, QDoubleSpinBox, QSplitter, QStackedWidget,
+    QSpinBox, QDoubleSpinBox, QSplitter, QStackedWidget, QToolButton,
 )
-from PyQt5.QtCore import Qt, QEvent, QSettings, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QEvent, QSettings, QThread, QTimer, QSize, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QFontMetrics, QIcon
 
 from serial.tools import list_ports
@@ -44,6 +44,7 @@ from nml_hand_exo.calibration import (
 from nml_hand_exo.applications.styles import DARK_STYLE
 from nml_hand_exo.applications._hand_state import motor_display_sample
 from nml_hand_exo.applications._telemetry_plot import finite_curve_data
+from nml_hand_exo.applications._device_terminal import DeviceTerminal, terminal_icon
 from nml_hand_exo.calibration.rom import build_auto_rom_queue
 from nml_hand_exo.interface import HandExo, SerialComm, DualSerialComm, AutoSerialComm
 from nml_hand_exo.interface._gesture_protocol import (
@@ -112,7 +113,7 @@ except ImportError:
 TORQUE_PLOT_WINDOW_S = 15.0
 
 
-DIRECT_VELOCITY_LIMIT_RPM = 50.0
+DIRECT_VELOCITY_LIMIT_RPM = 71.0
 DIRECT_CURRENT_LIMIT_MA = 910.0
 EMG_FINGER_MOTOR_NAMES = frozenset(
     {"thumbadd", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky"}
@@ -1299,6 +1300,7 @@ class SerialWorker(QThread):
     """
 
     assist_completed = pyqtSignal(str, object, str)
+    home_stage_completed = pyqtSignal(int, str)
     completed = pyqtSignal(object)
     line_received = pyqtSignal(str)
     pose_completed = pyqtSignal(int, str, int, object, str)
@@ -1311,6 +1313,7 @@ class SerialWorker(QThread):
         self._urgent_q = queue.Queue()
         self._assist_q = queue.Queue()
         self._assist_generation = 0
+        self._home_generation = 0
         self._poll_q = queue.Queue()
         self._run = True
         self._poll_pending = False
@@ -1344,7 +1347,7 @@ class SerialWorker(QThread):
             self._shadow_telemetry = bool(enabled)
 
     def request_assist(self, operation, payload=None):
-        if operation == "calibrate":
+        if operation in ("enable", "calibrate"):
             # Cancel queued regular work before handing actuator ownership to
             # assist; it must not replay after assist is subsequently stopped.
             with self._state_lock:
@@ -1372,7 +1375,11 @@ class SerialWorker(QThread):
             def apply(exo):
                 if generation != self._assist_generation:
                     return None
-                if operation == "calibrate":
+                if operation == "enable":
+                    if not self._wait_for_assist_stationary(exo, generation, payload["ids"]):
+                        return None
+                    result = exo.enable_torque_assist(payload["ids"], **payload["parameters"])
+                elif operation == "calibrate":
                     for mid, config in payload.items():
                         if generation != self._assist_generation:
                             return None
@@ -1384,28 +1391,87 @@ class SerialWorker(QThread):
                     exo.set_control_mode("current_position")
                     if generation != self._assist_generation:
                         return None
-                    exo.calibrate_assist(list(payload))
+                    result = exo.calibrate_assist(list(payload))
                 elif operation == "start":
-                    exo.start_assist()
+                    result = exo.start_assist()
                 elif operation == "heartbeat":
                     try:
-                        exo.heartbeat_assist()
-                    except Exception:
-                        state = exo.get_assist_status()
-                        if state["state"] == 0:
+                        result = exo.heartbeat_assist()
+                    except Exception as exc:
+                        state = getattr(exc, "assist_status", None)
+                        if state is None:
+                            state = exo.get_assist_status()
+                        if state["state"] in (0, 4):
                             return state
                         raise
                 elif operation == "stop":
-                    exo.stop_assist()
+                    result = exo.stop_assist()
                 else:
                     raise ValueError("Unknown assist operation")
-                return exo.get_assist_status()
+                return result if isinstance(result, dict) else exo.get_assist_status()
             status = self._with_raw_exo(apply)
             if generation == self._assist_generation:
                 self.assist_completed.emit(operation, status, "")
         except Exception as exc:
             if generation == self._assist_generation:
-                self.assist_completed.emit(operation, {}, str(exc))
+                self.assist_completed.emit(operation, getattr(exc, "assist_status", {}), str(exc))
+
+    def _wait_for_assist_stationary(self, exo, generation, motor_ids):
+        """Require fresh measured feedback to be quiet before one Assist enable.
+
+        This only reads feedback. Firmware still verifies pose, speed, limits
+        and current headroom, and a rejected enable is never retried here.
+        """
+        deadline = time.monotonic() + 5.0
+        quiet_since = None
+        bounds = {}
+        stamps = {}
+        detail = "fresh measured feedback unavailable"
+        while generation == self._assist_generation:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"Assist startup did not settle within 5 s: {detail}. Keep relaxed and still.")
+            records = exo.get_fast_telemetry(timeout=min(.25, remaining), motor_ids=list(motor_ids))
+            if generation != self._assist_generation:
+                return False
+            quiet = True
+            for mid in motor_ids:
+                record = records.get(mid)
+                if not record or record.get("error"):
+                    raise RuntimeError(f"Assist startup feedback unavailable for ID {mid}; check the motor connection.")
+                q, raw, stamp = (record.get(key) for key in
+                                 ("absolute_angle", "velocity_raw", "sample_timestamp_ms"))
+                if (record.get("position_source") != "measured" or
+                    record.get("velocity_source") != "measured" or
+                    not isinstance(q, (int, float)) or not math.isfinite(q) or
+                    not isinstance(raw, (int, float)) or not math.isfinite(raw) or
+                    not isinstance(stamp, int) or isinstance(stamp, bool) or not 0 <= stamp <= 0xffffffff):
+                    quiet = False
+                    detail = f"ID {mid}: fresh measured position/velocity unavailable"
+                    continue
+                if mid in stamps and not 0 < ((stamp-stamps[mid]) & 0xffffffff) < 0x80000000:
+                    quiet = False
+                    detail = f"ID {mid}: feedback timestamp did not advance"
+                    continue
+                stamps[mid] = stamp
+                lo, hi = bounds.get(mid, (q, q))
+                bounds[mid] = (min(lo, q), max(hi, q))
+                span = bounds[mid][1]-bounds[mid][0]
+                velocity = raw * .229 * 6
+                if abs(velocity) > 1 or span > .3:
+                    quiet = False
+                    detail = f"ID {mid}: velocity={velocity:.3f} deg/s, angle span={span:.3f} deg"
+            now = time.monotonic()
+            if quiet:
+                if quiet_since is None:
+                    quiet_since = now
+                elif now-quiet_since >= .5:
+                    return True
+            else:
+                quiet_since = None
+                bounds.clear()
+            time.sleep(min(.05, max(0., deadline-time.monotonic())))
+        return False
 
     def request_poll(self, include_telemetry: bool = True):
         with self._state_lock:
@@ -1429,14 +1495,59 @@ class SerialWorker(QThread):
     def enqueue(self, command: str, timeout: float = 1.0):
         self._urgent_q.put(("command", command, float(timeout)))
 
+    def enqueue_terminal(self, command: str, timeout: float = 2.0):
+        # Bind to this connection so unsent input cannot replay on a new device.
+        self._urgent_q.put(("terminal", self._exo, command, float(timeout)))
+
     def enqueue_send(self, command: str):
         """Fire-and-forget: send a command on the worker thread WITHOUT waiting
-        for a reply. Use for setters like enable:/home:/stop: that either emit no
+        for a reply. Use for setters like enable:/stop: that either emit no
         delimited acknowledgement or route it to the telemetry CDC -- waiting on
         a reply for those (via enqueue()) just times out per command and scrambles
         ack/command pairing. Runs under the serial lock on the worker thread, so
         the Qt thread never blocks."""
         self._urgent_q.put(("send", command))
+
+    def set_home_generation(self, generation):
+        """Invalidate unsent stages when Home is cancelled or restarted."""
+        self._home_generation = generation
+
+    def enqueue_home_stage(self, generation, motor_ids):
+        self._urgent_q.put(("home_stage", generation, tuple(motor_ids)))
+
+    def _handle_home_stage(self, generation, motor_ids):
+        if generation != self._home_generation:
+            return
+        try:
+            def send_and_wait(exo):
+                # Send the entire coupled group before waiting for any ACK.
+                # Primary-CDC ACKs prove dispatch, not physical arrival at home.
+                pending = set(motor_ids)
+                deadline = time.monotonic() + 2.0
+                if generation != self._home_generation:
+                    return
+                # send_command() flushes old replies before sending. One batch
+                # clears them once; per-ID sends could erase this group's ACKs.
+                exo.send_command("\n".join(f"home:{mid}" for mid in motor_ids))
+                while pending and generation == self._home_generation:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError(f"Home acknowledgement missing for IDs {sorted(pending)}")
+                    reply = exo._receive(wait_until_return=True, timeout=min(.05, remaining),
+                                         warn_on_timeout=False)
+                    for line in reply.splitlines():
+                        line = line.strip().rstrip(";").strip()
+                        if line.startswith("ERROR:"):
+                            raise RuntimeError(line)
+                        match = re.fullmatch(r"OK: home (\d+)", line)
+                        if match:
+                            pending.discard(int(match[1]))
+            self._with_raw_exo(send_and_wait)
+            error = ""
+        except Exception as exc:
+            error = str(exc)
+        if generation == self._home_generation:
+            self.home_stage_completed.emit(generation, error)
 
     def request_direct_actions(
         self, actions: dict[int, tuple[str, float | None]]
@@ -1502,9 +1613,16 @@ class SerialWorker(QThread):
             if tag == "command":
                 _, command, timeout = item
                 self._handle_command(command, timeout)
+            elif tag == "terminal":
+                _, connection, command, timeout = item
+                if connection is not None and connection is self._exo:
+                    self._handle_terminal_command(command, timeout)
             elif tag == "send":
                 _, command = item
                 self._handle_send(command)
+            elif tag == "home_stage":
+                _, generation, motor_ids = item
+                self._handle_home_stage(generation, motor_ids)
             elif tag == "pose_ack":
                 _, value, host, port, timeout = item
                 self._handle_pose_ack(value, host, port, timeout)
@@ -1536,28 +1654,24 @@ class SerialWorker(QThread):
             self._direct_actions = {}
         try:
             def apply(raw_exo):
+                # HandExo owns the transport switch: ASCII keeps its single
+                # serialized write, while Protobuf emits typed RPCs/batches.
+                sender = getattr(raw_exo, "send_direct_actions", None)
+                if callable(sender):
+                    sender(actions)
+                    return
+                # Compatibility for custom HandExo-like adapters that predate
+                # the transport-neutral action-set method.
                 commands = []
                 for dxl_id, (mode, value) in sorted(actions.items()):
-                    if mode == "velocity":
-                        commands.append(
-                            f"set_velocity:{dxl_id}:{float(value)}"
-                        )
-                    elif mode == "current":
-                        commands.append(
-                            f"set_current:{dxl_id}:{float(value)}"
-                        )
-                    else:
-                        commands.append(f"stop:{dxl_id}")
-                if not commands:
-                    return
+                    commands.append(
+                        f"stop:{dxl_id}" if mode == "stop"
+                        else f"set_{mode}:{dxl_id}:{float(value)}"
+                    )
                 delimiter = raw_exo.command_delimiter
-                payload = "".join(
-                    command + delimiter for command in commands
+                raw_exo.device.send(
+                    "".join(command + delimiter for command in commands)
                 )
-                # These high-rate setters are intentionally fire-and-forget.
-                # Send the complete set in one transport write so per-command
-                # HandExo.send_delay cannot exceed the 50 ms control period.
-                raw_exo.device.send(payload)
 
             self._with_raw_exo(apply)
         except Exception as exc:
@@ -1772,6 +1886,22 @@ class SerialWorker(QThread):
                 line = line.strip().rstrip(";").strip()
                 if line:
                     self.line_received.emit(line)
+        except Exception as exc:
+            self.line_received.emit(f"[cmd] {command} failed: {exc}")
+
+    def _handle_terminal_command(self, command: str, timeout: float):
+        if command.split(":", 1)[0].lower() != "get_telemetry_fast":
+            # _transact delegates encoding and response decoding to the active
+            # comm adapter, including Protobuf RPCs and their validated ACKs.
+            self._handle_command(command, timeout)
+            return
+        try:
+            fields = command.split(":")[1:]
+            ids = None if not fields or fields == ["all"] else [int(mid) for mid in fields]
+            result = self._with_raw_exo(
+                lambda raw: raw.get_fast_telemetry(timeout=timeout, motor_ids=ids)
+            )
+            self.line_received.emit(json.dumps(result, indent=2))
         except Exception as exc:
             self.line_received.emit(f"[cmd] {command} failed: {exc}")
 
@@ -2105,6 +2235,7 @@ class HandExoGUI(QWidget):
         self._serial_worker.pose_completed.connect(self._on_udp_pose_ack_ready)
         self._serial_worker.direct_failed.connect(self._on_emg_direct_failed)
         self._serial_worker.shadow_failed.connect(self._on_emg_shadow_failed)
+        self._serial_worker.home_stage_completed.connect(self._on_home_stage_completed)
         self._serial_worker.start()
 
         self._build_ui()
@@ -2114,6 +2245,8 @@ class HandExoGUI(QWidget):
         # entire fleet at once.  This keeps peak startup current bounded while
         # allowing the wrist and thumb linkages to move together.
         self._home_groups_pending: list[list[int]] = []
+        self._home_generation = 0
+        self._home_sequence_active = False
         self._home_poll_was_active = False
         self._home_timer = QTimer(self)
         self._home_timer.setSingleShot(True)
@@ -2206,7 +2339,6 @@ class HandExoGUI(QWidget):
         self.main_layout = controls_layout
         self._build_motor_section()
         self._build_position_hold_section()
-        self._build_serial_terminal_section()
         self._build_gesture_section()
         self._build_calibration_section()
         self._build_rom_section()
@@ -2248,7 +2380,6 @@ class HandExoGUI(QWidget):
         self._assist_panel.log_line.connect(self._log)
         self.main_tabs.addTab(self._assist_panel, "Assist")
 
-        self._build_log_section()
         for button in self.findChildren(QPushButton):
             if button is not self.refresh_btn:
                 self._fit_button_text(button)
@@ -5802,6 +5933,21 @@ class HandExoGUI(QWidget):
         title.setFont(QFont("Segoe UI", 28, QFont.Bold))
         row.addWidget(title, 1)
 
+        self._terminal = DeviceTerminal(self)
+        self._terminal.command_requested.connect(self._send_terminal_command)
+        self._terminal_button = QToolButton()
+        self._terminal_button.setIcon(terminal_icon("terminal"))
+        self._terminal_button.setIconSize(QSize(24, 24))
+        self._terminal_button.setFixedSize(44, 44)
+        self._terminal_button.setToolTip("Open device terminal and session log")
+        self._terminal_button.setAccessibleName("Device terminal")
+        self._terminal_button.setStyleSheet(
+            "QToolButton { background: #2e2e2e; border: 1px solid #444444; border-radius: 4px; }"
+            "QToolButton:hover { background: #3a3a3a; border-color: #c41230; }"
+        )
+        self._terminal_button.clicked.connect(self._terminal.open_terminal)
+        row.addWidget(self._terminal_button)
+
         self._global_stop_btn = QPushButton("STOP ALL MOTION")
         self._global_stop_btn.setProperty("danger", True)
         self._global_stop_btn.setMinimumSize(210, 48)
@@ -6059,10 +6205,12 @@ class HandExoGUI(QWidget):
         self._total_current_spin = QSpinBox()
         self._total_current_spin.setRange(1, 65535)
         self._total_current_spin.setValue(800)
+        self._applied_total_current_mA = None
         self._total_current_spin.setSuffix(" mA")
         self._total_current_spin.setToolTip(
             "Combined current budget across every motor on the shared bus. "
-            "Size this for the power supply; it is the brownout protection."
+            "Click Set Total to apply and read back the firmware budget. "
+            "Editing alone does not change the budget used by EMG current control."
         )
         self._set_total_current_btn = QPushButton("Set Total")
         self._set_total_current_btn.clicked.connect(
@@ -6073,7 +6221,7 @@ class HandExoGUI(QWidget):
         limits_grid.addWidget(self._total_current_spin, 0, 1)
         limits_grid.addWidget(self._set_total_current_btn, 0, 2)
         limits_grid.addWidget(
-            QLabel("Per-motor current and velocity limits are set in each row below."),
+            QLabel("Apply each row's current limit and direct/EMG speed ceiling below."),
             0,
             3,
         )
@@ -6167,32 +6315,6 @@ class HandExoGUI(QWidget):
 
         self.main_layout.addWidget(self._position_hold_box)
 
-    def _build_serial_terminal_section(self):
-        box = QGroupBox("Raw Serial Command (advanced)")
-        box.setCheckable(True)
-        box.setChecked(False)
-        layout = QHBoxLayout()
-        self._raw_command_edit = QLineEdit()
-        self._raw_command_edit.setPlaceholderText(
-            "Example: current_status or set_gesture:index:flex"
-        )
-        self._raw_command_edit.setToolTip(
-            "Send one firmware command exactly as in Arduino Serial Monitor. "
-            "The GUI adds the line terminator. Raw commands bypass normal GUI "
-            "targeting and safety-state bookkeeping."
-        )
-        self._raw_command_edit.returnPressed.connect(self._send_raw_command)
-        self._raw_send_btn = QPushButton("Send")
-        self._raw_send_btn.clicked.connect(self._send_raw_command)
-        layout.addWidget(self._raw_command_edit, 1)
-        layout.addWidget(self._raw_send_btn)
-        box.setLayout(layout)
-        self._raw_command_edit.setVisible(False)
-        self._raw_send_btn.setVisible(False)
-        box.toggled.connect(self._raw_command_edit.setVisible)
-        box.toggled.connect(self._raw_send_btn.setVisible)
-        self.main_layout.addWidget(box)
-
     def _build_motor_rows(self):
         """Rebuild the motor panel after connecting.
 
@@ -6215,7 +6337,7 @@ class HandExoGUI(QWidget):
         col_header = QHBoxLayout()
         for text, stretch in [
             ("Motor", 2), ("Angle", 2), ("Status", 1),
-            ("Current", 2), ("Velocity", 2), ("", 1), ("", 1),
+            ("Current limit", 2), ("Direct max", 2), ("", 1), ("", 1),
         ]:
             lbl = QLabel(text)
             lbl.setStyleSheet("color: #9a9a9a; font-size: 13px; font-weight: 600;")
@@ -6307,7 +6429,7 @@ class HandExoGUI(QWidget):
         col_hdr = QHBoxLayout()
         for text, stretch in [
             ("Motor", 2), ("Angle", 2), ("Status", 1),
-            ("Current", 2), ("Velocity", 2), ("", 1), ("", 1),
+            ("Current limit", 2), ("Direct max", 2), ("", 1), ("", 1),
         ]:
             lbl = QLabel(text)
             lbl.setStyleSheet("color: #9a9a9a; font-size: 13px; font-weight: 600;")
@@ -6343,11 +6465,13 @@ class HandExoGUI(QWidget):
         status_lbl = QLabel("--")
 
         current_limit_spin = QSpinBox()
-        current_limit_spin.setRange(1, int(DIRECT_CURRENT_LIMIT_MA))
+        current_limit_spin.setRange(0, int(DIRECT_CURRENT_LIMIT_MA))
         current_limit_spin.setValue(150)
         current_limit_spin.setSuffix(" mA")
         current_limit_spin.setToolTip(
-            "Per-motor current limit. Firmware also enforces the combined current budget."
+            "Configured per-motor current ceiling / nominal position effort. "
+            "Zero requests no current. Apply to send this value to firmware. "
+            "The position-mode governor can allocate less effort under the shared budget."
         )
         velocity_limit_spin = QDoubleSpinBox()
         velocity_limit_spin.setRange(0.229, DIRECT_VELOCITY_LIMIT_RPM)
@@ -6356,8 +6480,10 @@ class HandExoGUI(QWidget):
         velocity_limit_spin.setValue(DIRECT_VELOCITY_LIMIT_RPM)
         velocity_limit_spin.setSuffix(" rpm")
         velocity_limit_spin.setToolTip(
-            "Host-side per-motor ceiling for GUI direct/EMG commands. The "
-            "firmware independently verifies the motor's 50 rpm hardware limit."
+            "Host-side per-motor ceiling for GUI direct/EMG commands; click Apply. "
+            f"Updated firmware independently enforces {DIRECT_VELOCITY_LIMIT_RPM:g} rpm "
+            "and verifies the hardware register. Older firmware still caps at 50 rpm "
+            "until reflashed. This does not set position/gesture profile speed."
         )
         apply_limits_btn = QPushButton("Apply")
         apply_limits_btn.setToolTip(
@@ -6386,6 +6512,7 @@ class HandExoGUI(QWidget):
             "angle_lbl":  angle_lbl,
             "status_lbl": status_lbl,
             "current_limit_spin": current_limit_spin,
+            "current_limit_mA": 0.0,  # No direct current until readback succeeds.
             "velocity_limit_spin": velocity_limit_spin,
             "velocity_limit_rpm": velocity_limit_spin.value(),
             "apply_limits_btn": apply_limits_btn,
@@ -6401,18 +6528,10 @@ class HandExoGUI(QWidget):
         return row, widget_dict
 
     def _apply_motor_row_limits(self, motor: dict):
-        """Apply the hardware current limit and cache the GUI velocity ceiling."""
+        """Verify the firmware current setting and cache the GUI velocity ceiling."""
         if not self.exo_connected:
             return
-        if (
-            getattr(self, "_emg_live", False)
-            or getattr(self, "_direct_command_active", False)
-            or getattr(self, "_emg_hold_active", False)
-        ):
-            self._log(
-                "Stop EMG/direct motion and release the position hold before "
-                "changing motor limits."
-            )
+        if not HandExoGUI._setup_limits_change_allowed(self):
             return
         dxl_id = motor.get("dxl_id")
         if dxl_id is None:
@@ -6421,6 +6540,7 @@ class HandExoGUI(QWidget):
         velocity_rpm = float(motor["velocity_limit_spin"].value())
         try:
             def _apply(raw_exo):
+                motor["current_limit_mA"] = 0.0
                 raw_exo.set_current_limit(int(dxl_id), current_mA)
                 return raw_exo.get_motor_current_limit(int(dxl_id))
 
@@ -6431,11 +6551,12 @@ class HandExoGUI(QWidget):
                 # Action was skipped because the device was busy; leave the
                 # spinbox as-is and let the user retry.
                 return
-            if int(round(applied_current)) != current_mA:
+            if not math.isfinite(applied_current) or applied_current != current_mA:
                 raise RuntimeError(
                     f"current readback was {applied_current} mA, expected {current_mA} mA"
                 )
             motor["current_limit_spin"].setValue(int(round(applied_current)))
+            motor["current_limit_mA"] = float(applied_current)
             motor["velocity_limit_rpm"] = velocity_rpm
             self._log(
                 f"Verified ID {dxl_id} limits: {applied_current:.0f} mA, "
@@ -6831,25 +6952,6 @@ class HandExoGUI(QWidget):
         box.setLayout(layout)
         self.main_layout.addWidget(box)
 
-    # -- Log ---------------------------------------------------------------
-
-    def _build_log_section(self):
-        box = QGroupBox("Session Log")
-        box.setCheckable(True)
-        box.setChecked(False)
-        layout = QVBoxLayout()
-
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setMinimumHeight(80)
-        self.log_text.setMaximumHeight(160)
-        layout.addWidget(self.log_text)
-
-        box.setLayout(layout)
-        self.log_text.setVisible(False)
-        box.toggled.connect(self.log_text.setVisible)
-        self.main_layout.addWidget(box)
-
     # -- Actions -----------------------------------------------------------
 
     @staticmethod
@@ -6986,11 +7088,13 @@ class HandExoGUI(QWidget):
             # round-trip latency. The GUI does not consume those lines, so turn
             # them off rather than pay for them on every transaction.
             self.usb_protocol_label.setText("USB protocol: " + info.get("usb_protocol", "legacy auto"))
-            binary_usb = info.get("usb_protocol") == "protobuf-v1"
-            self._emg_shadow_cb.setEnabled(not binary_usb)
-            if binary_usb:
+            shadow_supported = bool(
+                getattr(self.exo.device, "supports_shadow_telemetry", True)
+            )
+            self._emg_shadow_cb.setEnabled(shadow_supported)
+            if not shadow_supported:
                 self._emg_shadow_cb.setChecked(False)
-                self._emg_shadow_status.setText("Shadow ASCII stream unavailable with Protobuf USB")
+                self._emg_shadow_status.setText("Shadow monitor unavailable on this transport")
 
             self._hand_calibration_by_id = info.get("hand_calibration", {})
             motors_dict = info.get("motors", {})  # keyed by Dynamixel ID
@@ -7236,31 +7340,55 @@ class HandExoGUI(QWidget):
     def _set_total_current_limit(self):
         if not self.exo_connected:
             return
+        if not HandExoGUI._setup_limits_change_allowed(self):
+            return
         budget_mA = self._total_current_spin.value()
         try:
-            self._run_bulk_serial_action(
-                lambda: self.exo.run_locked(
-                    lambda raw_exo: raw_exo.set_total_current_limit(budget_mA)
-                )
+            def _apply(raw_exo):
+                self._applied_total_current_mA = None
+                # The setter ACK carries firmware's applied (possibly clamped)
+                # budget. Consume it before any later command can be sent.
+                return raw_exo.set_total_current_limit(budget_mA)
+
+            applied = self._run_bulk_serial_action(
+                lambda: self.exo.run_locked(_apply)
             )
-            self._log(f"Set combined current budget to {budget_mA} mA.")
+            if applied is None:
+                return
+            if not math.isfinite(applied) or not 0 < applied <= 65535:
+                raise RuntimeError(f"invalid combined current-budget readback: {applied}")
+            self._applied_total_current_mA = float(applied)
+            self._total_current_spin.setValue(int(round(applied)))
+            self._log(
+                f"Verified combined current budget: {applied:.0f} mA "
+                f"(requested {budget_mA} mA)."
+            )
         except Exception as exc:
             self._log(f"Combined current-limit error: {exc}")
 
-    def _send_raw_command(self):
+    def _setup_limits_change_allowed(self) -> bool:
+        if any(getattr(self, flag, False) for flag in (
+            "_emg_live", "_direct_command_active", "_emg_hold_active",
+            "_home_sequence_active", "_teleop_streaming",
+            "_udp_binding_active_ids", "_rom_running",
+        )) or bool(getattr(self, "_udp_stream_pending", {})) or (
+            getattr(self, "_assist_panel", None) is not None and self._assist_panel.busy
+        ):
+            self._log("Stop active motion/streaming and release the position hold before changing limits.")
+            return False
+        return True
+
+    def _send_terminal_command(self, command: str):
         if not self.exo_connected:
             return
-        command = self._raw_command_edit.text().strip().rstrip(";").strip()
+        command = command.strip().rstrip(";").strip()
         if not command:
             return
-        if command.lower().startswith("get_telemetry_fast"):
-            self._log(
-                "[raw] get_telemetry_fast is binary-only; use the Telemetry tab."
-            )
+        if any(char in command for char in "\r\n;\x00"):
+            self._log("[terminal] Enter one firmware command at a time.")
             return
-        self._raw_command_edit.clear()
         self._log(f"> {command}")
-        self._serial_worker.enqueue(command, timeout=2.0)
+        self._serial_worker.enqueue_terminal(command, timeout=2.0)
 
     def _motor_all(self, action):
         """Enable or disable all active-mode motors.
@@ -7280,16 +7408,18 @@ class HandExoGUI(QWidget):
                 # Do not rely only on cached _direct_mode. UDP direct commands
                 # can leave firmware in velocity/current mode; force position mode
                 # before torque-enable so motors do not feel limp.
-                self.exo.set_control_mode("current_position")
-                self._direct_mode = None
-                self._direct_armed_ids.clear()
-                self._update_direct_arm_status()
-                self._log("Set control mode to current_position before enabling motors.")
                 def _enable_all(exo):
+                    # Restoration must share the paused-poll operation with
+                    # enabling. Its polling restart otherwise queues telemetry
+                    # between torque-off and enable, which can skip the latter.
+                    if not self._restore_position_control():
+                        return False
                     for dxl_id in self._motor_dxl_id:
                         exo.enable_motor(dxl_id)
+                    return True
 
-                self._run_bulk_serial_action(lambda: self.exo.run_locked(_enable_all))
+                if not self._run_bulk_serial_action(lambda: self.exo.run_locked(_enable_all)):
+                    return
                 for w in self.motor_widgets:
                     w["enabled"] = True
                     w["user_disabled"] = False  # explicit "Enable All" clears user-disabled
@@ -7301,8 +7431,12 @@ class HandExoGUI(QWidget):
                 def _disable_all(exo):
                     for dxl_id in self._motor_dxl_id:
                         exo.disable_motor(dxl_id)
+                    return True
 
-                self._run_bulk_serial_action(lambda: self.exo.run_locked(_disable_all))
+                if not self._run_bulk_serial_action(lambda: self.exo.run_locked(_disable_all)):
+                    return
+                self._direct_armed_ids.difference_update(self._motor_dxl_id)
+                self._update_direct_arm_status()
                 for w in self.motor_widgets:
                     w["enabled"] = False
                     w["user_disabled"] = True   # explicit "Disable All" marks all user-disabled
@@ -7371,9 +7505,12 @@ class HandExoGUI(QWidget):
             )
 
     def _sync_motor_limits_after_connect(self):
-        """Populate hardware current limits without misusing PROFILE_VELOCITY."""
+        """Read firmware current settings without misusing PROFILE_VELOCITY."""
         if not self.exo_connected or not self.motor_widgets:
             return
+        self._applied_total_current_mA = None
+        for motor in self.motor_widgets:
+            motor["current_limit_mA"] = 0.0
         try:
             def _read(raw_exo):
                 return raw_exo.get_motor_current_limit("all")
@@ -7383,22 +7520,35 @@ class HandExoGUI(QWidget):
             )
         except Exception as exc:
             self._log(f"Warning: could not read initial motor limits: {exc}")
-            return
+            current_by_id = {}
 
         for motor in getattr(self, "motor_widgets", []):
             dxl_id = motor.get("dxl_id")
             if dxl_id is None:
                 continue
             current = current_by_id.get(dxl_id) if isinstance(current_by_id, dict) else None
-            if current is not None:
+            if current is not None and math.isfinite(current) and 0 <= current <= DIRECT_CURRENT_LIMIT_MA:
                 motor["current_limit_spin"].setValue(
-                    max(1, min(int(DIRECT_CURRENT_LIMIT_MA), int(round(current))))
+                    int(round(current))
                 )
+                motor["current_limit_mA"] = float(current)
+            else:
+                self._log(f"Warning: current limit unavailable for ID {dxl_id}; direct current capped at zero.")
+        try:
+            budget = HandExoGUI._run_with_gui_events(
+                lambda: self.exo.run_locked(lambda raw_exo: raw_exo.get_total_current_limit())
+            )
+            if not math.isfinite(budget) or not 0 < budget <= 65535:
+                raise RuntimeError(f"invalid readback: {budget}")
+            self._applied_total_current_mA = float(budget)
+            self._total_current_spin.setValue(int(round(budget)))
+        except Exception as exc:
+            self._log(f"Warning: combined current budget unavailable; EMG current capped at zero: {exc}")
 
     def _motor_side(self, action: str, side: str):
         """Enable or disable all motors belonging to one exo side.
 
-        Sends individual motor commands using bare ``cmd_name`` values.
+        Sends individual motor commands using explicit integer DXL IDs.
         Only operates on the widget rows whose display name carries the
         matching side prefix (``L:`` for left, ``R:`` for right).
         """
@@ -7415,24 +7565,22 @@ class HandExoGUI(QWidget):
         ):
             self._release_emg_position_hold()
         try:
-            if action == "enable":
-                # Force position mode before side enable to avoid stale direct mode.
-                self.exo.set_control_mode("current_position")
-                self._direct_mode = None
-                self._direct_armed_ids.clear()
-                self._update_direct_arm_status()
-                self._log(
-                    f"Set control mode to current_position before enabling {side} motors."
-                )
             side_ids = [w.get("dxl_id") for w in side_widgets if w.get("dxl_id")]
             def _toggle_side(exo):
+                if action == "enable" and not self._restore_position_control():
+                    return False
                 for dxl_id in side_ids:
                     if action == "enable":
                         exo.enable_motor(dxl_id)
                     else:
                         exo.disable_motor(dxl_id)
+                return True
 
-            self._run_bulk_serial_action(lambda: self.exo.run_locked(_toggle_side))
+            if not self._run_bulk_serial_action(lambda: self.exo.run_locked(_toggle_side)):
+                return
+            if action != "enable":
+                self._direct_armed_ids.difference_update(side_ids)
+                self._update_direct_arm_status()
             for w in side_widgets:
                 if action == "enable":
                     w["enabled"]       = True
@@ -7485,7 +7633,7 @@ class HandExoGUI(QWidget):
         """Home enabled active motors in staged, mechanically coupled groups."""
         if not self.exo_connected:
             return
-        if self._home_timer.isActive() or self._home_groups_pending:
+        if self._home_sequence_active:
             self._log("Home sequence is already running.")
             return
         enabled_ids = {
@@ -7516,6 +7664,9 @@ class HandExoGUI(QWidget):
             for dxl_id in sorted(enabled_ids):
                 self._serial_worker.enqueue_send(f"enable:{dxl_id}")
             self._home_groups_pending = self._home_motor_groups(enabled_ids)
+            self._home_generation += 1
+            self._serial_worker.set_home_generation(self._home_generation)
+            self._home_sequence_active = True
             self._home_groups_total = len(self._home_groups_pending)
             self.home_all_btn.setEnabled(False)
             self._log(
@@ -7547,29 +7698,36 @@ class HandExoGUI(QWidget):
         return groups
 
     def _home_next_group(self):
+        if not self._home_sequence_active:
+            return
         if not self.exo_connected or not self.exo:
             self._finish_home_sequence()
             return
         if not self._home_groups_pending:
-            self._log(
-                f"Staged home commands sent for {self._home_groups_total} group(s)."
-            )
+            self._log(f"Staged home commands acknowledged and settled for {self._home_groups_total} group(s).")
             self._finish_home_sequence()
             return
         group = self._home_groups_pending.pop(0)
-        # Enqueue the group's home commands on the worker thread (never
-        # run_locked on the Qt thread) so the GUI cannot block on the serial
-        # lock. Fire-and-forget: the worker serializes them behind any in-flight
-        # read, and the inter-group settle timer paces the staged motion.
-        for dxl_id in group:
-            self._serial_worker.enqueue_send(f"home:{dxl_id}")
+        # Wait for the group's firmware ACKs on the worker; Qt remains responsive.
+        self._serial_worker.enqueue_home_stage(self._home_generation, group)
         self._log(f"Home stage: IDs {group}")
-        if self._home_groups_pending:
-            self._home_timer.start(HOME_GROUP_SETTLE_MS)
-        else:
-            self._home_next_group()
+
+    def _on_home_stage_completed(self, generation, error):
+        if generation != self._home_generation or not self._home_sequence_active:
+            return
+        if error:
+            self._log(f"Home stage failed: {error}")
+            self._finish_home_sequence()
+            return
+        # Also settle the final group before the timer resumes telemetry.
+        self._home_timer.start(HOME_GROUP_SETTLE_MS)
 
     def _finish_home_sequence(self, resume_polling: bool = True):
+        was_active = getattr(self, "_home_sequence_active", False)
+        self._home_sequence_active = False
+        self._home_generation = getattr(self, "_home_generation", 0) + 1
+        if hasattr(self, "_serial_worker"):
+            self._serial_worker.set_home_generation(self._home_generation)
         if hasattr(self, "_home_timer"):
             self._home_timer.stop()
         self._home_groups_pending = []
@@ -7581,7 +7739,9 @@ class HandExoGUI(QWidget):
         # telemetry (table + torque plot) dead whenever _home_poll_was_active was
         # False -- e.g. a stale/False capture -- with no way to recover short of
         # a reconnect. Polling is the normal connected state, so restore it.
-        self._log("[home] sequence complete; resuming telemetry polling.")
+        if was_active:
+            self._log("[home] sequence ended; " +
+                      ("resuming telemetry polling." if resume_polling else "polling remains suspended."))
         self._home_poll_was_active = False
         if resume_polling and self.exo_connected:
             self._resume_normal_polling(force_refresh=True)
@@ -7870,7 +8030,8 @@ class HandExoGUI(QWidget):
         self.home_all_btn.setEnabled(on)
         self._total_current_spin.setEnabled(on)
         self._set_total_current_btn.setEnabled(on)
-        self._raw_send_btn.setEnabled(on)
+        protocol = getattr(self.exo.device, "usb_protocol", "ASCII serial") if on else ""
+        self._terminal.set_connection(on, protocol)
         self._global_stop_btn.setEnabled(on)
         self._emg_use_armed_btn.setEnabled(on)
         self._update_position_hold_controls()
@@ -9273,7 +9434,9 @@ class HandExoGUI(QWidget):
                 continue
             if self._direct_mode == "current":
                 spin = motor.get("current_limit_spin")
-                if spin is not None:
+                if "current_limit_mA" in motor:
+                    limit = min(limit, float(motor["current_limit_mA"]))
+                elif spin is not None:
                     limit = min(limit, float(spin.value()))
             else:
                 limit = min(
@@ -9290,6 +9453,8 @@ class HandExoGUI(QWidget):
             float(budget_spin.value())
             if budget_spin is not None else 800.0
         )
+        if hasattr(self, "_applied_total_current_mA"):
+            budget = float(self._applied_total_current_mA or 0.0)
         hold_id = (
             self._configured_emg_hold_id()
             if hasattr(self, "_configured_emg_hold_id") else None
@@ -9828,6 +9993,13 @@ class HandExoGUI(QWidget):
             self.exo.set_control_mode("current_position")
             self._direct_mode = None
             self._direct_armed_ids.clear()
+            # Firmware mode changes turn torque off for the entire shared bus,
+            # including the other hand when Setup enables only one side.
+            for motor in self.motor_widgets:
+                motor["enabled"] = False
+                motor["toggle_btn"].setText("Enable")
+                motor["status_lbl"].setText("OFF")
+                motor["status_lbl"].setStyleSheet("color: #c0392b;")
             self._direct_mode_status.setText(
                 "Current-position mode; torque off"
             )
@@ -10217,6 +10389,7 @@ class HandExoGUI(QWidget):
         self._serial_worker.request_poll(include_telemetry=False)
 
     def closeEvent(self, event):
+        self._terminal.close()
         self._cache_udp_command_endpoint()
         self._send_udp_local_close_notice("GUI shutdown")
         self._set_udp_source_status(None)
@@ -10258,9 +10431,10 @@ class HandExoGUI(QWidget):
         event.accept()
 
     def _log(self, msg: str):
-        ts = datetime.now().strftime("%H:%M:%S")
-        line = f"[{ts}] {msg}"
-        self.log_text.append(line)
+        timestamp = datetime.now()
+        self._terminal.append_message(msg, timestamp)
+        ts = timestamp.strftime("%H:%M:%S.%f")[:-3]
+        line = "\n".join(f"[{ts}] {part}" for part in str(msg).splitlines())
         # Also mirror to stderr, flushed, so breadcrumbs are visible in a
         # terminal in real time even when the Qt widget cannot repaint (e.g.
         # while diagnosing a main-thread stall). Cheap; safe if stderr is absent.

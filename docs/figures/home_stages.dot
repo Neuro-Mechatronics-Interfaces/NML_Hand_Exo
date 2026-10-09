@@ -1,0 +1,16 @@
+digraph home_stages {
+ rankdir=TB;
+ node [shape=box,style="rounded,filled",fillcolor="#eef4fb",fontname="Helvetica",fontsize=11];
+ edge [fontname="Helvetica",fontsize=9];
+ SEND [label="Serial worker: send coupled group as one SDK batch\nClear old replies once; preserve every group ACK\nExplicit active-side enabled IDs; Home uses text CDC"];
+ ACK [label="Wait for every OK: home ID\n2-second stage deadline; check cancellation every 50 ms"];
+ SETTLE [label="GUI settle timer: 750 ms\nAlso applies after the final group"];
+ NEXT [label="Next stage?\nGeneration check rejects cancelled work"];
+ POLL [label="End sequence; resume telemetry\nPartial binary replies retained; sequence + CRC checked"];
+ SEND -> ACK;
+ ACK -> SETTLE [label="all acknowledgements received"];
+ SETTLE -> NEXT;
+ NEXT -> SEND [label="more groups"];
+ NEXT -> POLL [label="all groups sent and settled"];
+ ACK -> POLL [label="error / missing ACK: abort; never replay"];
+}

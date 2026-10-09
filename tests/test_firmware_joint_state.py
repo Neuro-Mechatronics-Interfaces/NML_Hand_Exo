@@ -103,3 +103,29 @@ def test_real_assist_calibration_and_guarded_control(tmp_path):
     source = tmp_path / "assist.cpp"
     source.write_text(harness.replace("// ASSIST_IMPLEMENTATION", implementation), encoding="utf-8")
     build_and_run(source, tmp_path)
+
+
+def test_secondary_assist_behavior_and_python_reference(tmp_path):
+    import importlib.util
+    import sys
+
+    build_and_run(ROOT / "tests/cpp/assist_secondary_test.cpp", tmp_path)
+    output = subprocess.run([str(tmp_path / "joint_state_test.exe"), "trace"],
+                            capture_output=True, text=True, check=True, timeout=30).stdout
+    model_path = ROOT / "examples/10_dxl_ctrl_sim_single_motor/control_model.py"
+    spec = importlib.util.spec_from_file_location("assist_reference_model", model_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    config = module.SimulationConfig(collection_epoch_s=0, min_position_deg=-200,
+                                     max_position_deg=3000)
+    sim = module.SingleMotorSimulation(config)
+    for k, line in enumerate(output.splitlines()):
+        sim.debiased_external_torque_nm = .2 if k < 75 else -.15
+        sim.velocity_deg_s = 5 if k < 75 else -5
+        sim._update_secondary_goal_assist(.02)
+        goal, velocity, lead, moving = map(float, line.split())
+        assert goal == pytest.approx(sim.secondary_goal_position_deg, abs=.001)
+        assert velocity == pytest.approx(sim.secondary_goal_velocity_deg_s, abs=.001)
+        assert lead == pytest.approx(sim.secondary_goal_lead_deg, abs=.001)
+        assert bool(moving) == sim.secondary_assist_active

@@ -1,0 +1,55 @@
+digraph dxl_single_motor_control {
+  graph [rankdir=LR, bgcolor="transparent", pad="0.12", nodesep="0.25", ranksep="0.55", fontname="Arial"];
+  node [shape=box, style="rounded,filled", fontname="Arial", fontsize=10, margin="0.10,0.06", color="#334155", fillcolor="#e2e8f0"];
+  edge [fontname="Arial", fontsize=9, color="#475569", arrowsize=0.7];
+
+  input [label="Scenario inputs\nstart/end, duration,\nexternal effort, endstop", fillcolor="#dbeafe"];
+  objective [label="Objective\nhold / trajectory /\ntorque assist / direct command", fillcolor="#dbeafe"];
+  mode [label="Operating Mode\nDynamixel2Arduino selection", fillcolor="#fef3c7"];
+
+  external_profile [label="External torque profile\npiecewise mean + Gaussian noise", fillcolor="#fed7aa"];
+  observer [label="Motor-side observer\nstate + actuator residual", fillcolor="#fed7aa"];
+  zero_bias [label="Zero-bias estimator\ncollection epoch", fillcolor="#fed7aa"];
+  detector [label="Sustained detector\nthreshold + delay", fillcolor="#fed7aa"];
+  assist_cmd [label="Bounded assist command\ngain + max + ramp", fillcolor="#bbf7d0"];
+
+  pos_ref [label="Position reference\nprofile + target shift", fillcolor="#dcfce7"];
+  pos_error [label="Position error\nqref − q", fillcolor="#dcfce7"];
+  pos_pid [label="Position PID + FF\nP / I / D / FF", fillcolor="#dcfce7"];
+  current_clamp [label="Effective Goal Current\nassist-derived <= limit", fillcolor="#bbf7d0"];
+  pwm_clamp [label="PWM clamp\nPOSITION / VELOCITY", fillcolor="#bbf7d0"];
+
+  vel_ref [label="Velocity reference\nprofile or assist map", fillcolor="#fce7f3"];
+  vel_error [label="Velocity error\nvref − v", fillcolor="#fce7f3"];
+  vel_pi [label="Velocity PI\nVelocity P / I", fillcolor="#fce7f3"];
+
+  current_cmd [label="Signed current\nCURRENT mode", fillcolor="#fee2e2"];
+  pwm_cmd [label="Signed PWM\nPWM mode", fillcolor="#fee2e2"];
+  plant [label="Motor + load\ninertia, friction,\nexternal effort", fillcolor="#cbd5e1"];
+  endstop [label="Endstop reaction\nbounded counter-torque", fillcolor="#fecaca"];
+  state [label="q, velocity, current\nposition + telemetry", fillcolor="#c7d2fe"];
+
+  input -> objective -> mode;
+  input -> external_profile -> observer -> zero_bias -> detector -> assist_cmd;
+  assist_cmd -> pos_ref [style=dashed, label="target shift"];
+  assist_cmd -> vel_ref [style=dashed, label="velocity bias"];
+  assist_cmd -> current_cmd [style=dashed, label="signed current"];
+  mode -> pos_ref [label="POSITION / EXTENDED\nCURRENT_POSITION"];
+  pos_ref -> pos_error -> pos_pid;
+  pos_pid -> current_clamp [label="CURRENT_POSITION"];
+  pos_pid -> pwm_clamp [label="POSITION / EXTENDED"];
+  mode -> vel_ref [label="VELOCITY"];
+  vel_ref -> vel_error -> vel_pi -> pwm_clamp;
+  mode -> current_cmd [label="CURRENT"];
+  mode -> pwm_cmd [label="PWM"];
+  current_clamp -> plant;
+  pwm_clamp -> plant;
+  current_cmd -> plant;
+  pwm_cmd -> plant;
+  objective -> vel_ref [style=dashed, label="assist mapping"];
+  objective -> current_cmd [style=dashed, label="assist mapping"];
+  plant -> endstop -> state;
+  plant -> state;
+  state -> pos_error [style=dashed, label="feedback"];
+  state -> vel_error [style=dashed, label="feedback"];
+}

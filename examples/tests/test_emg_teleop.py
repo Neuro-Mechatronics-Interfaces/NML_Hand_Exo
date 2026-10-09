@@ -1,6 +1,7 @@
 import time
 import threading
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -227,11 +228,13 @@ def test_connect_sync_does_not_replace_gui_velocity_ceiling_from_profile_registe
         "velocity_limit_rpm": 50.0,
     }
     raw_exo = SimpleNamespace(
-        get_motor_current_limit=lambda target: {15: 200}
+        get_motor_current_limit=lambda target: {15: 200},
+        get_total_current_limit=lambda: 800,
     )
     gui = SimpleNamespace(
         exo_connected=True,
         motor_widgets=[motor],
+        _total_current_spin=Spin(100),
         exo=SimpleNamespace(run_locked=lambda callback: callback(raw_exo)),
         _log=lambda _message: None,
     )
@@ -241,6 +244,9 @@ def test_connect_sync_does_not_replace_gui_velocity_ceiling_from_profile_registe
     assert current_spin.current == 200
     assert velocity_spin.current == 50.0
     assert motor["velocity_limit_rpm"] == 50.0
+    assert motor["current_limit_mA"] == 200
+    assert gui._applied_total_current_mA == 800
+    assert gui._total_current_spin.current == 800
 
 
 def test_realtime_telemetry_failure_never_enters_text_fallback():
@@ -416,6 +422,18 @@ def test_serial_worker_writes_multi_motor_current_set_as_one_payload():
         "set_current:15:60.0\r\n"
         "set_current:16:-60.0\r\n"
     ]
+
+
+def test_serial_worker_delegates_transport_switch_for_protobuf_action_set():
+    send_direct_actions = Mock()
+    worker = SerialWorker()
+    worker.set_exo(SimpleNamespace(send_direct_actions=send_direct_actions))
+    actions = {15: ("current", 60.0), 16: ("current", -60.0)}
+    worker.request_direct_actions(actions)
+
+    worker._handle_direct_actions()
+
+    send_direct_actions.assert_called_once_with(actions)
 
 
 def test_custom_finger_subset_is_ready_when_explicit_ids_are_safe_and_armed():

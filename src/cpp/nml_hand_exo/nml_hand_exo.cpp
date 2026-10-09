@@ -506,7 +506,7 @@ String NMLHandExo::getDeviceInfo(bool includeLiveTelemetry) {
     info += "Version: " + String(VERSION) + "\n";
 #if EXO_USB_PROTOBUF
     info += "USB Protocol: protobuf-v1\nUSB CDC Count: 2\nUSB Text Port: primary\nUSB Binary Port: secondary\n";
-    info += "USB Features: joint_model_write batch_motion assist_v1\n";
+    info += "USB Features: joint_model_write batch_motion assist_v2 assist_binary assist_enable\n";
 #elif EXO_AXON_USB
     info += "USB Protocol: axon-ascii\nUSB CDC Count: 1\n";
 #elif defined(DUAL_CDC) && DUAL_CDC
@@ -514,7 +514,7 @@ String NMLHandExo::getDeviceInfo(bool includeLiveTelemetry) {
 #else
     info += "USB Protocol: ascii-nx\nUSB CDC Count: 1\n";
 #endif
-    info += "Assist Protocol: assist-v1\n";
+    info += "Assist Protocol: assist-v3\n";
     info += "Model Step Ms: " + String(EXO_MODEL_STEP_MS) + "\n";
     info += "I/O Profile: 1\n";
     info += "Side: " + String(HAND_SIDE) + "\n";
@@ -1868,7 +1868,7 @@ bool NMLHandExo::getTorqueEnabledStatus(uint8_t id) {
 }
 
 void NMLHandExo::enableTorque(uint8_t id, bool enable) {
-  if (isAssistBusy()) { if (enable) return; stopAssist("disabled"); }
+  if (isAssistBusy()) { if (enable) return; stopAssist(ASSIST_REASON_DISABLED); }
   const int index = getIndexById(id);
   if (index < 0) return;
   serviceJointModels();
@@ -2764,7 +2764,7 @@ float NMLHandExo::getPresentVelocity(uint8_t id) {
   return flipMotor_[index] ? -rpm : rpm;
 }
 void NMLHandExo::stopDirectControl(uint8_t id) {
-  if (isAssistBusy()) stopAssist("external_stop");
+  if (isAssistBusy()) stopAssist(ASSIST_REASON_EXTERNAL_STOP);
   if (id == romCalId_ && (romCalPhase_ == ROM_CAL_RAMP || romCalPhase_ == ROM_CAL_REST)) {
     romCalStopRequested_ = true;
     if (strcmp(romCalReason_, "none") == 0) romCalReason_ = "stop_requested";
@@ -2991,7 +2991,7 @@ bool NMLHandExo::ensureDirectVelocityLimit(uint8_t id) {
 }
 
 bool NMLHandExo::setMotorControlMode(const String& mode) {
-  if (isAssistBusy()) { stopAssist("mode_changed"); if (isAssistBusy()) return false; }
+  if (isAssistBusy()) { stopAssist(ASSIST_REASON_MODE_CHANGED); if (isAssistBusy()) return false; }
   String m = mode;
   m.toUpperCase();
   for (int i = 0; i < numMotors_; i++) {

@@ -185,7 +185,9 @@ class FakeOpenRBComm:
             return f"OK: set_goal_velocity {parts[1]} {value}"
         if head == "set_total_current_lim":
             self.total_current_budget_mA = max(1, int(float(parts[1])))
-            return f"OK: total_current_limit {self.total_current_budget_mA}"
+            return f"OK: total_current_lim {self.total_current_budget_mA}"
+        if head == "get_total_current_lim":
+            return f"Total current limit: {self.total_current_budget_mA} mA"
         if head == "set_control_mode":
             self.control_mode = parts[2]
             return (

@@ -485,6 +485,22 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       if (number(getArg(token, 1), mid) && mid >= 1 && mid <= 253 && mid == floorf(mid) &&
           number(getArg(token, 2), threshold) && number(getArg(token, 3), gain) && number(getArg(token, 4), cap))
         ok = exo.configureAssist((uint8_t)mid, threshold, gain, cap);
+    } else if (cmd == "assist_observer" && fields == 4) {
+      float mid, inertia, viscous, coulomb;
+      if (number(getArg(token, 1), mid) && mid >= 1 && mid <= 253 && mid == floorf(mid) &&
+          number(getArg(token, 2), inertia) && number(getArg(token, 3), viscous) && number(getArg(token, 4), coulomb))
+        ok = exo.configureAssistObserver((uint8_t)mid, inertia, viscous, coulomb);
+    } else if (cmd == "assist_enable" && fields >= 7 && fields <= N_MOTORS+6) {
+      // Shared parameters precede explicit IDs on the text transport.
+      float values[6]; uint8_t ids[N_MOTORS]; bool valid = true;
+      for (int k = 0; k < 6; ++k)
+        if (!number(getArg(token, k+1), values[k])) { valid = false; break; }
+      for (int k = 6; valid && k < fields; ++k) {
+        float mid;
+        if (!number(getArg(token, k+1), mid) || mid < 1 || mid > 253 || mid != floorf(mid)) { valid = false; break; }
+        ids[k-6] = (uint8_t)mid;
+      }
+      if (valid) ok = exo.enableTorqueAssist(ids, fields-6, values[0], values[1], values[2], values[3], values[4], values[5]);
     } else if (cmd == "assist_calibrate" && fields >= 1 && fields <= N_MOTORS) {
       uint8_t ids[N_MOTORS]; bool valid = true;
       for (int k = 0; k < fields; ++k) {
@@ -1840,7 +1856,9 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" get_telemetry_fast    |  ID:ID:ID.../ALL     | // Binary current/velocity/position telemetry frame"));
     commandPrint(F(" set_utc_time          | UNIX_MS | // Synchronize UTC; no effect on control timing"));
     commandPrint(F(" get_utc_time          |         | // UTC ms, synchronization flag and uptime"));
-    commandPrint(F(" assist_config         | ID:THRESHOLD_MA:GAIN_DEG_PER_MA:CAP_MA | // Configure bounded assistance while off"));
+    commandPrint(F(" assist_enable         | THRESHOLD_MA:GAIN:CAP_MA:INERTIA:VISCOUS:COULOMB:ID[:ID...] | // Grouped startup, automatic bias and activation"));
+    commandPrint(F(" assist_config         | ID:THRESHOLD_MA:VELOCITY_GAIN_DEG_S_PER_MA:CAP_MA | // Configure secondary-goal assist while off"));
+    commandPrint(F(" assist_observer       | ID:INERTIA:VISCOUS:COULOMB | // Nm-based observer model terms; all zero = current residual"));
     commandPrint(F(" assist_calibrate      | ID[:ID...]           | // Relaxed bias capture; selected motors enabled in CURRENT_POSITION"));
     commandPrint(F(" assist_start / assist_stop / assist_heartbeat / assist_status | // Explicit assist, 1-second lease, measured status"));
     commandPrint(F(" set_joint_model       | ID:GAIN:TAU:VMAX:STIFFNESS:MOMENT | // Tune telemetry model only"));

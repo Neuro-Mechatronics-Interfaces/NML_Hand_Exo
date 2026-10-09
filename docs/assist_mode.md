@@ -1,216 +1,313 @@
-# Measured-effort Assist (v0.9.1)
+# Secondary-goal Assist (assist-v3)
 
-The **Assist** GUI tab implements a conservative, stepwise assistance controller.
-It runs on the board; Python configures it, displays diagnostics, and renews a
-one-second lease. It is separate from the telemetry predictor and Auto-ROM.
-No LQR is implemented. No external helper/EMG input is connected to this mode yet.
+The board now implements the default `CURRENT_POSITION` /
+`SECONDARY_GOAL_ASSIST` architecture in
+[`control_model.py`](../examples/10_dxl_ctrl_sim_single_motor/control_model.py).
+Python enables the active side's integer DXL IDs in one request and renews a one-second lease.
+The firmware integrates a persistent secondary goal from filtered effort, adds
+bounded lead, and uses the XC330 position controller with an independent current
+ceiling. The former half-degree step/settle controller is replaced.
 
 ## Operator workflow
 
-1. Reflash the updated v0.9.1 firmware and restart the Python GUI. `info` must
-   contain `Assist Protocol: assist-v1`; the firmware version alone is insufficient.
-   The existing Protobuf build flag still applies.
-2. Apply the correct side-specific home, direction and joint limits. The GUI
-   selects **current-position** mode automatically when calibration is requested;
-   that transition disables all motors. Only the assist selection is then enabled.
-   The sum of selected
-   assist current caps must fit the configured total current budget.
-3. In **Assist**, select those joints. Defaults are a 10-mA trigger threshold,
-   0.01 encoder degree/mA assistance gain, and a 40-mA current cap. Lowering
-   threshold increases sensitivity. Gain controls the size of each assist step.
-4. Relax at the intended pose and click **Calibrate relaxed bias**. This captures
-   the current position as the hold goal, applies the current cap and a slow
-   position profile, waits 500 ms, then collects 50 stationary measurements per
-   joint. Firmware installs the selected current cap and a fresh in-range goal
-   before enabling each selected motor. Keep the GUI connected throughout.
-5. Once the display says **Bias ready**, toggle **Assist on**. The table shows
-   bias, effective deadzone, signed residual effort, and sensing/settling state.
-6. **Assist off**, **Stop / torque off**, and global **STOP ALL MOTION** disarm
-   the session. Bias is invalidated; recalibrate to
-   restart. Assist does not return home or restore an earlier current/profile.
+1. Reflash this firmware and restart the updated GUI. `info` must contain
+   `Assist Protocol: assist-v3`; a firmware version alone is insufficient.
+2. Apply the correct side-specific calibration and hard ROM limits. The Assist
+   tab targets every joint on the active GUI side(s) by integer ID. Its shared
+   defaults are threshold **0.08 N m**, velocity gain **80 deg/s per N m**, and
+   maximum current **300 mA/joint**. Optional identified dynamics are separate
+   from the simulator's illustrative plant model. No enabled unselected motor
+   is allowed.
+3. Relax at the intended pose and click **Enable Torque-Assist**. The GUI first
+   waits for fresh measured position and velocity from every selected ID to
+   stay quiet for 500 ms: absolute speed at most 1 deg/s and position span at
+   most 0.3 degrees. It waits up to five seconds; Stop cancels this read-only
+   check. Estimated, unavailable or repeated-timestamp samples cannot qualify.
+   Firmware
+   selects current-position mode with verified grouped writes only where needed,
+   installs a capped hold at the measured pose, and collects 50 stationary
+   samples per joint (about one second at 50 Hz). Assistance starts automatically
+   once all baselines pass noise/current-headroom checks. There is no per-joint
+   bias-calibration button, manual joint selection, or separate Start action.
+4. Sustained effort
+   advances the secondary goal in either direction. Stalled progress releases
+   assistance and captures the achieved position. Relax for 500 ms before
+   restarting after release; a persistent load or reversal cannot bypass this.
+5. **Disable Torque-Assist**, **Stop / torque off**, and **STOP ALL MOTION** disarm the
+   session, attempt zero current and torque-off on selected IDs, and invalidate
+   bias. Enabling again automatically collects a new baseline. Stop does not restore earlier gains,
+   profiles, current caps or goals.
 
-The controls are intentionally bounded for initial testing. If calibration
-reports insufficient current headroom, that pose cannot be supported with the
-chosen cap and trigger threshold. Raising the assist ceiling automatically is
-not part of this controller. Reposition or use a mechanically supported pose.
+## Reconciliation with the simulator
 
-## Calibration rejection diagnostics
+| Concept | Firmware implementation |
+|---|---|
+| Goal velocity | `gain * clamp(filtered_effort_mA, -intent_cap, intent_cap)` |
+| Persistent goal | Integrate velocity using the measured per-joint observation interval |
+| Lead | Grow toward 8 degrees at 24 deg/s while active; decay on release |
+| Intent gate | 500 ms above threshold; no former 0.15-degree deflection/settling gate |
+| Progress gate | Signed measured speed below 1 deg/s for 500 ms releases assistance |
+| Position controller | Explicit raw P=350, I=0, D=160; feedforward gains zero |
+| Current ceiling | Requested default 300 mA; shared-budget/motor-limit bounded installed cap stays fixed throughout the session |
+| Physical/environmental endstop | Supplied by the mechanism/environment; no firmware soft endstop |
+| Hard ROM | Both integrated goal and emitted reference stay inside calibrated limits plus 2-degree margin; no angle wrapping |
 
-The SDK reads `assist_status` after a rejected `assist_calibrate` command on
-either transport. It reports the failed condition and, when available, the
-motor ID, measured angle and velocity. It does not retry or enable motors.
-The GUI retains the error after stop cleanup. Examples include
-`requires_current_position`, `motor_disabled`, `unselected_motor_enabled`,
-`not_settled`, `stored_limit`, `motor_current_limit` and `current_budget`.
-Firmware adds optional `reject_id`, `reject_angle_deg` and
-`reject_velocity_deg_s` fields to the status header; Protobuf framing is unchanged.
-Older firmware still exposes its less-specific reason through this SDK path.
+Default threshold is `0.08 / 0.00115 = 69.565... mA`; velocity gain is
+`80 * 0.00115 = 0.092 deg/s/mA`. The intent ceiling is
+`0.25 / 0.00115 = 217.391... mA`, giving maximum default goal velocity 20 deg/s.
+The approximate motor torque constant is a conversion convention, not an
+anatomical joint-torque calibration. Controller tuning defaults reside in
+[`assist_controller.h`](../src/cpp/nml_hand_exo/assist_controller.h).
 
-After Auto-ROM, the GUI re-establishes current-position mode automatically.
-A Home sequence completing its command queue does not establish that every
-joint has physically settled. Assist preflight still requires speed at most
-1 deg/s and a pose at least 2 motor degrees inside both stored limits.
+The GUI displays each effective installed cap. With requested cap $C$, motor
+limit $L_i$ and combined budget $B$, firmware first forms `c_i=min(C,L_i)`, then
+installs `floor(c_i * min(1, B/sum(c)))`. Thus an 800 mA budget with nine identical
+joints installs 88 mA/joint rather than rejecting nine requested 300 mA caps.
+It never increases a motor limit or the existing combined budget. If the scaled
+cap cannot support the threshold with 10% headroom, startup rejects before any
+bus write; measured bias/noise must also fit that headroom. Enabling a dual
+18-joint session with 800 mA and the default threshold will consequently reject,
+since 44 mA/joint is below the default 69.6 mA effort threshold. Review tuning
+and the existing Setup budget rather than silently increasing current.
 
-## What is measured
+`PROFILE_VELOCITY` and `PROFILE_ACCELERATION` are zeroed so the earlier slow
+step profile does not shape the streamed references. Actual XC330 trajectory,
+PID, quantization and bus timing still differ from the simplified simulation.
+Raw gain equality does not imply numerical plant equality. The motor's internal
+controller applies Goal Current as the current ceiling in current-based position
+mode, as described by the [ROBOTIS manual](https://emanual.robotis.com/docs/en/dxl/x/xc330-t288/#position-pid-gain80-82-84).
 
-Every control observation reads **PRESENT_POSITION, PRESENT_VELOCITY and
-PRESENT_CURRENT**, plus torque-enabled status, directly from the selected motor. Estimated GUI telemetry is
-never used to trigger assistance. Up to one joint is sampled per service pass;
-service is paced at 5 ms and a given joint no faster than 20 ms. Fleet size and
-bus latency determine the actual rate. An observation gap above 500 ms faults.
-During assist ownership, NX/Protobuf telemetry reuses these measured samples
-(method 5, control cache), preserving their original sample uptime/UTC stamps.
-Polling faster does not fabricate newer samples or issue competing motor reads.
-Unselected, missing or stale control samples are unavailable, never reported as
-measured zeros or estimated user effort.
+Two deliberate release refinements follow the intent of the LaTeX note: firmware
+captures the achieved pose on ordinary effort release as well as stall release,
+and cancels remaining lead in the *same* observation that releases assistance.
+The Python implementation can briefly retain outward lead on its stall transition
+and decays lead against an older secondary goal on ordinary release. Otherwise,
+the activation, integration and lead updates are compared directly with the
+Python reference in native regression tests.
 
-In current-based position mode, the motor's position controller requests current
-to oppose a displacement. Goal Current limits this request. In pure current
-mode, current follows the supplied command; it cannot independently indicate
-user effort. Motor current is not a direct external joint-force measurement.
-The electrical control modes are described in the
-[ROBOTIS XC330-T288 manual](https://emanual.robotis.com/docs/en/dxl/x/xc330-t288/).
+## Effort observer and assumptions
 
-This implementation treats holding-current residual as a **load proxy** and
-requires agreeing measured deflection before moving. It assumes positive raw
-motor current opposes a negative external deflection; both are in the motor's
-encoder coordinates, before application-level flip/home transforms. Verify
-that sign relationship on each actual motor/linkage; inverse or ambiguous
-behavior must not be compensated by guessing a software direction.
+Every observation reads **PRESENT_POSITION, PRESENT_VELOCITY, PRESENT_CURRENT**
+and torque-enabled status from the actual motor. Read failures stop the session.
+No telemetry predictor, gesture allocator, Auto-ROM model or host disturbance
+signal supplies effort evidence.
 
-## Control law and calibration
-
-For relaxed samples, Welford's algorithm estimates mean current `b` and standard
-deviation `sigma`. Mean encoder tracking error `e0` is recorded too. The
-effective trigger deadzone in mA is:
-
-```
-D = max(configured_threshold, 5, 3*sigma)
-effort = -(measured_current - b)
-deflection = measured_position - hold_goal - e0
-```
-
-At least 150 ms of successive observations must show `abs(effort) > D` and
-`sign(effort)*deflection >= 0.15 degree`, with measured speed at most 1 deg/s.
-Then the next goal is calculated from the **measured current position**:
+With positions in raw motor degrees, the configurable observer is:
 
 ```
-step = min(0.5 degree, gain * (abs(effort) - D))
-next_goal = measured_position + sign(effort)*step
+a = (velocity - previous_velocity) / dt
+raw_mA = (J*a + B*velocity + C*sign(velocity)) / Kt - measured_current
+alpha = dt / (0.20 + dt)
+effort_mA += alpha * (raw_mA + relaxed_current_bias - effort_mA)
+D = max(configured_threshold_mA, 5, 3*relaxed_current_noise_mA)
 ```
 
-Sub-0.1-degree steps are not sent. While moving, readings cannot trigger a new
-step. The joint must settle for at least 400 ms, with speed at most 1 deg/s and
-tracking error (relative to calibrated `e0`) at most 0.3 degree; failure to
-settle within 2 seconds stops the session. Effort must qualify afresh afterwards.
-This is a bounded admittance-style position step, not proportional open-loop
-current feedback and not an identified physical impedance controller.
+`J`, `B`, `C` default to **zero**: filtered holding-current residual is a
+quasi-static load proxy, not an identified external-force measurement. Optional
+identified motor/load inertia, viscous friction and Coulomb friction can be
+configured per integer ID with `configure_assist_observer`. Their units are
+Nm*s?/degree, Nm*s/degree and Nm, respectively. The simulator's nominal
+`inertia_kg_m2` value multiplies acceleration expressed in deg/s? without a radian
+conversion; do not copy it as a measured SI inertia. Convert physical kg*m? to
+Nm*s?/degree with a factor pi/180 when working in motor encoder degrees.
 
-Preflight also checks actual operating mode and rejects Drive Mode's reverse,
-time-based profile, and torque-on-by-goal bits (`unsupported_drive_mode`). It
-does not silently alter EEPROM settings.
+The simulator subtracts its separately known environmental endstop torque. The
+hardware has no independent measurement of that torque; environmental resistance
+is part of its observed load. Actual current already includes all motor action.
+The controller therefore relies on progress-based release at environmental stops.
+Inertia/friction model errors, gravity changes, strap loading, noise and
+co-contraction can create residuals. A fixed relaxed bias is not a pose-dependent
+gravity model. The old five-degree bias-window fault is removed to allow
+continuous ROM movement; this does not establish bias validity across that ROM.
+Verify signs and observer behavior with the supported mechanism on the bench.
 
-The motion profile uses `PROFILE_VELOCITY=4` (0.916 rpm, about 5.5 deg/s) and
-`PROFILE_ACCELERATION=1`. Firmware retains those settings after stopping;
-ordinary mode/profile configuration can change them again. The controller does
-not modify the stored ROM limits, telemetry gain, stiffness or gravity moment.
+## Ownership, timing and faults
 
-Bias calibration is local: motion or a new goal more than **5 encoder degrees**
-from the calibration pose stops with `bias_pose_changed`. Recalibration is
-required. A single relaxed baseline cannot remove gravity over an entire ROM
-or after changing arm orientation. Friction, strap loading, current-to-torque
-nonlinearity and user co-contraction remain unmodeled.
+CALIBRATING, READY and ACTIVE reserve motor control. Other GUI movement and
+incoming UDP motion pause; competing ASCII/Protobuf setters and heavy bus queries
+are rejected. Every due control pass services **all selected joints**, paced at
+20 ms (nominal 50 Hz), with no round-robin cursor or sequential fallback:
 
-## Ownership and stops
+1. One Protocol 2.0 Sync Read of addresses 126?135 gets signed current, velocity
+   and multi-turn position for the entire selection.
+2. One Sync Read of address 64 checks torque-enabled status for the same IDs.
+3. After every joint passes validation, at most one Sync Write of addresses
+   116?119 sends the complete set of changed position goals. Unchanged goals
+   cause no write. A bad goal rejects the whole batch before transmission.
 
-Calibration, READY and ACTIVE all reserve motor control. Other GUI motion pages
-are disabled, incoming UDP motion is ignored, and firmware rejects competing
-ASCII and Protobuf motion/configuration commands. Normal gesture updates and
-the current-position allocator pause. The selected caps individually respect
-configured current limits, and their sum must not exceed the total budget.
-No enabled unselected motor is permitted at calibration start.
+Transaction count is independent of selection size (1, 9 or 18); wire time
+still increases with the number of replies. Sync Read is a grouped request,
+not simultaneous physical sampling: motors return ordered packets on one bus.
+All members share a frame-completion timestamp; actual bus/loop timing determines
+`dt`. A short reply count, any motor status error or library error invalidates
+the whole frame and stops the session. No missing buffer is treated as zero
+feedback, and there is no per-ID retry that would multiply bus load.
 
-The firmware stops for missing/invalid/stale feedback, lost heartbeat, excessive
-speed (10 deg/s), tracking error (2 degrees), measured current above cap + 5 mA,
-step excursion (2 degrees), pose-window exit, or the stored-limit margin
-(2 degrees). Proposed goals must also stay inside that margin. Measured velocity
-is quantized by the motor; the 1-deg/s settling test generally requires a zero
-velocity-register sample.
+Startup preflight uses grouped feedback, drive/operating-mode and torque
+reads. Torque-off, current caps, PID gains, feedforward gains, profiles/goals
+and torque-on are installed with six Sync Writes, independent of fleet size.
+Every configuration group is read back before proceeding; selected torque-on
+is the final write. Startup has 10 grouped reads and six grouped writes when
+selected motors are already in mode 5. Otherwise a seventh grouped write and
+its readback change only selected motors needing mode 5, while torque is off.
+An encoder epoch/pose change during this transition rejects startup. The
+reachable inactive IDs participate only in the preflight torque read, never
+in assist writes. A failed verification stops and attempts to disable the
+whole selection.
 
-Stop attempts zero current and torque-off independently on each selected ID.
-If torque-off is not acknowledged, the state remains **4 / torque-off
-unconfirmed** and firmware retries; ownership is retained rather than allowing
-other movement. A late heartbeat cannot rearm an expired session. The GUI sends
-heartbeats every 250 ms, with at most one pending assist operation. Unsent starts
-and heartbeats are canceled by Stop. Disconnect stops heartbeats; the firmware
-lease is the fallback if a stop request cannot reach the board.
+An observation interval above 500 ms, nonfinite data, disabled motor, speed above
+60 deg/s, tracking error above 32 degrees, measured current above cap+5 mA,
+or measured hard-ROM margin violation stops the session. These speed/tracking
+bounds replace the step controller's incompatible 10 deg/s and 2-degree bounds.
+They do not enlarge stored joint limits or current limits.
 
-These are cooperative firmware deadlines and sampled checks. A blocked bus or
-loop can delay a stop, and torque-off does not brake a falling load. Software
-checks do not establish a physical guarantee against passing a limit.
+A stalled/effort-released joint remains in the ACTIVE session holding its captured
+pose, with `moving=0` and `rearm_blocked=1`; lease and fault checks continue. Other
+selected joints retain independent intent and release state. Host Stop is distinct
+and turns selected torque off. READY observations cannot pre-qualify activation
+dwell. Unsigned millisecond intervals handle uptime wraparound.
+
+Stop attempts one zero-current Sync Write and one torque-off Sync Write for
+all selected IDs independently, even if the first transmission fails. Since
+Sync Write has no per-motor ACK, one torque-status Sync Read must return the
+complete selection with every value zero before stop is confirmed. A TX success
+alone never certifies torque-off. If torque-off is unconfirmed, state 4 retains
+ownership and repeats the grouped stop every 100 ms.
+An expired heartbeat cannot resurrect a lease. The GUI sends heartbeats every
+250 ms, cancels unsent starts on Stop, and stops heartbeats on disconnect.
+These are cooperative sampled checks: a blocked bus can delay fault handling,
+and torque-off does not brake an unsupported load.
+
+During assist ownership, NX/Protobuf telemetry reuses the measured control cache
+(method 5), retaining original sample uptime/UTC stamps. Stale/unselected samples
+are unavailable; faster polling does not create new motor measurements.
+Calibration rejection status includes reason and, when available, `reject_id`,
+`reject_angle_deg` and `reject_velocity_deg_s`. The SDK fetches these on rejection
+without retrying calibration.
+
+The GUI's startup wait also sends at most one Enable request. A subsequent
+firmware rejection retains its measured angle, velocity and status through the
+SDK and worker. On XC330, one velocity-register count is 0.229 rpm, or 1.374 deg/s:
+the firmware's 1 deg/s settling check therefore requires a zero register value.
+Visibly stationary joints can still fail on small motion or velocity quantization.
+The host wait avoids immediate rejection on a transient reading; it does not
+weaken firmware preflight or baseline checks. Persistent failure needs examination
+of the reported measurements and the mechanism, rather than automatic retries.
+
+Setup's combined-budget setter currently clamps below `N_MOTORS * hold_current`.
+With dual firmware and the default 300 mA holding allowance, that floor is
+5400 mA, including configured inactive IDs. Thus requesting 900 mA can return
+5400 mA; this is an allocation setting, not measured draw. Changing the existing
+global holding allowance is a separate operation and changes holding behavior.
+Assist never raises this budget or changes that allowance.
 
 ## SDK and wire contract
 
-Use explicit integer DXL IDs:
+Use the updated SDK; its velocity-gain keyword replaces `gain_deg_per_mA`.
+Legacy configuration checks `assist-v2`/`assist-v3` metadata so v1 firmware cannot silently interpret
+velocity gain as a step size. All settings are volatile and all setters require OFF.
 
 ```python
-exo.configure_assist(16, threshold_mA=10, gain_deg_per_mA=0.01, current_cap_mA=40)
-exo.set_control_mode("current_position")  # all torque off
-exo.calibrate_assist([16])     # capture capped hold, then enable only ID 16
-# During calibration, READY, and ACTIVE: renew at ~250 ms and inspect status.
+exo.enable_torque_assist([16], threshold_Nm=.08,
+                        velocity_gain_deg_s_per_Nm=80, current_cap_mA=300)
+# Renew at ~250 ms during automatic baseline collection and active use.
 exo.heartbeat_assist()
 status = exo.get_assist_status()
-# Only once status['state'] == 2, and on an explicit operator action:
-exo.start_assist()
-# Continue heartbeats; on exit:
+# State 1 automatically becomes state 3; no separate Start call.
 exo.stop_assist()
 ```
 
-The GUI owns the heartbeat scheduling; this snippet is not a standalone loop.
+This snippet describes the sequence; it is not a complete heartbeat loop.
 
-| API operation | ASCII | Protobuf opcode |
+| Operation | ASCII command | Protobuf |
 |---|---|---|
-| Configure one joint | `assist_config:<id>:<threshold>:<gain>:<cap>` | 14; one ID, three `values` |
-| Calibrate selected joints | `assist_calibrate:<id>[:<id>...]` | 15; explicit IDs |
-| Start | `assist_start` | 16; no fields |
-| Heartbeat | `assist_heartbeat` | 17; no fields |
-| Stop | `assist_stop` | 18; no fields |
-| Status | `assist_status` | Slow text endpoint in both builds |
+| Enable | `assist_enable:<threshold_mA>:<gain_deg_s_per_mA>:<cap_mA>:<J>:<B>:<C>:<id>[:<id>...]` | Opcode 21, explicit IDs and six shared floats |
+| Configure | `assist_config:<id>:<threshold_mA>:<velocity_gain_deg_s_per_mA>:<cap_mA>` | Opcode 14, one ID and three floats |
+| Observer | `assist_observer:<id>:<J>:<B>:<C>` | Opcode 20, one ID and three floats |
+| Calibrate | `assist_calibrate:<id>[:<id>...]` | Opcode 15, explicit unique IDs |
+| Start | `assist_start` | Opcode 16 |
+| Heartbeat | `assist_heartbeat` | Opcode 17 |
+| Stop | `assist_stop` | Opcode 18 |
+| Status | `assist_status` | Opcode 19, numeric controller snapshot |
 
-Status starts `ASSIST: state=<0..4> reason=<reason>` and contains one
-`ASSIST_JOINT:` line per selected ID: samples, bias/noise/deadzone, effort,
-deflection, angle/goal, moving, steps, and sample age. States are OFF,
-CALIBRATING, READY, ACTIVE and STOP_UNCONFIRMED. Protobuf builds advertise
-`assist_v1` in `USB Features` as well as the shared `Assist Protocol` metadata.
+Configuration ranges are threshold 5?200 mA, velocity gain 0.001?0.5 deg/s/mA,
+cap 10?910 mA, with threshold below cap and intent ceiling. Each observer term
+must be finite in [0, 1] in its stated units. Calibration separately checks actual
+mode 5, normal Drive Mode direction, velocity-based profile and no implicit
+torque-on-by-goal bits. Legacy calibration requires mode 5 already; the new
+explicit Enable operation configures mode 5 in EEPROM only where needed.
+The legacy configure/calibrate/Start SDK sequence remains available for callers
+requiring a manual READY phase (500 ms settling plus 50 baseline samples).
 
-## Minimum remaining checks before wearing
+ASCII setters return `OK: <command>` or `ERROR: rejected <command>`.
+Configuration leaves torque unchanged; calibration installs the capped hold and
+enables the selected motors. V2 changes opcode 14's gain meaning to deg/s/mA.
+Protobuf builds advertise `assist_v2 assist_binary assist_enable` in `USB Features`.
+ASCII status starts `ASSIST: state=<0..4> reason=<reason>`; states are OFF, CALIBRATING,
+READY, ACTIVE, STOP_UNCONFIRMED. `ASSIST_JOINT` reports samples, bias, noise,
+deadzone, effort, diagnostic deflection, measured angle, reference `goal`,
+`secondary_goal`, `intent_deg_s`, `lead_deg`, `rearm_blocked`, `moving`, `steps`
+and sample age, plus `current_cap_mA`. The header includes
+`total_current_budget_mA`. `steps` counts activation episodes, not discrete steps.
 
-The implementation and simulated tests are not a wearer validation. First run
-these checks with the mechanism supported on the bench:
+The Protobuf build uses the same controller and grouped bus transactions.
+Opcodes 14–21 return `Response.assist` on success or controller rejection, with
+numeric state/reason enums, optional rejected-ID/pose diagnostics and up to 18
+joint records containing the fields above. Controller reasons are enums internally;
+only explicit ASCII status requests construct strings. Status reads RAM and adds
+no motor-bus transactions. The 128-byte request limit and PB envelope version 1
+are retained; responses allow 2048 bytes for full dual-hand snapshots.
 
-- Verify calibrated limits, encoder direction and agreeing current/deflection
-  signs for each selected joint under a gentle applied load in both directions.
-- Confirm no assist steps at rest, including at the edge of the 5-degree bias
-  window; measure noise and available current headroom in representative poses.
-- Confirm the actual 40-ms current waveform, achieved feedback rate and limited
-  position-step response under the intended telemetry load.
-- Verify Stop and host disconnect physically remove effort. Ensure the mechanism
-  is supported when torque is removed.
-
-For wider continuous assistance, the next requirement is a pose-dependent load
-bias model or independent effort sensing validated across that ROM. A future EMG
-helper should modulate a bounded assist step only after the same measured-effort
-gate, with its own freshness check; it must not bypass limits or rearm a session.
+On Protobuf connections, the SDK's assist methods return the decoded status dict,
+including numeric `reason_code` and the existing local `reason` label. The GUI
+uses the heartbeat reply directly, making one binary exchange every 250 ms and
+no ASCII status request. Binary rejection carries its snapshot in `AssistRejected`
+so diagnostics do not require another RPC. Observer configuration also uses binary.
+Discovery and unrelated maintenance continue to use primary CDC text while OFF.
+The GUI requires `assist-v3`, and Protobuf adds `assist_binary` plus
+`assist_enable` capability checks; older builds need a reflash. Enable is one
+binary transaction with no text discovery, per-ID configuration calls, or
+legacy all-motor mode switch while starting. Optional Axon scalar sampling is
+unavailable while assist owns the grouped feedback path.
 
 ## Verification
 
-Native tests execute the actual assist firmware methods against a fake bus,
-covering relaxed bias, positive/negative assistance, rejection of current alone,
-no triggering during commanded movement, limits, stale feedback, mode/ROM/budget
-preconditions, expired leases and failed torque-off retries. Python tests cover
-typed SDK transport selection, Protobuf decoding, cancellation of unsent starts,
-and the GUI's calibration/enable/stop states. Hardware validation remains open.
+Both OpenRB ASCII and Protobuf builds compile. If Arduino also discovers a
+machine-wide nanopb library, it can link that runtime alongside the vendored
+copy and report duplicate symbols. On this workspace the Protobuf build uses:
+
+```powershell
+arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 `
+  --build-property 'compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF=1 -IC:/MyRepos/Python/NML_Hand_Exo/src/cpp/nml_hand_exo' `
+  --build-path build/assist-v3-protobuf src/cpp/nml_hand_exo
+```
+
+Adjust the include path for other checkouts; it selects the repository's runtime
+without changing the installed libraries.
+
+Native tests execute actual firmware calibration, ownership, bus writes, lease,
+stop/retry and limit handling. An 18-motor fake bus exposes only Sync Read/Write
+methods, so reintroducing per-ID register calls fails compilation. Cases cover
+1/9/18-motor fixed transaction counts, one goal packet for the entire fleet,
+shared frame timestamps, side-safe explicit-ID selection, partial replies and
+status errors, last-motor faults, whole-batch goal rejection, startup readback
+mismatch, elapsed lease during bus reads and grouped stop verification/retry. Portable controller tests exercise dwell reset,
+positive/negative integration, independent current cap, stalled release,
+achieved-pose capture, relaxation/rearm, multi-turn bounds and model cancellation.
+A recorded bidirectional input sequence is compared numerically with Python's
+secondary-goal implementation. SDK/GUI tests cover both transports, v1 rejection,
+configuration, stop cancellation and state handling. Hardware behavior remains
+unverified: bench-check signs, noise/bias over the intended ROM, actual achieved
+current/velocity and physical Stop/disconnect before participant use.
 
 <!-- graphviz:docs/figures/assist_mode.dot -->
 ![GraphViz diagram](figures/assist_mode.svg)
 <!-- /graphviz:docs/figures/assist_mode.dot -->
+
+<!-- graphviz:docs/figures/assist_secondary.dot -->
+![Per-joint secondary-goal control](figures/assist_secondary.svg)
+<!-- /graphviz:docs/figures/assist_secondary.dot -->
+
+<!-- graphviz:docs/figures/assist_bus.dot -->
+![Grouped assist bus cycle](figures/assist_bus.svg)
+<!-- /graphviz:docs/figures/assist_bus.dot -->

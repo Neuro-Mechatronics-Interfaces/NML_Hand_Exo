@@ -21,3 +21,7 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run([sys.executable, '-m', 'nanopb.generator.nanopb_generator',
                     '-I' + str(schema), '-D' + str(ROOT / 'src/cpp/nml_hand_exo/protocol'),
                     str(descriptor)], check=True)
+
+# nanopb emits surplus empty lines at EOF; keep checked-in output whitespace-clean.
+for generated in (ROOT / 'src/cpp/nml_hand_exo/protocol').glob('exo_usb.pb.*'):
+    generated.write_text(generated.read_text(encoding='utf-8').rstrip() + '\n', encoding='utf-8')

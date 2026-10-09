@@ -1,9 +1,6 @@
 # NML Hand Exo firmware
 
-Firmware for the NML Hand Exoskeleton, targeting the **ROBOTIS OpenRB-150**
-(SAMD21) controller driving Dynamixel XC330 servos. The sketch entry point is
-[`nml_hand_exo.ino`](nml_hand_exo.ino); the device is controlled over a serial
-command interface (USB, and optionally an HC-05 Bluetooth UART).
+Firmware for the NML Hand Exoskeleton, targeting the **ROBOTIS OpenRB-150** (SAMD21) controller driving Dynamixel XC330 servos. The sketch entry point is [`nml_hand_exo.ino`](nml_hand_exo.ino); the device is controlled over a serial command interface (USB, and optionally an HC-05 Bluetooth UART).
 
 **v0.9.0:** motion-time telemetry comes from a bounded per-joint model, with field-source flags and UTC/sample-uptime timestamps. The GUI synchronizes UTC on connection. See the [implementation and protocol contract](../../../docs/v0.9.0_implementation.md) for tuning, compatibility, safety-feedback exceptions, and bench validation.
 
@@ -44,8 +41,7 @@ Global variables use 15132 bytes (46%) of dynamic memory ...
 
 You may see `LITTLE_ENDIAN redefined` warnings from the SAMD core headers; those come from the platform, not this firmware, and are harmless.
 
-To add a build flag without editing `config.h` (e.g. force single CDC), use `compiler.cpp.extra_flags`. Overriding `build.extra_flags` removes OpenRB MCU/USB
-definitions such as `__SAMD21G18A__` and causes missing `Sercom`/`TCC_INST_NUM` errors:
+To add a build flag without editing `config.h` (e.g. force single CDC), use `compiler.cpp.extra_flags`. Overriding `build.extra_flags` removes OpenRB MCU/USB definitions such as `__SAMD21G18A__` and causes missing `Sercom`/`TCC_INST_NUM` errors:
 
 ```bash
 arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DSINGLE_CDC" src/cpp/nml_hand_exo
@@ -53,27 +49,21 @@ arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler
 
 For example to compile and upload the optional `Protobuf` build (requires nanopb):
 
-Current firmware reports **0.9.1**, with measured 30-ms shaped pulse-response calibration.
-See [the v0.9.1 defaults and diagnostics](../../../docs/v0.9.1_pulse_calibration.md).
+Current firmware reports **0.9.1**, with measured 30-ms shaped pulse-response calibration. See [the v0.9.1 defaults and diagnostics](../../../docs/v0.9.1_pulse_calibration.md).
 
 ```bash
 arduino-cli compile --upload -p %COM% --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF=1 -I{build.source.path}" src/cpp/nml_hand_exo
 ```
-on Mac:
-```bash
+on Mac: ```bash
 arduino-cli compile --upload -p $COM --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF=1 -I{build.source.path}" src/cpp/nml_hand_exo
 ```
 
-The primary CDC retains `info`/`help`; the second carries typed Protobuf telemetry
-and direct motion/model-update requests. `info` advertises `USB Protocol: protobuf-v1` so the
-SDK/GUI discovers the layout automatically. See [USB diagnostics and protocol](../../../docs/usb_protocol_and_io_diagnostics.md)
-for compile-only commands, the Python extra, schema regeneration, and telemetry
-plus fixed-rate model-write benchmarks. `USB Features: joint_model_write`
-identifies builds supporting typed `set_joint_model` requests. The additional
-`batch_motion` feature enables ID-keyed angle/current batches, finger angles,
-and named gestures through Protobuf. Update both
-firmware and Python for this feature. The default ASCII/NX build is unchanged unless the flag
-is enabled.
+The primary CDC retains `info`/`help`; the second carries typed Protobuf telemetry and direct motion/model-update requests. `info` advertises `USB Protocol: protobuf-v1` so the SDK/GUI discovers the layout automatically. See [USB diagnostics and protocol](../../../docs/usb_protocol_and_io_diagnostics.md) for compile-only commands, the Python extra, schema regeneration, and telemetry plus fixed-rate model-write benchmarks. `USB Features: joint_model_write` identifies builds supporting typed `set_joint_model` requests. The additional `batch_motion` feature enables ID-keyed angle/current batches, finger angles, and named gestures through Protobuf. Update both firmware and Python for this feature. The default ASCII/NX build is unchanged unless the flag is enabled.
+
+Every text parser route remains reachable in a Protobuf build: 18 commands have
+typed RPC handlers and the other maintenance/calibration routes remain on the
+primary text CDC. Run `python tools/check_protocol_contract.py --matrix` from
+the repository root to audit the complete mapping.
 
 ---
 
@@ -85,19 +75,15 @@ Find the board's serial port:
 arduino-cli board list
 ```
 
-On Windows `cmd` terminal, to set `COM` environment variable (with OpenRB board plugged in):  
-```cmd
+On Windows `cmd` terminal, to set `COM` environment variable (with OpenRB board plugged in):   ```cmd
 set "COM=" && for /f "tokens=1" %i in ('arduino-cli board list ^| findstr "OpenRB-150:samd:OpenRB-150"') do @if not defined COM set "COM=%i"
 ```
-or on Mac/Linux:
-```bash
+or on Mac/Linux: ```bash
 export COM=$(arduino-cli board list | grep "OpenRB-150:samd:OpenRB-150" | head -n1 | awk '{print $1}')
 echo "$COM"
 ```
 
-Look for the row identified as OpenRB-150 (or the port that appears when you
-plug the board in) — for example `%COM%` on Windows, `/dev/ttyACM0` on Linux, or
-`/dev/cu.usbmodemXXXX` on macOS.
+Look for the row identified as OpenRB-150 (or the port that appears when you plug the board in) — for example `%COM%` on Windows, `/dev/ttyACM0` on Linux, or `/dev/cu.usbmodemXXXX` on macOS.
 
 Compile and upload in one step (`--upload` compiles first):
 
@@ -105,13 +91,11 @@ Compile and upload in one step (`--upload` compiles first):
 arduino-cli compile --upload -p %COM% --fqbn OpenRB-150:samd:OpenRB-150 src/cpp/nml_hand_exo
 ```
 
-On success the board flashes its status LED **4 times** and prints
-```cmd
+On success the board flashes its status LED **4 times** and prints ```cmd
 Exo device ready to receive commands
 ```
 
-**If the upload cannot open the port:** close any serial monitor or GUI holding it. If the board does not enter the bootloader on its own, double-press the board's reset button to force the SAMD bootloader (a new port usually appears
-for a few seconds); pass that port to `-p`.
+**If the upload cannot open the port:** close any serial monitor or GUI holding it. If the board does not enter the bootloader on its own, double-press the board's reset button to force the SAMD bootloader (a new port usually appears for a few seconds); pass that port to `-p`.
 
 ---
 
@@ -145,14 +129,11 @@ disable:all                          # torque off
 help                                 # list every command
 ```
 
-Use an **explicit integer Dynamixel ID** rather than a bare name when it
-matters: in dual-hand builds names like `wrist` are ambiguous (they exist on
-both sides) and resolve to the left motor. IDs are unambiguous.
+Use an **explicit integer Dynamixel ID** rather than a bare name when it matters: in dual-hand builds names like `wrist` are ambiguous (they exist on both sides) and resolve to the left motor. IDs are unambiguous.
 
 ### Direct current / velocity control
 
-The global control mode must be set before issuing direct commands; a mode
-change turns torque off, so re-enable afterward:
+The global control mode must be set before issuing direct commands; a mode change turns torque off, so re-enable afterward:
 
 ```text
 set_control_mode:all:current         # or velocity, position, current_position
@@ -163,10 +144,7 @@ stop:16                              # zero the direct goal
 
 ### Impedance range-of-motion (ROM) calibration (firmware >= 0.8.0)
 
-Discovers a joint's endstop in one direction by pushing on it gently under
-current control and watching for motion, rather than asking the wearer to move
-to their extremes. One joint, one direction per command; the host orchestrates
-a full sweep.
+Discovers a joint's endstop in one direction by pushing on it gently under current control and watching for motion, rather than asking the wearer to move to their extremes. One joint, one direction per command; the host orchestrates a full sweep.
 
 ```text
 set_control_mode:all:current         # required first
@@ -181,15 +159,9 @@ OK: calibrate_rom id=11 dir=flex
 ROM_CAL_RESULT: id=11 dir=flex home=228.45 endstop=262.10 current_mA=145 status=ok
 ```
 
-`cancel_rom` aborts a running sweep and returns the joint home. Every sweep
-tuning value lives in the labeled `ROM_CAL_*` block in [`config.h`](config.h);
-see [`docs/serial_protocol.md`](../../../docs/serial_protocol.md) for the full
-behavior and safety notes.
+`cancel_rom` aborts a running sweep and returns the joint home. Every sweep tuning value lives in the labeled `ROM_CAL_*` block in [`config.h`](config.h); see [`docs/serial_protocol.md`](../../../docs/serial_protocol.md) for the full behavior and safety notes.
 
-> Safety: this endpoint deliberately drives current into a joint on a
-> participant's hand. Keep the current ceiling conservative, keep `cancel_rom`
-> within reach, and confirm the reported `home` matches where the joint actually
-> started before adopting any endstop.
+> **Safety**: this endpoint deliberately drives current into a joint on a participant's hand. Keep the current ceiling conservative, keep `cancel_rom` within reach, and confirm the reported `home` matches where the joint actually started before adopting any endstop.
 
 ---
 
@@ -209,6 +181,14 @@ behavior and safety notes.
 
 ## Host-side control
 
-The Python package under [`src/nml_hand_exo`](../../nml_hand_exo) drives this
-firmware over serial (`HandExo`), including a `calibrate_rom(...)` helper for the ROM sweep above. Python changes do not require re-flashing; only firmware or
-protocol changes do.
+The Python package under [`src/nml_hand_exo`](../../nml_hand_exo) drives this firmware over serial (`HandExo`), including a `calibrate_rom(...)` helper for the ROM sweep above. Python changes do not require re-flashing; only firmware or protocol changes do.
+
+The Assist GUI uses `assist-v3` one-click Enable: grouped selected-ID mode/hold
+setup, automatic initial baseline and activation. Current caps share the existing
+combined budget; the GUI displays effective caps. No separate joint-bias menu is needed.
+With `EXO_USB_PROTOBUF=1`, enable, assist configuration, observer configuration, calibration,
+start, heartbeat, stop and status use typed binary messages on the secondary CDC.
+`USB Features: assist_binary assist_enable` identifies numeric status and one-click enable support. Each assist reply
+includes the shared controller's snapshot; heartbeat needs no ASCII status query.
+Both transports retain grouped Dynamixel Sync Read/Write. See
+[Assist mode](../../../docs/assist_mode.md) for the protocol and build commands.

@@ -749,9 +749,14 @@ constexpr unsigned long MOVE_WINDOW_MS = 1000;
 constexpr unsigned long STALL_HOLD_MS = 500;
 
 /// @brief Direct-control limits used by serial velocity/current commands.
-constexpr float DIRECT_VELOCITY_LIMIT_RPM = 50.0f;
-/// @brief XC330 VELOCITY_LIMIT register value nearest 50 rpm (0.229 rpm/unit).
-constexpr uint32_t DIRECT_VELOCITY_LIMIT_RAW = 218;
+constexpr float DIRECT_VELOCITY_LIMIT_RPM = 71.0f;
+/// @brief XC330 VELOCITY_LIMIT register value nearest 71 rpm (0.229 rpm/unit).
+/// This is a command ceiling, not the motor's achievable mechanical speed.
+constexpr uint32_t DIRECT_VELOCITY_LIMIT_RAW = 310;
+static_assert(DIRECT_VELOCITY_LIMIT_RAW <= 2047 &&
+              DIRECT_VELOCITY_LIMIT_RAW ==
+                  (uint32_t)(DIRECT_VELOCITY_LIMIT_RPM / 0.229f + 0.5f),
+              "Direct velocity ceiling must match the XC330 register limit");
 constexpr int DIRECT_CURRENT_LIMIT_MA = MOTOR_CURRENT_LIMIT;
 constexpr unsigned long DIRECT_COMMAND_TIMEOUT_MS = 250;
 /// @brief Distance from a joint limit where direct velocity begins tapering.

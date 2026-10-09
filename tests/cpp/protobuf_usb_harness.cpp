@@ -7,6 +7,7 @@
 #include <string>
 #include "protobuf_frame.h"
 #include "joint_state_model.h"
+#include "assist_controller.h"
 #include "protocol/exo_usb.pb.h"
 #include "protocol/exo_usb.pb.c"
 #include <pb_decode.h>
@@ -30,10 +31,29 @@ struct NMLHandExo {
   bool accept = true, assistBusy = false;
   bool isAssistBusy() const { return assistBusy; }
   bool configureAssist(uint8_t, float t, float g, float cap) { value = cap; return accept && isfinite(t) && isfinite(g) && isfinite(cap); }
+  bool configureAssistObserver(uint8_t, float j, float b, float c) { value = c; return accept && isfinite(j) && isfinite(b) && isfinite(c); }
   bool calibrateAssist(const uint8_t*, uint8_t) { ++writes; return accept; }
+  bool enableTorqueAssist(const uint8_t*, uint8_t, float t, float g, float cap, float j, float b, float c) {
+    ++writes; value = cap;
+    return accept && isfinite(t) && isfinite(g) && isfinite(cap) && isfinite(j) && isfinite(b) && isfinite(c);
+  }
   bool startAssist() { ++writes; return accept; }
   bool heartbeatAssist() { return accept; }
-  void stopAssist(const char* = "stopped") { ++stops; assistBusy = false; }
+  void stopAssist(AssistReason = ASSIST_REASON_STOPPED) { ++stops; assistBusy = false; }
+  void getAssistSnapshot(AssistStatusSnapshot& out) const {
+    out = AssistStatusSnapshot{};
+    out.state = assistBusy ? 3 : 0;
+    out.reason = accept ? ASSIST_REASON_ACTIVE : ASSIST_REASON_NOT_SETTLED;
+    if (!accept) { out.reject_id = 17; out.reject_angle_deg = 117.66f; out.reject_velocity_deg_s = 4.122f; }
+    out.count = 18;
+    out.total_current_budget_mA = 800;
+    for (int i = 0; i < 18; ++i) {
+      auto& j = out.joints[i]; j.id = i < 9 ? i+1 : i+2;
+      j.samples = 50; j.effort_mA = -21; j.goal = 2840; j.angle = -189;
+      j.age_ms = 25; j.rearm_blocked = true;
+      j.current_cap_mA = 88;
+    }
+  }
   std::string motorControlMode_ = "CURRENT";
   bool positionHoldActive_[9] = {};
   bool setGoalCurrents(const uint8_t*, const float*, uint8_t);

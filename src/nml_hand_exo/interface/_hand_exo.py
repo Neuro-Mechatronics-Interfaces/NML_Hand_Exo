@@ -711,26 +711,103 @@ class HandExo(object):
     def _assist_command(self, command, ids=(), values=(), *, timeout=1.0):
         if getattr(self.device, "usb_protocol", None) == "protobuf-v1":
             return self.device.assist_command(command, ids, values, timeout=timeout)
-        suffix = [str(mid) for mid in ids] + [format(v, ".9g") for v in values]
+        id_fields = [str(mid) for mid in ids]
+        value_fields = [format(v, ".9g") for v in values]
+        suffix = value_fields + id_fields if command == "assist_enable" else id_fields + value_fields
         text = command + (":" + ":".join(suffix) if suffix else "")
         return self._command_transaction(text, expected=f"OK: {command}", timeout=timeout)
 
-    def configure_assist(self, motor_id: int, *, threshold_mA=10.0,
-                         gain_deg_per_mA=0.01, current_cap_mA=40.0):
-        """Configure one joint while assist is off; lower threshold is more sensitive.
+    def configure_assist(self, motor_id: int, *, threshold_mA=0.08 / 0.00115,
+                         gain_deg_s_per_mA=80.0 * 0.00115, current_cap_mA=300.0):
+        """Configure assist-v2 while OFF; gain maps effort to goal velocity.
 
         Effort is a measured holding-current residual, not calibrated external torque.
         This configuration never enables torque or initiates motion.
         """
         mid = self._joint_model_id(motor_id)
-        values = (threshold_mA, gain_deg_per_mA, current_cap_mA)
-        for value, lo, hi in zip(values, (5, .001, 10), (60, .05, 80)):
+        values = (threshold_mA, gain_deg_s_per_mA, current_cap_mA)
+        for value, lo, hi in zip(values, (5, .001, 10), (200, .5, 910)):
             if isinstance(value, bool) or not math.isfinite(float(value)) or not lo <= float(value) <= hi:
                 raise ValueError("Invalid assist threshold, gain, or current cap")
         values = tuple(float(v) for v in values)
         if values[0] >= values[2]:
             raise ValueError("Assist threshold must be below current cap")
+        if self.info().get("assist_protocol") not in ("assist-v2", "assist-v3"):
+            raise RuntimeError("Secondary-goal assist requires assist-v2 firmware; reflash before configuring")
         return self._assist_command("assist_config", [mid], values)
+
+    def configure_assist_observer(self, motor_id: int, *, inertia_Nm_s2_per_deg=0.0,
+                                  viscous_Nm_s_per_deg=0.0, coulomb_Nm=0.0):
+        """Set identified load terms while OFF; zeros use a current-residual proxy.
+
+        These parameters are independent of the telemetry predictor. Use explicit
+        motor IDs and motor-coordinate units, including inertia per degree.
+        """
+        mid = self._joint_model_id(motor_id)
+        values = (inertia_Nm_s2_per_deg, viscous_Nm_s_per_deg, coulomb_Nm)
+        if any(isinstance(v, bool) or not math.isfinite(float(v)) or not 0 <= float(v) <= 1 for v in values):
+            raise ValueError("Assist observer terms must be finite numbers in [0, 1]")
+        if self.info().get("assist_protocol") not in ("assist-v2", "assist-v3"):
+            raise RuntimeError("Assist observer configuration requires assist-v2 firmware")
+        return self._assist_command("assist_observer", [mid], tuple(float(v) for v in values))
+
+    def enable_torque_assist(self, motor_ids, *, threshold_Nm=.08,
+                            velocity_gain_deg_s_per_Nm=80., current_cap_mA=300.,
+                            inertia_Nm_s2_per_deg=0., viscous_Nm_s_per_deg=0., coulomb_Nm=0.):
+        """Enable selected joints, automatically collect bias, then assist.
+
+        Keep relaxed and stationary during the initial one-second baseline.
+        Firmware groups mode/hold setup and respects the existing combined
+        current budget; status reports each effective cap. Renew heartbeat
+        every 250 ms. Zero observer terms use measured current as an effort
+        proxy; identified hardware terms can be supplied explicitly.
+        """
+        ids = [self._joint_model_id(mid) for mid in motor_ids]
+        if not ids or len(ids) > 18 or len(set(ids)) != len(ids):
+            raise ValueError("Use 1..18 unique explicit motor IDs")
+        inputs = (threshold_Nm, velocity_gain_deg_s_per_Nm, current_cap_mA,
+                  inertia_Nm_s2_per_deg, viscous_Nm_s_per_deg, coulomb_Nm)
+        if any(isinstance(v, bool) or not math.isfinite(float(v)) for v in inputs):
+            raise ValueError("Assist parameters must be finite numbers")
+        values = (float(threshold_Nm)/.00115, float(velocity_gain_deg_s_per_Nm)*.00115,
+                  *(float(v) for v in inputs[2:]))
+        if not (5 <= values[0] <= 200 and .001 <= values[1] <= .5 and
+                10 <= values[2] <= 910 and values[0] < values[2] and
+                all(0 <= v <= 1 for v in values[3:])):
+            raise ValueError("Invalid assist threshold, velocity gain, current cap, or observer terms")
+        # Binary discovery already established capabilities. No text info
+        # transaction, per-joint config RPC, or all-motor mode switch here.
+        if getattr(self.device, "usb_protocol", None) != "protobuf-v1":
+            if self.info().get("assist_protocol") != "assist-v3":
+                raise RuntimeError("Enable Torque-Assist requires assist-v3 firmware; reflash the current build")
+        try:
+            return self._assist_command("assist_enable", ids, values, timeout=2.)
+        except RuntimeError as exc:
+            status = getattr(exc, "assist_status", None)
+            if status is None and isinstance(exc, ProtocolResponseError):
+                status = self.get_assist_status()
+            if status is None:
+                raise
+            reason = status.get("reason", "unknown")
+            hints = {
+                "insufficient_current_headroom": "Lower the effort threshold/current demand, or review the combined current budget in Setup.",
+                "unselected_motor_enabled": "Disable motors outside the active GUI side before enabling assist.",
+                "not_settled": "Keep the joints relaxed and stationary during startup.",
+                "stored_limit": "Move inside the stored joint limits before enabling assist.",
+                "start_pose_changed": "The pose or encoder epoch changed during mode setup; check calibration and try again while stationary.",
+                "feedback_or_torque_read": "Check that every requested motor is connected.",
+            }
+            mid = status.get("reject_id")
+            detail = f"Torque-assist rejected: {reason}" + (f" (ID {mid})" if mid is not None else "")
+            for key, label in (("reject_angle_deg", "angle"),
+                               ("reject_velocity_deg_s", "velocity")):
+                value = status.get(key)
+                if isinstance(value, (int, float)) and math.isfinite(value):
+                    unit = "deg/s" if label == "velocity" else "deg"
+                    detail += f"; {label}={value:.3f} {unit}"
+            error = RuntimeError(detail + ". " + hints.get(reason, "Check the motor connection and joint limits."))
+            error.assist_status = status
+            raise error from exc
 
     def calibrate_assist(self, motor_ids):
         """Capture bias at the current pose in current-position mode. Updated
@@ -746,10 +823,12 @@ class HandExo(object):
         except RuntimeError as exc:
             if not isinstance(exc, ProtocolResponseError) and not str(exc).startswith("Firmware rejected"):
                 raise
-            # The binary reply carries a status enum. Fetch the existing slow
-            # status endpoint before GUI cleanup can obscure the rejection.
+            # Binary rejection already carries diagnostics. ASCII still needs
+            # a status query before GUI cleanup can obscure the rejection.
             try:
-                status = self.get_assist_status()
+                status = getattr(exc, "assist_status", None)
+                if status is None:
+                    status = self.get_assist_status()
             except Exception:
                 raise exc
             reason = status["reason"]
@@ -791,11 +870,16 @@ class HandExo(object):
 
     def get_assist_status(self):
         """Read measured effort/deflection, bias/noise, progress and fault reason."""
+        if getattr(self.device, "usb_protocol", None) == "protobuf-v1":
+            return self.device.get_assist_status(timeout=.4)
         reply = self._command_transaction("assist_status", expected="ASSIST:", timeout=.4)
         header = re.search(r"ASSIST: state=(\d+) reason=(\w+)", reply)
         if not header or int(header[1]) not in range(5):
             raise ValueError("Invalid assist status reply")
         result = dict(state=int(header[1]), reason=header[2], joints={})
+        budget = re.search(r"total_current_budget_mA=(\d+)", reply.splitlines()[0])
+        if budget:
+            result["total_current_budget_mA"] = int(budget[1])
         details = dict(re.findall(r"(reject_\w+)=\s*([^\s;]+)", reply.splitlines()[0]))
         if "reject_id" in details:
             result["reject_id"] = int(details["reject_id"])
@@ -1732,7 +1816,7 @@ class HandExo(object):
         """
         self.send_command(f"set_current_lim:{motor_id}:{current_limit}")
 
-    def set_total_current_limit(self, budget_mA: float):
+    def set_total_current_limit(self, budget_mA: float, *, timeout: float = 2.0) -> float:
         """
         Set the COMBINED current budget across all motors, in mA.
 
@@ -1740,17 +1824,20 @@ class HandExo(object):
         200 mA limit still draw up to N*200 mA together, which is what browns
         out the board when a posture commands every joint at once.  This caps
         the aggregate.  The firmware clamps a new budget to the range it can
-        actually satisfy, so read it back with :meth:`get_total_current_limit`.
+        actually satisfy. Wait for its acknowledgement and return the applied
+        budget; do not leave that reply in flight before a subsequent query.
 
         Args:
             budget_mA (float): Combined budget in mA.
+            timeout (float): Maximum acknowledgement wait in seconds.
 
         Returns:
-            None
+            float: Applied combined budget from the firmware acknowledgement.
 
         Raises:
             RuntimeError: If the device firmware is older than 0.4.0.
-            ValueError: If ``budget_mA`` is not a positive number.
+            ValueError: If ``budget_mA`` is not positive and finite.
+            ProtocolResponseError: If the acknowledgement is missing or malformed.
 
         """
         self._require_firmware(FW_CURRENT_BUDGET, "The combined current budget")
@@ -1758,26 +1845,47 @@ class HandExo(object):
             budget = float(budget_mA)
         except (TypeError, ValueError):
             raise ValueError(f"budget_mA must be numeric, got {budget_mA!r}")
-        if budget <= 0:
-            raise ValueError(f"budget_mA must be positive, got {budget:g}")
-        self.send_command(f"set_total_current_lim:{budget:g}")
+        if not math.isfinite(budget) or budget <= 0:
+            raise ValueError(f"budget_mA must be positive and finite, got {budget:g}")
+        command = f"set_total_current_lim:{budget:g}"
+        reply = self._command_transaction(
+            command, expected="OK: total_current_lim ", timeout=timeout
+        )
+        match = re.search(r"(?m)^\s*OK: total_current_lim\s+(\d+)\s*(?:;|$)", reply)
+        if not match or not 0 < int(match[1]) <= 65535:
+            raise ProtocolResponseError(
+                command=command, expected="OK: total_current_lim <positive mA>",
+                raw_response=reply,
+            )
+        return float(match[1])
 
-    def get_total_current_limit(self) -> float:
+    def get_total_current_limit(self, *, timeout: float = 2.0) -> float:
         """
         Read the combined current budget across all motors, in mA.
 
+        Args:
+            timeout (float): Maximum reply wait in seconds.
+
         Returns:
-            float: Budget in mA, or ``float('nan')`` if the device did not answer.
+            float: Budget in mA.
 
         Raises:
             RuntimeError: If the device firmware is older than 0.4.0.
+            ProtocolResponseError: If the reply is missing or malformed.
 
         """
         self._require_firmware(FW_CURRENT_BUDGET, "The combined current budget")
-        self.send_command("get_total_current_lim")
-        response = self._receive(wait_until_return=True)
-        match = re.search(r"([-+]?\d*\.?\d+)", response or "")
-        return float(match.group(1)) if match else float("nan")
+        command = "get_total_current_lim"
+        reply = self._command_transaction(
+            command, expected="Total current limit:", timeout=timeout
+        )
+        match = re.search(r"(?m)^\s*Total current limit:\s*(\d+)\s+mA\s*(?:;|$)", reply)
+        if not match or not 0 < int(match[1]) <= 65535:
+            raise ProtocolResponseError(
+                command=command, expected="Total current limit: <positive mA> mA",
+                raw_response=reply,
+            )
+        return float(match[1])
 
     def set_hold_current(self, hold_mA: float):
         """
@@ -1965,6 +2073,68 @@ class HandExo(object):
         target = motor_id if isinstance(motor_id, str) else int(motor_id)
         self.send_command(f"stop:{target}")
 
+    def send_direct_actions(
+        self, actions: dict[int, tuple[str, float | None]]
+    ) -> None:
+        """Send one GUI real-time action set through the selected USB backend.
+
+        ASCII transports retain their single-write command batch. Protobuf
+        transports use typed RPCs, including one current batch or one multi-ID
+        stop whenever the complete action set permits it. Motion RPCs are not
+        retried after an uncertain acknowledgement.
+        """
+        normalized: dict[int, tuple[str, float | None]] = {}
+        for motor_id, action in actions.items():
+            mid = self._joint_model_id(motor_id)
+            try:
+                mode, value = action
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid direct action for ID {motor_id}: {action}") from exc
+            if mode not in {"velocity", "current", "stop"}:
+                raise ValueError(f"Invalid direct action for ID {motor_id}: {action}")
+            if mode == "stop":
+                normalized[mid] = (mode, None)
+                continue
+            if isinstance(value, bool):
+                raise ValueError("Direct command values must be finite numbers")
+            number = float(value)
+            if not math.isfinite(number):
+                raise ValueError("Direct command values must be finite numbers")
+            normalized[mid] = (mode, number)
+        if not normalized:
+            return
+
+        if getattr(self.device, "usb_protocol", None) == "protobuf-v1":
+            modes = {mode for mode, _ in normalized.values()}
+            if modes == {"current"} and getattr(
+                self.device, "batch_motion_supported", False
+            ):
+                self.device.send_batch_command(
+                    "set_currents",
+                    {mid: value for mid, (_, value) in sorted(normalized.items())},
+                )
+                return
+            if modes == {"stop"}:
+                sender = getattr(self.device, "send_stop", None)
+                if callable(sender):
+                    sender(sorted(normalized))
+                    return
+            sender = getattr(self.device, "send_motor_command", None)
+            if not callable(sender):
+                raise RuntimeError("Protobuf transport has no typed motor-command handler")
+            for mid, (mode, value) in sorted(normalized.items()):
+                sender("stop" if mode == "stop" else f"set_{mode}", mid, value)
+            return
+
+        delimiter = self.command_delimiter
+        commands = []
+        for mid, (mode, value) in sorted(normalized.items()):
+            if mode == "stop":
+                commands.append(f"stop:{mid}")
+            else:
+                commands.append(f"set_{mode}:{mid}:{value}")
+        self.device.send("".join(command + delimiter for command in commands))
+
     def hold_motor_position(
         self,
         motor_id: int,
@@ -2023,15 +2193,21 @@ class HandExo(object):
             command, expected="Direct command timeout:"
         )
 
-    def set_control_mode(self, mode: str):
-        """Set the global motor mode; firmware leaves torque disabled."""
+    def set_control_mode(self, mode: str, *, timeout: float = 10.0):
+        """Set the global motor mode; firmware leaves torque disabled.
+
+        Allow up to ten seconds for the acknowledgement. Firmware visits every
+        configured ID on the shared bus, including an unattached hand, and its
+        individual Dynamixel operations can each wait up to 100 ms. The normal
+        0.75-second command timeout is too short for this global operation.
+        """
         normalized = mode.strip().lower()
         allowed = {"position", "current_position", "velocity", "current"}
         if normalized not in allowed:
             raise ValueError(f"Unsupported control mode: {mode}")
         command = f"set_control_mode:all:{normalized}"
         return self._command_transaction(
-            command, expected=f"Motor control mode: {normalized}"
+            command, expected=f"Motor control mode: {normalized}", timeout=timeout
         )
 
     def get_motor_limits(self, motor_id: (int or str) = 'all') -> tuple:

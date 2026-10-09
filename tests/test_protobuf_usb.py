@@ -123,10 +123,62 @@ def test_typed_sdk_motion_avoids_ascii_formatting():
     device.send.assert_not_called()
 
 
-def test_legacy_streams_disabled_on_binary_backend():
+def test_legacy_fast_stream_is_disabled_on_binary_backend():
     device = ProtobufSerialComm('fake', 'fake2', 1000000)
-    for command in ('get_telemetry_fast:16', 'shadow_start'):
-        with pytest.raises(RuntimeError): device.send(command)
+    with pytest.raises(RuntimeError):
+        device.send('get_telemetry_fast:16')
+
+
+def test_shadow_commands_retain_primary_text_route_on_protobuf_backend():
+    device = ProtobufSerialComm('fake', 'fake2', 1000000)
+    device._cmd, device._telem = Mock(), Mock()
+    device.send('shadow_config:2:16\r\nshadow_start\r\n')
+    assert [call.args[0] for call in device._cmd.write.call_args_list] == [
+        b'shadow_config:2:16\r\n', b'shadow_start\r\n'
+    ]
+    device._telem.write.assert_not_called()
+
+
+def test_serialized_current_batch_from_gui_becomes_one_typed_rpc():
+    device = ProtobufSerialComm('fake', 'fake2', 1000000,
+                                batch_motion_supported=True)
+    device.send_batch_command = Mock()
+    device.send('set_current:16:50\r\nset_current:17:-25\r\n')
+    device.send_batch_command.assert_called_once_with(
+        'set_currents', {16: 50.0, 17: -25.0}
+    )
+
+
+def test_hand_exo_direct_action_switch_uses_typed_protobuf_routes():
+    device = Mock(usb_protocol='protobuf-v1', batch_motion_supported=True)
+    exo = HandExo(device, send_delay=0)
+    exo.send_direct_actions({17: ('current', -25), 16: ('current', 50)})
+    device.send_batch_command.assert_called_once_with(
+        'set_currents', {16: 50.0, 17: -25.0}
+    )
+    device.send.assert_not_called()
+
+    device.reset_mock()
+    exo.send_direct_actions({17: ('stop', None), 16: ('stop', None)})
+    device.send_stop.assert_called_once_with([16, 17])
+    device.send.assert_not_called()
+
+
+def test_multi_id_stop_helper_cannot_expand_empty_selection_to_stop_all():
+    device = ProtobufSerialComm('fake', 'fake2', 1000000)
+    device._rpc = Mock()
+    with pytest.raises(ValueError, match='one or more explicit'):
+        device.send_stop([])
+    device._rpc.assert_not_called()
+
+
+def test_hand_exo_direct_action_switch_keeps_ascii_single_write():
+    device = Mock(usb_protocol='ascii-nx')
+    exo = HandExo(device, command_delimiter='\r\n', send_delay=0)
+    exo.send_direct_actions({17: ('velocity', -2), 16: ('velocity', 3)})
+    device.send.assert_called_once_with(
+        'set_velocity:16:3.0\r\nset_velocity:17:-2.0\r\n'
+    )
 
 
 MODEL = dict(gain=.2, time_constant=.1, max_velocity=70, stiffness=.001, moment=-.02)
@@ -340,11 +392,15 @@ def test_current_batch_stops_after_first_bus_failure(firmware):
     (pb.ASSIST_CONFIG, [16], [10, .01, 40]),
     (pb.ASSIST_CALIBRATE, [16, 17], []),
     (pb.ASSIST_START, [], []), (pb.ASSIST_HEARTBEAT, [], []), (pb.ASSIST_STOP, [], []),
+    (pb.ASSIST_STATUS, [], []), (pb.ASSIST_OBSERVER, [16], [.035, .018, .025]),
+    (pb.ASSIST_ENABLE, list(range(11, 20)), [.08/.00115, 80*.00115, 300, 0, 0, 0]),
 ])
 def test_assist_binary_dispatch(firmware, command, ids, values):
     request = pb.Request(sequence=22, command=command, motor_ids=ids, values=values)
     _, output = firmware(encode_frame(request.SerializeToString()))
-    assert pb.Response.FromString(read_frame(io.BytesIO(output), .1)).status == pb.OK
+    response = pb.Response.FromString(read_frame(io.BytesIO(output), .1))
+    assert response.status == pb.OK
+    assert response.HasField('assist') and len(response.assist.joints) == 18
 
 
 @pytest.mark.parametrize("command,ids,values", [
@@ -352,6 +408,13 @@ def test_assist_binary_dispatch(firmware, command, ids, values):
     (pb.ASSIST_CALIBRATE, [16, 16], []), (pb.ASSIST_CALIBRATE, [1], []),
     (pb.ASSIST_CALIBRATE, [], []), (pb.ASSIST_START, [16], []),
     (pb.ASSIST_HEARTBEAT, [], [1]), (pb.ASSIST_STOP, [16], []),
+    (pb.ASSIST_STATUS, [16], []), (pb.ASSIST_STATUS, [], [1]),
+    (pb.ASSIST_OBSERVER, [], [0, 0, 0]), (pb.ASSIST_OBSERVER, [16, 17], [0, 0, 0]),
+    (pb.ASSIST_OBSERVER, [16], [0, 0]),
+    (pb.ASSIST_ENABLE, [], [10, .01, 300, 0, 0, 0]),
+    (pb.ASSIST_ENABLE, [16], [10, .01, 300]),
+    (pb.ASSIST_ENABLE, [16, 16], [10, .01, 300, 0, 0, 0]),
+    (pb.ASSIST_ENABLE, [16], []),
 ])
 def test_malformed_assist_requests_have_no_effect(firmware, command, ids, values):
     request = pb.Request(sequence=23, command=command, motor_ids=ids, values=values)
@@ -365,3 +428,117 @@ def test_assist_excludes_other_binary_motion(firmware):
     counts, output = firmware(encode_frame(request.SerializeToString()), guard="assist")
     assert counts[:3] == [0, 0, 0]
     assert pb.Response.FromString(read_frame(io.BytesIO(output), .1)).status == pb.REJECTED
+
+
+def test_binary_assist_roundtrip_18_joints_and_one_heartbeat_exchange(firmware):
+    device = ProtobufSerialComm('fake', 'fake2', 1000000, assist_binary_supported=True)
+    commands, transactions = [], []
+    class FirmwareStream:
+        def reset_input_buffer(self):
+            self.reply = io.BytesIO()
+        def write(self, frame):
+            request = pb.Request.FromString(read_frame(io.BytesIO(frame), .1))
+            commands.append(request.command)
+            counts, output = firmware(frame, guard='assist')
+            transactions.append(counts)
+            self.reply = io.BytesIO(output)
+            return len(frame)
+        def read(self, count):
+            return self.reply.read(count)
+    device._telem = FirmwareStream()
+    device._cmd = Mock()
+    exo = HandExo(device, auto_connect=False)
+    status = exo.heartbeat_assist()
+    assert commands == [pb.ASSIST_HEARTBEAT]
+    assert transactions == [[0, 0, 0, 0]]
+    assert status['state'] == 3 and status['reason_code'] == pb.ASSIST_REASON_ACTIVE
+    assert set(status['joints']) == set(range(1,10)) | set(range(11,20))
+    joint = status['joints'][19]
+    assert joint['effort_mA'] == -21 and joint['angle'] == -189 and joint['goal'] == 2840
+    assert joint['rearm_blocked'] and joint['samples'] == 50 and joint['age_ms'] == 25
+    assert joint['current_cap_mA'] == 88 and status['total_current_budget_mA'] == 800
+    assert exo.get_assist_status() == status
+    assert commands == [pb.ASSIST_HEARTBEAT, pb.ASSIST_STATUS]
+    assert transactions[-1] == [0, 0, 0, 0]
+    device._cmd.write.assert_not_called()
+
+
+def test_rejected_binary_calibration_carries_diagnostics_without_second_rpc(firmware):
+    from nml_hand_exo.interface._hand_exo import ProtocolResponseError
+    device = ProtobufSerialComm('fake', 'fake2', 1000000, assist_binary_supported=True)
+    device._cmd, device._telem = Mock(), Mock()
+    def write(frame):
+        _, output = firmware(frame, reject=True)
+        stream = io.BytesIO(output)
+        device._telem.read.side_effect = stream.read
+        return len(frame)
+    device._telem.write.side_effect = write
+    exo = HandExo(device, auto_connect=False)
+    with pytest.raises(ProtocolResponseError, match=r'not_settled.*ID 17.*velocity=4.122'):
+        exo.calibrate_assist([17])
+    device._telem.write.assert_called_once()
+    device._cmd.write.assert_not_called()
+
+
+def test_missing_binary_assist_capability_never_falls_back_to_text():
+    device = ProtobufSerialComm('fake', 'fake2', 1000000)
+    device._cmd, device._telem = Mock(), Mock()
+    exo = HandExo(device, auto_connect=False)
+    for action in (exo.start_assist, exo.heartbeat_assist, exo.stop_assist, exo.get_assist_status):
+        with pytest.raises(RuntimeError, match='lacks assist_binary'):
+            action()
+    device._cmd.write.assert_not_called()
+    device._telem.write.assert_not_called()
+
+
+def test_assist_reason_codes_match_portable_firmware():
+    import re
+    header = (FIRMWARE / 'assist_controller.h').read_text()
+    codes = {name: int(number) for name, number in
+             re.findall(r'\b(ASSIST_REASON_[A-Z_]+) = (\d+),', header)}
+    assert codes == dict(pb.AssistReason.items())
+
+
+def test_assist_response_bounds_cover_worst_case_18_joint_snapshot():
+    response = pb.Response(sequence=0xffffffff, status=pb.REJECTED,
+                           assist=pb.AssistStatus(state=4, reason=pb.ASSIST_REASON_TORQUE_OFF_UNCONFIRMED,
+                                                 reject_id=253, reject_angle_deg=-36000,
+                                                 reject_velocity_deg_s=-60))
+    for mid in range(236,254):
+        joint = response.assist.joints.add()
+        for field in joint.DESCRIPTOR.fields:
+            setattr(joint, field.name, True if field.type == field.TYPE_BOOL else
+                    0xffffffff if field.type == field.TYPE_UINT32 else -36000.0)
+        joint.id = mid
+    payload = response.SerializeToString()
+    assert 640 < len(payload) < 2048
+    assert read_frame(io.BytesIO(encode_frame(payload)), .1) == payload
+    with pytest.raises(ValueError):
+        encode_frame(b'x'*2049)
+
+def test_one_click_enable_sdk_to_binary_firmware_without_text(firmware):
+    device = ProtobufSerialComm('fake', 'fake2', 1000000,
+                               assist_binary_supported=True, assist_enable_supported=True)
+    device._cmd, device._telem = Mock(), Mock()
+    requests = []
+    def write(frame):
+        requests.append(pb.Request.FromString(read_frame(io.BytesIO(frame), .1)))
+        _, output = firmware(frame)
+        stream = io.BytesIO(output)
+        device._telem.read.side_effect = stream.read
+        return len(frame)
+    device._telem.write.side_effect = write
+    exo = HandExo(device, auto_connect=False)
+    status = exo.enable_torque_assist(list(range(11,20)))
+    assert len(requests) == 1 and requests[0].command == pb.ASSIST_ENABLE
+    assert list(requests[0].motor_ids) == list(range(11,20))
+    assert list(requests[0].values) == pytest.approx([.08/.00115, 80*.00115, 300, 0, 0, 0])
+    assert status['total_current_budget_mA'] == 800
+    assert status['joints'][19]['current_cap_mA'] == 88
+    device._cmd.write.assert_not_called()
+
+
+def test_full_dual_enable_request_fits_binary_frame():
+    request = pb.Request(sequence=0xffffffff, command=pb.ASSIST_ENABLE,
+                         motor_ids=list(range(236,254)), values=[200, .5, 910, 1, 1, 1])
+    assert len(request.SerializeToString()) <= 128

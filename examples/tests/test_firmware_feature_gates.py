@@ -246,7 +246,8 @@ class CurrentBudgetTests(unittest.TestCase):
 
     def test_commands_sent_on_0_4_0(self):
         exo = _exo("0.4.0")
-        exo.set_total_current_limit(1200)
+        exo.device.next_reply = "OK: total_current_lim 1200"
+        self.assertEqual(exo.set_total_current_limit(1200), 1200.0)
         exo.set_hold_current(30)
         exo.set_current_governor(False)
         self.assertEqual(
@@ -260,7 +261,7 @@ class CurrentBudgetTests(unittest.TestCase):
 
     def test_rejects_nonsense_budgets(self):
         exo = _exo("0.4.0")
-        for bad in (0, -5):
+        for bad in (0, -5, float("nan"), float("inf")):
             with self.assertRaises(ValueError):
                 exo.set_total_current_limit(bad)
         with self.assertRaises(ValueError):

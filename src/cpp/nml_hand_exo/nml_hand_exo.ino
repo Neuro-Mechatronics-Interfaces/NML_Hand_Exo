@@ -183,6 +183,7 @@ void loop() {
     // so it never issues its own transaction.
     auto* exo = static_cast<NMLHandExo*>(context);
     using Field = axon_exo::AxonUsbPeripheral::Field;
+    if (exo->isAssistBusy()) return false; // assist owns grouped feedback; no scalar peripheral reads
     if (exo->telemetryEstimated()) return false; // Axon has no estimated-source flag.
     if (exo->getIndexById(id) < 0) return false;  // not a motor of this build
     if (field == Field::kAngle) {

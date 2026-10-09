@@ -363,14 +363,19 @@ class NMLHandExo {
 
     /// @brief Service the ROM calibration state machine. Called from update().
     /// Non-blocking: does at most a bounded amount of Dynamixel I/O per call.
-    bool configureAssist(uint8_t id, float thresholdMa, float gainDegPerMa, float currentCapMa);
+    bool configureAssist(uint8_t id, float thresholdMa, float gainDegSPerMa, float currentCapMa);
+    bool configureAssistObserver(uint8_t id, float inertiaNmS2PerDeg, float viscousNmSPerDeg, float coulombNm);
     bool calibrateAssist(const uint8_t* ids, uint8_t count);
+    bool enableTorqueAssist(const uint8_t* ids, uint8_t count, float thresholdMa,
+                           float gainDegSPerMa, float capMa, float inertia,
+                           float viscous, float coulomb);
     bool startAssist();
     bool heartbeatAssist();
-    void stopAssist(const char* reason = "stopped");
+    void stopAssist(AssistReason reason = ASSIST_REASON_STOPPED);
     bool isAssistBusy() const { return assistState_ != 0; }
     void serviceAssist();
     String assistStatus() const;
+    void getAssistSnapshot(AssistStatusSnapshot& out) const;
     void serviceRomCalibration();
 
     /// @brief Whether an impedance ROM sweep is currently running.
@@ -1119,13 +1124,17 @@ class NMLHandExo {
     // its tuning; see serviceRomCalibration() in nml_hand_exo.cpp.
     AssistJoint assistJoints_[N_MOTORS];
     uint8_t assistState_ = 0; // off, calibrating, ready, active, stop unconfirmed
-    uint8_t assistCursor_ = 0;
     unsigned long assistHeartbeatMs_ = 0, assistSampleMs_ = 0, assistBeginMs_ = 0;
-    const char* assistReason_ = "off";
+    AssistReason assistReason_ = ASSIST_REASON_OFF;
+    bool assistAutoStart_ = false;
     int assistRejectId_ = -1;
     float assistRejectAngle_ = NAN, assistRejectVelocity_ = NAN;
-    bool readAssistSample(uint8_t id, float& q, float& velocity, float& current, bool requireEnabled = true);
-    bool writeAssistGoal(int index);
+    bool readAssistRegisters(const bool* targets, uint16_t address, uint16_t length,
+                             AssistRegisterBlock* data);
+    bool writeAssistRegisters(const bool* targets, uint16_t address, uint16_t length,
+                              AssistRegisterBlock* data, bool verify = false);
+    bool readAssistFeedback(const bool* targets, AssistFeedback* feedback);
+    bool writeAssistGoals(const bool* targets);
     RomCalPhase romCalPhase_ = ROM_CAL_IDLE;
     RomCalDirection romCalDir_ = ROM_CAL_DIR_FLEX;
     RomCalStatus romCalStatus_ = ROM_CAL_STATUS_NONE;

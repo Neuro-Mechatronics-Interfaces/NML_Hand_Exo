@@ -6,6 +6,7 @@ device failed to act. Schema and engineering units live in protocol/exo_usb.prot
 from __future__ import annotations
 import binascii
 import math
+import re
 import secrets
 import struct
 import threading
@@ -13,10 +14,77 @@ import time
 import serial
 
 from ._interfaces import DualSerialComm
+from ._protocol_routes import (
+    PROTOBUF_ONLY_COMMANDS,
+    PROTOBUF_PRIMARY_TEXT_COMMANDS,
+    PROTOBUF_RPC_COMMANDS,
+    protobuf_command_route,
+)
+
+MAX_RESPONSE = 2048
+
+
+class AssistRejected(RuntimeError):
+    """A rejected binary assist operation, including its numeric snapshot."""
+
+    def __init__(self, message, assist_status):
+        super().__init__(message)
+        self.assist_status = assist_status
+
+
+class ProtobufFrameReader:
+    """Keep partial replies across RPC deadlines and resynchronize by CRC."""
+
+    def __init__(self):
+        self.buffer = bytearray()
+
+    def read(self, stream, timeout):
+        deadline = time.monotonic() + timeout
+        discarded = 0
+        while True:
+            start = self.buffer.find(b'PB')
+            if start < 0:
+                keep = int(self.buffer.endswith(b'P'))
+                discarded += len(self.buffer) - keep
+                del self.buffer[:len(self.buffer) - keep]
+            elif start:
+                discarded += start
+                del self.buffer[:start]
+            needed = 1
+            if self.buffer.startswith(b'PB'):
+                needed = 7 - len(self.buffer)
+                if len(self.buffer) >= 7:
+                    version, size, crc = struct.unpack_from('<BHH', self.buffer, 2)
+                    if version != 1 or not 0 < size <= MAX_RESPONSE:
+                        discarded += 1
+                        del self.buffer[0]
+                        continue
+                    needed = size + 7 - len(self.buffer)
+                    if needed <= 0:
+                        payload = bytes(self.buffer[7:7 + size])
+                        if binascii.crc_hqx(self.buffer[2:5] + payload, 0xffff) != crc:
+                            discarded += 1
+                            del self.buffer[0]
+                            continue
+                        del self.buffer[:7 + size]
+                        return payload
+            if time.monotonic() >= deadline:
+                if not self.buffer:
+                    detail = 'no reply bytes received'
+                elif len(self.buffer) < 7:
+                    detail = f'header {len(self.buffer)}/7 bytes'
+                else:
+                    detail = f'payload {len(self.buffer) - 7}/{size} bytes'
+                if discarded:
+                    detail += f'; discarded {discarded} invalid/noise bytes'
+                raise TimeoutError(f'Incomplete Protobuf frame: {detail}')
+            chunk = stream.read(needed)
+            if chunk:
+                self.buffer.extend(chunk)
 
 
 def encode_frame(payload: bytes) -> bytes:
-    if not 0 < len(payload) <= 640:
+    if not 0 < len(payload) <= MAX_RESPONSE:
         raise ValueError("Invalid Protobuf frame length")
     prefix = struct.pack('<BH', 1, len(payload))
     crc = binascii.crc_hqx(prefix + payload, 0xffff)
@@ -37,7 +105,7 @@ def read_frame(stream, timeout: float) -> bytes:
         prefix = (prefix + exact(1))[-2:]
     header = exact(5)
     version, size, crc = struct.unpack('<BHH', header)
-    if version != 1 or not 0 < size <= 640:
+    if version != 1 or not 0 < size <= MAX_RESPONSE:
         raise ValueError('Unsupported Protobuf envelope')
     payload = exact(size)
     if binascii.crc_hqx(header[:3] + payload, 0xffff) != crc:
@@ -49,10 +117,13 @@ class ProtobufSerialComm(DualSerialComm):
     usb_protocol = 'protobuf-v1'
     is_split = True
     supports_legacy_fast_telemetry = False
-    supports_shadow_telemetry = False
+    # Shadow configuration/status remain valid maintenance-plane commands on
+    # the primary text CDC. They never share or corrupt the binary endpoint.
+    supports_shadow_telemetry = True
     MOTOR_COMMANDS = {'set_current', 'set_velocity', 'set_absolute_angle', 'set_angle', 'stop'}
 
-    def __init__(self, *args, motor_ids=None, model_write_supported=False, batch_motion_supported=False, **kwargs):
+    def __init__(self, *args, motor_ids=None, model_write_supported=False,
+                 batch_motion_supported=False, assist_binary_supported=False, assist_enable_supported=False, **kwargs):
         super().__init__(*args, **kwargs)
         # Loaded only after discovery identifies a Protobuf build.
         try:
@@ -63,19 +134,53 @@ class ProtobufSerialComm(DualSerialComm):
         self.motor_ids = list(motor_ids or [])
         self.model_write_supported = bool(model_write_supported)
         self.batch_motion_supported = bool(batch_motion_supported)
+        self.assist_binary_supported = bool(assist_binary_supported)
+        self.assist_enable_supported = bool(assist_enable_supported)
+        self._assist_reasons = {number: name.removeprefix('ASSIST_REASON_').lower()
+                               for name, number in self.pb.AssistReason.items()}
         self._rpc_lock = threading.Lock()
         self._sequence = secrets.randbits(32)
+        self._frame_reader = ProtobufFrameReader()
 
     def assist_command(self, command, ids=(), values=(), *, timeout=1.0):
+        if command == 'assist_enable' and not self.assist_enable_supported:
+            raise RuntimeError('Enable Torque-Assist requires assist-v3 firmware; recompile/reflash the current build.')
+        if not self.assist_binary_supported:
+            raise RuntimeError('This Protobuf firmware lacks assist_binary; recompile/reflash '
+                               'the current Protobuf build to use binary assist status.')
         names = {"assist_config": self.pb.ASSIST_CONFIG,
+                 "assist_enable": self.pb.ASSIST_ENABLE,
+                 "assist_observer": self.pb.ASSIST_OBSERVER,
                  "assist_calibrate": self.pb.ASSIST_CALIBRATE,
                  "assist_start": self.pb.ASSIST_START,
                  "assist_heartbeat": self.pb.ASSIST_HEARTBEAT,
-                 "assist_stop": self.pb.ASSIST_STOP}
+                 "assist_stop": self.pb.ASSIST_STOP,
+                 "assist_status": self.pb.ASSIST_STATUS}
         if command not in names:
             raise ValueError("Unknown assist command")
-        self._rpc(names[command], ids, values=values, timeout=timeout)
-        return f"OK: {command}"
+        response = self._rpc(names[command], ids, values=values, timeout=timeout)
+        return self._decode_assist(response)
+
+    def get_assist_status(self, *, timeout=.4):
+        return self.assist_command('assist_status', timeout=timeout)
+
+    def _decode_assist(self, response):
+        if not response.HasField('assist'):
+            raise ValueError('Protobuf assist response has no status snapshot')
+        status = response.assist
+        if status.state not in range(5) or status.reason not in self._assist_reasons:
+            raise ValueError('Invalid binary assist state or reason')
+        result = dict(state=status.state, reason=self._assist_reasons[status.reason],
+                      reason_code=status.reason, joints={})
+        for key in ('reject_id', 'reject_angle_deg', 'reject_velocity_deg_s', 'total_current_budget_mA'):
+            if status.HasField(key):
+                result[key] = getattr(status, key)
+        for joint in status.joints:
+            if not 1 <= joint.id <= 253 or joint.id in result['joints'] or len(result['joints']) >= 18:
+                raise ValueError('Invalid or duplicate binary assist motor ID')
+            result['joints'][joint.id] = {field.name: value for field, value in joint.ListFields()
+                                          if field.name != 'id'}
+        return result
 
     def _open_and_probe(self):
         # AutoSerialComm has identified the primary text port via info already.
@@ -85,6 +190,7 @@ class ProtobufSerialComm(DualSerialComm):
                                     write_timeout=self.write_timeout)
         self._cmd.reset_input_buffer()
         self._telem.reset_input_buffer()
+        self._frame_reader = ProtobufFrameReader()
         self._reader_error = None
         self._start_reader()
 
@@ -119,19 +225,26 @@ class ProtobufSerialComm(DualSerialComm):
             frame = encode_frame(request.SerializeToString())
             if len(frame) > 135:
                 raise ValueError('Request exceeds firmware frame limit')
-            self._telem.reset_input_buffer()
             if self._telem.write(frame) != len(frame):
                 raise ConnectionError('Incomplete Protobuf request write')
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
-                response = self.pb.Response.FromString(read_frame(self._telem, deadline-time.monotonic()))
+                try:
+                    payload = self._frame_reader.read(self._telem, deadline-time.monotonic())
+                except TimeoutError as exc:
+                    raise TimeoutError(f'{self.pb.Command.Name(command)} on {self.telem_port} '
+                                       f'(sequence={request.sequence}): {exc}') from exc
+                response = self.pb.Response.FromString(payload)
                 if not response.IsInitialized():
                     raise ValueError('Incomplete Protobuf response')
                 if response.sequence != request.sequence:
                     continue # delayed response to an earlier timed-out request
                 if response.status != self.pb.OK:
-                    raise RuntimeError(f'Firmware rejected {self.pb.Command.Name(command)}: '
-                                       f'{self.pb.Status.Name(response.status)}')
+                    message = (f'Firmware rejected {self.pb.Command.Name(command)}: '
+                               f'{self.pb.Status.Name(response.status)}')
+                    if response.HasField('assist'):
+                        raise AssistRejected(message, self._decode_assist(response))
+                    raise RuntimeError(message)
                 return response
             raise TimeoutError('No matching Protobuf response; command was not retried')
 
@@ -151,6 +264,14 @@ class ProtobufSerialComm(DualSerialComm):
         self._rpc(self.pb.Command.Value(command.upper()), ids, value)
         # Existing transaction consumers may still expect the familiar ACK text.
         self._publish_reply('OK: ' + command)
+
+    def send_stop(self, motor_ids=()):
+        """Stop several explicit IDs in one existing STOP RPC."""
+        ids = list(motor_ids)
+        if not ids:
+            raise ValueError('send_stop requires one or more explicit motor IDs')
+        self._rpc(self.pb.STOP, ids)
+        self._publish_reply('OK: stop')
 
     def write_joint_model(self, motor_id, parameters, *, timeout=1.0):
         if not self.model_write_supported:
@@ -211,7 +332,43 @@ class ProtobufSerialComm(DualSerialComm):
             raise ValueError('Gesture name and pose require 1..31 letters, digits or underscores')
         return value
 
+    @staticmethod
+    def command_route(command: str) -> str:
+        """Expose the audited route matrix to diagnostics and tests."""
+        return protobuf_command_route(command)
+
+    @staticmethod
+    def _serialized_commands(message: str) -> list[str]:
+        """Split the same newline/semicolon batches accepted by ASCII CDC."""
+        if not isinstance(message, str):
+            raise TypeError('Serialized command payload must be text')
+        return [part.strip() for part in re.split(r'[;\r\n]+', message) if part.strip()]
+
     def send(self, message: str):
+        commands = self._serialized_commands(message)
+        if not commands:
+            raise ValueError('Serialized command payload is empty')
+        # The GUI emits one transport write containing a complete real-time
+        # action set. Preserve that behavior on Protobuf and use the existing
+        # current batch opcode when the complete set is homogeneous.
+        heads = [command.split(':', 1)[0].lower() for command in commands]
+        if len(commands) > 1 and len(set(heads)) == 1 and heads[0] == 'set_current':
+            targets = {}
+            for command in commands:
+                parts = command.split(':')
+                if len(parts) != 3:
+                    raise ValueError('set_current requires an ID and value')
+                mid = int(parts[1])
+                if mid in targets:
+                    raise ValueError('Duplicate motor ID')
+                targets[mid] = float(parts[2])
+            if self.batch_motion_supported:
+                self.send_batch_command('set_currents', targets)
+                return
+        for command in commands:
+            self._send_one(command)
+
+    def _send_one(self, message: str):
         parts = message.strip().split(':')
         command = parts[0].lower()
         if command in {'set_angles', 'set_absolute_angles', 'set_currents'}:
@@ -253,9 +410,10 @@ class ProtobufSerialComm(DualSerialComm):
                 raise ValueError('Invalid motor command arguments')
             mid = 'all' if command == 'stop' and parts[1].lower() == 'all' else int(parts[1])
             self.send_motor_command(command, mid, None if expected == 2 else float(parts[2]))
-        elif command == 'get_telemetry_fast' or command.startswith('shadow_'):
-            raise RuntimeError('Legacy telemetry/shadow serialization is disabled for Protobuf firmware')
+        elif command == 'get_telemetry_fast':
+            raise RuntimeError('Use the typed get_fast_frame/get_fast_telemetry route on Protobuf firmware')
         else:
-            # Slow settings, gestures, calibration, info/help and emergency text
-            # diagnostics retain the existing maintenance-plane contract.
-            super().send(message)
+            # The explicit contract list is audited against parseMessage().
+            # Unknown commands still go to firmware so it can produce its
+            # canonical error and forward-compatible additions can be probed.
+            self._write_line(self._cmd, message)

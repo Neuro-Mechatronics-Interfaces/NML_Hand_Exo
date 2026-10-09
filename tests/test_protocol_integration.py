@@ -8,7 +8,12 @@ from nml_hand_exo.applications.hand_exo_gui import HandExoGUI, SerialWorker, Syn
 from nml_hand_exo.applications.emg_intent_decoder_gui import EmgIntentDecoderWindow
 from nml_hand_exo.interface._hand_exo import HandExo, ProtocolResponseError
 from nml_hand_exo.testing import FakeOpenRBComm, ReplyFault
-from tools.check_protocol_contract import missing_host_commands
+from tools.check_protocol_contract import (
+    firmware_commands,
+    missing_host_commands,
+    protobuf_contract_errors,
+    protobuf_routes,
+)
 
 
 def _fake_exo():
@@ -307,13 +312,24 @@ def test_literal_host_commands_exist_in_firmware_parser():
     assert not missing, f"Host commands absent from firmware parser: {sorted(missing)}"
 
 
+def test_every_firmware_text_command_has_a_protobuf_build_route():
+    root = Path(__file__).resolve().parents[1]
+    firmware = root / "src/cpp/nml_hand_exo/utils.cpp"
+    routes = protobuf_routes(root)
+    assert set(routes) == firmware_commands(firmware)
+    assert set(routes.values()) == {"primary-text", "protobuf-rpc"}
+    assert sum(route == "protobuf-rpc" for route in routes.values()) == 18
+    assert sum(route == "primary-text" for route in routes.values()) == 85
+    assert not protobuf_contract_errors(root)
+
+
 def test_velocity_mode_verifies_motor_hardware_limit_before_mode_change():
     root = Path(__file__).resolve().parents[1]
     config = (root / "src/cpp/nml_hand_exo/config.h").read_text()
     firmware = (root / "src/cpp/nml_hand_exo/nml_hand_exo.cpp").read_text()
     parser = (root / "src/cpp/nml_hand_exo/utils.cpp").read_text()
 
-    assert "DIRECT_VELOCITY_LIMIT_RAW = 218" in config
+    assert "DIRECT_VELOCITY_LIMIT_RAW = 310" in config
     assert "readControlTableItem(VELOCITY_LIMIT, id)" in firmware
     assert "writeControlTableItem(\n            VELOCITY_LIMIT, id, DIRECT_VELOCITY_LIMIT_RAW)" in firmware
     assert firmware.index("dxl_.torqueOff(motorIds_[i])") < firmware.index(

@@ -3,3 +3,4 @@ exo_usb.Request.values max_count:18
 exo_usb.Gesture.name max_size:32
 exo_usb.Gesture.pose max_size:32
 exo_usb.Response.nx_frame max_size:607
+exo_usb.AssistStatus.joints max_count:18

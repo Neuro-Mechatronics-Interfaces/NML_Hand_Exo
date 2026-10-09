@@ -60,6 +60,8 @@ class AutoSerialComm(BaseComm):
                                          motor_ids=sorted(self.info['motors']),
                                          model_write_supported='joint_model_write' in self.info.get('usb_features', []),
                                          batch_motion_supported='batch_motion' in self.info.get('usb_features', []),
+                                         assist_binary_supported='assist_binary' in self.info.get('usb_features', []),
+                                         assist_enable_supported='assist_enable' in self.info.get('usb_features', []),
                                          **self.kwargs)
         elif count == 2:
             backend = DualSerialComm(*pair, self.baudrate, **self.kwargs)

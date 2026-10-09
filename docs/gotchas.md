@@ -4,6 +4,67 @@ Hard-won knowledge. Read before touching firmware, the serial protocol, or the G
 
 ---
 
+## Assist rejects a visibly stationary joint as `not_settled`
+
+Assist reads the motor's actual velocity register before installing its hold.
+The settling limit is 1 deg/s; a single XC330 velocity count is 1.374 deg/s,
+so a nonzero count can reject startup even when motion is hard to see. The former
+one-click SDK message discarded the firmware's rejected angle and velocity.
+Those values and the rejection status now survive through the GUI worker.
+
+The GUI waits up to five seconds for 500 ms of fresh measured feedback from all
+selected IDs, with speed at most 1 deg/s and angle span at most 0.3 degrees.
+It never accepts predicted or repeated-timestamp samples, never relaxes firmware
+checks and sends only one Enable request. Stop invalidates the pending startup.
+If a joint still fails, the error identifies its measured velocity/span; check
+those measurements and the mechanism before trying again. No firmware change
+is required for this host-side wait and diagnostic fix.
+
+The combined-budget result `5400 mA (requested 900 mA)` has a separate cause:
+the current firmware clamps the budget to at least 18 configured motors times
+the default 300 mA holding allowance. The GUI displays the actual applied value.
+Lowering that global allowance is a separate holding-behavior change, and Assist
+does not change it automatically.
+
+---
+
+## Enable All times out restoring current-position mode
+
+`Could not restore position control` with an empty reply to
+`set_control_mode:all:current_position` can result from the former 0.75-second
+SDK acknowledgement timeout. Firmware changes mode across all configured IDs
+(18 in dual firmware), even when the GUI targets only the right hand. Individual
+Dynamixel register operations default to 100 ms waits, so slow or unavailable
+motors can make that global operation exceed the host deadline. The empty reply
+alone cannot distinguish a late acknowledgement from an absent one.
+
+`HandExo.set_control_mode()` now waits up to ten seconds by default, with an
+optional keyword `timeout` override. It still requires the matching successful
+mode acknowledgement; errors, wrong replies and timeouts prevent Setup from
+enabling torque. Polling remains paused through restoration and targeted enable.
+Regression tests reproduce a 0.9-second acknowledgement on the real Protobuf
+text-reader path and exercise Enable All/Left/Right with a delayed mode change.
+Restart the GUI with the updated SDK; this fix requires no firmware reflash.
+
+---
+
+## Set Total reports an invalid combined current-budget readback (`nan`)
+
+The former GUI sent `set_total_current_lim` without consuming its acknowledgement,
+then immediately queried `get_total_current_lim`. A late setter reply could arrive
+after the query's input flush and be parsed as that query's response. An empty or
+unexpected reply became `nan`, obscuring whether setting the budget succeeded.
+
+The SDK setter now waits for `OK: total_current_lim <applied mA>` and returns
+that applied value. Setup uses it directly. The independent getter validates
+`Total current limit: <mA> mA`. Both use a bounded two-second wait and identify
+the command and raw reply on failure. Restart the GUI with the updated SDK;
+no firmware change is required. A genuine empty reply still means the device's
+acknowledgement was not received; it does not prove the budget was rejected
+or that it was applied. The updated error preserves that distinction.
+
+---
+
 ## Connect stalls, then a retry cannot open the CDC port
 
 Connection attempts now disable Connect/Refresh/Probe until the attempt finishes.
@@ -59,6 +120,37 @@ The mixed-load benchmark's `unexpected keyword argument 'timeout'` at
 the model write reaches firmware. The script now detects this signature mismatch
 before opening ports and reports the imported SDK path and editable-install
 command above. Run that command in the same activated environment as the test.
+
+---
+
+## Protobuf telemetry timeout after staged Home
+
+If a coupled group such as `[11, 12]` reports a missing ACK for only ID 11,
+the former worker called `send_command()` separately for each motor. Each call
+clears queued text replies, so sending `home:12` could discard the completed
+reply to `home:11`. The worker now sends one newline-delimited SDK batch per
+group, clearing stale input only before that group. Home remains a primary-CDC
+text command on `protobuf-v1`. Regression tests use the real Protobuf adapter
+and text-reader thread with both immediate and delayed replies.
+
+`Incomplete Protobuf frame` previously conflated no reply with a partial header
+or payload. The host also discarded partial replies after the timeout and reset
+binary input before the next RPC, so an in-flight reply could lose its header.
+The current host retains partial frames across RPCs, verifies CRCs and discards
+complete late replies by sequence number. Motion RPCs are never replayed.
+Errors now identify the command, binary port, sequence and missing byte count.
+
+Staged Home now sends each mechanically coupled group's commands on the worker,
+waits for every `OK: home <id>` acknowledgement and settles for 750 ms before
+the next group. The last group gets the same settle interval before telemetry
+resumes. ACKs mean firmware accepted the commands, not that the joints reached
+home. Cancellation invalidates queued stages and their completion signals.
+Idle cleanup no longer prints a misleading home-complete log line.
+
+These are Python changes; restart the GUI with the updated SDK. No firmware
+reflash is needed. The original timeout alone cannot establish whether the board
+was busy, a reply was delayed or USB delivery failed; use the detailed new error
+if it recurs.
 
 ---
 
