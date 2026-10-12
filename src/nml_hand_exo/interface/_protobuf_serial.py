@@ -23,6 +23,55 @@ from ._protocol_routes import (
 
 MAX_RESPONSE = 2048
 
+_DISCOVERY_FEATURES = (
+    ("joint_model_write", "DISCOVERY_CAP_JOINT_MODEL_WRITE"),
+    ("batch_motion", "DISCOVERY_CAP_BATCH_MOTION"),
+    ("current_limit_batch", "DISCOVERY_CAP_CURRENT_LIMIT_BATCH"),
+    ("assist_v2", "DISCOVERY_CAP_ASSIST_V2"),
+    ("assist_binary", "DISCOVERY_CAP_ASSIST_BINARY"),
+    ("assist_enable", "DISCOVERY_CAP_ASSIST_ENABLE"),
+    ("assist_gains", "DISCOVERY_CAP_ASSIST_GAINS"),
+)
+
+
+def discovery_to_info(discovery):
+    """Adapt typed HELLO metadata to the established ``HandExo.info`` shape."""
+    from . import exo_usb_pb2
+    if not discovery.IsInitialized() or discovery.protocol_version != 2:
+        raise ValueError('Invalid protobuf-v2 discovery response')
+    if discovery.cdc_count not in (1, 2):
+        raise ValueError('Invalid protobuf CDC count in discovery response')
+    if discovery.cdc_role not in (exo_usb_pb2.CDC_ROLE_PRIMARY_TEXT,
+                                  exo_usb_pb2.CDC_ROLE_SECONDARY_BINARY):
+        raise ValueError('Invalid protobuf CDC role in discovery response')
+    motor_ids = list(discovery.motor_ids)
+    if not motor_ids or len(motor_ids) > 18 or any(
+        not 1 <= motor_id <= 253 for motor_id in motor_ids
+    ) or len(set(motor_ids)) != len(motor_ids):
+        raise ValueError('Invalid or duplicate motor ID in discovery response')
+    features = [name for name, enum_name in _DISCOVERY_FEATURES
+                if discovery.capability_flags & getattr(exo_usb_pb2, enum_name)]
+    motors = {motor_id: {'id': motor_id} for motor_id in motor_ids}
+    info = {
+        'name': 'NMLHandExo',
+        'version': discovery.firmware_version,
+        'n_motors': len(motor_ids),
+        'motors': motors,
+        'motor_ids': motor_ids,
+        'usb_protocol': 'protobuf-v2',
+        'usb_cdc_count': discovery.cdc_count,
+        'usb_text_port': 'primary' if discovery.cdc_role == exo_usb_pb2.CDC_ROLE_PRIMARY_TEXT else 'secondary',
+        'usb_binary_port': 'secondary' if discovery.cdc_role == exo_usb_pb2.CDC_ROLE_PRIMARY_TEXT else 'primary',
+        'usb_features': features,
+        'usb_capability_flags': discovery.capability_flags,
+        'protocol_schema_version': discovery.schema_version,
+        'protocol_version': discovery.protocol_version,
+        'side': discovery.side,
+    }
+    for motor_id, motor in motors.items():
+        info[f'motor_{motor_id}'] = motor
+    return info
+
 
 class AssistRejected(RuntimeError):
     """A rejected binary assist operation, including its numeric snapshot."""
@@ -39,7 +88,7 @@ class ProtobufFrameReader:
         self.buffer = bytearray()
         self.expected_version = int(expected_version)
 
-    def read(self, stream, timeout):
+    def read(self, stream, timeout, *, poll_available=False):
         deadline = time.monotonic() + timeout
         discarded = 0
         while True:
@@ -79,7 +128,23 @@ class ProtobufFrameReader:
                 if discarded:
                     detail += f'; discarded {discarded} invalid/noise bytes'
                 raise TimeoutError(f'Incomplete Protobuf frame: {detail}')
-            chunk = stream.read(needed)
+            if poll_available:
+                # On Windows, an overlapped pyserial read can still wait
+                # inside the OS when the requested size exceeds the bytes
+                # currently available. Protobuf-v2 has no competing reader,
+                # so poll the port first and only request bytes known to be
+                # ready. This keeps the absolute RPC deadline authoritative
+                # when the device never answers GET_TELEMETRY_FAST.
+                available = getattr(stream, 'in_waiting', None)
+                if isinstance(available, int):
+                    if available <= 0:
+                        time.sleep(min(.001, max(0.0, deadline - time.monotonic())))
+                        continue
+                    chunk = stream.read(min(needed, available))
+                else:
+                    chunk = stream.read(needed)
+            else:
+                chunk = stream.read(needed)
             if chunk:
                 self.buffer.extend(chunk)
 
@@ -123,11 +188,13 @@ class ProtobufSerialComm(DualSerialComm):
     # Shadow configuration/status remain valid maintenance-plane commands on
     # the primary text CDC. They never share or corrupt the binary endpoint.
     supports_shadow_telemetry = True
+    poll_available_before_binary_read = False
     MOTOR_COMMANDS = {'set_current', 'set_velocity', 'set_absolute_angle', 'set_angle', 'stop'}
 
     def __init__(self, *args, motor_ids=None, model_write_supported=False,
                  batch_motion_supported=False, assist_binary_supported=False,
-                 assist_enable_supported=False, current_limit_batch_supported=False, **kwargs):
+                 assist_enable_supported=False, assist_gains_supported=False,
+                 current_limit_batch_supported=False, **kwargs):
         super().__init__(*args, **kwargs)
         # Loaded only after discovery identifies a Protobuf build.
         try:
@@ -140,22 +207,31 @@ class ProtobufSerialComm(DualSerialComm):
         self.batch_motion_supported = bool(batch_motion_supported)
         self.assist_binary_supported = bool(assist_binary_supported)
         self.assist_enable_supported = bool(assist_enable_supported)
+        self.assist_gains_supported = bool(assist_gains_supported)
         self.current_limit_batch_supported = bool(current_limit_batch_supported)
         self._assist_reasons = {number: name.removeprefix('ASSIST_REASON_').lower()
                                for name, number in self.pb.AssistReason.items()}
         self._rpc_lock = threading.Lock()
         self._sequence = secrets.randbits(32)
         self._frame_reader = ProtobufFrameReader(self.frame_version)
+        self._async_event_callback = None
+
+    def set_async_event_callback(self, callback):
+        """Receive v2 sequence-zero text events as soon as the RPC reader sees them."""
+        self._async_event_callback = callback if callable(callback) else None
 
     def assist_command(self, command, ids=(), values=(), *, timeout=1.0):
         if command == 'assist_enable' and not self.assist_enable_supported:
             raise RuntimeError('Enable Torque-Assist requires assist-v3 firmware; recompile/reflash the current build.')
+        if command == 'assist_gains' and not self.assist_gains_supported:
+            raise RuntimeError('Assist P/D gains require the updated firmware; recompile/reflash the current build.')
         if not self.assist_binary_supported:
             raise RuntimeError('This Protobuf firmware lacks assist_binary; recompile/reflash '
                                'the current Protobuf build to use binary assist status.')
         names = {"assist_config": self.pb.ASSIST_CONFIG,
                  "assist_enable": self.pb.ASSIST_ENABLE,
                  "assist_observer": self.pb.ASSIST_OBSERVER,
+                 "assist_gains": self.pb.ASSIST_GAINS,
                  "assist_settle_config": self.pb.ASSIST_SETTLE_CONFIG,
                  "assist_calibrate": self.pb.ASSIST_CALIBRATE,
                  "assist_start": self.pb.ASSIST_START,
@@ -180,7 +256,7 @@ class ProtobufSerialComm(DualSerialComm):
                       reason_code=status.reason, joints={})
         for key in ('reject_id', 'reject_angle_deg', 'reject_velocity_deg_s',
                     'total_current_budget_mA', 'settle_velocity_limit_deg_s',
-                    'settle_pose_drift_deg'):
+                    'settle_pose_drift_deg', 'intent_detect_delay_s'):
             if status.HasField(key):
                 result[key] = getattr(status, key)
         for joint in status.joints:
@@ -225,7 +301,11 @@ class ProtobufSerialComm(DualSerialComm):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
-                payload = self._frame_reader.read(response_device, deadline-time.monotonic())
+                payload = self._frame_reader.read(
+                    response_device,
+                    deadline-time.monotonic(),
+                    poll_available=self.poll_available_before_binary_read,
+                )
             except TimeoutError as exc:
                 raise TimeoutError(f'{label} on {self.telem_port} '
                                    f'(sequence={request.sequence}): {exc}') from exc
@@ -237,6 +317,14 @@ class ProtobufSerialComm(DualSerialComm):
             if response.sequence == 0:
                 if response.HasField('text_reply'):
                     self._publish_reply(response.text_reply)
+                    callback = self._async_event_callback
+                    if callback is not None:
+                        try:
+                            callback(response.text_reply)
+                        except Exception:
+                            # Diagnostic delivery must never break the RPC
+                            # that is still waiting for its matching sequence.
+                            pass
                 continue
             if response.sequence != request.sequence:
                 continue # delayed response to an earlier timed-out request
@@ -258,7 +346,17 @@ class ProtobufSerialComm(DualSerialComm):
             raise ValueError('Use at most 18 unique explicit integer motor IDs')
         if value is not None and (isinstance(value, bool) or not math.isfinite(value)):
             raise ValueError('Motor command value must be finite')
-        with self._rpc_lock:
+        # A stale transaction must not make the next telemetry request wait
+        # forever.  This is especially important for Assist startup, where a
+        # blocked lock acquisition otherwise looks identical to missing motor
+        # position/velocity feedback in the GUI.
+        lock_timeout = max(0.0, float(timeout))
+        if not self._rpc_lock.acquire(timeout=lock_timeout):
+            raise TimeoutError(
+                f'{self.pb.Command.Name(command)} transaction lock timed out '
+                f'after {lock_timeout:.3f} s'
+            )
+        try:
             self._sequence = (self._sequence + 1) & 0xffffffff
             request = self.pb.Request(sequence=self._sequence, command=command, motor_ids=ids)
             if value is not None:
@@ -272,6 +370,8 @@ class ProtobufSerialComm(DualSerialComm):
             if gesture is not None:
                 request.gesture.CopyFrom(self.pb.Gesture(**gesture))
             return self._exchange(request, self.pb.Command.Name(command), timeout)
+        finally:
+            self._rpc_lock.release()
 
     def get_fast_frame(self, motor_ids=None, *, timeout=.5):
         response = self._rpc(self.pb.GET_TELEMETRY_FAST,
@@ -475,6 +575,7 @@ class ProtobufV2SerialComm(ProtobufSerialComm):
     usb_protocol = 'protobuf-v2'
     frame_version = 2
     max_request_frame = 512
+    poll_available_before_binary_read = True
 
     def __init__(self, *args, **kwargs):
         kwargs.setdefault('current_limit_batch_supported', True)
@@ -526,8 +627,12 @@ class ProtobufV2SerialComm(ProtobufSerialComm):
         super()._send_one(message)
 
 
-def probe_protobuf_v2_ports(port_a, port_b, baudrate, *, timeout=.4):
-    """Return ``(command_port, response_port)`` after a side-effect-free HELLO.
+def probe_protobuf_v2_ports(port_a, port_b, baudrate, *, timeout=.4, return_info=False):
+    """Probe both CDC orientations with HELLO.
+
+    Return ``(command_port, response_port)`` normally. With ``return_info``
+    enabled, return ``((command_port, response_port), info_dict)`` where the
+    dictionary is populated from typed discovery or the legacy text fallback.
 
     USB CDC enumeration order is not stable, so both orientations are tested.
     A trailing newline is intentional: it lets a v1 line parser discard the
@@ -545,8 +650,20 @@ def probe_protobuf_v2_ports(port_a, port_b, baudrate, *, timeout=.4):
             payload = ProtobufFrameReader(2).read(response, timeout)
             result = exo_usb_pb2.Response.FromString(payload)
             if result.IsInitialized() and result.sequence == 1 and result.status == exo_usb_pb2.OK:
+                if result.HasField('discovery'):
+                    info = discovery_to_info(result.discovery)
+                    return ((command_port, response_port), info) if return_info else (command_port, response_port)
+                # Compatibility with pre-discovery protobuf-v2 firmware.
                 if result.HasField('text_reply') and result.text_reply == 'protobuf-v2':
-                    return command_port, response_port
+                    info = {
+                        'name': 'NMLHandExo', 'usb_protocol': 'protobuf-v2',
+                        'usb_cdc_count': 2, 'usb_text_port': 'primary',
+                        'usb_binary_port': 'secondary',
+                        'usb_features': ['joint_model_write', 'batch_motion',
+                                         'current_limit_batch', 'assist_binary',
+                                         'assist_enable'],
+                    }
+                    return ((command_port, response_port), info) if return_info else (command_port, response_port)
         except (OSError, serial.SerialException, TimeoutError, ValueError):
             pass
         finally:
@@ -556,4 +673,4 @@ def probe_protobuf_v2_ports(port_a, port_b, baudrate, *, timeout=.4):
                         device.close()
                     except Exception:
                         pass
-    return None
+    return (None, None) if return_info else None

@@ -19,8 +19,8 @@ static exo_pb::Reader readerV2(2);
 static void packAssistStatus(NMLHandExo& exo, exo_usb_Response& response) {
   AssistStatusSnapshot snapshot;
   exo.getAssistSnapshot(snapshot);
-  response.has_assist = true;
-  auto& status = response.assist;
+  response.which_payload = exo_usb_Response_assist_tag;
+  auto& status = response.payload.assist;
   status.state = static_cast<exo_usb_AssistState>(snapshot.state);
   status.reason = static_cast<exo_usb_AssistReason>(snapshot.reason);
   status.has_reject_id = snapshot.reject_id >= 0;
@@ -36,6 +36,8 @@ static void packAssistStatus(NMLHandExo& exo, exo_usb_Response& response) {
   status.settle_velocity_limit_deg_s = snapshot.settle_velocity_limit_deg_s;
   status.has_settle_pose_drift_deg = true;
   status.settle_pose_drift_deg = snapshot.settle_pose_drift_deg;
+  status.has_intent_detect_delay_s = true;
+  status.intent_detect_delay_s = snapshot.intent_detect_delay_s;
   for (uint8_t i = 0; i < snapshot.count; ++i) {
     const auto& source = snapshot.joints[i]; auto& target = status.joints[i];
     target.id = source.id;
@@ -56,6 +58,8 @@ static void packAssistStatus(NMLHandExo& exo, exo_usb_Response& response) {
     target.age_ms = source.age_ms;
     target.has_current_cap_mA = true;
     target.current_cap_mA = source.current_cap_mA;
+    target.has_position_p = true; target.position_p = source.position_p;
+    target.has_position_d = true; target.position_d = source.position_d;
   }
 }
 static_assert(exo_usb_AssistStatus_size + 16 <= exo_pb::MAX_RESPONSE,
@@ -77,7 +81,8 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
       request.command == exo_usb_Command_ASSIST_STATUS ||
       request.command == exo_usb_Command_ASSIST_OBSERVER ||
       request.command == exo_usb_Command_ASSIST_ENABLE ||
-      request.command == exo_usb_Command_ASSIST_SETTLE_CONFIG;
+      request.command == exo_usb_Command_ASSIST_SETTLE_CONFIG ||
+      request.command == exo_usb_Command_ASSIST_GAINS;
   if (assist) {
     if (request.has_value || request.has_joint_model || request.has_finger_angles || request.has_gesture) return;
     for (uint8_t k = 0; k < request.motor_ids_count; ++k) {
@@ -86,8 +91,12 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
     }
     bool ok = false;
     if (request.command == exo_usb_Command_ASSIST_SETTLE_CONFIG) {
-      if (request.motor_ids_count || request.values_count != 2) return;
-      ok = exo.configureAssistSettling(request.values[0], request.values[1]);
+      if (request.motor_ids_count || (request.values_count != 2 && request.values_count != 3)) return;
+      ok = exo.configureAssistSettling(request.values[0], request.values[1],
+                                       request.values_count == 3 ? request.values[2] : .03f);
+    } else if (request.command == exo_usb_Command_ASSIST_GAINS) {
+      if (request.motor_ids_count != 1 || request.values_count != 2) return;
+      ok = exo.configureAssistGains(request.motor_ids[0], request.values[0], request.values[1]);
     } else if (request.command == exo_usb_Command_ASSIST_CONFIG || request.command == exo_usb_Command_ASSIST_OBSERVER) {
       if (request.motor_ids_count != 1 || request.values_count != 3) return;
       ok = request.command == exo_usb_Command_ASSIST_CONFIG
@@ -153,9 +162,9 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
 #if EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V2
     case exo_usb_Command_SET_CURRENT_LIMITS:
       ok = exo.setCurrentLimits(ids, request.values, request.values_count);
-      response.has_batch = true;
-      response.batch.has_motors = true;
-      response.batch.motors = request.values_count;
+      response.which_payload = exo_usb_Response_batch_tag;
+      response.payload.batch.has_motors = true;
+      response.payload.batch.motors = request.values_count;
       break;
 #endif
     case exo_usb_Command_SET_CURRENTS:
@@ -174,10 +183,10 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
       }
       uint8_t written = 0, skipped = 0;
       ok = exo.setAbsoluteAnglesSync(targets, request.values_count, &written, &skipped);
-      response.has_batch = true;
-      response.batch.has_motors = response.batch.has_skipped_offline = true;
-      response.batch.motors = written;
-      response.batch.skipped_offline = skipped;
+      response.which_payload = exo_usb_Response_batch_tag;
+      response.payload.batch.has_motors = response.payload.batch.has_skipped_offline = true;
+      response.payload.batch.motors = written;
+      response.payload.batch.skipped_offline = skipped;
       break;
     }
     case exo_usb_Command_SET_FINGER_ANGLES: {
@@ -212,8 +221,8 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
       }
       uint8_t written = 0, skipped = 0;
       ok = !count || exo.setAbsoluteAnglesSync(targets, count, &written, &skipped);
-      response.has_batch = true;
-      auto& b = response.batch;
+      response.which_payload = exo_usb_Response_batch_tag;
+      auto& b = response.payload.batch;
       b.has_motors = b.has_skipped_offline = b.has_commanded = b.has_held = b.has_unknown = b.has_zero_travel = true;
       b.motors = written; b.skipped_offline = skipped; b.commanded = commanded;
       b.held = held; b.unknown = unknown; b.zero_travel = zero;
@@ -249,7 +258,8 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
       uint8_t method = 0;
       uint8_t count = exo.getFastTelemetryRecords(ids, request.motor_ids_count, records, method, 10);
       // NX v3 header (13 bytes); records already have the packed wire layout.
-      uint8_t* out = response.nx_frame.bytes;
+      response.which_payload = exo_usb_Response_nx_frame_tag;
+      uint8_t* out = response.payload.nx_frame.bytes;
       const uint16_t length = count * sizeof(FastTelemetryRecord);
       out[0] = 'N'; out[1] = 'X'; out[2] = 3; out[3] = method; out[4] = count;
       out[5] = length; out[6] = length >> 8;
@@ -260,8 +270,7 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
       for (uint16_t i = 0; i < 11; ++i) sum += out[i];
       for (uint16_t i = 13; i < 13 + length; ++i) sum += out[i];
       out[11] = sum; out[12] = sum >> 8;
-      response.nx_frame.size = 13 + length;
-      response.has_nx_frame = true;
+      response.payload.nx_frame.size = 13 + length;
       ok = true;
       break;
     }
@@ -325,13 +334,35 @@ static void sendProtobufV2Response(const exo_usb_Response& response) {
   EXO_PROFILE_CALL(USB_TX, TELEM_SERIAL.write(output, size + 7));
 }
 
+static void packDiscovery(exo_usb_Response& response) {
+  response.which_payload = exo_usb_Response_discovery_tag;
+  auto& discovery = response.payload.discovery;
+  discovery.schema_version = 1;
+  discovery.protocol_version = 2;
+  strncpy(discovery.firmware_version, NMLHandExo::VERSION,
+          sizeof(discovery.firmware_version) - 1);
+  discovery.capability_flags =
+      exo_usb_DiscoveryCapability_DISCOVERY_CAP_JOINT_MODEL_WRITE |
+      exo_usb_DiscoveryCapability_DISCOVERY_CAP_BATCH_MOTION |
+      exo_usb_DiscoveryCapability_DISCOVERY_CAP_CURRENT_LIMIT_BATCH |
+      exo_usb_DiscoveryCapability_DISCOVERY_CAP_ASSIST_V2 |
+      exo_usb_DiscoveryCapability_DISCOVERY_CAP_ASSIST_BINARY |
+      exo_usb_DiscoveryCapability_DISCOVERY_CAP_ASSIST_ENABLE |
+      exo_usb_DiscoveryCapability_DISCOVERY_CAP_ASSIST_GAINS;
+  discovery.cdc_count = 2;
+  discovery.cdc_role = exo_usb_CdcRole_CDC_ROLE_PRIMARY_TEXT;
+  strncpy(discovery.side, HAND_SIDE, sizeof(discovery.side) - 1);
+  discovery.motor_ids_count = N_MOTORS;
+  for (uint8_t i = 0; i < N_MOTORS; ++i) discovery.motor_ids[i] = MOTOR_IDS[i];
+}
+
 void protobufV2EmitEvent(const String& message) {
   exo_usb_Response response = exo_usb_Response_init_zero;
   response.sequence = 0;
   response.status = exo_usb_Status_OK;
-  response.has_text_reply = true;
-  message.substring(0, sizeof(response.text_reply) - 1).toCharArray(
-      response.text_reply, sizeof(response.text_reply));
+  response.which_payload = exo_usb_Response_text_reply_tag;
+  message.substring(0, sizeof(response.payload.text_reply) - 1).toCharArray(
+      response.payload.text_reply, sizeof(response.payload.text_reply));
   sendProtobufV2Response(response);
 }
 
@@ -344,8 +375,7 @@ static void executeRequestV2(NMLHandExo& exo, GestureController& gc, Adafruit_BN
         request.values_count || request.has_finger_angles || request.has_gesture ||
         request.has_text_command) return;
     response.status = exo_usb_Status_OK;
-    response.has_text_reply = true;
-    strncpy(response.text_reply, "protobuf-v2", sizeof(response.text_reply) - 1);
+    packDiscovery(response);
     return;
   }
   if (request.command == exo_usb_Command_TEXT_COMMAND) {
@@ -356,9 +386,9 @@ static void executeRequestV2(NMLHandExo& exo, GestureController& gc, Adafruit_BN
     protobufReplyCaptureBegin(capture);
     parseMessage(exo, gc, imu, String(request.text_command));
     protobufReplyCaptureEnd();
-    response.has_text_reply = true;
-    capture.substring(0, sizeof(response.text_reply) - 1).toCharArray(
-        response.text_reply, sizeof(response.text_reply));
+    response.which_payload = exo_usb_Response_text_reply_tag;
+    capture.substring(0, sizeof(response.payload.text_reply) - 1).toCharArray(
+        response.payload.text_reply, sizeof(response.payload.text_reply));
     response.status = capture.startsWith("ERROR:") ? exo_usb_Status_REJECTED : exo_usb_Status_OK;
     return;
   }

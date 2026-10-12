@@ -84,8 +84,8 @@ class SimulationConfig:
     external_random_seed: int = 7
     collection_epoch_s: float = 1.0
     external_estimator_tau_s: float = 0.20
-    assist_detect_threshold_nm: float = 0.08
-    assist_detect_delay_s: float = 0.50
+    assist_detect_threshold_nm: float = 0.002
+    assist_detect_delay_s: float = 0.03
     external_assist_gain: float = 1.0
     external_assist_max_torque_nm: float = 0.50
     external_assist_ramp_s: float = 0.25
@@ -107,15 +107,16 @@ class SimulationConfig:
     # moderate D damping.  Other objectives can still tune these registers.
     position_p_raw: int = 300
     position_i_raw: int = 0
-    position_d_raw: int = 160
+    position_d_raw: int = 600
     velocity_p_raw: int = 40
     velocity_i_raw: int = 1200
     goal_current_limit_ma: float = 300.0
     pwm_limit_percent: float = 100.0
     assist_target_bias_deg_per_nm: float = 0.0
-    assist_velocity_deg_s_per_nm: float = 80.0
-    secondary_goal_lead_deg: float = 8.0
+    assist_velocity_deg_s_per_nm: float = 100.0
+    secondary_goal_lead_deg: float = 12.0
     secondary_goal_lead_rate_deg_s: float = 24.0
+    secondary_release_lead_scale: float = 0.25
     secondary_goal_stall_velocity_deg_s: float = 1.0
     secondary_goal_stall_delay_s: float = 0.50
 
@@ -192,6 +193,7 @@ class SingleMotorSimulation:
         self.secondary_goal_position_deg = self.position_deg
         self.secondary_goal_velocity_deg_s = 0.0
         self.secondary_goal_lead_deg = 0.0
+        self.secondary_release_lead_deg = 0.0
         self.secondary_goal_direction = 0
         self.secondary_assist_active = False
         self.secondary_rearm_blocked = False
@@ -266,6 +268,7 @@ class SingleMotorSimulation:
             self.secondary_goal_position_deg = self.position_deg
             self.secondary_goal_velocity_deg_s = 0.0
             self.secondary_goal_lead_deg = 0.0
+            self.secondary_release_lead_deg = 0.0
             self.secondary_goal_direction = 0
             self.secondary_assist_active = False
             self.secondary_rearm_blocked = False
@@ -278,6 +281,7 @@ class SingleMotorSimulation:
             self.secondary_goal_position_deg = self.position_deg
             self.secondary_goal_velocity_deg_s = 0.0
             self.secondary_goal_lead_deg = 0.0
+            self.secondary_release_lead_deg = 0.0
             self.secondary_goal_direction = 0
             self.secondary_assist_active = False
             self.secondary_rearm_blocked = False
@@ -557,7 +561,6 @@ class SingleMotorSimulation:
                 self.secondary_release_timer_s += dt
                 if self.secondary_release_timer_s >= detect_delay:
                     self.secondary_rearm_blocked = False
-                    self.secondary_release_capture_position_deg = None
                     self.secondary_release_timer_s = 0.0
             else:
                 self.secondary_release_timer_s = 0.0
@@ -572,10 +575,21 @@ class SingleMotorSimulation:
             if self.secondary_release_capture_position_deg is not None:
                 self.secondary_goal_position_deg = _clamp(
                     self.secondary_release_capture_position_deg
+                    + self.secondary_release_lead_deg
                     - self.secondary_goal_direction * self.secondary_goal_lead_deg,
                     c.min_position_deg,
                     c.max_position_deg,
                 )
+            if not self.secondary_rearm_blocked:
+                self.secondary_goal_lead_deg = 0.0
+                if self.secondary_release_capture_position_deg is not None:
+                    self.secondary_goal_position_deg = _clamp(
+                        self.secondary_release_capture_position_deg
+                        + self.secondary_release_lead_deg,
+                        c.min_position_deg,
+                        c.max_position_deg,
+                    )
+                self.secondary_release_capture_position_deg = None
             self.assist_active = False
             return
 
@@ -608,29 +622,59 @@ class SingleMotorSimulation:
             )
             direction = _sign(self.secondary_goal_velocity_deg_s)
             if direction != 0.0:
+                direction_changed = (
+                    self.secondary_goal_direction != 0
+                    and int(direction) != self.secondary_goal_direction
+                )
+                if direction_changed:
+                    # Match firmware: never flip the sign of an accumulated
+                    # lead in place. Re-anchor the reversal at the measured
+                    # pose and start advancing on the next control sample.
+                    self.secondary_release_lead_deg = 0.0
+                    self.secondary_goal_position_deg = _clamp(
+                        self.position_deg,
+                        c.min_position_deg,
+                        c.max_position_deg,
+                    )
+                    self.secondary_goal_lead_deg = 0.0
                 self.secondary_goal_direction = int(direction)
                 progress_velocity = direction * self.velocity_deg_s
                 if progress_velocity < max(0.0, c.secondary_goal_stall_velocity_deg_s):
                     self.secondary_stall_timer_s += dt
                 else:
                     self.secondary_stall_timer_s = 0.0
-                self.secondary_goal_position_deg = _clamp(
-                    self.secondary_goal_position_deg
-                    + self.secondary_goal_velocity_deg_s * dt,
-                    c.min_position_deg,
-                    c.max_position_deg,
-                )
-                self.secondary_goal_lead_deg = min(
-                    abs(c.secondary_goal_lead_deg),
-                    self.secondary_goal_lead_deg
-                    + abs(c.secondary_goal_lead_rate_deg_s) * dt,
-                )
+                if not direction_changed:
+                    self.secondary_goal_position_deg = _clamp(
+                        self.secondary_goal_position_deg
+                        + self.secondary_goal_velocity_deg_s * dt,
+                        c.min_position_deg,
+                        c.max_position_deg,
+                    )
+                    self.secondary_goal_lead_deg = min(
+                        abs(c.secondary_goal_lead_deg),
+                        self.secondary_goal_lead_deg
+                        + abs(c.secondary_goal_lead_rate_deg_s) * dt,
+                    )
                 if self.secondary_stall_timer_s >= max(0.0, c.secondary_goal_stall_delay_s):
                     self.secondary_assist_active = False
                     self.secondary_rearm_blocked = True
-                    self.secondary_goal_position_deg = self.position_deg
+                    self.secondary_release_lead_deg = (
+                        self.secondary_goal_direction
+                        * min(
+                            abs(c.secondary_goal_lead_deg),
+                            abs(self.secondary_goal_lead_deg),
+                        )
+                        * max(0.0, c.secondary_release_lead_scale)
+                    )
                     self.secondary_goal_velocity_deg_s = 0.0
                     self.secondary_release_capture_position_deg = self.position_deg
+                    self.secondary_goal_position_deg = _clamp(
+                        self.position_deg
+                        + self.secondary_release_lead_deg
+                        - self.secondary_goal_direction * self.secondary_goal_lead_deg,
+                        c.min_position_deg,
+                        c.max_position_deg,
+                    )
                     self.secondary_stall_timer_s = 0.0
             else:
                 self.secondary_goal_velocity_deg_s = 0.0

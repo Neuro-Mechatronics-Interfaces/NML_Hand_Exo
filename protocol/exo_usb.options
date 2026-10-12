@@ -6,3 +6,6 @@ exo_usb.Gesture.pose max_size:32
 exo_usb.Response.nx_frame max_size:1200
 exo_usb.Response.text_reply max_size:2000
 exo_usb.AssistStatus.joints max_count:18
+exo_usb.Discovery.firmware_version max_size:16
+exo_usb.Discovery.side max_size:8
+exo_usb.Discovery.motor_ids max_count:18

@@ -405,8 +405,10 @@ class NMLHandExo {
     /// @brief Service the ROM calibration state machine. Called from update().
     /// Non-blocking: does at most a bounded amount of Dynamixel I/O per call.
     bool configureAssist(uint8_t id, float thresholdMa, float gainDegSPerMa, float currentCapMa);
+    bool configureAssistGains(uint8_t id, float positionP, float positionD);
     bool configureAssistObserver(uint8_t id, float inertiaNmS2PerDeg, float viscousNmSPerDeg, float coulombNm);
-    bool configureAssistSettling(float velocityLimitDegS, float poseDriftDeg);
+    bool configureAssistSettling(float velocityLimitDegS, float poseDriftDeg,
+                                 float intentDetectDelayS = .03f);
     bool calibrateAssist(const uint8_t* ids, uint8_t count);
     bool enableTorqueAssist(const uint8_t* ids, uint8_t count, float thresholdMa,
                            float gainDegSPerMa, float capMa, float inertia,
@@ -414,7 +416,10 @@ class NMLHandExo {
     bool startAssist();
     bool heartbeatAssist();
     void stopAssist(AssistReason reason = ASSIST_REASON_STOPPED);
-    bool isAssistBusy() const { return assistState_ != 0; }
+    /// Safely disarm explicit IDs, re-probe them, and reseed telemetry state.
+    /// This never enables torque or commands motion.
+    bool resetMotors(const uint8_t* ids, uint8_t count);
+    bool isAssistBusy() const { return assistState_ != ASSIST_STATE_OFF; }
     void serviceAssist();
     String assistStatus() const;
     void getAssistSnapshot(AssistStatusSnapshot& out) const;
@@ -938,7 +943,9 @@ class NMLHandExo {
     /// 0.9.4 -- updates the FastTelemetryRecord size to 61 bytes for NX v3 wire format.
     ///
     /// 0.9.5 -- runs the detrended torque observer continuously for NX telemetry.
-    static constexpr const char* VERSION = "0.9.5";
+    ///
+    /// 0.9.7 -- faster Assist sampling and responsive reversal re-arm.
+    static constexpr const char* VERSION = "0.9.7";
 
   private:
     ExoUtcClock utcClock_;
@@ -1165,14 +1172,15 @@ class NMLHandExo {
     // The state machine reads only the ROM_CAL_* constants from config.h for
     // its tuning; see serviceRomCalibration() in nml_hand_exo.cpp.
     AssistJoint assistJoints_[N_MOTORS];
-    uint8_t assistState_ = 0; // off, calibrating, ready, active, stop unconfirmed
+    AssistState assistState_ = ASSIST_STATE_OFF;
     unsigned long assistHeartbeatMs_ = 0, assistSampleMs_ = 0, assistBeginMs_ = 0;
     AssistReason assistReason_ = ASSIST_REASON_OFF;
     bool assistAutoStart_ = false;
     int assistRejectId_ = -1;
     float assistRejectAngle_ = NAN, assistRejectVelocity_ = NAN;
-    float assistSettleVelocityLimitDegS_ = 1.0f;
-    float assistSettlePoseDriftDeg_ = .3f;
+    float assistSettleVelocityLimitDegS_ = 3.5f;
+    float assistSettlePoseDriftDeg_ = 2.5f;
+  float assistIntentDetectDelayS_ = .03f;
     bool readAssistRegisters(const bool* targets, uint16_t address, uint16_t length,
                              AssistRegisterBlock* data);
     bool writeAssistRegisters(const bool* targets, uint16_t address, uint16_t length,

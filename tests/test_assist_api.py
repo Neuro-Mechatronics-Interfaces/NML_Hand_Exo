@@ -51,6 +51,18 @@ def test_assist_targets_are_explicit_unique_integer_ids():
     exo._command_transaction.assert_not_called()
 
 
+def test_reset_motors_requires_explicit_unique_ids_and_routes_primary_text():
+    exo = api()
+    assert exo.reset_motors([11, 16]) == "OK"
+    exo._command_transaction.assert_called_once_with(
+        "reset_motors:11:16", expected="OK: reset_motors", timeout=5.0)
+    exo._command_transaction.reset_mock()
+    for ids in ([], [11, 11], ["index"], [True]):
+        with pytest.raises(ValueError):
+            exo.reset_motors(ids)
+    exo._command_transaction.assert_not_called()
+
+
 def test_assist_status_preserves_fault_and_measured_diagnostics():
     exo = api()
     exo._command_transaction.return_value = (
@@ -111,9 +123,24 @@ def test_startup_settling_configuration_is_separate_from_deadzone(protocol):
     if protocol == "protobuf-v1":
         exo.device.assist_command.assert_called_once_with(
             "assist_settle_config", (), (2.5, .8), timeout=1.)
+        exo.info.assert_not_called()
     else:
         exo._command_transaction.assert_called_once_with(
             "assist_settle_config:2.5:0.8", expected="OK: assist_settle_config", timeout=1.)
+
+
+@pytest.mark.parametrize("protocol", ["ascii-nx", "protobuf-v1"])
+def test_intent_rearm_dwell_is_sent_when_configured(protocol):
+    exo = api(protocol)
+    exo.configure_assist_settling(
+        velocity_limit_deg_s=2.5, pose_drift_deg=.8, intent_detect_delay_s=.25)
+    if protocol == "protobuf-v1":
+        exo.device.assist_command.assert_called_once_with(
+            "assist_settle_config", (), (2.5, .8, .25), timeout=1.)
+    else:
+        exo._command_transaction.assert_called_once_with(
+            "assist_settle_config:2.5:0.8:0.25",
+            expected="OK: assist_settle_config", timeout=1.)
 
 
 def test_invalid_startup_settling_never_reaches_transport():
@@ -256,6 +283,24 @@ def test_assist_observer_uses_selected_transport(protocol):
     exo._command_transaction.assert_not_called()
 
 
+@pytest.mark.parametrize("protocol", ["ascii-nx", "protobuf-v1"])
+def test_assist_position_gains_use_selected_transport(protocol):
+    exo = api(protocol)
+    exo.configure_assist_gains(16, position_p=700, position_d=90)
+    if protocol == "protobuf-v1":
+        exo.device.assist_command.assert_called_once_with(
+            "assist_gains", [16], (700., 90.), timeout=1.)
+        exo._command_transaction.assert_not_called()
+    else:
+        exo._command_transaction.assert_called_once_with(
+            "assist_gains:16:700:90", expected="OK: assist_gains", timeout=1.)
+        exo.device.assist_command.assert_not_called()
+    exo._command_transaction.reset_mock()
+    with pytest.raises(ValueError):
+        exo.configure_assist_gains(16, position_p=700.5, position_d=90)
+    exo._command_transaction.assert_not_called()
+
+
 def test_assist_panel_requires_v3_and_uses_simulator_defaults(qapp):
     from PyQt5.QtCore import QObject, pyqtSignal
     from nml_hand_exo.applications._assist_panel import AssistPanel
@@ -269,13 +314,19 @@ def test_assist_panel_requires_v3_and_uses_simulator_defaults(qapp):
     panel.set_connection(True, [(16, "index")], {"assist_protocol": "assist-v2"})
     assert not panel.toggle.isEnabled()
     panel.set_connection(True, [(16, "index")], {"assist_protocol": "assist-v3"})
-    assert panel.threshold.value() == .08
+    assert panel.threshold.value() == .002
     assert "deadzone" in panel.threshold.toolTip().lower()
-    assert panel.gain.value() == 80
-    assert panel.cap.value() == 300
+    assert panel.settle_velocity.value() == 4.5
+    assert panel.settle_drift.value() == 3.5
+    assert panel.intent_delay.value() == .03
+    assert panel.gain.value() == 240
+    assert panel.cap.value() == 200
+    assert panel.position_p.value() == 160
+    assert panel.position_d.value() == 600
     panel.toggle.click()
     parameters = worker.request_assist.call_args.args[1]["parameters"]
-    assert parameters["velocity_gain_deg_s_per_Nm"] == 80
+    assert parameters["velocity_gain_deg_s_per_Nm"] == 240
+    assert parameters["intent_detect_delay_s"] == .03
     assert parameters["inertia_Nm_s2_per_deg"] == 0
     assert not hasattr(panel, 'calibrate')
     panel.deleteLater()
@@ -310,12 +361,12 @@ def test_enable_torque_assist_is_one_request_with_simulator_units(protocol):
     exo.enable_torque_assist([11, 16, 19])
     if protocol == 'protobuf-v1':
         exo.device.assist_command.assert_called_once_with(
-            'assist_enable', [11, 16, 19], (.08/.00115, 80*.00115, 300., 0., 0., 0.), timeout=2.)
+            'assist_enable', [11, 16, 19], (.002/.00115, 100*.00115, 300., 0., 0., 0.), timeout=2.)
         exo.info.assert_not_called()
         exo._command_transaction.assert_not_called()
     else:
         exo._command_transaction.assert_called_once_with(
-            'assist_enable:69.5652174:0.092:300:0:0:0:11:16:19', expected='OK: assist_enable', timeout=2.)
+            'assist_enable:1.73913043:0.115:300:0:0:0:11:16:19', expected='OK: assist_enable', timeout=2.)
 
 
 @pytest.mark.parametrize('params', [dict(threshold_Nm=float('nan')), dict(current_cap_mA=911),
@@ -344,6 +395,72 @@ def test_worker_enable_avoids_legacy_mode_and_per_joint_config(monkeypatch):
     exo.calibrate_assist.assert_not_called()
     exo.start_assist.assert_not_called()
     exo.get_assist_status.assert_not_called()
+
+
+def test_worker_enable_emits_protobuf_safe_progress_breadcrumbs(monkeypatch):
+    from nml_hand_exo.applications.hand_exo_gui import SerialWorker
+    worker = SerialWorker()
+    exo = Mock()
+    exo.run_locked = lambda callback: callback(exo)
+    exo.enable_torque_assist.return_value = dict(state=1, reason='calibrating', joints={})
+    worker.set_exo(exo)
+    lines = []
+    worker.line_received.connect(lines.append)
+    stationary_feedback(monkeypatch, exo, [16])
+    worker.request_assist('enable', dict(
+        ids=[16],
+        parameters=dict(
+            threshold_Nm=.08,
+            startup_velocity_limit_deg_s=10.,
+            startup_pose_drift_deg=5.,
+            intent_detect_delay_s=.25,
+            position_p=700.,
+            position_d=90.,
+        )))
+    worker._handle_assist(*worker._assist_q.get_nowait())
+    assert any('Enable requested for IDs [16]' in line for line in lines)
+    assert any('Sending startup settling configuration' in line for line in lines)
+    assert any('startup preflight:' in line for line in lines)
+    assert any('sending ASSIST_ENABLE' in line for line in lines)
+    assert any('position gains: P=700, D=90' in line for line in lines)
+    assert any('enable completed: state=1 reason=calibrating' in line for line in lines)
+    exo.configure_assist_settling.assert_called_once_with(
+        velocity_limit_deg_s=10., pose_drift_deg=5., intent_detect_delay_s=.25)
+    assert [call.args for call in exo.configure_assist_gains.call_args_list] == [
+        (16,),
+    ]
+    assert exo.configure_assist_gains.call_args.kwargs == {
+        'position_p': 700., 'position_d': 90.,
+    }
+
+
+def test_protobuf_enable_uses_cached_monitor_telemetry_without_second_read():
+    from nml_hand_exo.applications.hand_exo_gui import SerialWorker
+
+    worker = SerialWorker()
+    exo = Mock()
+    exo.device.usb_protocol = "protobuf-v2"
+    exo.run_locked = lambda callback: callback(exo)
+    exo.enable_torque_assist.return_value = dict(
+        state=1, reason="calibrating", joints={})
+    worker.set_exo(exo)
+    # At this poll cadence, excluding the sample just before the 500 ms
+    # boundary would incorrectly report only 466 ms of usable history.
+    for stamp in (0, 117, 234, 351, 468, 584):
+        worker._cache_fast_telemetry({16: dict(
+            error=False,
+            absolute_angle=100.,
+            velocity_raw=0.,
+            position_source="measured",
+            velocity_source="measured",
+            sample_timestamp_ms=stamp,
+        )})
+
+    worker.request_assist("enable", dict(ids=[16], parameters={}))
+    worker._handle_assist(*worker._assist_q.get_nowait())
+
+    exo.get_fast_telemetry.assert_not_called()
+    exo.enable_torque_assist.assert_called_once_with([16])
 
 
 def test_stop_cancels_unsent_one_click_enable():
@@ -380,7 +497,7 @@ def test_panel_targets_active_side_and_shows_effective_caps(qapp):
     worker = Worker()
     panel = AssistPanel(worker)
     info = dict(assist_protocol='assist-v3', usb_protocol='protobuf-v1',
-                usb_features=['assist_binary', 'assist_enable'])
+                usb_features=['assist_binary', 'assist_enable', 'assist_gains'])
     panel.set_connection(True, [(11, 'wrist'), (16, 'index')], info)
     panel.toggle.click()
     assert worker.request_assist.call_args.args[1]['ids'] == [11, 16]
@@ -395,6 +512,10 @@ def test_panel_targets_active_side_and_shows_effective_caps(qapp):
     assert not panel.timer.isActive() and not panel.toggle.isChecked()
     worker.assist_completed.emit('stop', dict(state=0, reason='stopped', joints={}), '')
     assert panel.toggle.isEnabled() and not panel.busy
+    panel.reset.click()
+    worker.request_assist.assert_called_with('reset', {'ids': [11, 16]})
+    worker.assist_completed.emit('reset', dict(state=0, reason='stopped', joints={}), '')
+    assert panel.reset.isEnabled() and not panel.busy
     panel.deleteLater()
 
 

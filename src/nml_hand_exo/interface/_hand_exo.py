@@ -749,8 +749,8 @@ class HandExo(object):
         text = command + (":" + ":".join(suffix) if suffix else "")
         return self._command_transaction(text, expected=f"OK: {command}", timeout=timeout)
 
-    def configure_assist(self, motor_id: int, *, threshold_mA=0.08 / 0.00115,
-                         gain_deg_s_per_mA=80.0 * 0.00115, current_cap_mA=300.0):
+    def configure_assist(self, motor_id: int, *, threshold_mA=0.002 / 0.00115,
+                         gain_deg_s_per_mA=100.0 * 0.00115, current_cap_mA=300.0):
         """Configure assist-v2 while OFF; gain maps effort to goal velocity.
 
         Effort is a measured holding-current residual, not calibrated external torque.
@@ -758,7 +758,7 @@ class HandExo(object):
         """
         mid = self._joint_model_id(motor_id)
         values = (threshold_mA, gain_deg_s_per_mA, current_cap_mA)
-        for value, lo, hi in zip(values, (5, .001, 10), (200, .5, 910)):
+        for value, lo, hi in zip(values, (1, .001, 10), (200, .5, 910)):
             if isinstance(value, bool) or not math.isfinite(float(value)) or not lo <= float(value) <= hi:
                 raise ValueError("Invalid assist threshold, gain, or current cap")
         values = tuple(float(v) for v in values)
@@ -783,26 +783,52 @@ class HandExo(object):
             raise RuntimeError("Assist observer configuration requires assist-v2 firmware")
         return self._assist_command("assist_observer", [mid], tuple(float(v) for v in values))
 
+    def configure_assist_gains(self, motor_id: int, *, position_p=220, position_d=600):
+        """Set raw Dynamixel Position P and D gains while Assist is off.
+
+        Firmware writes these values to the motor Position PID registers during
+        Assist startup. Position I remains zero by design.
+        """
+        mid = self._joint_model_id(motor_id)
+        values = (position_p, position_d)
+        if any(isinstance(v, bool) or not math.isfinite(float(v)) or float(v) != math.floor(float(v))
+               for v in values):
+            raise ValueError("Assist P/D gains must be finite integer values")
+        p, d = (int(v) for v in values)
+        if not 1 <= p <= 16383 or not 0 <= d <= 16383:
+            raise ValueError("Assist P gain must be [1, 16383] and D gain [0, 16383]")
+        if not self._is_protobuf_transport() and self.info().get("assist_protocol") not in ("assist-v2", "assist-v3"):
+            raise RuntimeError("Assist P/D configuration requires assist-v2 firmware")
+        return self._assist_command("assist_gains", [mid], (float(p), float(d)))
+
     def configure_assist_settling(self, *, velocity_limit_deg_s=1.0,
-                                  pose_drift_deg=.3):
-        """Set stationary-start velocity and pose-drift tolerances while off.
+                                  pose_drift_deg=.3, intent_detect_delay_s=None):
+        """Set startup settling and intent/re-arm dwell values while off.
 
         These are separate from the activation deadzone: they qualify the
         initial measured startup state. Firmware bounds them to 0.1..10 deg/s
-        and 0.01..5 deg, and the settings are volatile.
+        and 0.01..5 deg. ``intent_detect_delay_s`` controls the sustained
+        effort dwell before activation and the no-effort dwell before re-arm;
+        it is bounded to 0.03..2 seconds. The settings are volatile.
         """
         values = (velocity_limit_deg_s, pose_drift_deg)
+        if intent_detect_delay_s is not None:
+            values += (intent_detect_delay_s,)
         if any(isinstance(v, bool) or not math.isfinite(float(v)) for v in values):
             raise ValueError("Assist settling limits must be finite numbers")
-        velocity_limit_deg_s, pose_drift_deg = (float(v) for v in values)
+        velocity_limit_deg_s, pose_drift_deg = (float(v) for v in values[:2])
+        if len(values) == 3:
+            intent_detect_delay_s = float(values[2])
         if not .1 <= velocity_limit_deg_s <= 10 or not .01 <= pose_drift_deg <= 5:
             raise ValueError("Assist settling limits must be velocity [0.1, 10] deg/s and drift [0.01, 5] deg")
-        if self.info().get("assist_protocol") not in ("assist-v2", "assist-v3"):
+        if intent_detect_delay_s is not None and not .03 <= intent_detect_delay_s <= 2:
+            raise ValueError("Assist intent/re-arm dwell must be [0.03, 2] seconds")
+        if not self._is_protobuf_transport() and self.info().get("assist_protocol") not in ("assist-v2", "assist-v3"):
             raise RuntimeError("Assist settling configuration requires assist-v2 firmware")
         return self._assist_command("assist_settle_config", values=values)
 
-    def enable_torque_assist(self, motor_ids, *, threshold_Nm=.08,
-                            velocity_gain_deg_s_per_Nm=80., current_cap_mA=300.,
+    def enable_torque_assist(self, motor_ids, *, threshold_Nm=.002,
+                            velocity_gain_deg_s_per_Nm=100., current_cap_mA=300.,
                             inertia_Nm_s2_per_deg=0., viscous_Nm_s_per_deg=0., coulomb_Nm=0.):
         """Enable selected joints, automatically collect bias, then assist.
 
@@ -827,7 +853,7 @@ class HandExo(object):
             raise ValueError("Assist parameters must be finite numbers")
         values = (float(threshold_Nm)/.00115, float(velocity_gain_deg_s_per_Nm)*.00115,
                   *(float(v) for v in inputs[2:]))
-        if not (5 <= values[0] <= 200 and .001 <= values[1] <= .5 and
+        if not (1 <= values[0] <= 200 and .001 <= values[1] <= .5 and
                 10 <= values[2] <= 910 and values[0] < values[2] and
                 all(0 <= v <= 1 for v in values[3:])):
             raise ValueError("Invalid assist threshold, velocity gain, current cap, or observer terms")
@@ -924,6 +950,22 @@ class HandExo(object):
         """Disarm and torque-off the selected assist IDs; invalidate bias."""
         return self._assist_command("assist_stop", timeout=.5)
 
+    def reset_motors(self, motor_ids, *, timeout: float = 5.0):
+        """Safely recover explicit IDs from stale/unavailable telemetry.
+
+        Firmware torque-offs the requested IDs, clears Assist/session telemetry
+        state, re-pings them, and seeds the position model from a fresh encoder
+        read. It never enables torque or commands motion. IDs are explicit so a
+        right-only GUI session cannot accidentally disarm the other side.
+        """
+        ids = [self._joint_model_id(mid) for mid in motor_ids]
+        if not ids or len(ids) > 18 or len(ids) != len(set(ids)):
+            raise ValueError("Use 1..18 unique explicit motor IDs")
+        command = "reset_motors:" + ":".join(str(mid) for mid in ids)
+        return self._command_transaction(command, expected="OK: reset_motors", timeout=timeout)
+
+    recover_motors = reset_motors
+
     def get_assist_status(self):
         """Read measured effort/deflection, bias/noise, progress and fault reason."""
         if self._is_protobuf_transport():
@@ -942,7 +984,8 @@ class HandExo(object):
         for key in ("reject_angle_deg", "reject_velocity_deg_s"):
             if key in details:
                 result[key] = float(details[key])
-        for key in ("settle_velocity_limit_deg_s", "settle_pose_drift_deg"):
+        for key in ("settle_velocity_limit_deg_s", "settle_pose_drift_deg",
+                    "intent_detect_delay_s"):
             if key in details:
                 result[key] = float(details[key])
         for line in reply.splitlines():
@@ -1490,6 +1533,19 @@ class HandExo(object):
 
         info: dict = {}
         if not raw:
+            # AutoSerialComm may have completed typed Protobuf-v2 discovery
+            # before this compatibility query. Preserve the long-standing
+            # dictionary shape even when a maintenance reply is unavailable;
+            # a complete legacy text reply below still supplies names, limits,
+            # reachability and all other rich motor metadata.
+            discovery = getattr(self.device, "discovery_info", None)
+            if isinstance(discovery, dict) and discovery.get("usb_protocol") == "protobuf-v2":
+                info.update(discovery)
+                parsed_version = parse_firmware_version(info.get("version", ""))
+                if parsed_version:
+                    self._firmware_version = parsed_version
+                if hasattr(self.device, "motor_ids") and info.get("motors"):
+                    self.device.motor_ids = sorted(info["motors"])
             return info
         info["_raw"] = raw
 
@@ -1596,6 +1652,12 @@ class HandExo(object):
             en_m = re.search(r'enabled:\s*(true|false)', blob, re.IGNORECASE)
             if en_m:
                 m_info['enabled'] = (en_m.group(1).lower() == 'true')
+
+            # Firmware startup reachability: this is a cached result of the
+            # initial Dynamixel position probe, not a new live read.
+            reachable_m = re.search(r'reachable:\s*(true|false)', blob, re.IGNORECASE)
+            if reachable_m:
+                m_info['reachable'] = (reachable_m.group(1).lower() == 'true')
 
             # Stash — use actual Dynamixel ID (from id: field), not loop index
             actual_id = m_info.get('id', motor_id)

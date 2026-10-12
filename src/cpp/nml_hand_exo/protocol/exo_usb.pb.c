@@ -21,6 +21,9 @@ PB_BIND(exo_usb_JointModel, exo_usb_JointModel, AUTO)
 PB_BIND(exo_usb_Request, exo_usb_Request, 2)
 
 
+PB_BIND(exo_usb_Discovery, exo_usb_Discovery, AUTO)
+
+
 PB_BIND(exo_usb_AssistJointStatus, exo_usb_AssistJointStatus, AUTO)
 
 

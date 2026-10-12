@@ -14,7 +14,7 @@ ceiling. The former half-degree step/settle controller is replaced.
    `Assist Protocol: assist-v3`; a firmware version alone is insufficient.
 2. Apply the correct side-specific calibration and hard ROM limits. The Assist
    tab targets every joint on the active GUI side(s) by integer ID. Its shared
-   defaults are threshold **0.08 N m**, velocity gain **80 deg/s per N m**, and
+   defaults are threshold **0.002 N m**, velocity gain **100 deg/s per N m**, and
    maximum current **300 mA/joint**. Optional identified dynamics are separate
    from the simulator's illustrative plant model. No enabled unselected motor
    is allowed.
@@ -31,7 +31,7 @@ ceiling. The former half-degree step/settle controller is replaced.
    bias-calibration button, manual joint selection, or separate Start action.
 4. Sustained effort
    advances the secondary goal in either direction. Stalled progress releases
-   assistance and captures the achieved position. Relax for 500 ms before
+   assistance and captures the achieved position. Relax for 30 ms before
    restarting after release; a persistent load or reversal cannot bypass this.
 5. **Disable Torque-Assist**, **Stop / torque off**, and **STOP ALL MOTION** disarm the
    session, attempt zero current and torque-off on selected IDs, and invalidate
@@ -44,17 +44,20 @@ ceiling. The former half-degree step/settle controller is replaced.
 |---|---|
 | Goal velocity | `gain * clamp(filtered_effort_mA, -intent_cap, intent_cap)` |
 | Persistent goal | Integrate velocity using the measured per-joint observation interval |
-| Lead | Grow toward 8 degrees at 24 deg/s while active; decay on release |
-| Intent gate | 500 ms above threshold; no former 0.15-degree deflection/settling gate |
+| Lead | Grow toward 12 degrees at 24 deg/s internally while active; emitted target is slew-limited to 8 deg/s with 32 deg/s² acceleration limiting |
+| Intent gate | 30 ms above threshold; no former 0.15-degree deflection/settling gate |
 | Progress gate | Signed measured speed below 1 deg/s for 500 ms releases assistance |
-| Position controller | Explicit raw P=300, I=0, D=160; feedforward gains zero; reduced P keeps assist compliant |
+| Position controller | Raw P/D are configurable (defaults P=160, I=0, D=600); feedforward gains zero; reduced P keeps assist compliant |
+| Target slew | Streamed Assist position target advances at no more than 8 deg/s per joint, with 32 deg/s² acceleration limiting |
 | Current ceiling | Requested default 300 mA; shared-budget/motor-limit bounded installed cap stays fixed throughout the session |
 | Physical/environmental endstop | Supplied by the mechanism/environment; no firmware soft endstop |
 | Hard ROM | Both integrated goal and emitted reference stay inside calibrated limits plus 2-degree margin; no angle wrapping |
 
-Default threshold is `0.08 / 0.00115 = 69.565... mA`; velocity gain is
-`80 * 0.00115 = 0.092 deg/s/mA`. The intent ceiling is
-`0.25 / 0.00115 = 217.391... mA`, giving maximum default goal velocity 20 deg/s.
+Default configured threshold is `0.002 / 0.00115 = 1.739... mA`; velocity gain is
+`100 * 0.00115 = 0.115 deg/s/mA`. The intent ceiling is
+`0.25 / 0.00115 = 217.391... mA`, giving a maximum internal intent velocity
+of 20 deg/s. The emitted motor target is separately limited to 8 deg/s to
+avoid ringing when effort or lead changes quickly.
 The approximate motor torque constant is a conversion convention, not an
 anatomical joint-torque calibration. Controller tuning defaults reside in
 [`assist_controller.h`](../src/cpp/nml_hand_exo/assist_controller.h).
@@ -77,6 +80,13 @@ is separate: it uses velocity and position span, so changing this deadzone
 does not make a moving or velocity-quantized joint acceptable. The rejection
 diagnostic reports the measured angle and velocity to distinguish the cases.
 
+If a selected motor becomes unavailable after a transport fault or Assist stop
+fault, use **Reset / recover motors** in the Assist tab, or call
+`exo.reset_motors([11, 12, ...])`. The recovery command only torque-offs the
+explicit IDs, clears stale Assist/telemetry state, re-pings each motor, and
+seeds its position model from a fresh encoder read. It never enables torque or
+commands motion.
+
 ### Tuning startup settling separately
 
 The two fields immediately below the deadzone field in the Assist tab are the
@@ -95,6 +105,16 @@ bounded to `0.1..10 deg/s` and `0.01..5 deg`. The SDK exposes them as
 The GUI sends them automatically from those two labeled fields before
 `Enable Torque-Assist`.
 
+### Tuning the Assist position controller
+
+The Assist tab exposes raw Dynamixel **Position P gain** and **Position D gain**
+fields. P is bounded to `1..16383` and D to `0..16383`; Position I remains zero.
+The SDK exposes the same operation as
+`configure_assist_gains(motor_id, position_p=220, position_d=600)`. The GUI sends
+the selected IDs' values while Assist is off, before startup calibration. During
+firmware startup those stored values are written to the motor's Position PID
+registers and returned in `ASSIST_STATUS` as `position_p` and `position_d`.
+
 The GUI displays each effective installed cap. With requested cap $C$, motor
 limit $L_i$ and combined budget $B$, firmware first forms `c_i=min(C,L_i)`, then
 installs `floor(c_i * min(1, B/sum(c)))`. Thus an 800 mA budget with nine identical
@@ -102,12 +122,14 @@ joints installs 88 mA/joint rather than rejecting nine requested 300 mA caps.
 It never increases a motor limit or the existing combined budget. If the scaled
 cap cannot support the threshold with 10% headroom, startup rejects before any
 bus write; measured bias/noise must also fit that headroom. Enabling a dual
-18-joint session with 800 mA and the default threshold will consequently reject,
-since 44 mA/joint is below the default 69.6 mA effort threshold. Review tuning
-and the existing Setup budget rather than silently increasing current.
+18-joint session with 800 mA and the default threshold remains subject to the
+same headroom and measured-noise checks. Review tuning and the existing Setup
+budget rather than silently increasing current.
 
 `PROFILE_VELOCITY` and `PROFILE_ACCELERATION` are zeroed so the earlier slow
-step profile does not shape the streamed references. Actual XC330 trajectory,
+step profile does not shape the streamed references; the Assist firmware now
+samples at up to 100 Hz and defaults to a 30 ms intent/re-arm dwell; it
+applies its own 8 deg/s target slew and 32 deg/s² acceleration limits. Actual XC330 trajectory,
 PID, quantization and bus timing still differ from the simplified simulation.
 Raw gain equality does not imply numerical plant equality. The motor's internal
 controller applies Goal Current as the current ceiling in current-based position
@@ -115,11 +137,14 @@ mode, as described by the [ROBOTIS manual](https://emanual.robotis.com/docs/en/d
 
 Two deliberate release refinements follow the intent of the LaTeX note: firmware
 captures the achieved pose on ordinary effort release as well as stall release,
-and cancels remaining lead in the *same* observation that releases assistance.
-The Python implementation can briefly retain outward lead on its stall transition
-and decays lead against an older secondary goal on ordinary release. Otherwise,
-the activation, integration and lead updates are compared directly with the
-Python reference in native regression tests.
+and preserves only 25% of the achieved lead while re-arming. A new effort
+re-anchors from the current measured pose before the activation dwell completes;
+a clear opposite effort bypasses the quiet-only re-arm wait and uses the same
+short dwell for the new direction.
+If effort reverses while active, firmware and the Python reference clear the
+accumulated lead and re-anchor at the measured pose before advancing in the new
+direction; this prevents changing the sign of the lead from creating a large
+one-sample reference jump.
 
 ## Effort observer and assumptions
 
@@ -200,13 +225,16 @@ in assist writes. A failed verification stops and attempts to disable the
 whole selection.
 
 An observation interval above 500 ms, nonfinite data, disabled motor, speed above
-60 deg/s, tracking error above 32 degrees, measured current above cap+5 mA,
+71 deg/s, tracking error above 32 degrees, measured current above cap+5 mA,
 or measured hard-ROM margin violation stops the session. These speed/tracking
 bounds replace the step controller's incompatible 10 deg/s and 2-degree bounds.
 They do not enlarge stored joint limits or current limits.
 
-A stalled/effort-released joint remains in the ACTIVE session holding its captured
-pose, with `moving=0` and `rearm_blocked=1`; lease and fault checks continue. Other
+A stalled/effort-released joint remains in the ACTIVE session near its captured
+pose, with `moving=0` and `rearm_blocked=1`. Firmware re-anchors the emitted goal
+to the captured position plus 25% of the achieved lead, capped at 3 degrees,
+instead of driving a stale goal backward through the capture point; a new effort
+in the opposite direction discards that release lead. Lease and fault checks continue. Other
 selected joints retain independent intent and release state. Host Stop is distinct
 and turns selected torque off. READY observations cannot pre-qualify activation
 dwell. Unsigned millisecond intervals handle uptime wraparound.
@@ -254,8 +282,8 @@ Legacy configuration checks `assist-v2`/`assist-v3` metadata so v1 firmware cann
 velocity gain as a step size. All settings are volatile and all setters require OFF.
 
 ```python
-exo.enable_torque_assist([16], threshold_Nm=.08,
-                        velocity_gain_deg_s_per_Nm=80, current_cap_mA=300)
+exo.enable_torque_assist([16], threshold_Nm=.002,
+                        velocity_gain_deg_s_per_Nm=100, current_cap_mA=300)
 # Renew at ~250 ms during automatic baseline collection and active use.
 exo.heartbeat_assist()
 status = exo.get_assist_status()
@@ -270,14 +298,15 @@ This snippet describes the sequence; it is not a complete heartbeat loop.
 | Enable | `assist_enable:<threshold_mA>:<gain_deg_s_per_mA>:<cap_mA>:<J>:<B>:<C>:<id>[:<id>...]` | Opcode 21, explicit IDs and six shared floats |
 | Configure | `assist_config:<id>:<threshold_mA>:<velocity_gain_deg_s_per_mA>:<cap_mA>` | Opcode 14, one ID and three floats |
 | Observer | `assist_observer:<id>:<J>:<B>:<C>` | Opcode 20, one ID and three floats |
-| Startup settling | `assist_settle_config:<velocity_limit_deg_s>:<pose_drift_deg>` | Opcode 25, two shared floats and no IDs |
+| Startup settling | `assist_settle_config:<velocity_limit_deg_s>:<pose_drift_deg>:<intent_delay_s>` | Opcode 25, two or three shared floats and no IDs |
+| Position gains | `assist_gains:<id>:<position_P_raw>:<position_D_raw>` | Opcode 26, one ID and two values |
 | Calibrate | `assist_calibrate:<id>[:<id>...]` | Opcode 15, explicit unique IDs |
 | Start | `assist_start` | Opcode 16 |
 | Heartbeat | `assist_heartbeat` | Opcode 17 |
 | Stop | `assist_stop` | Opcode 18 |
 | Status | `assist_status` | Opcode 19, numeric controller snapshot |
 
-Configuration ranges are threshold 5?200 mA, velocity gain 0.001?0.5 deg/s/mA,
+Configuration ranges are threshold 1?200 mA, velocity gain 0.001?0.5 deg/s/mA,
 cap 10?910 mA, with threshold below cap and intent ceiling. Each observer term
 must be finite in [0, 1] in its stated units. Calibration separately checks actual
 mode 5, normal Drive Mode direction, velocity-based profile and no implicit
@@ -287,20 +316,29 @@ The legacy configure/calibrate/Start SDK sequence remains available for callers
 requiring a manual READY phase (500 ms settling plus 50 baseline samples).
 
 `ASSIST_STATUS` includes the currently applied startup settling values as
-`settle_velocity_limit_deg_s` and `settle_pose_drift_deg`, so a host can verify
-which limits firmware is using.
+`settle_velocity_limit_deg_s`, `settle_pose_drift_deg`, and
+`intent_detect_delay_s`, so a host can verify
+which limits firmware is using. Each joint status also reports the applied raw
+`position_p` and `position_d` gains.
 
 ASCII setters return `OK: <command>` or `ERROR: rejected <command>`.
 Configuration leaves torque unchanged; calibration installs the capped hold and
 enables the selected motors. V2 changes opcode 14's gain meaning to deg/s/mA.
-Protobuf builds advertise `assist_v2 assist_binary assist_enable` in `USB Features`.
+Protobuf builds advertise `assist_v2 assist_binary assist_enable assist_gains` in `USB Features`.
 ASCII status starts `ASSIST: state=<0..4> reason=<reason>`; states are OFF, CALIBRATING,
 READY, ACTIVE, STOP_UNCONFIRMED. `ASSIST_JOINT` reports samples, bias, noise,
 deadzone, effort, diagnostic deflection, measured angle, reference `goal`,
 `secondary_goal`, `intent_deg_s`, `lead_deg`, `rearm_blocked`, `moving`, `steps`
 and sample age, plus `current_cap_mA`. The header includes
 `total_current_budget_mA`, `settle_velocity_limit_deg_s`, and
-`settle_pose_drift_deg`. `steps` counts activation episodes, not discrete steps.
+`settle_pose_drift_deg`, and `intent_detect_delay_s`. `steps` counts activation
+episodes, not discrete steps. The intent delay controls both the sustained
+effort dwell before activation and the no-effort dwell before re-arm.
+
+The firmware gives the position loop up to 12 degrees of intentional lead so a
+small sustained effort creates a useful position error. The emitted goal is
+limited to 8 deg/s and 32 deg/s²; the acceleration limit ramps that target in
+and out instead of changing its velocity abruptly at each 20 ms service sample.
 
 The Protobuf build uses the same controller and grouped bus transactions.
 Opcodes 14–21 return `Response.assist` on success or controller rejection, with
@@ -319,7 +357,8 @@ Discovery and unrelated maintenance continue to use primary CDC text while OFF.
 The GUI requires `assist-v3`, and Protobuf adds `assist_binary` plus
 `assist_enable` capability checks; older builds need a reflash. Enable is one
 binary transaction with no text discovery, per-ID configuration calls, or
-legacy all-motor mode switch while starting. Optional Axon scalar sampling is
+legacy all-motor mode switch while starting. Position gains are configured with
+one small RPC per selected ID before the single enable transaction. Optional Axon scalar sampling is
 unavailable while assist owns the grouped feedback path.
 
 ## Verification

@@ -3,7 +3,7 @@ digraph telemetry_source {
   node [shape=box, style="rounded,filled", fillcolor="#eef4fb", fontname="Helvetica", fontsize=11];
   edge [fontname="Helvetica", fontsize=9];
 
-  MEASURED [label="MEASURED\n(idle: read real DXL\nregisters via Sync Read)"];
+  MEASURED [label="MEASURED\n(idle: Sync Read, or\nbounded per-ID fallback)"];
   ESTIMATED [label="ESTIMATED\n(shared bus: model telemetry;\ncontrol safety reads retained)"];
   UNAVAILABLE [label="UNAVAILABLE\n(idle telemetry read failed;\nmodel not corrected)"];
 
@@ -14,5 +14,5 @@ digraph telemetry_source {
   ESTIMATED -> UNAVAILABLE [label="quiet holdoff elapsed;\nidle read fails"];
   UNAVAILABLE -> MEASURED [label="successful idle read"];
   UNAVAILABLE -> ESTIMATED [label="new motion; use last model seed\n(if no seed: values unavailable)"];
-  MEASURED -> MEASURED [label="idle: poll at telemetry rate"];
+  MEASURED -> MEASURED [label="idle: poll at telemetry rate\n(partial frame retries per ID)"];
 }

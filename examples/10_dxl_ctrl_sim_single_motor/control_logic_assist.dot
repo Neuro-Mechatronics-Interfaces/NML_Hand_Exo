@@ -4,8 +4,8 @@ digraph proposed_secondary_goal_assist {
   edge [fontname="Arial", fontsize=9, color="#475569", arrowsize=0.75];
 
   sensing [label="1. Motor-side sensing\nraw residual from q, v, acceleration,\nactuator torque, friction, endstop torque\n\nr_hat = LPF(residual)\nbias = running mean during collection\nr = r_hat - bias", fillcolor="#dbeafe"];
-  intent [label="2. Intent velocity\nfilter signed residual r\n\nv_goal = gain * r\n\nactivate after sustained bias;\nrelease after low residual or stalled progress", fillcolor="#dcfce7"];
-  goal [label="3. Secondary goal state\nq_goal <- q_goal + dt * v_goal\n\nlead l is bounded and decays\nwhen progress stalls\nqref = q_goal + sign(v_goal) * l\n\nDo not clamp qref to soft endstop", fillcolor="#fef3c7"];
+  intent [label="2. Intent velocity\nfilter signed residual r\n\nv_goal = gain * r\n\nactivate after 30 ms intent;\nrelease after low residual or stalled progress;\nopposite effort re-arms after release", fillcolor="#dcfce7"];
+  goal [label="3. Secondary goal state\nq_goal <- q_goal + dt * v_goal\n\nlead l is bounded and decays\nwhen progress stalls\nrelease: q_capture + 0.25 l\nopposite effort clears it;\nactive reversal re-anchors q\nand clears l before advancing\nqref = q_goal + sign(v_goal) * l\n\nDo not clamp qref to soft endstop", fillcolor="#fef3c7"];
   pid [label="4. Compliant position controller\ne = qref - q\n\nlow Kp, little/no Ki, damping D\ntau_PID = Kp e + Ki integral(e)\n           + Kd (vref - v)", fillcolor="#fce7f3"];
   output [label="5. Independent current ceiling + plant\nI_ceiling is a safety/compliance limit\ntau_act = clamp(tau_PID, +/- I_ceiling Kt)\n\nplant: q,v <- tau_act + tau_ext\n                 + tau_endstop - friction\n\nfeedback v measures progress;\nstall releases lead and captures q_goal", fillcolor="#fed7aa"];
 
@@ -15,5 +15,5 @@ digraph proposed_secondary_goal_assist {
   pid -> output [label="desired effort tau_PID [N-m]"];
   output -> sensing [style=dashed, label="feedback q, v, actuator residual", color="#0891b2"];
   output -> intent [style=dashed, label="measured progress / stall", color="#0891b2"];
-  output -> goal [style=dashed, label="capture achieved q on release", color="#0891b2"];
+  output -> goal [style=dashed, label="capture q; scaled release lead; reversal re-anchors current q", color="#0891b2"];
 }

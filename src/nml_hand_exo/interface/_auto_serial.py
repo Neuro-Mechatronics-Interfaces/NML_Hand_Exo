@@ -49,16 +49,11 @@ class AutoSerialComm(BaseComm):
             # legacy line probes have failed.
             if pair and len(pair) == 2:
                 from ._protobuf_serial import probe_protobuf_v2_ports
-                v2_ports = probe_protobuf_v2_ports(pair[0], pair[1], self.baudrate)
-                if v2_ports:
-                    primary, secondary = v2_ports
-                    self.info = {
-                        'usb_protocol': 'protobuf-v2', 'usb_cdc_count': 2,
-                        'usb_text_port': 'primary', 'usb_binary_port': 'secondary',
-                        'usb_features': ['joint_model_write', 'batch_motion',
-                                         'current_limit_batch', 'assist_binary',
-                                         'assist_enable'],
-                    }
+                v2_result = probe_protobuf_v2_ports(
+                    pair[0], pair[1], self.baudrate, return_info=True
+                )
+                if v2_result and v2_result[0]:
+                    (primary, secondary), self.info = v2_result
                 else:
                     raise ConnectionError('USB discovery failed: ' + '; '.join(failures))
             else:
@@ -81,6 +76,7 @@ class AutoSerialComm(BaseComm):
                                  batch_motion_supported='batch_motion' in self.info.get('usb_features', []),
                                  assist_binary_supported='assist_binary' in self.info.get('usb_features', []),
                                  assist_enable_supported='assist_enable' in self.info.get('usb_features', []),
+                                 assist_gains_supported='assist_gains' in self.info.get('usb_features', []),
                                  current_limit_batch_supported='current_limit_batch' in self.info.get('usb_features', []),
                                  **self.kwargs)
         elif count == 2:
@@ -88,6 +84,9 @@ class AutoSerialComm(BaseComm):
         else:
             backend = SerialComm(primary, self.baudrate, **self.kwargs)
         self.backend = backend
+        # Retain typed HELLO metadata for callers that need discovery details
+        # without forcing a large text info transaction.
+        backend.discovery_info = dict(self.info)
         self.is_split = count == 2
         self.usb_protocol = protocol
         self.progress(f'USB protocol: {protocol}; CDC ports: {count}')

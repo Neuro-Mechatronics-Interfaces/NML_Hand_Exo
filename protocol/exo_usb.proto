@@ -28,7 +28,8 @@ enum Command {
   TEXT_COMMAND = 22;    // protobuf-v2 maintenance command; text_command contains the ASCII payload
   SET_CURRENT_LIMITS = 23; // explicit IDs + per-motor nominal current limits in values[]
   HELLO = 24;            // side-effect-free transport discovery
-  ASSIST_SETTLE_CONFIG = 25; // no IDs; values=[max_velocity_deg_s, max_pose_drift_deg]
+  ASSIST_SETTLE_CONFIG = 25; // no IDs; values=[max_velocity_deg_s, max_pose_drift_deg, intent_detect_delay_s]
+  ASSIST_GAINS = 26;     // one ID; values=[position_P_raw, position_D_raw]
 }
 message FingerAngles {
   // Missing fields hold that joint; signed integers are rest-relative -100..100.
@@ -70,6 +71,31 @@ message Request {
   optional string text_command = 9;
 }
 enum Status { OK = 0; INVALID_REQUEST = 1; REJECTED = 2; }
+enum DiscoveryCapability {
+  DISCOVERY_CAP_NONE = 0;
+  DISCOVERY_CAP_JOINT_MODEL_WRITE = 1;
+  DISCOVERY_CAP_BATCH_MOTION = 2;
+  DISCOVERY_CAP_CURRENT_LIMIT_BATCH = 4;
+  DISCOVERY_CAP_ASSIST_V2 = 8;
+  DISCOVERY_CAP_ASSIST_BINARY = 16;
+  DISCOVERY_CAP_ASSIST_ENABLE = 32;
+  DISCOVERY_CAP_ASSIST_GAINS = 64;
+}
+enum CdcRole {
+  CDC_ROLE_UNKNOWN = 0;
+  CDC_ROLE_PRIMARY_TEXT = 1;
+  CDC_ROLE_SECONDARY_BINARY = 2;
+}
+message Discovery {
+  required uint32 schema_version = 1;
+  required uint32 protocol_version = 2;
+  required string firmware_version = 3;
+  required uint32 capability_flags = 4;
+  required uint32 cdc_count = 5;
+  required CdcRole cdc_role = 6;
+  required string side = 7;
+  repeated uint32 motor_ids = 8 [packed = true];
+}
 enum AssistState { ASSIST_OFF = 0; ASSIST_CALIBRATING = 1; ASSIST_READY = 2; ASSIST_ACTIVE = 3; ASSIST_STOP_FAULT = 4; }
 enum AssistReason {
   ASSIST_REASON_NONE = 0;
@@ -136,6 +162,8 @@ message AssistJointStatus {
   required uint32 steps = 15;
   required uint32 age_ms = 16;
   optional float current_cap_mA = 17;
+  optional uint32 position_p = 18;
+  optional uint32 position_d = 19;
 }
 message AssistStatus {
   required AssistState state = 1;
@@ -147,14 +175,21 @@ message AssistStatus {
   optional uint32 total_current_budget_mA = 7;
   optional float settle_velocity_limit_deg_s = 8;
   optional float settle_pose_drift_deg = 9;
+  optional float intent_detect_delay_s = 10;
 }
 message Response {
   required uint32 sequence = 1;
   required Status status = 2;
-  // NX v3 header + packed records, including control-loop observability.
-  // Avoid varint expansion and preserve the existing SDK's validated decoder.
-  optional bytes nx_frame = 3;
-  optional BatchResult batch = 4;
-  optional AssistStatus assist = 5;
-  optional string text_reply = 6;
+  // Response payloads are mutually exclusive. In particular, the bounded
+  // maintenance text does not coexist in RAM with NX or Assist status.
+  oneof payload {
+    // NX v3 header + packed records, including control-loop observability.
+    // Avoid varint expansion and preserve the existing SDK's validated decoder.
+    bytes nx_frame = 3;
+    BatchResult batch = 4;
+    AssistStatus assist = 5;
+    // Kept at tag 6 so older protobuf-v2 firmware remains readable.
+    string text_reply = 6;
+    Discovery discovery = 7;
+  }
 }

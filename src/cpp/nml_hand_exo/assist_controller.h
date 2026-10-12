@@ -50,6 +50,17 @@ enum AssistReason : uint8_t {
   ASSIST_REASON_UNKNOWN = 43,
   ASSIST_REASON_EXTERNAL_STOP = 44,
 };
+
+// Keep these values stable: they are part of the ASCII/protobuf status
+// contract and must continue to match exo_usb.proto::AssistState.
+enum AssistState : uint8_t {
+  ASSIST_STATE_OFF = 0,
+  ASSIST_STATE_CALIBRATING = 1,
+  ASSIST_STATE_READY = 2,
+  ASSIST_STATE_ACTIVE = 3,
+  ASSIST_STATE_STOP_FAULT = 4,
+};
+
 inline const char* assistReasonName(AssistReason reason) {
   switch (reason) {
     case ASSIST_REASON_NONE: return "none";
@@ -112,15 +123,18 @@ struct AssistJointStatus {
   bool rearm_blocked = false;
   uint32_t age_ms = 0;
   float current_cap_mA = 0;
+  uint16_t position_p = 0, position_d = 0;
 };
 struct AssistStatusSnapshot {
-  uint8_t state = 0, count = 0;
+  AssistState state = ASSIST_STATE_OFF;
+  uint8_t count = 0;
   AssistReason reason = ASSIST_REASON_OFF;
   int reject_id = -1;
   float reject_angle_deg = NAN, reject_velocity_deg_s = NAN;
   uint16_t total_current_budget_mA = 0;
   float settle_velocity_limit_deg_s = 1.0f;
   float settle_pose_drift_deg = .3f;
+  float intent_detect_delay_s = .03f;
   AssistJointStatus joints[18];
 };
 
@@ -136,10 +150,31 @@ struct AssistJoint {
   // Assist uses a deliberately compliant position loop.  Keep this lower
   // than the normal position-control tuning so the moving secondary goal
   // does not feel unnecessarily stiff.
-  static constexpr uint16_t kAssistPositionP = 300;
+  static constexpr uint16_t kAssistPositionP = 220;
   static constexpr uint16_t kAssistPositionI = 0;
-  static constexpr uint16_t kAssistPositionD = 160;
-  float threshold = .08f/kTorqueConstant, gain = 80*kTorqueConstant, currentCap = 300;
+  static constexpr uint16_t kAssistPositionD = 600;
+  static constexpr uint16_t kAssistPositionPMin = 1;
+  static constexpr uint16_t kAssistPositionPMax = 16383;
+  static constexpr uint16_t kAssistPositionDMin = 0;
+  static constexpr uint16_t kAssistPositionDMax = 16383;
+  // Keep a useful positional error for the Dynamixel position loop, while
+  // smoothing the emitted goal's velocity and acceleration. The lead is an
+  // intentional compliant push; the trajectory limits prevent it from being
+  // presented as a sequence of abrupt 20 ms target jumps.
+  static constexpr float kAssistLeadMaxDeg = 12.0f;
+  static constexpr float kAssistTargetSlewDegS = 8.0f;
+  static constexpr float kAssistTargetAccelDegS2 = 32.0f;
+  // Shared activation/re-arm dwell. Keep the stall dwell separate below so
+  // a slow joint is not declared stalled merely because intent is brief.
+  static constexpr float kAssistIntentDetectDelayS = .03f;
+  static constexpr uint32_t kAssistServicePeriodMs = 10;
+  // On release, preserve a small fraction of the achieved lead instead of
+  // driving the stale emitted goal back through the captured pose.
+  static constexpr float kAssistReleaseLeadScale = .25f;
+  // 5--10 mN m is the intended activation range for a quiet joint. Store the
+  // threshold in mA because the controller and noise deadzone are electrical
+  // quantities; 0.002 N m is about 1.74 mA at the nominal torque constant.
+  float threshold = .002f/kTorqueConstant, gain = 100*kTorqueConstant, currentCap = 300;
   float observerTau = .20f, inertia = 0, viscous = 0, coulomb = 0;
   // This observer runs for telemetry even when Torque Assist is off.  Its
   // bias is learned only during quiet, powered operation; disabled motors
@@ -151,9 +186,11 @@ struct AssistJoint {
   bool telemetryValid = false;
   uint32_t telemetryLastSample = 0;
   float intentCap = .25f/kTorqueConstant;
-  float leadMax = 8, leadRate = 24, detectDelay = .50f;
+  float leadMax = kAssistLeadMaxDeg, leadRate = 24,
+        detectDelay = kAssistIntentDetectDelayS;
   float stallVelocity = 1, stallDelay = .50f;
-  float speedLimit = 60, trackingLimit = 32;
+  float speedLimit = 71, trackingLimit = 64;
+  float targetSlewDegS = kAssistTargetSlewDegS;
   uint16_t positionP = kAssistPositionP;
   uint16_t positionI = kAssistPositionI;
   uint16_t positionD = kAssistPositionD;
@@ -162,6 +199,9 @@ struct AssistJoint {
   bool rearmBlocked = false;
   float bias = 0, m2 = 0, noise = 0, biasAngle = 0, biasError = 0;
   float goal = 0, secondaryGoal = 0, intentVelocity = 0, lead = 0, capture = 0;
+  float releaseLead = 0;
+  bool goalReanchorPending = false;
+  float targetVelocityDegS = 0;
   float angle = 0, effort = 0, deflection = 0, estimate = 0;
   float intentTimer = 0, releaseTimer = 0, stallTimer = 0;
   int8_t direction = 0;
@@ -177,7 +217,9 @@ struct AssistJoint {
   void begin(float position, uint32_t now) {
     selected = true; calibrated = moving = measuredValid = rearmBlocked = false;
     bias = m2 = noise = biasError = effort = deflection = estimate = 0;
-    intentVelocity = lead = intentTimer = releaseTimer = stallTimer = 0; direction = 0;
+    intentVelocity = lead = intentTimer = releaseTimer = stallTimer = releaseLead = 0;
+    goalReanchorPending = false; direction = 0;
+    targetVelocityDegS = 0;
     measuredVelocity = 0;
     samples = steps = 0; goal = secondaryGoal = capture = angle = biasAngle = position;
     phaseStart = lastSample = now;
@@ -186,32 +228,78 @@ struct AssistJoint {
   void releaseAt(float q) {
     moving = false; rearmBlocked = true; capture = q;
     intentVelocity = intentTimer = releaseTimer = stallTimer = 0;
-    // Cancel lead in the same observation; avoid a final outward kick.
-    secondaryGoal = bound(q-direction*lead, hardMin, hardMax);
+    targetVelocityDegS = 0;
+    // Re-anchor to the captured pose plus a small amount of the achieved lead.
+    // This avoids sending the previous emitted goal backward through the pose
+    // when effort releases or the joint stalls.
+    releaseLead = direction * fminf(leadMax, fabsf(lead)*kAssistReleaseLeadScale);
+    secondaryGoal = bound(q+releaseLead-direction*lead, hardMin, hardMax);
+    goalReanchorPending = true;
   }
   void updateIntent(float q, float velocity, float dt) {
     const float intent = bound(effort, -intentCap, intentCap);
     const float magnitude = fabsf(intent), thresholdMa = deadzone();
+    const float requestedVelocity = gain*intent;
+    const int8_t requestedDirection = sign(requestedVelocity);
     if (rearmBlocked) {
-      releaseTimer = magnitude <= thresholdMa*.5f ? releaseTimer+dt : 0;
+      const bool oppositeIntent = magnitude >= thresholdMa && requestedDirection &&
+                                  direction && requestedDirection != direction;
+      if (!oppositeIntent) {
+        releaseTimer = magnitude <= thresholdMa*.5f ? releaseTimer+dt : 0;
+        moving = false; intentVelocity = stallTimer = 0;
+        lead = fmaxf(0, lead-leadRate*dt);
+        secondaryGoal = bound(capture+releaseLead-direction*lead, hardMin, hardMax);
+        if (releaseTimer + .0001f >= detectDelay) {
+          rearmBlocked = false; releaseTimer = 0; lead = 0;
+          secondaryGoal = bound(capture+releaseLead, hardMin, hardMax);
+        }
+        return;
+      }
+      // A clear effort reversal is an intentional new command. Do not force
+      // the user to relax fully after a stall/release; re-anchor at the
+      // measured pose and apply the normal short activation dwell below.
+      rearmBlocked = false; releaseTimer = 0; intentTimer = 0;
       moving = false; intentVelocity = stallTimer = 0;
-      lead = fmaxf(0, lead-leadRate*dt);
-      secondaryGoal = bound(capture-direction*lead, hardMin, hardMax);
-      if (releaseTimer >= detectDelay) { rearmBlocked = false; releaseTimer = 0; }
-      return;
+      releaseLead = lead = 0;
+      secondaryGoal = bound(q, hardMin, hardMax);
+      direction = requestedDirection;
+      goalReanchorPending = true;
     }
     if (magnitude >= thresholdMa) { intentTimer += dt; releaseTimer = 0; }
     else { intentTimer = 0; releaseTimer = moving ? releaseTimer+dt : 0; }
-    if (!moving && intentTimer >= detectDelay) { moving = true; ++steps; }
-    if (moving && releaseTimer >= detectDelay) { releaseAt(q); return; }
+    if (!moving && requestedDirection && releaseLead != 0) {
+      // A new intent supersedes the old release anchor.  Re-anchor from the
+      // current measured pose before the dwell completes so a user who moved
+      // during re-arm never gets pulled toward the older captured pose.
+      releaseLead = 0;
+      secondaryGoal = bound(q, hardMin, hardMax);
+      direction = requestedDirection;
+      goalReanchorPending = true;
+    }
+    if (!moving && intentTimer + .0001f >= detectDelay) { moving = true; ++steps; }
+    if (moving && releaseTimer + .0001f >= detectDelay) { releaseAt(q); return; }
     if (moving) {
-      intentVelocity = gain*intent;
+      intentVelocity = requestedVelocity;
       const int8_t nextDirection = sign(intentVelocity);
+      bool directionChanged = false;
       if (nextDirection) {
+        if (direction != 0 && nextDirection != direction) {
+          // Never flip the sign of an accumulated lead in place. That would
+          // move the reference by up to twice the lead in one feedback pass.
+          // Re-anchor the reversal at the measured pose and let the next pass
+          // begin the new trajectory from there.
+          releaseLead = 0;
+          lead = 0;
+          secondaryGoal = bound(q, hardMin, hardMax);
+          goalReanchorPending = true;
+          directionChanged = true;
+        }
         direction = nextDirection;
         stallTimer = direction*velocity < stallVelocity ? stallTimer+dt : 0;
-        secondaryGoal = bound(secondaryGoal+intentVelocity*dt, hardMin, hardMax);
-        lead = fminf(leadMax, lead+leadRate*dt);
+        if (!directionChanged) {
+          secondaryGoal = bound(secondaryGoal+intentVelocity*dt, hardMin, hardMax);
+          lead = fminf(leadMax, lead+leadRate*dt);
+        }
         if (stallTimer >= stallDelay) releaseAt(q);
       }
     } else {
@@ -220,11 +308,11 @@ struct AssistJoint {
     }
   }
   float reference() const {
-    if (rearmBlocked) return bound(capture, hardMin, hardMax);
+    if (rearmBlocked) return bound(capture+releaseLead, hardMin, hardMax);
     return bound(secondaryGoal+direction*lead, hardMin, hardMax);
   }
   void resetTelemetryObserver() {
-    telemetryEffort = telemetryPreviousVelocity = 0;
+    telemetryBias = telemetryEffort = telemetryPreviousVelocity = 0;
     telemetryValid = false; telemetryLastSample = 0;
   }
   bool observeTelemetry(float q, float velocity, float current,
@@ -257,7 +345,9 @@ struct AssistJoint {
     return isfinite(telemetryEffort);
   }
   AssistReason sample(float q, float velocity, float current, uint32_t now,
-                     bool calibrating, bool active, bool& writeGoal) {
+                     bool calibrating, bool active, bool& writeGoal,
+                     float calibrationVelocityLimitDegS = 1.0f,
+                     float calibrationPoseDriftDeg = .3f) {
     writeGoal = false;
     if (!isfinite(q) || !isfinite(velocity) || !isfinite(current)) return ASSIST_REASON_FEEDBACK_INVALID;
     const uint32_t elapsed = now-lastSample;
@@ -272,7 +362,10 @@ struct AssistJoint {
     if (fabsf(current) > currentCap+5) return ASSIST_REASON_CURRENT_LIMIT;
     if (calibrating && !calibrated) {
       if (now-phaseStart < collectionSettleMs) return ASSIST_REASON_NONE;
-      if (fabsf(velocity) > 1 || fabsf(q-biasAngle) > .3f) return ASSIST_REASON_CALIBRATION_MOVING;
+      if (fabsf(velocity) > calibrationVelocityLimitDegS ||
+          fabsf(q-biasAngle) > calibrationPoseDriftDeg) {
+        return ASSIST_REASON_CALIBRATION_MOVING;
+      }
       ++samples;
       const float d = current-bias;
       bias += d/samples; m2 += d*(current-bias);
@@ -300,7 +393,34 @@ struct AssistJoint {
     if (!active) return ASSIST_REASON_NONE;
     updateIntent(q, velocity, dt);
     const float next = reference();
-    if (fabsf(next-goal) >= .05f) { goal = next; writeGoal = true; }
+    const float delta = next-goal;
+    const float maxSpeed = fmaxf(0, targetSlewDegS);
+    if (goalReanchorPending) {
+      // The new target is deliberately close to the measured pose and lies
+      // in the prior direction of travel. Write it immediately so the motor
+      // never receives the stale pre-release goal for another bus cycle.
+      goal = next; targetVelocityDegS = 0; goalReanchorPending = false;
+      writeGoal = true;
+    } else if (maxSpeed > 0 &&
+        (fabsf(delta) >= .05f || fabsf(targetVelocityDegS) > .001f)) {
+      // Move the actual emitted goal with both velocity and acceleration
+      // limits. A velocity-only limiter starts and stops abruptly at the
+      // 20 ms service cadence, which is felt as a choppy push on the hand.
+      const float desiredVelocity = bound(delta/fmaxf(dt, .001f), -maxSpeed, maxSpeed);
+      const float maxVelocityStep = fmaxf(0, kAssistTargetAccelDegS2)*dt;
+      targetVelocityDegS += bound(desiredVelocity-targetVelocityDegS,
+                                  -maxVelocityStep, maxVelocityStep);
+      const float step = targetVelocityDegS*dt;
+      if (fabsf(delta) <= fabsf(step) || (delta > 0) != (step > 0)) {
+        goal = next; targetVelocityDegS = 0;
+      } else {
+        goal += step;
+      }
+      goal = bound(goal, hardMin, hardMax);
+      writeGoal = true;
+    } else if (maxSpeed <= 0) {
+      targetVelocityDegS = 0;
+    }
     return ASSIST_REASON_NONE;
   }
 };

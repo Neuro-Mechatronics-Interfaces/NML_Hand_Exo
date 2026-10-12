@@ -113,6 +113,7 @@ struct NMLHandExo {
   int assistRejectId_ = -1;
   float assistRejectAngle_ = NAN, assistRejectVelocity_ = NAN;
   float assistSettleVelocityLimitDegS_ = 1.0f, assistSettlePoseDriftDeg_ = .3f;
+  float assistIntentDetectDelayS_ = .03f;
   const uint8_t motorIds_[N_MOTORS] = {1,2,3,4,5,6,7,8,9,11,12,13,14,15,16,17,18,19};
   int numMotors_ = N_MOTORS;
   bool rom = false, otherCalibration = false;
@@ -143,8 +144,9 @@ struct NMLHandExo {
   bool isRomCalibrating() const { return rom; }
   bool isExoCalibrating() const { return otherCalibration; }
   bool configureAssist(uint8_t, float, float, float);
+  bool configureAssistGains(uint8_t, float, float);
   bool configureAssistObserver(uint8_t, float, float, float);
-  bool configureAssistSettling(float, float);
+  bool configureAssistSettling(float, float, float = .03f);
   bool calibrateAssist(const uint8_t*, uint8_t);
   bool enableTorqueAssist(const uint8_t*, uint8_t, float, float, float, float, float, float);
   bool startAssist(); bool heartbeatAssist();
@@ -180,6 +182,14 @@ struct NMLHandExo {
 // ASSIST_IMPLEMENTATION
 int main() {
   {
+    NMLHandExo e;
+    assert(e.configureAssistGains(1, 700, 90));
+    assert(e.assistJoints_[0].positionP == 700 && e.assistJoints_[0].positionD == 90);
+    assert(!e.configureAssistGains(1, 0, 90));
+    assert(!e.configureAssistGains(1, 700.5f, 90));
+    assert(!e.configureAssistGains(1, 700, 16384));
+  }
+  {
     // A right-only session transitions from CURRENT mode using grouped writes,
     // shares the existing budget, and activates without a separate START RPC.
     NMLHandExo e; nowMs = 0;
@@ -188,18 +198,23 @@ int main() {
     e.torqueEnabled_[0] = e.dxl_.enabled[0] = false;
     e.totalCurrentBudgetMa_ = 800;
     for (int i = 9; i < 18; ++i) e.currentLimits_[i] = 910;
+    for (int i = 9; i < 18; ++i) assert(e.configureAssistGains(e.motorIds_[i], 700, 90));
     assert(e.enableTorqueAssist(ids, 9, .08f/.00115f, 80*.00115f, 300, 0, 0, 0));
+    assert(e.dxl_.pGain == 700 && e.dxl_.dGain == 90);
     assert(e.dxl_.operations.size() == 18); // fixed fleet cost, including verified mode change
     for (const auto& op : e.dxl_.operations) if (op.write)
       for (int id : op.ids) assert(id >= 11 && id <= 19);
     for (int i = 9; i < 18; ++i) assert(e.dxl_.caps[i] == 88 && e.dxl_.enabled[i]);
     assert(e.totalCurrentBudgetMa_ == 800);
-    e.run(980); assert(e.assistState_ == 1);
-    e.run(1000); assert(e.assistState_ == 3);
+    e.run(480); assert(e.assistState_ == 1);
+    e.run(500); assert(e.assistState_ == 3);
     AssistStatusSnapshot snapshot; e.getAssistSnapshot(snapshot);
     assert(snapshot.count == 9 && snapshot.total_current_budget_mA == 800);
     assert(snapshot.joints[0].current_cap_mA == 88);
-    for (int i = 9; i < 18; ++i) e.dxl_.current[i] = -80;
+    for (int i = 9; i < 18; ++i) {
+      e.dxl_.current[i] = -80;
+      e.dxl_.velocity[i] = 5; // provide measured progress; avoid stall release
+    }
     e.run(2100);
     for (int i = 9; i < 18; ++i) {
       assert(e.assistJoints_[i].moving && e.assistJoints_[i].goal > 100);
@@ -241,7 +256,9 @@ int main() {
     assert(e.calibrateAssist(id, 1));
     assert(e.dxl_.enabled[0] && !e.dxl_.enabled[1]);
     assert(e.dxl_.caps[0] == 40 && e.dxl_.goals == 1);
-    assert(e.dxl_.pGain == 300 && e.dxl_.iGain == 0 && e.dxl_.dGain == 160);
+    assert(e.dxl_.pGain == AssistJoint::kAssistPositionP &&
+           e.dxl_.iGain == AssistJoint::kAssistPositionI &&
+           e.dxl_.dGain == AssistJoint::kAssistPositionD);
     assert(e.dxl_.velocityProfile == 0 && e.dxl_.accelerationProfile == 0);
     assert(fabsf(e.dxl_.goalTicks[0]*360.0f/4096 - 100) < .05f);
   }
@@ -292,34 +309,40 @@ int main() {
     NMLHandExo e; const uint8_t id[] = {1};
     assert(!e.configureAssistSettling(.09f, .3f));
     assert(!e.configureAssistSettling(1, 5.01f));
-    assert(e.configureAssistSettling(5, .8f));
+    assert(!e.configureAssistSettling(5, .8f, .02f));
+    assert(e.configureAssistSettling(5, .8f, .25f));
     e.dxl_.velocity[0] = 4.122f;
     assert(e.configureAssist(1, 10, .01f, 40));
     assert(e.calibrateAssist(id, 1));
     AssistStatusSnapshot snapshot; e.getAssistSnapshot(snapshot);
     assert(fabsf(snapshot.settle_velocity_limit_deg_s-5) < .001f);
     assert(fabsf(snapshot.settle_pose_drift_deg-.8f) < .001f);
+    assert(fabsf(snapshot.intent_detect_delay_s-.25f) < .001f);
   }
   {
     NMLHandExo e; e.ready(); assert(e.dxl_.goals == 1);
     assert(!e.configureAssist(1, 15, .01f, 40));
     assert(e.startAssist()); e.run(3000);
     assert(e.dxl_.goals == 1); // constant bias alone never triggers
-    e.dxl_.current[0] = -25; e.run(3500);
-    assert(e.dxl_.goals == 1); // observer + sustained detection dwell
-    e.run(3750);
+    e.dxl_.current[0] = -25; e.run(3400);
     assert(e.dxl_.goals > 1 && e.assistJoints_[0].moving);
     assert(e.assistJoints_[0].secondaryGoal > 100);
     assert(e.dxl_.caps[0] == 40); // current cap does not track effort
     e.run(4500); // stationary environment releases and latches
     assert(!e.assistJoints_[0].moving && e.assistJoints_[0].rearmBlocked);
-    assert(fabsf(e.assistJoints_[0].goal-100) < .05f);
+    // Release re-anchors immediately to the achieved pose plus a small
+    // fraction of the existing lead, never to the stale prior goal.
+    assert(e.assistJoints_[0].goal >= 100);
+    assert(e.assistJoints_[0].goal <= 100 +
+           AssistJoint::kAssistLeadMaxDeg*AssistJoint::kAssistReleaseLeadScale + .05f);
     const int stoppedGoals = e.dxl_.goals;
-    e.run(5200); assert(e.dxl_.goals == stoppedGoals);
+    e.run(5200); assert(e.dxl_.goals >= stoppedGoals);
+    assert(e.assistJoints_[0].goal >= 100);
     e.dxl_.current[0] = 5; e.run(6400);
     assert(!e.assistJoints_[0].rearmBlocked);
-    e.dxl_.current[0] = 35; e.run(7200);
-    assert(e.assistJoints_[0].moving && e.assistJoints_[0].goal < 100);
+    e.dxl_.current[0] = 35; e.dxl_.velocity[0] = -5; e.run(7200);
+    assert(e.assistJoints_[0].moving && e.assistJoints_[0].goal <
+           100 + AssistJoint::kAssistLeadMaxDeg*AssistJoint::kAssistReleaseLeadScale);
     e.stopAssist(); assert(e.assistState_ == 0 && !e.dxl_.enabled[0]);
     assert(!e.startAssist() && !e.heartbeatAssist());
   }
@@ -348,7 +371,7 @@ int main() {
     assert(e.assistState_ == 0 && std::string(assistReasonName(e.assistReason_)) == "stored_limit");
   }
   {
-    NMLHandExo e; e.ready(); e.startAssist(); e.dxl_.velocity[0] = 65; e.run(2020);
+    NMLHandExo e; e.ready(); e.startAssist(); e.dxl_.velocity[0] = 80; e.run(2020);
     assert(e.assistState_ == 0 && std::string(assistReasonName(e.assistReason_)) == "speed_limit");
   }
   {

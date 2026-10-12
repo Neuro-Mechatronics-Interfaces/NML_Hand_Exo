@@ -66,6 +66,17 @@ def test_setup_and_direct_widgets_allow_71_and_match_firmware(setup_gui):
     assert raw == round(rpm / 0.229)
 
 
+def test_setup_rows_show_firmware_reachability(setup_gui):
+    gui = setup_gui
+    gui._motor_reachable_by_id = {1: False, 11: True}
+    gui._build_motor_rows()
+
+    assert gui.motor_widgets[0]["reachable"] is False
+    assert "unreachable" in gui.motor_widgets[0]["reachability_lbl"].toolTip()
+    assert gui.motor_widgets[1]["reachable"] is True
+    assert "reachable" in gui.motor_widgets[1]["reachability_lbl"].toolTip()
+
+
 def test_row_apply_targets_right_id_and_edits_do_not_change_applied_limits(setup_gui):
     gui = setup_gui
     raw = device(gui)

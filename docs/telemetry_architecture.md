@@ -104,6 +104,11 @@ _telem_timer.timeout → _poll_telemetry()
                    effort, and dwell timers
 ```
 
+If an idle grouped Dynamixel read is incomplete, firmware retries reachable
+IDs with bounded per-ID reads and preserves recovered measured records. An
+absent configured ID can therefore remain unavailable without hiding the
+physical right-hand motors' measured positions.
+
 ---
 
 ## Firmware response format and parser state `[VERIFIED]`

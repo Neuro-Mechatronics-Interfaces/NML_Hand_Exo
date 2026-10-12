@@ -176,9 +176,18 @@ compatibility aliases but should not be used for new builds.
 
 Protobuf-v2 uses version-2 `PB` envelopes on both CDCs: the command CDC accepts
 Requests and the response CDC emits Responses. Discovery sends a side-effect-free
-`HELLO` in both physical orientations. Existing maintenance commands are carried
-inside the `TEXT_COMMAND` opcode, while motion, telemetry, assist, and the
-per-motor `SET_CURRENT_LIMITS` operation remain typed protobuf messages.
+`HELLO` in both physical orientations. New firmware returns typed discovery
+metadata (including capability bits and configured motor IDs); the SDK falls back
+to the legacy `text_reply` value `protobuf-v2` for older v2 firmware. Existing
+maintenance commands are carried inside the `TEXT_COMMAND` opcode, while motion,
+telemetry, assist, and the per-motor `SET_CURRENT_LIMITS` operation remain typed
+protobuf messages.
+
+The `Response.payload` protobuf `oneof` keeps NX telemetry, batch results, Assist
+status, discovery, and maintenance text mutually exclusive in the nanopb C
+struct. Wire tags for existing payloads are unchanged, so older text replies and
+new typed discovery can be handled by the updated SDK without putting the large
+maintenance text buffer alongside telemetry or Assist status.
 
 Use `compiler.cpp.extra_flags`, not `build.extra_flags`: the latter replaces
 OpenRB's MCU and USB definitions and causes missing `Sercom`/`TCC_INST_NUM` errors.
@@ -358,6 +367,8 @@ budget and each effective current cap. All assist operations use the secondary
 binary endpoint. Replies include a typed `Response.assist` snapshot with numeric
 state/reason enums and up to 18 joint records. Heartbeat replies carry status,
 so the GUI needs one exchange and no ASCII status parsing while running.
+`assist_gains` adds opcode 26 for raw per-ID Position P/D gains; those values are
+reported in each joint status and written during Assist startup.
 Opcode 14 retains three floats, but its gain now has units deg/s/mA; update
 firmware and SDK together. Discovery and unrelated maintenance remain text.
 

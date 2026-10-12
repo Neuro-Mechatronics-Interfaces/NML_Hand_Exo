@@ -394,6 +394,8 @@ def test_current_batch_stops_after_first_bus_failure(firmware):
     (pb.ASSIST_START, [], []), (pb.ASSIST_HEARTBEAT, [], []), (pb.ASSIST_STOP, [], []),
     (pb.ASSIST_STATUS, [], []), (pb.ASSIST_OBSERVER, [16], [.035, .018, .025]),
     (pb.ASSIST_SETTLE_CONFIG, [], [2.5, .8]),
+    (pb.ASSIST_SETTLE_CONFIG, [], [2.5, .8, .25]),
+    (pb.ASSIST_GAINS, [16], [700, 90]),
     (pb.ASSIST_ENABLE, list(range(11, 20)), [.08/.00115, 80*.00115, 300, 0, 0, 0]),
 ])
 def test_assist_binary_dispatch(firmware, command, ids, values):
@@ -414,6 +416,9 @@ def test_assist_binary_dispatch(firmware, command, ids, values):
     (pb.ASSIST_OBSERVER, [16], [0, 0]),
     (pb.ASSIST_SETTLE_CONFIG, [16], [1, .3]),
     (pb.ASSIST_SETTLE_CONFIG, [], [1]),
+    (pb.ASSIST_GAINS, [], [700, 90]),
+    (pb.ASSIST_GAINS, [16, 17], [700, 90]),
+    (pb.ASSIST_GAINS, [16], [700]),
     (pb.ASSIST_ENABLE, [], [10, .01, 300, 0, 0, 0]),
     (pb.ASSIST_ENABLE, [16], [10, .01, 300]),
     (pb.ASSIST_ENABLE, [16, 16], [10, .01, 300, 0, 0, 0]),
@@ -459,7 +464,8 @@ def test_binary_assist_roundtrip_18_joints_and_one_heartbeat_exchange(firmware):
     joint = status['joints'][19]
     assert joint['effort_mA'] == -21 and joint['angle'] == -189 and joint['goal'] == 2840
     assert joint['rearm_blocked'] and joint['samples'] == 50 and joint['age_ms'] == 25
-    assert joint['current_cap_mA'] == 88 and status['total_current_budget_mA'] == 800
+    assert joint['current_cap_mA'] == 88 and joint['position_p'] == 700 and joint['position_d'] == 90
+    assert status['total_current_budget_mA'] == 800
     assert exo.get_assist_status() == status
     assert commands == [pb.ASSIST_HEARTBEAT, pb.ASSIST_STATUS]
     assert transactions[-1] == [0, 0, 0, 0]

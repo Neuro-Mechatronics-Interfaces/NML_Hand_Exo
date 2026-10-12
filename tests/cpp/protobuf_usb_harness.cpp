@@ -31,8 +31,11 @@ struct NMLHandExo {
   bool accept = true, assistBusy = false;
   bool isAssistBusy() const { return assistBusy; }
   bool configureAssist(uint8_t, float t, float g, float cap) { value = cap; return accept && isfinite(t) && isfinite(g) && isfinite(cap); }
+  bool configureAssistGains(uint8_t, float p, float d) { value = d; return accept && isfinite(p) && isfinite(d); }
   bool configureAssistObserver(uint8_t, float j, float b, float c) { value = c; return accept && isfinite(j) && isfinite(b) && isfinite(c); }
-  bool configureAssistSettling(float velocity, float drift) { value = drift; return accept && isfinite(velocity) && isfinite(drift); }
+  bool configureAssistSettling(float velocity, float drift, float intentDelay = .30f) {
+    value = intentDelay; return accept && isfinite(velocity) && isfinite(drift) && isfinite(intentDelay);
+  }
   bool calibrateAssist(const uint8_t*, uint8_t) { ++writes; return accept; }
   bool enableTorqueAssist(const uint8_t*, uint8_t, float t, float g, float cap, float j, float b, float c) {
     ++writes; value = cap;
@@ -53,6 +56,7 @@ struct NMLHandExo {
       j.samples = 50; j.effort_mA = -21; j.goal = 2840; j.angle = -189;
       j.age_ms = 25; j.rearm_blocked = true;
       j.current_cap_mA = 88;
+      j.position_p = 700; j.position_d = 90;
     }
   }
   std::string motorControlMode_ = "CURRENT";

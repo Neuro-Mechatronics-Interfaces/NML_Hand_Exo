@@ -346,8 +346,8 @@ void NMLHandExo::fillControlTelemetry(int index, FastTelemetryRecord& r) {
   }
 
   if (assist) {
-    if (assistState_ == 1) r.control_state = FAST_CONTROL_ASSIST_CALIBRATING;
-    else if (assistState_ == 2) r.control_state = FAST_CONTROL_ASSIST_READY;
+    if (assistState_ == ASSIST_STATE_CALIBRATING) r.control_state = FAST_CONTROL_ASSIST_CALIBRATING;
+    else if (assistState_ == ASSIST_STATE_READY) r.control_state = FAST_CONTROL_ASSIST_READY;
     else if (j.rearmBlocked) r.control_state = FAST_CONTROL_ASSIST_REARM;
     else if (j.stallTimer > 0.0f) r.control_state = FAST_CONTROL_ASSIST_STALLED;
     else if (j.moving) r.control_state = FAST_CONTROL_ASSIST_MOVING;
@@ -431,11 +431,49 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
   info.is_info_changed = true;
   while (DXL_SERIAL.available() > 0) DXL_SERIAL.read();
   const uint8_t got = EXO_PROFILE_CALL(DXL_READ, dxl_.syncRead(&info, timeoutMs));
-  methodOut = FAST_TELEM_METHOD_SYNC_READ;
   // The library does not supply a reliable per-slot completion bitmap.
   // A partial response must never decode unfilled buffers as physical zeros.
-  // Fail the whole sample closed; retry on the next poll, not N*3 fallbacks.
-  if (got != packed) return count;
+  // Retry a partial frame with bounded one-motor reads instead. This is only
+  // entered on an incomplete sync-read, so the normal path remains one bus
+  // transaction per poll while a single transient/offline ID cannot hide the
+  // measured records for every reachable motor in the frame.
+  if (got != packed) {
+    methodOut = FAST_TELEM_METHOD_FALLBACK_READ;
+    for (uint8_t i = 0; i < count; ++i) {
+      const int index = getIndexById(ids[i]);
+      if (index < 0 || !motorReachable_[index]) continue;
+
+      bool currentOk = false;
+      const int16_t current = readPresentCurrentMa(ids[i], currentOk);
+      const int32_t velocity = (int32_t)EXO_PROFILE_CALL(
+          DXL_READ, dxl_.readControlTableItem(PRESENT_VELOCITY, ids[i], timeoutMs));
+      const bool velocityOk = dxl_.getLastLibErrCode() == DXL_LIB_OK;
+      int32_t ticks = 0;
+      const bool positionOk = readPresentPositionTicks(ids[i], ticks);
+      if (!currentOk || !velocityOk || !positionOk) continue;
+
+      FastTelemetryRecord& r = records[i];
+      const float angle = ticks * 360.0f / PULSE_RESOLUTION;
+      if (!isfinite(angle) || fabsf(angle) > 36000.0f) continue;
+      r.current_mA = current;
+      r.velocity_raw = velocity;
+      r.position_ticks = ticks;
+      r.absolute_cdeg = (int32_t)roundf(angle * 100.0f);
+      r.relative_cdeg = (int32_t)roundf((angle - zeroOffsets_[index]) *
+                                        (flipMotor_[index] ? -100.0f : 100.0f));
+      r.error = 0;
+      r.sample_ms = millis();
+      r.utc_ms = utcClock_.now(r.sample_ms);
+      r.sources = 0x15; // position/current/velocity measured
+      jointModels_[index].correct(angle, velocity * 0.229f * 6.0f,
+                                  current, true, r.sample_ms);
+      updateTelemetryObserver(index, r);
+      fillControlTelemetry(index, r);
+    }
+    return count;
+  }
+
+  methodOut = FAST_TELEM_METHOD_SYNC_READ;
   const uint32_t now = millis();
   for (uint8_t p = 0; p < packed; ++p) {
     if (xels[p].error != 0) continue;
@@ -603,10 +641,10 @@ String NMLHandExo::getDeviceInfo(bool includeLiveTelemetry) {
     info += "Version: " + String(VERSION) + "\n";
 #if EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V2
     info += "USB Protocol: protobuf-v2\nUSB CDC Count: 2\nUSB Text Port: primary\nUSB Binary Port: secondary\n";
-    info += "USB Features: joint_model_write batch_motion current_limit_batch assist_v2 assist_binary assist_enable\n";
+    info += "USB Features: joint_model_write batch_motion current_limit_batch assist_v2 assist_binary assist_enable assist_gains\n";
 #elif EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V1
     info += "USB Protocol: protobuf-v1\nUSB CDC Count: 2\nUSB Text Port: primary\nUSB Binary Port: secondary\n";
-    info += "USB Features: joint_model_write batch_motion assist_v2 assist_binary assist_enable\n";
+    info += "USB Features: joint_model_write batch_motion assist_v2 assist_binary assist_enable assist_gains\n";
 #elif EXO_AXON_USB
     info += "USB Protocol: axon-ascii\nUSB CDC Count: 1\n";
 #elif defined(DUAL_CDC) && DUAL_CDC
@@ -628,6 +666,7 @@ String NMLHandExo::getDeviceInfo(bool includeLiveTelemetry) {
 
       info += "Motor " + String(i) + ": {name: " + String(name) +
             ", id: " + String(id) +
+            ", reachable: " + (motorReachable_[i] ? "true" : "false") +
             ", limits: [" + String(minLimit, 2) + ", " + String(maxLimit, 2) + "]";
       if (includeLiveTelemetry) {
         float angle = getRelativeAngle(id);
@@ -1767,6 +1806,10 @@ float NMLHandExo::getZeroAngle(uint8_t id){
 }
 void NMLHandExo::setHome(uint8_t id){
   int index = getIndexById(id);
+  // A dual build may have only one physical side attached. Skip unreachable
+  // configured IDs during home:all so their failed writes cannot disturb the
+  // shared bus used by the reachable side.
+  if (index >= 0 && !motorReachable_[index]) return;
   if (index == -1) {
     debugPrint(F("Invalid motor ID"));
     return;
@@ -1787,6 +1830,7 @@ void NMLHandExo::setHome(uint8_t id){
 void NMLHandExo::homeAllMotors() {
   for (int i = 0; i < numMotors_; ++i) {
     uint8_t id = motorIds_[i];
+    if (!motorReachable_[i]) continue;
     setHome(id);
   }
 }
@@ -1971,6 +2015,9 @@ void NMLHandExo::enableTorque(uint8_t id, bool enable) {
   if (isAssistBusy()) { if (enable) return; stopAssist(ASSIST_REASON_DISABLED); }
   const int index = getIndexById(id);
   if (index < 0) return;
+  // Dual builds may contain the other hand's configured IDs while only one
+  // physical hand is attached. Do not issue writes to an absent motor.
+  if (!motorReachable_[index]) return;
   serviceJointModels();
   telemetryGate_.note(millis());
   if (enable) {
@@ -3146,6 +3193,89 @@ bool NMLHandExo::setMotorControlMode(const String& mode) {
   motorControlMode_ = m;
   stopAllDirectControl();
   return true;
+}
+
+bool NMLHandExo::resetMotors(const uint8_t* ids, uint8_t count) {
+  if (!ids || !count || count > numMotors_) return false;
+  for (uint8_t k = 0; k < count; ++k) {
+    const int index = getIndexById(ids[k]);
+    if (index < 0) return false;
+    for (uint8_t j = 0; j < k; ++j) if (ids[j] == ids[k]) return false;
+  }
+
+  // A normal stop already certifies torque-off when possible. If the assist
+  // state is the unconfirmed-stop fault, retry the same bounded stop path a
+  // few times before touching the requested IDs. Never silently clear that
+  // fault while a motor may still be powered.
+  for (uint8_t attempt = 0; isAssistBusy() && attempt < 3; ++attempt) {
+    stopAssist(ASSIST_REASON_STOP_RETRIED);
+  }
+  if (isAssistBusy()) return false;
+
+  bool allOk = true;
+  const uint32_t now = millis();
+  for (uint8_t k = 0; k < count; ++k) {
+    const int index = getIndexById(ids[k]);
+    auto& joint = assistJoints_[index];
+
+    // Clear controller/session state without changing configured limits,
+    // gains, current caps, or observer dynamics.
+    joint.selected = false;
+    joint.calibrated = false;
+    joint.moving = false;
+    joint.rearmBlocked = false;
+    joint.measuredValid = false;
+    joint.bias = joint.m2 = joint.noise = joint.biasError = 0;
+    joint.effort = joint.deflection = joint.estimate = 0;
+    joint.intentVelocity = joint.lead = joint.intentTimer = 0;
+    joint.releaseTimer = joint.stallTimer = 0;
+    joint.direction = 0;
+    joint.resetTelemetryObserver();
+
+    motorMoving_[index] = false;
+    motorAdmitted_[index] = false;
+    directCommandActive_[index] = false;
+    directCommandDirection_[index] = 0;
+    positionHoldActive_[index] = false;
+    verdictPending_[index] = false;
+    appliedCurrents_[index] = 0;
+    goalAngleValid_[index] = false;
+
+    // Re-establish reachability instead of trusting the startup-only probe.
+    const bool pinged = EXO_PROFILE_CALL(DXL_READ, dxl_.ping(ids[k])) != 0;
+    motorReachable_[index] = pinged;
+    if (!pinged) {
+      jointModels_[index].valid = false;
+      allOk = false;
+      continue;
+    }
+
+    if (!EXO_PROFILE_CALL(DXL_WRITE, dxl_.torqueOff(ids[k]))) {
+      allOk = false;
+      continue;
+    }
+    // Only clear the local torque state after the hardware write succeeds;
+    // a failed write must remain visible as an un-certified condition.
+    torqueEnabled_[index] = false;
+
+    const float position = EXO_PROFILE_CALL(
+        DXL_READ, dxl_.getPresentPosition(ids[k], UNIT_DEGREE));
+    if (dxl_.getLastLibErrCode() != DXL_LIB_OK || !isfinite(position) ||
+        position < -36000.0f || position > 36000.0f) {
+      jointModels_[index].valid = false;
+      allOk = false;
+      continue;
+    }
+    goalAngle_[index] = position;
+    goalAngleValid_[index] = true;
+    jointModels_[index].correct(position, 0, 0, false, now);
+  }
+  allocationDirty_ = false;
+  telemetryGate_.note(now);
+  assistAutoStart_ = false;
+  assistState_ = ASSIST_STATE_OFF;
+  assistReason_ = allOk ? ASSIST_REASON_STOPPED : ASSIST_REASON_FEEDBACK_READ;
+  return allOk;
 }
 String NMLHandExo::getMotorControlMode() {
   String mode = "UNKNOWN";

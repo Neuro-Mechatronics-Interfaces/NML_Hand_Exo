@@ -1,11 +1,12 @@
 #include "config.h"
 #include "nml_hand_exo.h"
 #include "io_profile.h"
+#include "utils.h"
 #include <string.h>
 
 bool NMLHandExo::configureAssist(uint8_t id, float thresholdMa, float gainDegSPerMa, float capMa) {
   const int i = getIndexById(id);
-  if (isAssistBusy() || i < 0 || !isfinite(thresholdMa) || thresholdMa < 5 || thresholdMa > 200 ||
+  if (isAssistBusy() || i < 0 || !isfinite(thresholdMa) || thresholdMa < 1 || thresholdMa > 200 ||
       !isfinite(gainDegSPerMa) || gainDegSPerMa < .001f || gainDegSPerMa > .5f ||
       !isfinite(capMa) || capMa < 10 || capMa > 910 || thresholdMa >= capMa ||
       thresholdMa >= assistJoints_[i].intentCap) return false;
@@ -27,15 +28,43 @@ bool NMLHandExo::configureAssistObserver(uint8_t id, float inertia, float viscou
   return true;
 }
 
-bool NMLHandExo::configureAssistSettling(float velocityLimitDegS, float poseDriftDeg) {
+bool NMLHandExo::configureAssistGains(uint8_t id, float positionP, float positionD) {
+  const int i = getIndexById(id);
+  if (isAssistBusy() || i < 0 || !isfinite(positionP) ||
+      positionP < AssistJoint::kAssistPositionPMin ||
+      positionP > AssistJoint::kAssistPositionPMax || positionP != floorf(positionP) ||
+      !isfinite(positionD) || positionD < AssistJoint::kAssistPositionDMin ||
+      positionD > AssistJoint::kAssistPositionDMax || positionD != floorf(positionD)) return false;
+  auto& j = assistJoints_[i];
+  j.positionP = (uint16_t)positionP;
+  j.positionD = (uint16_t)positionD;
+  j.calibrated = false;
+  return true;
+}
+
+// Protobuf-v2 has no text acknowledgement until the synchronous assist
+// transaction returns. These sequence-zero events use the existing telemetry
+// event path, so a long Dynamixel transaction remains observable without
+// corrupting the solicited response frame. Native assist harnesses do not
+// define ARDUINO, so this remains a zero-cost no-op there.
+#if defined(ARDUINO) && EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V2
+#define EXO_ASSIST_TRACE(text) telemetryPrintln(String("[assist-fw] ") + String(text))
+#else
+#define EXO_ASSIST_TRACE(text) ((void)0)
+#endif
+
+bool NMLHandExo::configureAssistSettling(float velocityLimitDegS, float poseDriftDeg,
+                                         float intentDetectDelayS) {
   // These limits are startup qualification tolerances, not motion or current
   // safety limits. Keep a bounded range so a UI/API mistake cannot disable the
   // stationary-start gate altogether.
   if (isAssistBusy() || !isfinite(velocityLimitDegS) || velocityLimitDegS < .1f ||
       velocityLimitDegS > 10.0f || !isfinite(poseDriftDeg) || poseDriftDeg < .01f ||
-      poseDriftDeg > 5.0f) return false;
+      poseDriftDeg > 5.0f || !isfinite(intentDetectDelayS) ||
+      intentDetectDelayS < .03f || intentDetectDelayS > 2.0f) return false;
   assistSettleVelocityLimitDegS_ = velocityLimitDegS;
   assistSettlePoseDriftDeg_ = poseDriftDeg;
+  assistIntentDetectDelayS_ = intentDetectDelayS;
   return true;
 }
 
@@ -135,7 +164,7 @@ bool NMLHandExo::enableTorqueAssist(const uint8_t* ids, uint8_t count, float thr
   if (isAssistBusy()) return false;
   assistAutoStart_ = false;
   assistRejectId_ = -1; assistRejectAngle_ = assistRejectVelocity_ = NAN;
-  if (!ids || !count || count > numMotors_ || !isfinite(thresholdMa) || thresholdMa < 5 ||
+  if (!ids || !count || count > numMotors_ || !isfinite(thresholdMa) || thresholdMa < 1 ||
       thresholdMa > 200 || !isfinite(gainDegSPerMa) || gainDegSPerMa < .001f || gainDegSPerMa > .5f ||
       !isfinite(capMa) || capMa < 10 || capMa > 910 || thresholdMa >= capMa ||
       !isfinite(inertia) || inertia < 0 || inertia > 1 ||
@@ -170,7 +199,9 @@ bool NMLHandExo::enableTorqueAssist(const uint8_t* ids, uint8_t count, float thr
     configureAssistObserver(motorIds_[i], inertia, viscous, coulomb);
   }
   assistAutoStart_ = true;
+  EXO_ASSIST_TRACE("ASSIST_ENABLE entered; starting firmware calibration");
   const bool ok = calibrateAssist(ids, count);
+  EXO_ASSIST_TRACE(ok ? "ASSIST_ENABLE calibration returned OK" : "ASSIST_ENABLE calibration returned REJECTED");
   if (!ok) assistAutoStart_ = false;
   return ok;
 }
@@ -200,9 +231,11 @@ bool NMLHandExo::calibrateAssist(const uint8_t* ids, uint8_t count) {
     reachable[i] = chosen[i] || motorReachable_[i];
   }
   if (budget > totalCurrentBudgetMa_) return reject(ASSIST_REASON_CURRENT_BUDGET);
-  AssistRegisterBlock state[N_MOTORS];
+  AssistRegisterBlock state[N_MOTORS] = {};
   AssistFeedback feedback[N_MOTORS];
+  EXO_ASSIST_TRACE("phase=initial feedback read begin");
   if (!readAssistFeedback(chosen, feedback)) return reject(ASSIST_REASON_FEEDBACK_OR_TORQUE_READ);
+  EXO_ASSIST_TRACE("phase=initial feedback read complete");
   for (int i = 0; i < numMotors_; ++i) if (chosen[i]) {
     const float q = feedback[i].angle, v = feedback[i].velocity;
     assistRejectAngle_ = q; assistRejectVelocity_ = v;
@@ -214,7 +247,9 @@ bool NMLHandExo::calibrateAssist(const uint8_t* ids, uint8_t count) {
         q > jointLimits_[i][1]-DIRECT_LIMIT_MARGIN_DEG) return reject(ASSIST_REASON_STORED_LIMIT, motorIds_[i]);
   }
   assistRejectAngle_ = assistRejectVelocity_ = NAN;
+  EXO_ASSIST_TRACE("phase=operating-mode read begin");
   if (!readAssistRegisters(chosen, 10, 2, state)) return reject(ASSIST_REASON_OPERATING_MODE_READ);
+  EXO_ASSIST_TRACE("phase=operating-mode read complete");
   bool changeMode[N_MOTORS] = {};
   for (int i = 0; i < numMotors_; ++i) if (chosen[i]) {
     if (state[i].bytes[1] != 5 && !assistAutoStart_) return reject(ASSIST_REASON_MOTOR_REQUIRES_CURRENT_POSITION, motorIds_[i]);
@@ -222,31 +257,40 @@ bool NMLHandExo::calibrateAssist(const uint8_t* ids, uint8_t count) {
     if (state[i].bytes[0] & 0x0d) return reject(ASSIST_REASON_UNSUPPORTED_DRIVE_MODE, motorIds_[i]);
   }
   // One grouped read includes reachable inactive IDs, but writes never do.
+  EXO_ASSIST_TRACE("phase=whole-fleet torque read begin");
   if (!readAssistRegisters(reachable, 64, 1, state)) return reject(ASSIST_REASON_UNSELECTED_TORQUE_READ);
+  EXO_ASSIST_TRACE("phase=whole-fleet torque read complete");
   for (int i = 0; i < numMotors_; ++i)
     if (!chosen[i] && reachable[i] && state[i].bytes[0] != 0) return reject(ASSIST_REASON_UNSELECTED_MOTOR_ENABLED, motorIds_[i]);
 
   assistRejectId_ = -1;
-  assistState_ = 1; assistReason_ = ASSIST_REASON_CALIBRATING;
+  assistState_ = ASSIST_STATE_CALIBRATING; assistReason_ = ASSIST_REASON_CALIBRATING;
+  EXO_ASSIST_TRACE("phase=calibrating state set");
   assistHeartbeatMs_ = assistSampleMs_ = assistBeginMs_ = millis();
   for (int i = 0; i < numMotors_; ++i) assistJoints_[i].selected = chosen[i];
-  AssistRegisterBlock settings[N_MOTORS];
+  AssistRegisterBlock settings[N_MOTORS] = {};
+  EXO_ASSIST_TRACE("phase=start torque-off write begin");
   if (!writeAssistRegisters(chosen, 64, 1, settings, true)) {
     stopAssist(ASSIST_REASON_START_TORQUE_OFF_FAILED); return false;
   }
+  EXO_ASSIST_TRACE("phase=start torque-off write complete");
   for (int i = 0; i < numMotors_; ++i) if (chosen[i]) torqueEnabled_[i] = false;
   if (assistAutoStart_) {
     for (int i = 0; i < numMotors_; ++i) if (changeMode[i]) settings[i].bytes[0] = 5;
+    EXO_ASSIST_TRACE("phase=control-mode write begin");
     if (!writeAssistRegisters(changeMode, 11, 1, settings, true)) {
       stopAssist(ASSIST_REASON_START_WRITE_FAILED); return false;
     }
+    EXO_ASSIST_TRACE("phase=control-mode write complete");
     motorControlMode_ = "CURRENT_POSITION";
     for (int i = 0; i < numMotors_; ++i) if (chosen[i]) {
       positionHoldActive_[i] = directCommandActive_[i] = false;
     }
   }
   AssistFeedback captured[N_MOTORS];
+  EXO_ASSIST_TRACE("phase=post-hold feedback read begin");
   if (!readAssistFeedback(chosen, captured)) { stopAssist(ASSIST_REASON_START_POSE_CHANGED); return false; }
+  EXO_ASSIST_TRACE("phase=post-hold feedback read complete");
   for (int i = 0; i < numMotors_; ++i) if (chosen[i]) {
     auto& j = assistJoints_[i];
     const float q = captured[i].angle;
@@ -257,27 +301,34 @@ bool NMLHandExo::calibrateAssist(const uint8_t* ids, uint8_t count) {
     j.hardMin = ceilf((jointLimits_[i][0]+DIRECT_LIMIT_MARGIN_DEG)*PULSE_RESOLUTION/360.0f)*360.0f/PULSE_RESOLUTION;
     j.hardMax = floorf((jointLimits_[i][1]-DIRECT_LIMIT_MARGIN_DEG)*PULSE_RESOLUTION/360.0f)*360.0f/PULSE_RESOLUTION;
     j.begin(q, millis());
+    j.detectDelay = assistIntentDetectDelayS_;
     j.collectionSettleMs = assistAutoStart_ ? 0 : 500;
     const uint16_t cap = (uint16_t)j.currentCap;
     memcpy(settings[i].bytes, &cap, 2);
   }
   // Each group is read back before torque-on. Sync Write only confirms TX.
+  EXO_ASSIST_TRACE("phase=current-cap write begin");
   if (!writeAssistRegisters(chosen, 102, 2, settings, true)) {
     stopAssist(ASSIST_REASON_START_WRITE_FAILED); return false;
   }
+  EXO_ASSIST_TRACE("phase=current-cap write complete");
   for (int i = 0; i < numMotors_; ++i) if (chosen[i]) {
     const auto& j = assistJoints_[i];
     memcpy(settings[i].bytes, &j.positionD, 2);
     memcpy(settings[i].bytes+2, &j.positionI, 2);
     memcpy(settings[i].bytes+4, &j.positionP, 2);
   }
+  EXO_ASSIST_TRACE("phase=PID write begin");
   if (!writeAssistRegisters(chosen, 80, 6, settings, true)) {
     stopAssist(ASSIST_REASON_START_WRITE_FAILED); return false;
   }
+  EXO_ASSIST_TRACE("phase=PID write complete");
   for (int i = 0; i < numMotors_; ++i) settings[i] = AssistRegisterBlock{};
+  EXO_ASSIST_TRACE("phase=profile write begin");
   if (!writeAssistRegisters(chosen, 88, 4, settings, true)) {
     stopAssist(ASSIST_REASON_START_WRITE_FAILED); return false;
   }
+  EXO_ASSIST_TRACE("phase=profile write complete");
   for (int i = 0; i < numMotors_; ++i) if (chosen[i]) {
     const int32_t ticks = (int32_t)roundf(assistJoints_[i].goal*PULSE_RESOLUTION/360.0f);
     const float q = ticks*(360.0f/PULSE_RESOLUTION);
@@ -286,15 +337,19 @@ bool NMLHandExo::calibrateAssist(const uint8_t* ids, uint8_t count) {
     }
     memcpy(settings[i].bytes+8, &ticks, 4);
   }
+  EXO_ASSIST_TRACE("phase=goal write begin");
   if (!writeAssistRegisters(chosen, 108, 12, settings, true)) {
     stopAssist(ASSIST_REASON_START_WRITE_FAILED); return false;
   }
+  EXO_ASSIST_TRACE("phase=goal write complete");
   // Ensure the lease did not expire while collecting/verifying whole-fleet data.
   if (millis()-assistHeartbeatMs_ > 1000) { stopAssist(ASSIST_REASON_HEARTBEAT_TIMEOUT); return false; }
   for (int i = 0; i < numMotors_; ++i) if (chosen[i]) settings[i].bytes[0] = 1;
+  EXO_ASSIST_TRACE("phase=start torque-on write begin");
   if (!writeAssistRegisters(chosen, 64, 1, settings, true)) {
     stopAssist(ASSIST_REASON_START_TORQUE_ON_FAILED); return false;
   }
+  EXO_ASSIST_TRACE("phase=start torque-on write complete");
   const uint32_t now = millis();
   for (int i = 0; i < numMotors_; ++i) if (chosen[i]) {
     torqueEnabled_[i] = true; appliedCurrents_[i] = (uint16_t)assistJoints_[i].currentCap;
@@ -307,26 +362,26 @@ bool NMLHandExo::calibrateAssist(const uint8_t* ids, uint8_t count) {
 }
 
 bool NMLHandExo::startAssist() {
-  if (assistState_ != 2 || millis()-assistHeartbeatMs_ > 1000) return false;
+  if (assistState_ != ASSIST_STATE_READY || millis()-assistHeartbeatMs_ > 1000) return false;
   for (int i = 0; i < numMotors_; ++i) if (assistJoints_[i].selected) {
     // READY observations cannot pre-qualify activation dwell.
     assistJoints_[i].intentTimer = assistJoints_[i].releaseTimer = assistJoints_[i].stallTimer = 0;
   }
-  assistState_ = 3; assistReason_ = ASSIST_REASON_ACTIVE; assistHeartbeatMs_ = millis();
+  assistState_ = ASSIST_STATE_ACTIVE; assistReason_ = ASSIST_REASON_ACTIVE; assistHeartbeatMs_ = millis();
   return true;
 }
 bool NMLHandExo::heartbeatAssist() {
   // An expired lease cannot be resurrected by a late queued heartbeat.
-  if (!isAssistBusy() || assistState_ == 4) return false;
+  if (!isAssistBusy() || assistState_ == ASSIST_STATE_STOP_FAULT) return false;
   if (millis()-assistHeartbeatMs_ > 1000) { stopAssist(ASSIST_REASON_HEARTBEAT_TIMEOUT); return false; }
   assistHeartbeatMs_ = millis(); return true;
 }
 void NMLHandExo::stopAssist(AssistReason reason) {
   assistAutoStart_ = false;
   if (!isAssistBusy()) return;
-  assistState_ = 0; assistReason_ = reason;
+  assistState_ = ASSIST_STATE_OFF; assistReason_ = reason;
   bool chosen[N_MOTORS] = {};
-  AssistRegisterBlock zero[N_MOTORS], actual[N_MOTORS];
+  AssistRegisterBlock zero[N_MOTORS] = {}, actual[N_MOTORS] = {};
   for (int i = 0; i < numMotors_; ++i) chosen[i] = assistJoints_[i].selected;
   // Both Sync Writes are attempted independently; a successful TX is not an
   // acknowledgement that any motor disabled. A grouped read certifies stop.
@@ -343,7 +398,10 @@ void NMLHandExo::stopAssist(AssistReason reason) {
     assistJoints_[i].calibrated = false; assistJoints_[i].moving = false;
     assistJoints_[i].measuredValid = false;
   }
-  if (!stopped) { assistState_ = 4; assistReason_ = ASSIST_REASON_TORQUE_OFF_UNCONFIRMED; }
+  if (!stopped) {
+    assistState_ = ASSIST_STATE_STOP_FAULT;
+    assistReason_ = ASSIST_REASON_TORQUE_OFF_UNCONFIRMED;
+  }
   allocationDirty_ = false;
   telemetryGate_.note(millis());
 }
@@ -351,14 +409,14 @@ void NMLHandExo::serviceAssist() {
   if (!isAssistBusy()) return;
   EXO_PROFILE(CONTROL);
   const uint32_t now = millis();
-  if (assistState_ == 4) {
+  if (assistState_ == ASSIST_STATE_STOP_FAULT) {
     if (now-assistSampleMs_ >= 100) { assistSampleMs_ = now; stopAssist(ASSIST_REASON_STOP_RETRIED); }
     return;
   }
   if (now-assistHeartbeatMs_ > 1000) { stopAssist(ASSIST_REASON_HEARTBEAT_TIMEOUT); return; }
   if (motorControlMode_ != "CURRENT_POSITION") { stopAssist(ASSIST_REASON_MODE_CHANGED); return; }
-  if (assistState_ == 1 && now-assistBeginMs_ > 30000) { stopAssist(ASSIST_REASON_CALIBRATION_TIMEOUT); return; }
-  if (now-assistSampleMs_ < 20) return;
+  if (assistState_ == ASSIST_STATE_CALIBRATING && now-assistBeginMs_ > 30000) { stopAssist(ASSIST_REASON_CALIBRATION_TIMEOUT); return; }
+  if (now-assistSampleMs_ < AssistJoint::kAssistServicePeriodMs) return;
   assistSampleMs_ = now;
   bool chosen[N_MOTORS] = {}, changed[N_MOTORS] = {};
   uint8_t count = 0;
@@ -383,7 +441,9 @@ void NMLHandExo::serviceAssist() {
     if (f.angle < jointLimits_[i][0]+DIRECT_LIMIT_MARGIN_DEG ||
         f.angle > jointLimits_[i][1]-DIRECT_LIMIT_MARGIN_DEG) { stopAssist(ASSIST_REASON_STORED_LIMIT); return; }
     const AssistReason failure = j.sample(f.angle, f.velocity, f.current, sampleMs,
-                                 assistState_ == 1, assistState_ == 3, changed[i]);
+                                 assistState_ == ASSIST_STATE_CALIBRATING,
+                                 assistState_ == ASSIST_STATE_ACTIVE, changed[i],
+                                 assistSettleVelocityLimitDegS_, assistSettlePoseDriftDeg_);
     if (failure) {
       assistRejectId_ = motorIds_[i]; assistRejectAngle_ = f.angle; assistRejectVelocity_ = f.velocity;
       stopAssist(failure); return;
@@ -400,24 +460,28 @@ void NMLHandExo::serviceAssist() {
     j.measuredUtc = utcClock_.now(sampleMs); motorMoving_[i] = j.moving;
     jointModels_[i].correct(f.angle, f.velocity, f.current, true, sampleMs);
   }
-  if (assistState_ == 1) {
+  if (assistState_ == ASSIST_STATE_CALIBRATING) {
     bool ready = true;
     for (int i = 0; i < numMotors_; ++i) if (chosen[i] && !assistJoints_[i].calibrated) ready = false;
     if (ready) {
-      assistState_ = 2; assistReason_ = ASSIST_REASON_READY;
+      assistState_ = ASSIST_STATE_READY; assistReason_ = ASSIST_REASON_READY;
       // Automatic completion never renews a host lease or prequalifies dwell.
-      if (assistAutoStart_) { assistState_ = 3; assistReason_ = ASSIST_REASON_ACTIVE; }
+      if (assistAutoStart_) {
+        assistState_ = ASSIST_STATE_ACTIVE;
+        assistReason_ = ASSIST_REASON_ACTIVE;
+      }
     }
   }
 }
 void NMLHandExo::getAssistSnapshot(AssistStatusSnapshot& out) const {
   out = AssistStatusSnapshot{};
-  out.state = assistState_; out.reason = assistReason_;
+  out.state = static_cast<AssistState>(assistState_); out.reason = assistReason_;
   out.total_current_budget_mA = totalCurrentBudgetMa_;
   out.reject_id = assistRejectId_;
   out.reject_angle_deg = assistRejectAngle_; out.reject_velocity_deg_s = assistRejectVelocity_;
   out.settle_velocity_limit_deg_s = assistSettleVelocityLimitDegS_;
   out.settle_pose_drift_deg = assistSettlePoseDriftDeg_;
+  out.intent_detect_delay_s = assistIntentDetectDelayS_;
   const uint32_t now = millis();
   for (int i = 0; i < numMotors_ && out.count < 18; ++i) if (assistJoints_[i].selected) {
     const auto& j = assistJoints_[i];
@@ -430,14 +494,17 @@ void NMLHandExo::getAssistSnapshot(AssistStatusSnapshot& out) const {
     record.lead_deg = j.lead; record.rearm_blocked = j.rearmBlocked;
     record.age_ms = now-j.lastSample;
     record.current_cap_mA = j.currentCap;
+    record.position_p = j.positionP; record.position_d = j.positionD;
   }
 }
 
 String NMLHandExo::assistStatus() const {
-  String out = "ASSIST: state=" + String(assistState_) + " reason=" + String(assistReasonName(assistReason_));
+  String out = "ASSIST: state=" + String(static_cast<uint8_t>(assistState_)) +
+      " reason=" + String(assistReasonName(assistReason_));
   out += " total_current_budget_mA=" + String(totalCurrentBudgetMa_);
   out += " settle_velocity_limit_deg_s=" + String(assistSettleVelocityLimitDegS_, 3) +
-      " settle_pose_drift_deg=" + String(assistSettlePoseDriftDeg_, 3);
+      " settle_pose_drift_deg=" + String(assistSettlePoseDriftDeg_, 3) +
+      " intent_detect_delay_s=" + String(assistIntentDetectDelayS_, 3);
   if (assistRejectId_ >= 0) out += " reject_id=" + String(assistRejectId_) +
       " reject_angle_deg=" + String(assistRejectAngle_, 3) +
       " reject_velocity_deg_s=" + String(assistRejectVelocity_, 3);
@@ -451,7 +518,8 @@ String NMLHandExo::assistStatus() const {
         " secondary_goal=" + String(j.secondaryGoal, 3) + " intent_deg_s=" + String(j.intentVelocity, 3) +
         " lead_deg=" + String(j.lead, 3) + " rearm_blocked=" + String(j.rearmBlocked ? 1 : 0) +
         " steps=" + String(j.steps) + " age_ms=" + String(millis()-j.lastSample) +
-        " current_cap_mA=" + String(j.currentCap, 0);
+        " current_cap_mA=" + String(j.currentCap, 0) +
+        " position_p=" + String(j.positionP) + " position_d=" + String(j.positionD);
   }
   return out;
 }

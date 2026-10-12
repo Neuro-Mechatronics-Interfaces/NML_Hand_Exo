@@ -72,6 +72,17 @@ def test_timeout_reports_which_part_of_reply_is_missing(data, detail):
     assert bytes(reader.buffer) == data
 
 
+def test_reader_does_not_call_blocking_read_when_serial_has_no_bytes():
+    class EmptySerial:
+        in_waiting = 0
+
+        def read(self, size):
+            raise AssertionError('read() must not run with no bytes available')
+
+    with pytest.raises(TimeoutError, match='no reply bytes received'):
+        ProtobufFrameReader().read(EmptySerial(), .002, poll_available=True)
+
+
 def test_read_without_reply_never_retries_motion_rpc():
     device = ProtobufSerialComm('COM11', 'COM10', 1000000)
     device._telem = Mock()

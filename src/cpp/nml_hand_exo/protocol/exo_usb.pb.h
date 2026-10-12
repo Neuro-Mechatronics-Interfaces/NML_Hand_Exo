@@ -35,7 +35,8 @@ typedef enum _exo_usb_Command {
     exo_usb_Command_TEXT_COMMAND = 22,
     exo_usb_Command_SET_CURRENT_LIMITS = 23,
     exo_usb_Command_HELLO = 24,
-    exo_usb_Command_ASSIST_SETTLE_CONFIG = 25
+    exo_usb_Command_ASSIST_SETTLE_CONFIG = 25,
+    exo_usb_Command_ASSIST_GAINS = 26
 } exo_usb_Command;
 
 typedef enum _exo_usb_Status {
@@ -43,6 +44,23 @@ typedef enum _exo_usb_Status {
     exo_usb_Status_INVALID_REQUEST = 1,
     exo_usb_Status_REJECTED = 2
 } exo_usb_Status;
+
+typedef enum _exo_usb_DiscoveryCapability {
+    exo_usb_DiscoveryCapability_DISCOVERY_CAP_NONE = 0,
+    exo_usb_DiscoveryCapability_DISCOVERY_CAP_JOINT_MODEL_WRITE = 1,
+    exo_usb_DiscoveryCapability_DISCOVERY_CAP_BATCH_MOTION = 2,
+    exo_usb_DiscoveryCapability_DISCOVERY_CAP_CURRENT_LIMIT_BATCH = 4,
+    exo_usb_DiscoveryCapability_DISCOVERY_CAP_ASSIST_V2 = 8,
+    exo_usb_DiscoveryCapability_DISCOVERY_CAP_ASSIST_BINARY = 16,
+    exo_usb_DiscoveryCapability_DISCOVERY_CAP_ASSIST_ENABLE = 32,
+    exo_usb_DiscoveryCapability_DISCOVERY_CAP_ASSIST_GAINS = 64
+} exo_usb_DiscoveryCapability;
+
+typedef enum _exo_usb_CdcRole {
+    exo_usb_CdcRole_CDC_ROLE_UNKNOWN = 0,
+    exo_usb_CdcRole_CDC_ROLE_PRIMARY_TEXT = 1,
+    exo_usb_CdcRole_CDC_ROLE_SECONDARY_BINARY = 2
+} exo_usb_CdcRole;
 
 typedef enum _exo_usb_AssistState {
     exo_usb_AssistState_ASSIST_OFF = 0,
@@ -164,6 +182,18 @@ typedef struct _exo_usb_Request {
     char text_command[192];
 } exo_usb_Request;
 
+typedef struct _exo_usb_Discovery {
+    uint32_t schema_version;
+    uint32_t protocol_version;
+    char firmware_version[16];
+    uint32_t capability_flags;
+    uint32_t cdc_count;
+    exo_usb_CdcRole cdc_role;
+    char side[8];
+    pb_size_t motor_ids_count;
+    uint32_t motor_ids[18];
+} exo_usb_Discovery;
+
 typedef struct _exo_usb_AssistJointStatus {
     uint32_t id;
     uint32_t samples;
@@ -183,6 +213,10 @@ typedef struct _exo_usb_AssistJointStatus {
     uint32_t age_ms;
     bool has_current_cap_mA;
     float current_cap_mA;
+    bool has_position_p;
+    uint32_t position_p;
+    bool has_position_d;
+    uint32_t position_d;
 } exo_usb_AssistJointStatus;
 
 typedef struct _exo_usb_AssistStatus {
@@ -202,20 +236,22 @@ typedef struct _exo_usb_AssistStatus {
     float settle_velocity_limit_deg_s;
     bool has_settle_pose_drift_deg;
     float settle_pose_drift_deg;
+    bool has_intent_detect_delay_s;
+    float intent_detect_delay_s;
 } exo_usb_AssistStatus;
 
 typedef PB_BYTES_ARRAY_T(1200) exo_usb_Response_nx_frame_t;
 typedef struct _exo_usb_Response {
     uint32_t sequence;
     exo_usb_Status status;
-    bool has_nx_frame;
-    exo_usb_Response_nx_frame_t nx_frame;
-    bool has_batch;
-    exo_usb_BatchResult batch;
-    bool has_assist;
-    exo_usb_AssistStatus assist;
-    bool has_text_reply;
-    char text_reply[2000];
+    pb_size_t which_payload;
+    union {
+        exo_usb_Response_nx_frame_t nx_frame;
+        exo_usb_BatchResult batch;
+        exo_usb_AssistStatus assist;
+        char text_reply[2000];
+        exo_usb_Discovery discovery;
+    } payload;
 } exo_usb_Response;
 
 
@@ -225,12 +261,20 @@ extern "C" {
 
 /* Helper constants for enums */
 #define _exo_usb_Command_MIN exo_usb_Command_GET_TELEMETRY_FAST
-#define _exo_usb_Command_MAX exo_usb_Command_ASSIST_SETTLE_CONFIG
-#define _exo_usb_Command_ARRAYSIZE ((exo_usb_Command)(exo_usb_Command_ASSIST_SETTLE_CONFIG+1))
+#define _exo_usb_Command_MAX exo_usb_Command_ASSIST_GAINS
+#define _exo_usb_Command_ARRAYSIZE ((exo_usb_Command)(exo_usb_Command_ASSIST_GAINS+1))
 
 #define _exo_usb_Status_MIN exo_usb_Status_OK
 #define _exo_usb_Status_MAX exo_usb_Status_REJECTED
 #define _exo_usb_Status_ARRAYSIZE ((exo_usb_Status)(exo_usb_Status_REJECTED+1))
+
+#define _exo_usb_DiscoveryCapability_MIN exo_usb_DiscoveryCapability_DISCOVERY_CAP_NONE
+#define _exo_usb_DiscoveryCapability_MAX exo_usb_DiscoveryCapability_DISCOVERY_CAP_ASSIST_GAINS
+#define _exo_usb_DiscoveryCapability_ARRAYSIZE ((exo_usb_DiscoveryCapability)(exo_usb_DiscoveryCapability_DISCOVERY_CAP_ASSIST_GAINS+1))
+
+#define _exo_usb_CdcRole_MIN exo_usb_CdcRole_CDC_ROLE_UNKNOWN
+#define _exo_usb_CdcRole_MAX exo_usb_CdcRole_CDC_ROLE_SECONDARY_BINARY
+#define _exo_usb_CdcRole_ARRAYSIZE ((exo_usb_CdcRole)(exo_usb_CdcRole_CDC_ROLE_SECONDARY_BINARY+1))
 
 #define _exo_usb_AssistState_MIN exo_usb_AssistState_ASSIST_OFF
 #define _exo_usb_AssistState_MAX exo_usb_AssistState_ASSIST_STOP_FAULT
@@ -246,6 +290,8 @@ extern "C" {
 
 #define exo_usb_Request_command_ENUMTYPE exo_usb_Command
 
+#define exo_usb_Discovery_cdc_role_ENUMTYPE exo_usb_CdcRole
+
 
 #define exo_usb_AssistStatus_state_ENUMTYPE exo_usb_AssistState
 #define exo_usb_AssistStatus_reason_ENUMTYPE exo_usb_AssistReason
@@ -259,17 +305,19 @@ extern "C" {
 #define exo_usb_BatchResult_init_default         {false, 0, false, 0, false, 0, false, 0, false, 0, false, 0}
 #define exo_usb_JointModel_init_default          {0, 0, 0, 0, 0}
 #define exo_usb_Request_init_default             {0, _exo_usb_Command_MIN, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, false, 0, false, exo_usb_JointModel_init_default, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, false, exo_usb_FingerAngles_init_default, false, exo_usb_Gesture_init_default, false, ""}
-#define exo_usb_AssistJointStatus_init_default   {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, 0}
-#define exo_usb_AssistStatus_init_default        {_exo_usb_AssistState_MIN, _exo_usb_AssistReason_MIN, false, 0, false, 0, false, 0, 0, {exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default}, false, 0, false, 0, false, 0}
-#define exo_usb_Response_init_default            {0, _exo_usb_Status_MIN, false, {0, {0}}, false, exo_usb_BatchResult_init_default, false, exo_usb_AssistStatus_init_default, false, ""}
+#define exo_usb_Discovery_init_default           {0, 0, "", 0, 0, _exo_usb_CdcRole_MIN, "", 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}
+#define exo_usb_AssistJointStatus_init_default   {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, 0, false, 0, false, 0}
+#define exo_usb_AssistStatus_init_default        {_exo_usb_AssistState_MIN, _exo_usb_AssistReason_MIN, false, 0, false, 0, false, 0, 0, {exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default, exo_usb_AssistJointStatus_init_default}, false, 0, false, 0, false, 0, false, 0}
+#define exo_usb_Response_init_default            {0, _exo_usb_Status_MIN, 0, {{0, {0}}}}
 #define exo_usb_FingerAngles_init_zero           {false, 0, false, 0, false, 0, false, 0, false, 0, false, 0}
 #define exo_usb_Gesture_init_zero                {"", false, ""}
 #define exo_usb_BatchResult_init_zero            {false, 0, false, 0, false, 0, false, 0, false, 0, false, 0}
 #define exo_usb_JointModel_init_zero             {0, 0, 0, 0, 0}
 #define exo_usb_Request_init_zero                {0, _exo_usb_Command_MIN, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, false, 0, false, exo_usb_JointModel_init_zero, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, false, exo_usb_FingerAngles_init_zero, false, exo_usb_Gesture_init_zero, false, ""}
-#define exo_usb_AssistJointStatus_init_zero      {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, 0}
-#define exo_usb_AssistStatus_init_zero           {_exo_usb_AssistState_MIN, _exo_usb_AssistReason_MIN, false, 0, false, 0, false, 0, 0, {exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero}, false, 0, false, 0, false, 0}
-#define exo_usb_Response_init_zero               {0, _exo_usb_Status_MIN, false, {0, {0}}, false, exo_usb_BatchResult_init_zero, false, exo_usb_AssistStatus_init_zero, false, ""}
+#define exo_usb_Discovery_init_zero              {0, 0, "", 0, 0, _exo_usb_CdcRole_MIN, "", 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}
+#define exo_usb_AssistJointStatus_init_zero      {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, 0, false, 0, false, 0}
+#define exo_usb_AssistStatus_init_zero           {_exo_usb_AssistState_MIN, _exo_usb_AssistReason_MIN, false, 0, false, 0, false, 0, 0, {exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero, exo_usb_AssistJointStatus_init_zero}, false, 0, false, 0, false, 0, false, 0}
+#define exo_usb_Response_init_zero               {0, _exo_usb_Status_MIN, 0, {{0, {0}}}}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define exo_usb_FingerAngles_thumb_tag           1
@@ -300,6 +348,14 @@ extern "C" {
 #define exo_usb_Request_finger_angles_tag        7
 #define exo_usb_Request_gesture_tag              8
 #define exo_usb_Request_text_command_tag         9
+#define exo_usb_Discovery_schema_version_tag     1
+#define exo_usb_Discovery_protocol_version_tag   2
+#define exo_usb_Discovery_firmware_version_tag   3
+#define exo_usb_Discovery_capability_flags_tag   4
+#define exo_usb_Discovery_cdc_count_tag          5
+#define exo_usb_Discovery_cdc_role_tag           6
+#define exo_usb_Discovery_side_tag               7
+#define exo_usb_Discovery_motor_ids_tag          8
 #define exo_usb_AssistJointStatus_id_tag         1
 #define exo_usb_AssistJointStatus_samples_tag    2
 #define exo_usb_AssistJointStatus_bias_mA_tag    3
@@ -317,6 +373,8 @@ extern "C" {
 #define exo_usb_AssistJointStatus_steps_tag      15
 #define exo_usb_AssistJointStatus_age_ms_tag     16
 #define exo_usb_AssistJointStatus_current_cap_mA_tag 17
+#define exo_usb_AssistJointStatus_position_p_tag 18
+#define exo_usb_AssistJointStatus_position_d_tag 19
 #define exo_usb_AssistStatus_state_tag           1
 #define exo_usb_AssistStatus_reason_tag          2
 #define exo_usb_AssistStatus_reject_id_tag       3
@@ -326,12 +384,14 @@ extern "C" {
 #define exo_usb_AssistStatus_total_current_budget_mA_tag 7
 #define exo_usb_AssistStatus_settle_velocity_limit_deg_s_tag 8
 #define exo_usb_AssistStatus_settle_pose_drift_deg_tag 9
+#define exo_usb_AssistStatus_intent_detect_delay_s_tag 10
 #define exo_usb_Response_sequence_tag            1
 #define exo_usb_Response_status_tag              2
 #define exo_usb_Response_nx_frame_tag            3
 #define exo_usb_Response_batch_tag               4
 #define exo_usb_Response_assist_tag              5
 #define exo_usb_Response_text_reply_tag          6
+#define exo_usb_Response_discovery_tag           7
 
 /* Struct field encoding specification for nanopb */
 #define exo_usb_FingerAngles_FIELDLIST(X, a) \
@@ -385,6 +445,18 @@ X(a, STATIC,   OPTIONAL, STRING,   text_command,      9)
 #define exo_usb_Request_finger_angles_MSGTYPE exo_usb_FingerAngles
 #define exo_usb_Request_gesture_MSGTYPE exo_usb_Gesture
 
+#define exo_usb_Discovery_FIELDLIST(X, a) \
+X(a, STATIC,   REQUIRED, UINT32,   schema_version,    1) \
+X(a, STATIC,   REQUIRED, UINT32,   protocol_version,   2) \
+X(a, STATIC,   REQUIRED, STRING,   firmware_version,   3) \
+X(a, STATIC,   REQUIRED, UINT32,   capability_flags,   4) \
+X(a, STATIC,   REQUIRED, UINT32,   cdc_count,         5) \
+X(a, STATIC,   REQUIRED, UENUM,    cdc_role,          6) \
+X(a, STATIC,   REQUIRED, STRING,   side,              7) \
+X(a, STATIC,   REPEATED, UINT32,   motor_ids,         8)
+#define exo_usb_Discovery_CALLBACK NULL
+#define exo_usb_Discovery_DEFAULT NULL
+
 #define exo_usb_AssistJointStatus_FIELDLIST(X, a) \
 X(a, STATIC,   REQUIRED, UINT32,   id,                1) \
 X(a, STATIC,   REQUIRED, UINT32,   samples,           2) \
@@ -402,7 +474,9 @@ X(a, STATIC,   REQUIRED, FLOAT,    lead_deg,         13) \
 X(a, STATIC,   REQUIRED, BOOL,     rearm_blocked,    14) \
 X(a, STATIC,   REQUIRED, UINT32,   steps,            15) \
 X(a, STATIC,   REQUIRED, UINT32,   age_ms,           16) \
-X(a, STATIC,   OPTIONAL, FLOAT,    current_cap_mA,   17)
+X(a, STATIC,   OPTIONAL, FLOAT,    current_cap_mA,   17) \
+X(a, STATIC,   OPTIONAL, UINT32,   position_p,       18) \
+X(a, STATIC,   OPTIONAL, UINT32,   position_d,       19)
 #define exo_usb_AssistJointStatus_CALLBACK NULL
 #define exo_usb_AssistJointStatus_DEFAULT NULL
 
@@ -415,7 +489,8 @@ X(a, STATIC,   OPTIONAL, FLOAT,    reject_velocity_deg_s,   5) \
 X(a, STATIC,   REPEATED, MESSAGE,  joints,            6) \
 X(a, STATIC,   OPTIONAL, UINT32,   total_current_budget_mA,   7) \
 X(a, STATIC,   OPTIONAL, FLOAT,    settle_velocity_limit_deg_s,   8) \
-X(a, STATIC,   OPTIONAL, FLOAT,    settle_pose_drift_deg,   9)
+X(a, STATIC,   OPTIONAL, FLOAT,    settle_pose_drift_deg,   9) \
+X(a, STATIC,   OPTIONAL, FLOAT,    intent_detect_delay_s,  10)
 #define exo_usb_AssistStatus_CALLBACK NULL
 #define exo_usb_AssistStatus_DEFAULT NULL
 #define exo_usb_AssistStatus_joints_MSGTYPE exo_usb_AssistJointStatus
@@ -423,20 +498,23 @@ X(a, STATIC,   OPTIONAL, FLOAT,    settle_pose_drift_deg,   9)
 #define exo_usb_Response_FIELDLIST(X, a) \
 X(a, STATIC,   REQUIRED, UINT32,   sequence,          1) \
 X(a, STATIC,   REQUIRED, UENUM,    status,            2) \
-X(a, STATIC,   OPTIONAL, BYTES,    nx_frame,          3) \
-X(a, STATIC,   OPTIONAL, MESSAGE,  batch,             4) \
-X(a, STATIC,   OPTIONAL, MESSAGE,  assist,            5) \
-X(a, STATIC,   OPTIONAL, STRING,   text_reply,        6)
+X(a, STATIC,   ONEOF,    BYTES,    (payload,nx_frame,payload.nx_frame),   3) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,batch,payload.batch),   4) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,assist,payload.assist),   5) \
+X(a, STATIC,   ONEOF,    STRING,   (payload,text_reply,payload.text_reply),   6) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,discovery,payload.discovery),   7)
 #define exo_usb_Response_CALLBACK NULL
 #define exo_usb_Response_DEFAULT NULL
-#define exo_usb_Response_batch_MSGTYPE exo_usb_BatchResult
-#define exo_usb_Response_assist_MSGTYPE exo_usb_AssistStatus
+#define exo_usb_Response_payload_batch_MSGTYPE exo_usb_BatchResult
+#define exo_usb_Response_payload_assist_MSGTYPE exo_usb_AssistStatus
+#define exo_usb_Response_payload_discovery_MSGTYPE exo_usb_Discovery
 
 extern const pb_msgdesc_t exo_usb_FingerAngles_msg;
 extern const pb_msgdesc_t exo_usb_Gesture_msg;
 extern const pb_msgdesc_t exo_usb_BatchResult_msg;
 extern const pb_msgdesc_t exo_usb_JointModel_msg;
 extern const pb_msgdesc_t exo_usb_Request_msg;
+extern const pb_msgdesc_t exo_usb_Discovery_msg;
 extern const pb_msgdesc_t exo_usb_AssistJointStatus_msg;
 extern const pb_msgdesc_t exo_usb_AssistStatus_msg;
 extern const pb_msgdesc_t exo_usb_Response_msg;
@@ -447,20 +525,22 @@ extern const pb_msgdesc_t exo_usb_Response_msg;
 #define exo_usb_BatchResult_fields &exo_usb_BatchResult_msg
 #define exo_usb_JointModel_fields &exo_usb_JointModel_msg
 #define exo_usb_Request_fields &exo_usb_Request_msg
+#define exo_usb_Discovery_fields &exo_usb_Discovery_msg
 #define exo_usb_AssistJointStatus_fields &exo_usb_AssistJointStatus_msg
 #define exo_usb_AssistStatus_fields &exo_usb_AssistStatus_msg
 #define exo_usb_Response_fields &exo_usb_Response_msg
 
 /* Maximum encoded size of messages (where known) */
 #define EXO_USB_EXO_USB_PB_H_MAX_SIZE            exo_usb_Response_size
-#define exo_usb_AssistJointStatus_size           85
-#define exo_usb_AssistStatus_size                1602
+#define exo_usb_AssistJointStatus_size           99
+#define exo_usb_AssistStatus_size                1859
 #define exo_usb_BatchResult_size                 36
+#define exo_usb_Discovery_size                   160
 #define exo_usb_FingerAngles_size                36
 #define exo_usb_Gesture_size                     66
 #define exo_usb_JointModel_size                  25
 #define exo_usb_Request_size                     538
-#define exo_usb_Response_size                    4856
+#define exo_usb_Response_size                    2010
 
 #ifdef __cplusplus
 } /* extern "C" */

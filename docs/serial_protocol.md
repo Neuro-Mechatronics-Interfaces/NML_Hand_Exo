@@ -96,7 +96,7 @@ lines so a request burst cannot starve the pulse deadline.
 
 ### Fast telemetry binary frame
 
-**Firmware 0.9.0:** `NX` header version 2 adds field provenance and per-record UTC/uptime timestamps. The current firmware's `NX` header version 3 additionally exports read-only control-loop observability for every requested motor: the actual goal, secondary goal, reference, position error, applied Goal Current, assist effort, intent/release/stall dwell timers, and controller state/flags. Motion-time telemetry uses the internal joint model; idle telemetry uses one Sync Read. Update the Python SDK alongside the firmware. See the [complete v0.9.0 wire contract](v0.9.0_implementation.md), including `set_joint_model`, `get_joint_model`, `set_estimate_holdoff`, `set_joint_trigger`, `clear_joint_trigger`, `set_utc_time`, and `get_utc_time`.
+**Firmware 0.9.0:** `NX` header version 2 adds field provenance and per-record UTC/uptime timestamps. The current firmware's `NX` header version 3 additionally exports read-only control-loop observability for every requested motor: the actual goal, secondary goal, reference, position error, applied Goal Current, assist effort, intent/release/stall dwell timers, and controller state/flags. Motion-time telemetry uses the internal joint model; idle telemetry normally uses one Sync Read, with a bounded per-ID register-read fallback when that grouped read is incomplete. Update the Python SDK alongside the firmware. See the [complete v0.9.0 wire contract](v0.9.0_implementation.md), including `set_joint_model`, `get_joint_model`, `set_estimate_holdoff`, `set_joint_trigger`, `clear_joint_trigger`, `set_utc_time`, and `get_utc_time`.
 
 The following describes the legacy version-1 frame, still supported by the SDK:
 
@@ -125,11 +125,15 @@ not change the Protobuf envelope.
 
 Assist startup qualification is configured independently from the effort
 deadzone. Protobuf command `ASSIST_SETTLE_CONFIG` (25) carries
-`values=[max_velocity_deg_s, max_pose_drift_deg]` with no motor IDs; the ASCII
-equivalent is `assist_settle_config:<velocity_limit_deg_s>:<pose_drift_deg>`.
-Defaults are `1.0 deg/s` and `0.30 deg`, with bounded volatile ranges of
-`0.1..10 deg/s` and `0.01..5 deg`. The Assist status response reports the
-applied values.
+`values=[max_velocity_deg_s, max_pose_drift_deg, intent_detect_delay_s]` with
+no motor IDs; the ASCII equivalent is
+`assist_settle_config:<velocity_limit_deg_s>:<pose_drift_deg>:<intent_delay_s>`.
+The third value is optional for compatibility with older firmware. Defaults are
+`1.0 deg/s`, `0.30 deg`, and `0.03 s`, with bounded volatile ranges of
+`0.1..10 deg/s`, `0.01..5 deg`, and `0.03..2 s`. The intent/re-arm dwell is
+the sustained-effort duration before Assist activates and the no-effort
+duration before it can re-arm. The Assist status response reports all applied
+values.
 
 `telemetry_diag:<id>:<id>...` returns a text diagnostic using the same firmware
 read path, including method, elapsed microseconds, and per-motor raw values.
@@ -672,11 +676,20 @@ Firmware v0.9.1 adds adaptive 40-ms shaped Auto-ROM pulses and asynchronous
 response statistics; see [the v0.9.1 procedure](v0.9.1_pulse_calibration.md).
 
 The Protobuf transport reserves the second CDC for bounded nanopb request/reply
-frames. Primary USB retains ASCII maintenance commands, `info`, `help` and ROM
-events. `info` advertises the protocol, CDC count/roles, model integration step,
-and I/O profile version. The SDK/GUI discovers this automatically; legacy NX
-polling is disabled on the Protobuf backend. Shadow configuration and buffered
-status queries remain primary-CDC text commands.
+frames. Protobuf-v2 discovery sends a side-effect-free framed `HELLO` and reads a
+compact typed `Response.discovery` containing schema/protocol versions, firmware
+version, capability bits, CDC role, side/build, and configured motor IDs. The
+SDK maps this metadata to the established `HandExo.info()` keys. It accepts the
+legacy `text_reply == "protobuf-v2"` HELLO response from older v2 firmware as a
+fallback. Primary USB retains ASCII maintenance commands, `info`, `help` and ROM
+events; those commands remain unchanged for legacy serial users.
+
+`Response.payload` is a protobuf `oneof`: NX telemetry, batch results, Assist
+status, discovery, and bounded maintenance text cannot coexist in one C response
+object. This keeps the 2,000-byte text buffer out of the simultaneous telemetry
+and Assist storage path while preserving the existing text-command surface.
+Legacy NX polling is disabled on the Protobuf backend. Shadow configuration and
+buffered status queries remain primary-CDC text commands.
 `USB Features: joint_model_write` advertises binary `SET_JOINT_MODEL` support;
 the SDK sends one explicit ID and five typed float parameters through this path.
 Older Protobuf builds require a reflash for model writes through the updated SDK.
@@ -707,11 +720,18 @@ replies carry status, avoiding a second status request in the GUI.
 
 The `PB` version-1 envelope and 128-byte request limit remain unchanged.
 The response payload limit is 2048 bytes to accommodate 18 joint records;
-firmware advertises `assist_binary` in `USB Features`. The SDK uses binary
+firmware advertises `assist_binary assist_gains` in `USB Features`. The SDK uses binary
 status and observer operations on Protobuf connections without an ASCII
 fallback. Primary CDC discovery and unrelated maintenance commands remain text.
 
+The primary-CDC `reset_motors:<id>[:<id>...]` command is available on ASCII and
+Protobuf builds. It retries a pending Assist stop, torque-offs only the explicit
+IDs, clears their stale controller/telemetry state, re-pings them, and seeds
+their position models from fresh encoder reads. It returns success only after
+torque-off and position recovery are certified; it never enables torque or
+commands motion.
+
 All `parseMessage()` routes are explicitly classified in
-`interface/_protocol_routes.py`: 18 typed Protobuf RPCs and 85 primary-text
+`interface/_protocol_routes.py`: 20 typed Protobuf RPCs and 85 primary-text
 commands. `python tools/check_protocol_contract.py --matrix` verifies that the
 103-command parser set, Protobuf schema, and C++ RPC dispatch stay synchronized.

@@ -495,6 +495,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   // Assist owns all actuators, including READY while the operator enables it.
   // Heavy bus queries and every competing setter are rejected during ownership.
   if (exo.isAssistBusy() && !(cmd.startsWith("assist_") || cmd == "stop" || cmd == "disable" ||
+      cmd == "reset_motors" ||
       cmd == "info" || cmd == "help" || cmd == "get_telemetry_fast" ||
       cmd == "get_utc_time" || cmd == "io_profile" || cmd == "loop_stats")) {
     commandPrint(F("ERROR: assist owns motor control; stop assist first")); return;
@@ -517,15 +518,21 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       if (number(getArg(token, 1), mid) && mid >= 1 && mid <= 253 && mid == floorf(mid) &&
           number(getArg(token, 2), threshold) && number(getArg(token, 3), gain) && number(getArg(token, 4), cap))
         ok = exo.configureAssist((uint8_t)mid, threshold, gain, cap);
+    } else if (cmd == "assist_gains" && fields == 3) {
+      float mid, positionP, positionD;
+      if (number(getArg(token, 1), mid) && mid >= 1 && mid <= 253 && mid == floorf(mid) &&
+          number(getArg(token, 2), positionP) && number(getArg(token, 3), positionD))
+        ok = exo.configureAssistGains((uint8_t)mid, positionP, positionD);
     } else if (cmd == "assist_observer" && fields == 4) {
       float mid, inertia, viscous, coulomb;
       if (number(getArg(token, 1), mid) && mid >= 1 && mid <= 253 && mid == floorf(mid) &&
           number(getArg(token, 2), inertia) && number(getArg(token, 3), viscous) && number(getArg(token, 4), coulomb))
         ok = exo.configureAssistObserver((uint8_t)mid, inertia, viscous, coulomb);
-    } else if (cmd == "assist_settle_config" && fields == 2) {
-      float velocityLimit, poseDrift;
-      if (number(getArg(token, 1), velocityLimit) && number(getArg(token, 2), poseDrift))
-        ok = exo.configureAssistSettling(velocityLimit, poseDrift);
+    } else if (cmd == "assist_settle_config" && (fields == 2 || fields == 3)) {
+      float velocityLimit, poseDrift, intentDelay = .03f;
+      if (number(getArg(token, 1), velocityLimit) && number(getArg(token, 2), poseDrift) &&
+          (fields == 2 || number(getArg(token, 3), intentDelay)))
+        ok = exo.configureAssistSettling(velocityLimit, poseDrift, intentDelay);
     } else if (cmd == "assist_enable" && fields >= 7 && fields <= N_MOTORS+6) {
       // Shared parameters precede explicit IDs on the text transport.
       float values[6]; uint8_t ids[N_MOTORS]; bool valid = true;
@@ -547,6 +554,37 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       if (valid) ok = exo.calibrateAssist(ids, fields);
     }
     commandPrint(String(ok ? "OK: " : "ERROR: rejected ") + cmd); return;
+  }
+
+  if (cmd == "reset_motors") {
+    const int fields = [&]() {
+      int n = 0;
+      for (unsigned int k = 0; k < token.length(); ++k) if (token[k] == ':') ++n;
+      return n;
+    }();
+    if (fields < 1 || fields > exo.getMotorCount()) {
+      commandPrint(F("ERROR: reset_motors requires one or more explicit DXL IDs"));
+      return;
+    }
+    uint8_t ids[N_MOTORS];
+    bool valid = true;
+    for (int k = 0; k < fields; ++k) {
+      String value = getArg(token, k + 1);
+      value.trim();
+      char* end = nullptr;
+      const long parsed = strtol(value.c_str(), &end, 10);
+      if (!value.length() || !end || *end != '\0' || parsed < 1 || parsed > 253 ||
+          exo.getIndexById((uint8_t)parsed) < 0) {
+        valid = false; break;
+      }
+      ids[k] = (uint8_t)parsed;
+      for (int j = 0; j < k; ++j) if (ids[j] == ids[k]) valid = false;
+      if (!valid) break;
+    }
+    const bool ok = valid && exo.resetMotors(ids, fields);
+    commandPrint(ok ? "OK: reset_motors" :
+        "ERROR: reset_motors could not certify torque-off and fresh position");
+    return;
   }
 
   // ========== Supported high-level commands ==========
@@ -1894,10 +1932,14 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" get_utc_time          |         | // UTC ms, synchronization flag and uptime"));
     commandPrint(F(" assist_enable         | THRESHOLD_MA:GAIN:CAP_MA:INERTIA:VISCOUS:COULOMB:ID[:ID...] | // Grouped startup, automatic bias and activation"));
     commandPrint(F(" assist_config         | ID:THRESHOLD_MA:VELOCITY_GAIN_DEG_S_PER_MA:CAP_MA | // Configure secondary-goal assist while off"));
-    commandPrint(F(" assist_settle_config  | VELOCITY_LIMIT_DEG_S:POSE_DRIFT_DEG | // Configure startup settling qualification while off"));
+#if EXO_USB_PROTOCOL != EXO_USB_PROTOCOL_ASCII
+    commandPrint(F(" assist_gains          | ID:POSITION_P:POSITION_D | // Configure Assist position gains while off"));
+#endif
+    commandPrint(F(" assist_settle_config  | VELOCITY_LIMIT_DEG_S:POSE_DRIFT_DEG:INTENT_DELAY_S | // Configure settling and Assist intent dwell while off"));
     commandPrint(F(" assist_observer       | ID:INERTIA:VISCOUS:COULOMB | // Nm-based observer model terms; all zero = current residual"));
     commandPrint(F(" assist_calibrate      | ID[:ID...]           | // Relaxed bias capture; selected motors enabled in CURRENT_POSITION"));
     commandPrint(F(" assist_start / assist_stop / assist_heartbeat / assist_status | // Explicit assist, 1-second lease, measured status"));
+    commandPrint(F(" reset_motors          | ID[:ID...]           | // Safe torque-off, re-probe, and telemetry recovery"));
     commandPrint(F(" set_joint_model       | ID:GAIN:TAU:VMAX:STIFFNESS:MOMENT | // Tune telemetry model only"));
     commandPrint(F(" get_joint_model       | ID | // Query model and trigger threshold"));
     commandPrint(F(" set_estimate_holdoff  | MS | // Telemetry quiet period (50..5000)"));

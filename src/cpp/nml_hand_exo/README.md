@@ -214,7 +214,7 @@ setup, automatic initial baseline and activation. Current caps share the existin
 combined budget; the GUI displays effective caps. No separate joint-bias menu is needed.
 With a Protobuf transport, enable, assist configuration, observer configuration, calibration,
 start, heartbeat, stop and status use typed binary messages on the secondary CDC.
-`USB Features: assist_binary assist_enable` identifies numeric status and one-click enable support. Each assist reply
+`USB Features: assist_binary assist_enable assist_gains` identifies numeric status, one-click enable, and configurable P/D support. Each assist reply
 includes the shared controller's snapshot; heartbeat needs no ASCII status query.
 Both transports retain grouped Dynamixel Sync Read/Write. See
 [Assist mode](../../../docs/assist_mode.md) for the protocol and build commands.

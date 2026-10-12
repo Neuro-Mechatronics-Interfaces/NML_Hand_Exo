@@ -116,7 +116,7 @@ except ImportError:
 TORQUE_PLOT_WINDOW_S = 15.0
 
 
-DIRECT_VELOCITY_LIMIT_RPM = 71.0
+DIRECT_VELOCITY_LIMIT_RPM = 60.0
 DIRECT_CURRENT_LIMIT_MA = 910.0
 EMG_FINGER_MOTOR_NAMES = frozenset(
     {"thumbadd", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky"}
@@ -139,6 +139,10 @@ SHADOW_TELEMETRY_RATE_HZ = 10
 EMG_FAST_TELEMETRY_TIMEOUT_S = 0.15
 TELEMETRY_RENDER_INTERVAL_MS = 100
 TELEMETRY_BUFFER_SAMPLES = 5
+# Keep the raw Monitor acquisition history independent of the five-sample
+# display averaging buffer. At 50 Hz this retains roughly ten seconds, and at
+# slower rates it still provides ample margin for the 500 ms startup gate.
+ASSIST_FEEDBACK_HISTORY_SAMPLES = 512
 POSITION_HOLD_CAPTURE_MAX_AGE_S = 1.0
 WINDOW_ICON_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "favicon-32x32.svg"
@@ -1350,10 +1354,29 @@ class SerialWorker(QThread):
         self._last_poll_error_log = 0.0
         self._motor_ids: list[int] = []
         self._state_lock = threading.Lock()
+        # ASSIST_ENABLE/STOP are synchronous firmware transactions. Do not
+        # queue fresh Monitor RPCs while one is in flight; the firmware cannot
+        # service another protobuf request until its Dynamixel work returns.
+        self._assist_transport_busy = 0
+        self._assist_feedback_lock = threading.Lock()
+        self._assist_feedback_history: dict[int, deque] = {}
 
     def set_exo(self, exo):
+        if exo is self._exo:
+            return
         self._assist_generation += 1
+        old_device = getattr(self._exo, "device", None) if self._exo is not None else None
+        clear_event_callback = getattr(old_device, "set_async_event_callback", None)
+        if callable(clear_event_callback):
+            clear_event_callback(None)
+        if exo is not self._exo:
+            with self._assist_feedback_lock:
+                self._assist_feedback_history.clear()
         self._exo = exo
+        new_device = getattr(exo, "device", None) if exo is not None else None
+        set_event_callback = getattr(new_device, "set_async_event_callback", None)
+        if callable(set_event_callback):
+            set_event_callback(self.line_received.emit)
 
     def set_motor_ids(self, motor_ids):
         with self._state_lock:
@@ -1371,10 +1394,62 @@ class SerialWorker(QThread):
         with self._state_lock:
             self._shadow_telemetry = bool(enabled)
 
+    def _cache_fast_telemetry(self, records):
+        """Retain raw Monitor samples for Assist startup qualification."""
+        if not isinstance(records, dict):
+            return
+        received_at = time.monotonic()
+        with self._assist_feedback_lock:
+            for motor_id, record in records.items():
+                try:
+                    motor_id = int(motor_id)
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                sample_timestamp = record.get("sample_timestamp_ms")
+                if (not isinstance(sample_timestamp, int) or
+                        isinstance(sample_timestamp, bool) or
+                        not 0 <= sample_timestamp <= 0xffffffff):
+                    continue
+                history = self._assist_feedback_history.setdefault(
+                    motor_id, deque(maxlen=ASSIST_FEEDBACK_HISTORY_SAMPLES))
+                if history and history[-1][1].get("sample_timestamp_ms") == sample_timestamp:
+                    continue
+                history.append((received_at, dict(record)))
+
+    def _cached_fast_telemetry(self, motor_ids, *, max_age_s=2.0):
+        """Return recent raw Monitor samples without touching the transport."""
+        cutoff = time.monotonic() - float(max_age_s)
+        with self._assist_feedback_lock:
+            return {
+                int(motor_id): [
+                    (received_at, dict(record))
+                    for received_at, record in self._assist_feedback_history.get(int(motor_id), ())
+                    if received_at >= cutoff
+                ]
+                for motor_id in motor_ids
+            }
+
+    def clear_fast_telemetry_cache(self, motor_ids=None):
+        """Discard Monitor samples invalidated by a reset or homing command."""
+        with self._assist_feedback_lock:
+            if motor_ids is None:
+                self._assist_feedback_history.clear()
+                return
+            for motor_id in motor_ids:
+                self._assist_feedback_history.pop(int(motor_id), None)
+
     def request_assist(self, operation, payload=None):
-        if operation in ("enable", "calibrate"):
+        if operation in ("enable", "calibrate", "stop", "reset"):
+            with self._state_lock:
+                self._assist_transport_busy += 1
+        if operation in ("enable", "calibrate", "reset"):
+            if operation == "reset" and isinstance(payload, dict):
+                self.clear_fast_telemetry_cache(payload.get("ids", ()))
             # Cancel queued regular work before handing actuator ownership to
-            # assist; it must not replay after assist is subsequently stopped.
+            # Assist or performing recovery; stale motion must not replay after
+            # the requested operation completes.
             with self._state_lock:
                 self._direct_actions.clear()
                 self._direct_pending = False
@@ -1389,12 +1464,31 @@ class SerialWorker(QThread):
                     retained.append(item)
             for item in retained:
                 self._urgent_q.put(item)
-        if operation == "stop":
+        if operation in ("stop", "reset"):
             self._assist_generation += 1
         self._assist_q.put((self._assist_generation, operation, payload))
 
+    def _assist_log(self, message: str):
+        """Mirror Assist progress to the GUI terminal and process stderr.
+
+        Protobuf commands are binary and therefore do not produce the text
+        acknowledgements that the legacy terminal used to display.  Keep
+        these breadcrumbs on the existing line_received channel so they are
+        visible in both the Device Terminal and the console running the GUI.
+        """
+        self.line_received.emit(f"[assist] {message}")
+
+    @staticmethod
+    def _assist_status_summary(status):
+        if not isinstance(status, dict):
+            return str(status)
+        return f"state={status.get('state', '?')} reason={status.get('reason', '?')}"
+
     def _handle_assist(self, generation, operation, payload):
         if generation != self._assist_generation:
+            if operation in ("enable", "calibrate", "stop", "reset"):
+                with self._state_lock:
+                    self._assist_transport_busy = max(0, self._assist_transport_busy - 1)
             return
         try:
             def apply(exo):
@@ -1404,14 +1498,39 @@ class SerialWorker(QThread):
                     parameters = dict(payload["parameters"])
                     velocity_limit = parameters.pop("startup_velocity_limit_deg_s", 1.0)
                     pose_drift = parameters.pop("startup_pose_drift_deg", .3)
+                    intent_delay_present = "intent_detect_delay_s" in parameters
+                    intent_delay = parameters.pop("intent_detect_delay_s", .03)
+                    position_p = parameters.pop("position_p", None)
+                    position_d = parameters.pop("position_d", None)
+                    self._assist_log(
+                        f"Enable requested for IDs {list(payload['ids'])}; "
+                        f"startup limits: velocity <= {velocity_limit:g} deg/s, "
+                        f"pose drift <= {pose_drift:g} deg; "
+                        f"intent/re-arm dwell = {intent_delay:g} s."
+                    )
                     if ("startup_velocity_limit_deg_s" in payload["parameters"] or
-                            "startup_pose_drift_deg" in payload["parameters"]):
-                        exo.configure_assist_settling(
+                            "startup_pose_drift_deg" in payload["parameters"] or
+                            intent_delay_present):
+                        self._assist_log("Sending startup settling configuration...")
+                        settling_kwargs = dict(
                             velocity_limit_deg_s=velocity_limit,
                             pose_drift_deg=pose_drift)
+                        if intent_delay_present:
+                            settling_kwargs["intent_detect_delay_s"] = intent_delay
+                        exo.configure_assist_settling(**settling_kwargs)
+                        self._assist_log("Startup settling configuration accepted.")
+                    if (position_p is None) != (position_d is None):
+                        raise ValueError("Assist position P and D gains must be provided together")
+                    if position_p is not None:
+                        self._assist_log(
+                            f"Sending Assist position gains: P={position_p:g}, D={position_d:g}.")
+                        for mid in payload["ids"]:
+                            exo.configure_assist_gains(
+                                mid, position_p=position_p, position_d=position_d)
                     if not self._wait_for_assist_stationary(
                             exo, generation, payload["ids"], velocity_limit, pose_drift):
                         return None
+                    self._assist_log("Measured startup state settled; sending ASSIST_ENABLE.")
                     result = exo.enable_torque_assist(payload["ids"], **parameters)
                 elif operation == "calibrate":
                     for mid, config in payload.items():
@@ -1440,39 +1559,211 @@ class SerialWorker(QThread):
                         raise
                 elif operation == "stop":
                     result = exo.stop_assist()
+                elif operation == "reset":
+                    result = exo.reset_motors(list(payload["ids"]), timeout=5.0)
                 else:
                     raise ValueError("Unknown assist operation")
                 return result if isinstance(result, dict) else exo.get_assist_status()
             status = self._with_raw_exo(apply)
             if generation == self._assist_generation:
+                self._assist_log(
+                    f"{operation} completed: {self._assist_status_summary(status)}"
+                )
                 self.assist_completed.emit(operation, status, "")
         except Exception as exc:
             if generation == self._assist_generation:
+                self._assist_log(f"{operation} failed: {exc}")
                 self.assist_completed.emit(operation, getattr(exc, "assist_status", {}), str(exc))
+        finally:
+            if operation in ("enable", "calibrate", "stop", "reset"):
+                with self._state_lock:
+                    self._assist_transport_busy = max(0, self._assist_transport_busy - 1)
 
     def _wait_for_assist_stationary(self, exo, generation, motor_ids,
                                     velocity_limit_deg_s=1.0, pose_drift_deg=.3):
         """Require fresh measured feedback to be quiet before one Assist enable.
 
+        Monitor already acquires the compact fast-telemetry frames. Reusing
+        those samples avoids a second synchronous Protobuf request competing
+        with the Monitor acquisition and also makes the startup decision use
+        exactly the values visible in the Monitor tab.
+
         This only reads feedback. Firmware still verifies pose, speed, limits
         and current headroom, and a rejected enable is never retried here.
         """
+        protocol = str(getattr(getattr(exo, "device", None), "usb_protocol", ""))
+        if protocol.startswith("protobuf-"):
+            histories = self._cached_fast_telemetry(motor_ids, max_age_s=2.0)
+            now = time.monotonic()
+            cache_detail = "fresh Monitor fast telemetry unavailable"
+            settled = True
+
+            for mid in motor_ids:
+                samples = histories.get(int(mid), [])
+                if not samples:
+                    settled = False
+                    cache_detail = f"ID {mid}: Monitor fast-telemetry cache is empty"
+                    break
+                latest_received = samples[-1][0]
+                if now - latest_received > .75:
+                    settled = False
+                    cache_detail = (
+                        f"ID {mid}: latest Monitor sample is "
+                        f"{now - latest_received:.2f} s old"
+                    )
+                    break
+
+                valid = []
+                previous_stamp = None
+                elapsed_ms = 0
+                for received_at, record in samples:
+                    q = record.get("absolute_angle")
+                    raw = record.get("velocity_raw")
+                    stamp = record.get("sample_timestamp_ms")
+                    if (record.get("error") or
+                            record.get("position_source") != "measured" or
+                            record.get("velocity_source") != "measured" or
+                            not isinstance(q, (int, float)) or not math.isfinite(q) or
+                            not isinstance(raw, (int, float)) or not math.isfinite(raw) or
+                            not isinstance(stamp, int) or isinstance(stamp, bool) or
+                            not 0 <= stamp <= 0xffffffff):
+                        continue
+                    if previous_stamp is not None:
+                        delta = (stamp - previous_stamp) & 0xffffffff
+                        if not 0 < delta < 0x80000000:
+                            continue
+                        elapsed_ms += delta
+                    previous_stamp = stamp
+                    valid.append((received_at, q, raw, stamp, elapsed_ms))
+
+                if not valid:
+                    settled = False
+                    cache_detail = f"ID {mid}: Monitor samples lack measured position/velocity"
+                    break
+
+                # Only the most recent 500 ms matters. Older motion should
+                # not prevent startup once the hand has become still.
+                latest_elapsed = valid[-1][4]
+                window_start = next(
+                    (index for index, sample in enumerate(valid)
+                     if latest_elapsed - sample[4] <= 500),
+                    len(valid) - 1,
+                )
+                # Keep the sample immediately before the 500 ms boundary.
+                # With a 116 ms Monitor interval, excluding it can make a
+                # genuinely long-enough window appear as 466 ms.
+                if (window_start > 0 and
+                        latest_elapsed - valid[window_start][4] < 500):
+                    window_start -= 1
+                window = valid[window_start:]
+                if len(window) < 2 or latest_elapsed - window[0][4] < 500:
+                    settled = False
+                    covered = latest_elapsed - window[0][4] if window else 0
+                    cache_detail = (
+                        f"ID {mid}: Monitor history covers only {covered} ms; "
+                        "need 500 ms of samples"
+                    )
+                    break
+                velocity = max(abs(sample[2] * .229 * 6) for sample in window)
+                span = max(sample[1] for sample in window) - min(sample[1] for sample in window)
+                if velocity > velocity_limit_deg_s or span > pose_drift_deg:
+                    settled = False
+                    cache_detail = (
+                        f"ID {mid}: cached velocity={velocity:.3f} deg/s, "
+                        f"angle span={span:.3f} deg"
+                    )
+                    break
+
+            if not settled:
+                self._assist_log(
+                    "startup preflight: using shared Monitor fast telemetry; "
+                    f"not settled ({cache_detail})"
+                )
+                raise RuntimeError(
+                    "Assist startup could not qualify the shared Monitor telemetry: "
+                    f"{cache_detail}. Leave Monitor polling active until values are live, then retry."
+                )
+            self._assist_log(
+                "startup preflight: using shared Monitor fast telemetry; "
+                "cached measured position/velocity remained within limits for 0.50 s"
+            )
+            return True
+
+        # The fallback below is retained for legacy/custom adapters and for
+        # hardware-independent tests. Real Protobuf transports always take the
+        # shared-cache path above, so they never issue this second request.
         deadline = time.monotonic() + 5.0
         quiet_since = None
         bounds = {}
         stamps = {}
         detail = "fresh measured feedback unavailable"
+        last_report_at = None
+
+        def read_fast_telemetry_with_watchdog():
+            """Read one frame while keeping a breadcrumb alive if transport stalls."""
+            finished = threading.Event()
+            started = time.monotonic()
+            self._assist_log(
+                "startup preflight: bounded fast-telemetry read entered; "
+                "watchdog interval=0.50 s"
+            )
+
+            def watchdog():
+                while not finished.wait(.5):
+                    elapsed = time.monotonic() - started
+                    message = (
+                        "startup preflight: still waiting for the Protobuf "
+                        f"GET_TELEMETRY_FAST response ({elapsed:.1f} s); "
+                        "no measured position/velocity frame has arrived"
+                    )
+                    self._assist_log(message)
+                    # This runs on a diagnostic-only thread.  Print directly
+                    # as well as emitting the Qt signal so a blocked Qt event
+                    # loop cannot hide the fact that the transport read is
+                    # still pending from the shell running handexo gui.
+                    print(f"[assist-watchdog] {message}", file=sys.stderr, flush=True)
+
+            thread = threading.Thread(
+                target=watchdog,
+                name="assist-telemetry-watchdog",
+                daemon=True,
+            )
+            thread.start()
+            try:
+                return exo.get_fast_telemetry(
+                    timeout=min(.25, deadline - time.monotonic()),
+                    motor_ids=list(motor_ids))
+            finally:
+                finished.set()
+
+        def report_progress(message=None, force=False):
+            nonlocal last_report_at
+            now = time.monotonic()
+            if force or last_report_at is None or now - last_report_at >= .5:
+                self._assist_log(f"startup preflight: {message or detail}")
+                last_report_at = now
+
         while generation == self._assist_generation:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(f"Assist startup did not settle within 5 s: {detail}. Keep relaxed and still.")
-            records = exo.get_fast_telemetry(timeout=min(.25, remaining), motor_ids=list(motor_ids))
+            report_progress("requesting fresh measured position/velocity")
+            try:
+                records = read_fast_telemetry_with_watchdog()
+            except Exception as exc:
+                self._assist_log(
+                    f"startup preflight telemetry read failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                raise
             if generation != self._assist_generation:
                 return False
             quiet = True
             for mid in motor_ids:
                 record = records.get(mid)
                 if not record or record.get("error"):
+                    detail = f"ID {mid}: telemetry missing or reported an error"
+                    report_progress(force=True)
                     raise RuntimeError(f"Assist startup feedback unavailable for ID {mid}; check the motor connection.")
                 q, raw, stamp = (record.get(key) for key in
                                  ("absolute_angle", "velocity_raw", "sample_timestamp_ms"))
@@ -1501,16 +1792,19 @@ class SerialWorker(QThread):
                 if quiet_since is None:
                     quiet_since = now
                 elif now-quiet_since >= .5:
+                    self._assist_log("startup preflight: all IDs remained within limits for 0.50 s")
                     return True
+                detail = f"all IDs within limits; quiet for {now - quiet_since:.2f}/0.50 s"
             else:
                 quiet_since = None
                 bounds.clear()
+            report_progress()
             time.sleep(min(.05, max(0., deadline-time.monotonic())))
         return False
 
     def request_poll(self, include_telemetry: bool = True):
         with self._state_lock:
-            if self._poll_pending:
+            if self._assist_transport_busy or self._poll_pending:
                 return
             self._poll_pending = True
         self._poll_q.put(("poll", bool(include_telemetry)))
@@ -1805,6 +2099,10 @@ class SerialWorker(QThread):
                     EMG_FAST_TELEMETRY_TIMEOUT_S if realtime_control else 0.5,
                     poll_ids,
                 )
+                # Monitor and Assist must share the same acquisition path.
+                # In particular, do not make Assist issue a second synchronous
+                # GET_TELEMETRY_FAST request on Protobuf transports.
+                self._cache_fast_telemetry(fast)
                 result["relative"] = {
                     mid: data.get("angle") for mid, data in fast.items()
                 }
@@ -2160,6 +2458,7 @@ class HandExoGUI(QWidget):
         # Dynamixel ID for each widget index — needed to look up telemetry/angle
         # results since HandExo returns dicts keyed by Dynamixel ID, not 0-based index.
         self._motor_dxl_id: list[int] = []
+        self._motor_reachable_by_id: dict[int, bool | None] = {}
         self._last_telemetry_update_monotonic: float | None = None
         self._telemetry_rate_ema: float | None = None
         self._telemetry_buffers: dict[str, dict[int, deque]] = {
@@ -2437,6 +2736,7 @@ class HandExoGUI(QWidget):
         self._assist_panel.preparing.connect(self._prepare_assist_ui)
         self._assist_panel.busy_changed.connect(self._assist_busy_changed)
         self._assist_panel.log_line.connect(self._log)
+        self._serial_worker.assist_completed.connect(self._on_assist_operation_completed)
         self.main_tabs.addTab(self._assist_panel, "Assist")
 
         for button in self.findChildren(QPushButton):
@@ -2467,6 +2767,15 @@ class HandExoGUI(QWidget):
             self.main_tabs.setTabEnabled(index, not busy)
         if hasattr(self, "_rom_start_btn"):
             self._rom_start_btn.setEnabled(not busy and self.exo_connected)
+
+    def _on_assist_operation_completed(self, operation, _status, _error):
+        """Restart Monitor with fresh samples after an ID-scoped recovery."""
+        if operation != "reset" or not self.exo_connected:
+            return
+        self._reset_telemetry_buffers()
+        self._latest_hand_angles = {}
+        self._latest_hand_meta = None
+        self._resume_normal_polling(force_refresh=True)
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Wheel and isinstance(obj, QTabBar):
@@ -6115,7 +6424,10 @@ class HandExoGUI(QWidget):
         title.setFont(QFont("Segoe UI", 28, QFont.Bold))
         row.addWidget(title, 1)
 
-        self._terminal = DeviceTerminal(self)
+        # DeviceTerminal is intentionally an unowned top-level window so
+        # Windows gives it its own taskbar entry.  closeEvent() closes it with
+        # the main GUI, so it remains part of this application's lifecycle.
+        self._terminal = DeviceTerminal()
         self._terminal.command_requested.connect(self._send_terminal_command)
         self._terminal_button = QToolButton()
         self._terminal_button.setIcon(terminal_icon("terminal"))
@@ -6531,7 +6843,7 @@ class HandExoGUI(QWidget):
         """Single-exo layout: column headers + motor rows in one column."""
         col_header = QHBoxLayout()
         for text, stretch in [
-            ("Motor", 2), ("Angle", 2), ("Status", 1),
+            ("Motor", 2), ("Angle", 2), ("Status", 1), ("Link", 1),
             ("Current limit", 2), ("Direct max", 2), ("", 1), ("", 1),
         ]:
             lbl = QLabel(text)
@@ -6658,6 +6970,9 @@ class HandExoGUI(QWidget):
         name_lbl.setStyleSheet("font-weight: bold;")
         angle_lbl  = QLabel("--")
         status_lbl = QLabel("--")
+        reachability_lbl = QLabel("●")
+        reachability_lbl.setAlignment(Qt.AlignCenter)
+        reachability_lbl.setMinimumWidth(24)
 
         current_limit_spin = QSpinBox()
         current_limit_spin.setRange(0, int(DIRECT_CURRENT_LIMIT_MA))
@@ -6690,11 +7005,22 @@ class HandExoGUI(QWidget):
         toggle_btn.setMinimumWidth(102)
         toggle_btn.setStyleSheet("padding: 4px 12px;")
         dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
+        reachable = self._motor_reachable_by_id.get(dxl_id)
+        if reachable is True:
+            reachability_lbl.setStyleSheet("color: #27ae60; font-size: 16px;")
+            reachability_lbl.setToolTip(f"ID {dxl_id}: reachable at firmware startup")
+        elif reachable is False:
+            reachability_lbl.setStyleSheet("color: #c0392b; font-size: 16px;")
+            reachability_lbl.setToolTip(f"ID {dxl_id}: unreachable at firmware startup")
+        else:
+            reachability_lbl.setStyleSheet("color: #888888; font-size: 16px;")
+            reachability_lbl.setToolTip(f"ID {dxl_id}: reachability not reported")
         toggle_btn.clicked.connect(self._make_motor_toggle(i, dxl_id))
 
         row_layout.addWidget(name_lbl,   2)
         row_layout.addWidget(angle_lbl,  2)
         row_layout.addWidget(status_lbl, 1)
+        row_layout.addWidget(reachability_lbl, 1)
         row_layout.addWidget(current_limit_spin, 2)
         row_layout.addWidget(velocity_limit_spin, 2)
         row_layout.addWidget(apply_limits_btn, 1)
@@ -6706,6 +7032,8 @@ class HandExoGUI(QWidget):
             "dxl_id":     dxl_id,   # integer Dynamixel ID; use for per-motor commands
             "angle_lbl":  angle_lbl,
             "status_lbl": status_lbl,
+            "reachability_lbl": reachability_lbl,
+            "reachable": reachable,
             "current_limit_spin": current_limit_spin,
             "current_limit_mA": 0.0,  # No direct current until readback succeeds.
             "velocity_limit_spin": velocity_limit_spin,
@@ -7293,6 +7621,11 @@ class HandExoGUI(QWidget):
 
             self._hand_calibration_by_id = info.get("hand_calibration", {})
             motors_dict = info.get("motors", {})  # keyed by Dynamixel ID
+            self._motor_reachable_by_id = {
+                int(dxl_id): md.get("reachable")
+                if isinstance(md.get("reachable"), bool) else None
+                for dxl_id, md in motors_dict.items()
+            }
             self._firmware_limits_by_id = {
                 int(dxl_id): (float(md["limits"][0]), float(md["limits"][1]))
                 for dxl_id, md in motors_dict.items()
@@ -7362,6 +7695,24 @@ class HandExoGUI(QWidget):
                 )
 
             self._log(f"Detected motor IDs: {self._motor_dxl_id}")
+            # Report the complete firmware-configured fleet, not only the
+            # active GUI side. In Right Only/Left Only mode the inactive side
+            # is intentionally omitted from the widgets, but assist preflight
+            # still needs the firmware reachability map to be unambiguous.
+            configured_ids = sorted(self._motor_reachable_by_id)
+            reachable_ids = sorted(
+                mid for mid in configured_ids
+                if self._motor_reachable_by_id.get(mid) is True
+            )
+            unreachable_ids = sorted(
+                mid for mid in configured_ids
+                if self._motor_reachable_by_id.get(mid) is False
+            )
+            if reachable_ids or unreachable_ids:
+                self._log(
+                    f"Firmware reachability (configured): reachable={reachable_ids}, "
+                    f"unreachable={unreachable_ids}"
+                )
             self._log(f"Left motors ({len(self._left_motor_names)}): {self._left_motor_names}")
             self._log(f"Right motors ({len(self._right_motor_names)}): {self._right_motor_names}")
 
@@ -7488,6 +7839,7 @@ class HandExoGUI(QWidget):
         self._left_motor_names  = []
         self._right_motor_names = []
         self._motor_dxl_id      = []
+        self._motor_reachable_by_id = {}
         self.motor_names        = []
         self._direct_motor_combo.clear()
         self._emg_motor_combo.clear()
@@ -7885,6 +8237,10 @@ class HandExoGUI(QWidget):
             if not self._ensure_position_control():
                 raise RuntimeError("Could not restore current-position mode")
             was_polling = was_polling or self._angle_timer.isActive()
+            # Home changes the firmware's motion/telemetry phase. Do not let
+            # the Assist preflight reuse pre-home samples while the joints are
+            # moving back to their stored targets.
+            self._serial_worker.clear_fast_telemetry_cache(enabled_ids)
             self._home_poll_was_active = was_polling
             self._angle_timer.stop()
             self._suspend_device_poll_requests = True

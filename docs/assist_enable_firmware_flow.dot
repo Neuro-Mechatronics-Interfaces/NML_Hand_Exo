@@ -1,0 +1,17 @@
+digraph assist_enable_firmware_flow {
+  rankdir=LR;
+  graph [fontname="Segoe UI", pad=0.15, nodesep=0.35, ranksep=0.55];
+  node [shape=box, style="rounded,filled", fillcolor="#eef4ff", color="#4776a8", fontname="Segoe UI"];
+  edge [fontname="Segoe UI", color="#555555"];
+
+  preflight [label="GUI\nshared Monitor cache\nsettled"];
+  request [label="Protobuf-v2\nASSIST_ENABLE request\nCMD CDC"];
+  reads [label="Firmware\ninitial + mode +\nwhole-fleet reads"];
+  writes [label="Firmware\nassist register writes\nwith readback"];
+  response [label="Protobuf-v2\nAssistStatus response\nTELEM CDC"];
+
+  preflight -> request [label="dispatch once"];
+  request -> reads [label="executeRequestV2"];
+  reads -> writes [label="state=CALIBRATING"];
+  writes -> response [label="return / reject"];
+}
