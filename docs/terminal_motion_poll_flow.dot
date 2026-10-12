@@ -1,0 +1,17 @@
+digraph terminal_motion_poll_flow {
+  rankdir=LR;
+  graph [bgcolor="transparent", fontname="Segoe UI", nodesep=0.45, ranksep=0.65];
+  node [shape=box, style="rounded,filled", fillcolor="#eef4ff", color="#5078b8", fontname="Segoe UI", fontsize=10];
+  edge [color="#52606d", fontname="Segoe UI", fontsize=9];
+
+  terminal [label="GUI terminal\nposition / gesture command"];
+  accepted [label="Firmware ACK\n(command accepted)"];
+  verdict [label="Firmware move-verdict\nwindow (~5 s)\nDynamixel reads active"];
+  result [label="GESTURE_RESULT\nreached / stalled / short"];
+  polling [label="Automatic binary telemetry\nresumes"];
+
+  terminal -> accepted [label="send once"];
+  accepted -> verdict [label="motion continues"];
+  verdict -> result [label="verdict batch closes"];
+  result -> polling [label="5.5 s host hold expires"];
+}

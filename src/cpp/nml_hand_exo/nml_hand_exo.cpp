@@ -668,7 +668,11 @@ String NMLHandExo::getDeviceInfo(bool includeLiveTelemetry) {
             ", id: " + String(id) +
             ", reachable: " + (motorReachable_[i] ? "true" : "false") +
             ", limits: [" + String(minLimit, 2) + ", " + String(maxLimit, 2) + "]";
-      if (includeLiveTelemetry) {
+      // Startup discovery already records reachability.  Do not probe a
+      // missing motor again just because the caller requested verbose live
+      // telemetry: each failed DXL read can consume the bus timeout and make
+      // the whole text request outlive the USB transaction deadline.
+      if (includeLiveTelemetry && motorReachable_[i]) {
         float angle = getRelativeAngle(id);
         float abs = getAbsoluteAngle(id);
         float torque = getTorque(id);
@@ -1640,6 +1644,11 @@ void NMLHandExo::setRelativeAngle(uint8_t id, float relativeAngle) {
     debugPrint("Invalid motor ID: " + String(id));
     return;
   }
+  // A dual build may contain the other hand's configured IDs while only one
+  // physical hand is attached. Match Assist, telemetry, Sync Write, and
+  // homeAllMotors: startup-unreachable IDs must not become move-verdict
+  // entries or touch the shared bus.
+  if (!motorReachable_[index]) return;
 
   // Flip the relative angle if necessary
   if (flipMotor_[index]) {
@@ -1677,6 +1686,9 @@ void NMLHandExo::setAbsoluteAngle(uint8_t id, float absoluteAngle) {
     debugPrint("Invalid motor ID: " + String(id));
     return;
   }
+  // Keep gesture and direct absolute-angle paths consistent with the
+  // reachability filtering used by Assist and setAbsoluteAnglesSync().
+  if (!motorReachable_[index]) return;
   float clamped = constrain(absoluteAngle, jointLimits_[index][0], jointLimits_[index][1]);
 
   // In extended/current-based position mode the motor travels directly from
@@ -1838,6 +1850,8 @@ void NMLHandExo::setAngleById(uint8_t id, float angle_deg) {
   if (!isfinite(angle_deg)) return;
   int index = getIndexById(id);
   if (index == -1) return;
+  // Do not create a pending move verdict for a motor absent at startup.
+  if (!motorReachable_[index]) return;
 
   // Apply offset to relative angle position
   float abs_goal = zeroOffsets_[index] + angle_deg;

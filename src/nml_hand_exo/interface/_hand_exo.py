@@ -12,6 +12,7 @@ from ._gesture_protocol import (
     format_set_finger_angles,
     normalize_finger_angles,
 )
+from ._firmware_help import firmware_help_text
 
 
 #: Firmware version that introduced the per-joint "rest" state, anchored
@@ -1383,14 +1384,31 @@ class HandExo(object):
 
     def help(self) -> str:
         """
-        Sends a help command to the exoskeleton to retrieve available commands.
+        Return the firmware command reference without consuming serial replies.
+
+        Firmware prints ``help`` as one delimited line per command. That is
+        useful for a human serial monitor, but it is not a single request /
+        response on dual-CDC transports and can leave the remaining lines
+        queued for the next command. The command reference is static, so
+        clients use the same local representation as the GUI terminal.
 
         Returns:
             str: A string containing the help information from the exoskeleton.
 
         """
-        self.send_command("help")
-        return self._receive(wait_until_return=True)
+        return self.firmware_help()
+
+    @staticmethod
+    def firmware_help() -> str:
+        """Return the Python-facing human-readable firmware command reference.
+
+        ``utils.cpp`` emits ``help`` as many independently delimited serial
+        prints.  Clients that intentionally consume one request/reply frame
+        (including the GUI terminal) use this local representation instead of
+        changing the transport framing just for that informational command.
+        The unbounded firmware-only ``info_verbose`` diagnostic is omitted.
+        """
+        return firmware_help_text()
 
     def set_debug(self, enable: bool, *, timeout: float = 1.0):
         """

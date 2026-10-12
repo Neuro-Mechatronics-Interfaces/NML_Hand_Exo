@@ -806,7 +806,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       commandPrint("ERROR: disable_ids requires one or more valid DXL IDs");
     }
 
-  } else if (cmd == "get_enabled") {
+  } else if (cmd == "get_enabled" || cmd == "get_enable") {
     String arg = getArg(token, 1);  // local copy
     arg.trim(); arg.toUpperCase();
     bool status;
@@ -877,6 +877,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   } else if (cmd == "get_goal_velocity") {
     String arg = getArg(token, 1);  // local copy
     arg.trim(); arg.toUpperCase();
+    if (arg.length() == 0) arg = "ALL";
     if (arg == "ALL") {
       String info = "Motor velocity: \n";
       for (int i = 0; i < exo.getMotorCount(); ++i) {
@@ -892,6 +893,8 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
         uint32_t vel = exo.getVelocityLimit(id);
         commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
           ", velocity: " + String(vel) + "}");
+      } else {
+        commandPrint(F("ERROR: get_goal_velocity requires a valid motor ID/name or ALL"));
       }
     }
 
@@ -927,6 +930,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   } else if (cmd == "get_goal_acceleration") {
     String arg = getArg(token, 1);  // local copy
     arg.trim(); arg.toUpperCase();
+    if (arg.length() == 0) arg = "ALL";
     if (arg == "ALL") {
       String info = "Motor acceleration: \n";
       for (int i = 0; i < exo.getMotorCount(); ++i) {
@@ -942,6 +946,8 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
         int acc = exo.getAccelerationLimit(id);
         commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
           ", acceleration: " + String(acc) + "}");
+      } else {
+        commandPrint(F("ERROR: get_goal_acceleration requires a valid motor ID/name or ALL"));
       }
     }
 
@@ -1124,6 +1130,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   } else if (cmd == "get_goal_current") {
     String arg = getArg(token, 1);
     arg.trim(); arg.toUpperCase();
+    if (arg.length() == 0) arg = "ALL";
     if (arg == "ALL") {
       String info = "Motor goal current: \n";
       for (int i = 0; i < exo.getMotorCount(); ++i) {
@@ -1139,6 +1146,8 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
         float current_mA = exo.getGoalCurrent(id);
         commandPrint("Motor: {name: " + exo.getMotorNameByID(id) + ", id: " + String(id) +
           ", goal_current: " + String(current_mA, 3) + " mA}");
+      } else {
+        commandPrint(F("ERROR: get_goal_current requires a valid motor ID/name or ALL"));
       }
     }
 
@@ -1537,10 +1546,20 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
   } else if (cmd == "set_gesture") {
     String gestureStr = getArg(token, 1);
     String stateStr = getArg(token, 2);
-    gc.executeGesture(gestureStr, stateStr);
-    // Acknowledge so the host has a delimited reply to wait on; without this a
-    // request/response transaction on this command can only ever time out.
-    commandPrint("OK: gesture " + gestureStr + ":" + stateStr);
+    gestureStr.trim();
+    stateStr.trim();
+    const int gestureIndex = findGestureIndex(gestureStr);
+    if (gestureIndex < 0) {
+      commandPrint("ERROR: set_gesture unknown gesture: " + gestureStr);
+    } else if (findStateIndex(gestureLibrary[gestureIndex], stateStr) < 0) {
+      commandPrint("ERROR: set_gesture unknown state '" + stateStr +
+                   "' for gesture '" + gestureStr + "'");
+    } else {
+      gc.executeGesture(gestureStr, stateStr);
+      // Acknowledge so the host has a delimited reply to wait on; without this
+      // a request/response transaction on this command can only time out.
+      commandPrint("OK: gesture " + gestureStr + ":" + stateStr);
+    }
 
   } else if (cmd == "cycle_gesture") {
     debugPrint(F("[GestureController] cycle gesture button pressed"));
@@ -1565,9 +1584,29 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     }
 
   } else if (cmd == "set_gesture_state") {
-    String stateStr = getArg(token, 1);
-    gc.executeCurrentGestureNewState(stateStr);
-    commandPrint("OK: gesture_state " + stateStr);
+    // Preserve the original one-argument form, which applies a state to the
+    // currently selected gesture, while also accepting the documented
+    // gesture:state form. Validate both tokens before acknowledging; the old
+    // branch silently ignored a second token and returned OK for an unknown
+    // state.
+    String first = getArg(token, 1);
+    String second = getArg(token, 2);
+    first.trim();
+    second.trim();
+    String gestureStr = second.length() ? first : gc.getCurrentGesture();
+    String stateStr = second.length() ? second : first;
+    const int gestureIndex = findGestureIndex(gestureStr);
+    if (gestureIndex < 0) {
+      commandPrint("ERROR: set_gesture_state unknown gesture: " + gestureStr);
+    } else if (findStateIndex(gestureLibrary[gestureIndex], stateStr) < 0) {
+      commandPrint("ERROR: set_gesture_state unknown state '" + stateStr +
+                   "' for gesture '" + gestureStr + "'");
+    } else {
+      gc.executeGesture(gestureStr, stateStr);
+      commandPrint(second.length()
+                    ? "OK: gesture_state " + gestureStr + ":" + stateStr
+                    : "OK: gesture_state " + stateStr);
+    }
 
   } else if (cmd == "set_gesture_angle") {
     String gestureStr = getArg(token, 1);

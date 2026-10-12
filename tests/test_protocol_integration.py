@@ -76,6 +76,14 @@ def test_indirect_attribute_queries_use_actual_firmware_command_names():
     ]
 
 
+def test_get_enable_alias_matches_get_enabled_on_fake_firmware():
+    exo, comm = _fake_exo()
+    comm.enabled[14] = True
+
+    assert exo._get_motor_attribute("enabled", 14, True, command="get_enable") == {14: True}
+    assert comm.sent[-1] == "get_enable:14"
+
+
 def test_velocity_limit_api_uses_rpm_and_explicit_motor_id():
     exo, comm = _fake_exo()
 

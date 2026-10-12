@@ -147,10 +147,34 @@ resumes. ACKs mean firmware accepted the commands, not that the joints reached
 home. Cancellation invalidates queued stages and their completion signals.
 Idle cleanup no longer prints a misleading home-complete log line.
 
-These are Python changes; restart the GUI with the updated SDK. No firmware
-reflash is needed. The original timeout alone cannot establish whether the board
-was busy, a reply was delayed or USB delivery failed; use the detailed new error
-if it recurs.
+The Device Terminal can also issue raw position/gesture commands. Those commands
+now hold automatic binary telemetry for 5.5 seconds, covering the firmware's
+5-second move-verdict window, so a queued `GET_TELEMETRY_FAST` request does not
+compete with the firmware's Dynamixel reads. The hold is host-side only; the
+following `GESTURE_RESULT` remains the authoritative reached/stalled result.
+See [the terminal motion/poll flow](terminal_motion_poll_flow.svg).
+
+`info_verbose` is a firmware-only diagnostic command on this interface.  The
+Python GUI does not advertise or transmit it because its live DXL reads do not
+reliably produce a bounded Protobuf response.  Use `info` for discovered
+metadata and the Monitor tab for live telemetry instead.
+
+Legacy profile setters (`set_goal_velocity` and `set_goal_acceleration`) and
+gesture cycling may legitimately return an empty text payload after the
+firmware has performed the action; the Protobuf client now treats an OK frame
+without `text_reply` as a valid silent response.  Bare `get_goal_velocity`,
+`get_goal_acceleration`, and `get_goal_current` now mean `ALL` in the firmware
+parser, matching the SDK defaults; reflash after changing this parser.
+
+The firmware's shared absolute/relative motion setters now apply the same
+startup `motorReachable_` filter already used by Assist, Sync Write, telemetry,
+and `homeAllMotors()`. This is required for gesture and direct-angle commands
+as well as Home, and requires reflashing the firmware after the source change.
+
+Restart the GUI with the updated SDK and reflash the firmware for the shared
+motion-setter reachability guard. The original timeout alone cannot establish
+whether the board was busy, a reply was delayed or USB delivery failed; use the
+detailed new error if it recurs.
 
 ---
 
@@ -454,13 +478,12 @@ set_zero_offset:wrist:X  →  ID 1 (left wrist) — RIGHT IS NEVER UPDATED
 
 ## Dual-mode: `set_gesture` is a firmware broadcast
 
-`set_gesture:grasp:close` arrives at `executeGesture()` in firmware, which iterates ALL
-`N_MOTORS` and calls `setAbsoluteAngle()` on each one — regardless of which side the GUI
-selected, and regardless of whether the motor has torque enabled.
-
-`setAbsoluteAngle()` writes the Dynamixel goal position register unconditionally. If
-the motor is torque-off, it won't move yet, but the goal is latched. Re-enabling torque
-later will cause an unexpected jump.
+`set_gesture:grasp:close` arrives at `executeGesture()` in firmware, which resolves
+the gesture across the configured motor table. `setAbsoluteAngle()` now rejects
+IDs marked unreachable during startup, so an absent hand cannot receive a goal or
+produce a move verdict. Reachable but torque-off motors can still have a goal
+latched; re-enabling torque later can therefore cause an intentional command to
+take effect.
 
 Protection strategy (implemented at connect time): inactive-side motors are disabled
 immediately when `_connect()` finishes, so they cannot physically move even when their

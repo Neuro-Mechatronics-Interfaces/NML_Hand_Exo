@@ -47,6 +47,7 @@ from nml_hand_exo.applications._telemetry_plot import finite_curve_data
 from nml_hand_exo.applications._device_terminal import DeviceTerminal, terminal_icon
 from nml_hand_exo.calibration.rom import build_auto_rom_queue
 from nml_hand_exo.interface import HandExo, SerialComm, DualSerialComm, AutoSerialComm
+from nml_hand_exo.interface._firmware_help import firmware_command_may_be_silent
 from nml_hand_exo.interface._gesture_protocol import (
     COMMAND_PASSTHROUGH_ACK,
     POSE_QUERY,
@@ -132,6 +133,21 @@ UDP_HEARTBEAT_RECHECK_MS = 50
 UDP_METRIC_EMA_ALPHA = 0.2
 UDP_BACKLOG_EMA_TIME_CONSTANT_S = 2.0
 HOME_GROUP_SETTLE_MS = 750
+# Firmware keeps a move-verdict batch open for MOVE_TIMEOUT_MS (currently
+# 5000 ms). A raw terminal motion command does not pass through the GUI's
+# staged-home/gesture workflow, so hold automatic Monitor requests through
+# that window plus a small guard. Otherwise the first GET_TELEMETRY_FAST
+# request can contend with the firmware's Dynamixel reads and time out with
+# an empty Protobuf frame even though the command was accepted.
+TERMINAL_MOTION_POLL_HOLD_S = 5.5
+TERMINAL_MOTION_COMMANDS = frozenset({
+    "home",
+    "set_gesture",
+    "set_gesture_angle",
+    "set_finger_angles",
+    "set_angle",
+    "set_absolute_angle",
+})
 TELEMETRY_DEFAULT_RATE_HZ = 50
 DIRECT_TELEMETRY_MAX_RATE_HZ = 10
 EMG_TELEMETRY_RATE_HZ = 2
@@ -1352,6 +1368,8 @@ class SerialWorker(QThread):
         self._realtime_motor_ids: list[int] = []
         self._shadow_telemetry = False
         self._last_poll_error_log = 0.0
+        self._terminal_motion_poll_hold_until = 0.0
+        self._terminal_command_active = False
         self._motor_ids: list[int] = []
         self._state_lock = threading.Lock()
         # ASSIST_ENABLE/STOP are synchronous firmware transactions. Do not
@@ -1373,6 +1391,9 @@ class SerialWorker(QThread):
             with self._assist_feedback_lock:
                 self._assist_feedback_history.clear()
         self._exo = exo
+        with self._state_lock:
+            self._terminal_motion_poll_hold_until = 0.0
+            self._terminal_command_active = False
         new_device = getattr(exo, "device", None) if exo is not None else None
         set_event_callback = getattr(new_device, "set_async_event_callback", None)
         if callable(set_event_callback):
@@ -1804,7 +1825,9 @@ class SerialWorker(QThread):
 
     def request_poll(self, include_telemetry: bool = True):
         with self._state_lock:
-            if self._assist_transport_busy or self._poll_pending:
+            if (self._assist_transport_busy or self._poll_pending or
+                    self._terminal_command_active or
+                    time.monotonic() < self._terminal_motion_poll_hold_until):
                 return
             self._poll_pending = True
         self._poll_q.put(("poll", bool(include_telemetry)))
@@ -1945,7 +1968,19 @@ class SerialWorker(QThread):
             elif tag == "terminal":
                 _, connection, command, timeout = item
                 if connection is not None and connection is self._exo:
-                    self._handle_terminal_command(command, timeout)
+                    with self._state_lock:
+                        self._terminal_command_active = True
+                    try:
+                        self._handle_terminal_command(command, timeout)
+                    finally:
+                        with self._state_lock:
+                            self._terminal_command_active = False
+                            command_name = command.split(":", 1)[0].strip().lower()
+                            if command_name in TERMINAL_MOTION_COMMANDS:
+                                self._terminal_motion_poll_hold_until = max(
+                                    self._terminal_motion_poll_hold_until,
+                                    time.monotonic() + TERMINAL_MOTION_POLL_HOLD_S,
+                                )
             elif tag == "send":
                 _, command = item
                 self._handle_send(command)
@@ -2026,6 +2061,17 @@ class SerialWorker(QThread):
         }
         exo = self._exo
         if exo is None:
+            self.completed.emit(result)
+            return
+        with self._state_lock:
+            terminal_motion_active = (
+                self._terminal_command_active or
+                time.monotonic() < self._terminal_motion_poll_hold_until
+            )
+        if terminal_motion_active:
+            # A poll may already have been queued when the terminal command
+            # arrived. Do not let that stale queue item reach the binary CDC
+            # endpoint during firmware's move-verdict processing.
             self.completed.emit(result)
             return
         with self._state_lock:
@@ -2231,6 +2277,11 @@ class SerialWorker(QThread):
         try:
             raw = self._transact(command, timeout)
             if not raw.strip():
+                if firmware_command_may_be_silent(command):
+                    self.line_received.emit(
+                        f"[cmd] {command} sent; firmware provides no acknowledgement"
+                    )
+                    return
                 raise ProtocolResponseError(
                     command=command,
                     expected="a delimited firmware acknowledgement or response",
@@ -2244,6 +2295,29 @@ class SerialWorker(QThread):
             self.line_received.emit(f"[cmd] {command} failed: {exc}")
 
     def _handle_terminal_command(self, command: str, timeout: float):
+        # Firmware prints ``help`` one commandPrint line at a time.  Those
+        # lines are separate delimited replies on dual-CDC, so a normal
+        # request/reply transaction would display only the first heading and
+        # leave the remaining help rows queued for the next command.  Help is
+        # static presentation text; render the complete firmware-compatible
+        # block locally and leave serial framing untouched for every other
+        # command.
+        if command.strip().lower() == "help":
+            self.line_received.emit(HandExo.firmware_help())
+            return
+        command_name = command.split(":", 1)[0].strip().lower()
+        if command_name == "info_verbose":
+            self.line_received.emit(
+                "[cmd] info_verbose is not exposed by the Python GUI interface; "
+                "use info and Monitor telemetry"
+            )
+            return
+        if command_name in TERMINAL_MOTION_COMMANDS:
+            with self._state_lock:
+                self._terminal_motion_poll_hold_until = max(
+                    self._terminal_motion_poll_hold_until,
+                    time.monotonic() + TERMINAL_MOTION_POLL_HOLD_S,
+                )
         if command.split(":", 1)[0].lower() != "get_telemetry_fast":
             # _transact delegates encoding and response decoding to the active
             # comm adapter, including Protobuf RPCs and their validated ACKs.
@@ -2326,6 +2400,18 @@ class SerialWorker(QThread):
                 comm.flush_input()
             except Exception:
                 pass
+            # Protobuf-v2 text commands are RPCs rather than writes followed
+            # by a generic receive.  Calling the backend transaction directly
+            # preserves the timeout selected by the GUI; the adapter's
+            # send() path historically used its 2-second default instead.
+            text_command = getattr(comm, "send_text_command", None)
+            if not callable(text_command):
+                # Compatibility with an older v2 adapter that predates the
+                # public transport-neutral helper.
+                text_command = getattr(comm, "_text_command", None)
+            if (getattr(comm, "usb_protocol", "") == "protobuf-v2" and
+                    callable(text_command)):
+                return text_command(command, timeout=timeout)
             comm.send(full)
             try:
                 return comm.receive(

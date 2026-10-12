@@ -133,6 +133,134 @@ def test_ascii_terminal_uses_serial_format_and_displays_reply(qapp):
     assert lines == ["firmware: 0.9.0"]
 
 
+def test_hand_exo_help_is_local_and_does_not_touch_serial(qapp):
+    comm = SerialComm("fake", 1000000)
+    comm.device = Mock(is_open=True)
+    exo = HandExo(comm, command_delimiter="\r\n", send_delay=0)
+
+    reply = exo.help()
+
+    assert "List of commands" in reply
+    comm.device.write.assert_not_called()
+
+
+def test_terminal_accepts_firmware_silent_enable_command(qapp):
+    comm = SerialComm("fake", 1000000)
+    comm.device = Mock(is_open=True)
+    comm.device.read_until.return_value = b""
+    worker = SerialWorker()
+    worker.set_exo(HandExo(comm, command_delimiter="\r\n", send_delay=0))
+    lines = []
+    worker.line_received.connect(lines.append)
+
+    worker._handle_terminal_command("enable:all", .01)
+
+    assert lines == [
+        "[cmd] enable:all sent; firmware provides no acknowledgement"
+    ]
+
+
+def test_terminal_accepts_firmware_silent_gesture_cycle_commands(qapp):
+    comm = SerialComm("fake", 1000000)
+    comm.device = Mock(is_open=True)
+    comm.device.read_until.return_value = b""
+    worker = SerialWorker()
+    worker.set_exo(HandExo(comm, command_delimiter="\r\n", send_delay=0))
+    lines = []
+    worker.line_received.connect(lines.append)
+
+    worker._handle_terminal_command("cycle_gesture", .01)
+    worker._handle_terminal_command("cycle_gesture_state", .01)
+
+    assert lines == [
+        "[cmd] cycle_gesture sent; firmware provides no acknowledgement",
+        "[cmd] cycle_gesture_state sent; firmware provides no acknowledgement",
+    ]
+
+
+def test_terminal_help_is_rendered_as_one_complete_firmware_response(qapp):
+    worker = SerialWorker()
+    raw = Mock()
+    worker.set_exo(raw)
+    lines = []
+    worker.line_received.connect(lines.append)
+
+    worker._handle_terminal_command("help", .1)
+
+    raw.device.send.assert_not_called()
+    assert len(lines) == 1
+    assert lines[0].startswith(" ================================== List of commands")
+    assert " set_gesture           |" in lines[0]
+    assert " get_telemetry_fast    |" in lines[0]
+    assert " oled                  |" in lines[0]
+    assert "info_verbose" not in lines[0]
+
+
+def test_terminal_info_verbose_is_not_sent_on_python_protobuf_interface(qapp):
+    worker = SerialWorker()
+    raw = Mock()
+    worker.set_exo(raw)
+    lines = []
+    worker.line_received.connect(lines.append)
+
+    worker._handle_terminal_command("info_verbose", 10.0)
+
+    raw.device.send.assert_not_called()
+    assert lines == [
+        "[cmd] info_verbose is not exposed by the Python GUI interface; "
+        "use info and Monitor telemetry"
+    ]
+
+
+def test_terminal_motion_holds_queued_poll_during_firmware_verdict_window(qapp):
+    comm = SerialComm("fake", 1000000)
+    comm.device = Mock(is_open=True)
+    comm.device.read_until.return_value = b"OK: home all;"
+    worker = SerialWorker()
+    worker.set_exo(HandExo(comm, command_delimiter="\r\n", send_delay=0))
+
+    worker._handle_terminal_command("home:all", .1)
+    worker.request_poll()
+
+    assert worker._poll_q.empty()
+    assert not worker.has_pending_poll()
+
+
+def test_protobuf_v2_text_transaction_uses_requested_timeout(qapp):
+    worker = SerialWorker()
+    raw = Mock()
+    raw.run_locked = None
+    comm = Mock()
+    comm.usb_protocol = "protobuf-v2"
+    comm.send_text_command.return_value = "verbose reply"
+    raw.device = comm
+    worker.set_exo(raw)
+
+    assert worker._transact("info_verbose", 10.0) == "verbose reply"
+    comm.flush_input.assert_called_once_with()
+    comm.send_text_command.assert_called_once_with("info_verbose", timeout=10.0)
+    comm.send.assert_not_called()
+
+
+def test_protobuf_v2_empty_text_reply_is_valid_for_silent_command(qapp):
+    worker = SerialWorker()
+    raw = Mock()
+    raw.run_locked = None
+    comm = Mock()
+    comm.usb_protocol = "protobuf-v2"
+    comm.send_text_command.return_value = ""
+    raw.device = comm
+    worker.set_exo(raw)
+    lines = []
+    worker.line_received.connect(lines.append)
+
+    worker._handle_command("cycle_gesture", .1)
+
+    assert lines == [
+        "[cmd] cycle_gesture sent; firmware provides no acknowledgement"
+    ]
+
+
 def protobuf_worker():
     pb = pytest.importorskip("nml_hand_exo.interface.exo_usb_pb2")
     from nml_hand_exo.interface._protobuf_serial import ProtobufSerialComm, encode_frame, read_frame

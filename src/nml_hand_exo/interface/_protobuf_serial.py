@@ -610,9 +610,21 @@ class ProtobufV2SerialComm(ProtobufSerialComm):
                                       command=self.pb.TEXT_COMMAND,
                                       text_command=message)
             response = self._exchange(request, 'TEXT_COMMAND', timeout)
-        if not response.HasField('text_reply'):
-            raise ValueError('Protobuf-v2 text command response has no text_reply')
-        return response.text_reply
+        # Some legacy firmware commands intentionally perform an action
+        # without calling commandPrint().  Protobuf-v2 still returns the
+        # request status, but the optional text field is absent.  Preserve
+        # that as an empty reply so the caller can apply the command-specific
+        # silent-command contract instead of reporting a transport failure.
+        return response.text_reply if response.HasField('text_reply') else ''
+
+    def send_text_command(self, message, *, timeout=2.0):
+        """Execute one legacy firmware command through TEXT_COMMAND.
+
+        Keep this as a public transport operation so callers that need a
+        longer diagnostic deadline do not have to know about the v2 backend's
+        internal RPC helper.
+        """
+        return self._text_command(message, timeout=timeout)
 
     def _send_one(self, message: str):
         command = message.strip().split(':', 1)[0].lower()
@@ -621,7 +633,7 @@ class ProtobufV2SerialComm(ProtobufSerialComm):
             'set_finger_angles', 'set_gesture', 'set_gesture_angle',
             'set_joint_model', *self.MOTOR_COMMANDS, 'get_telemetry_fast',
         }:
-            reply = self._text_command(message)
+            reply = self.send_text_command(message)
             self._publish_reply(reply)
             return
         super()._send_one(message)

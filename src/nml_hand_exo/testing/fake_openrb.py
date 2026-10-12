@@ -146,7 +146,7 @@ class FakeOpenRBComm:
                 f"Name: NML_HAND_EXO\nVersion: {self.version}\nSide: right\n"
                 f"Number of Motors: {len(self.motor_ids)}"
             )
-        if head in {"get_angle", "get_absolute_angle", "get_current", "get_torque", "get_enabled", "get_motor_limits", "get_baud", "get_goal_velocity", "get_goal_acceleration", "get_current_lim"}:
+        if head in {"get_angle", "get_absolute_angle", "get_current", "get_torque", "get_enabled", "get_enable", "get_motor_limits", "get_baud", "get_goal_velocity", "get_goal_acceleration", "get_current_lim"}:
             target = parts[1] if len(parts) > 1 else "all"
             fields = {
                 "get_angle": ("angle", self.angles),
@@ -154,6 +154,7 @@ class FakeOpenRBComm:
                 "get_current": ("current", self.currents),
                 "get_torque": ("torque", {mid: 0.0 for mid in self.motor_ids}),
                 "get_enabled": ("enabled", {mid: str(self.enabled[mid]).lower() for mid in self.motor_ids}),
+                "get_enable": ("enabled", {mid: str(self.enabled[mid]).lower() for mid in self.motor_ids}),
                 "get_motor_limits": ("limits", {mid: f"[{self.limits[mid][0]}, {self.limits[mid][1]}]" for mid in self.motor_ids}),
                 "get_baud": ("baudrate", {mid: 1_000_000 for mid in self.motor_ids}),
                 "get_goal_velocity": ("velocity", self.velocity_limits_raw),

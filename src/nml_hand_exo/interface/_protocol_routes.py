@@ -63,6 +63,7 @@ PROTOBUF_PRIMARY_TEXT_COMMANDS = frozenset(
         "get_command_timeout",
         "get_current",
         "get_current_lim",
+        "get_enable",
         "get_enabled",
         "get_exo_mode",
         "get_flip",
