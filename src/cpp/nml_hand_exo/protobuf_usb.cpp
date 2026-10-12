@@ -1,5 +1,5 @@
 #include "config.h"
-#if EXO_USB_PROTOBUF
+#if EXO_USB_PROTOCOL != EXO_USB_PROTOCOL_ASCII
 #include "protobuf_usb.h"
 #include "protobuf_frame.h"
 #include "nml_hand_exo.h"
@@ -7,8 +7,8 @@
 #include "gesture_library.h"
 #include "io_profile.h"
 #include "utils.h"
-#include <pb_decode.h>
-#include <pb_encode.h>
+#include "pb_decode.h"
+#include "pb_encode.h"
 #include "protocol/exo_usb.pb.h"
 #include "protocol/exo_usb.pb.c"
 #include <string.h>
@@ -110,7 +110,8 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
   const bool gestureAngle = request.command == exo_usb_Command_SET_GESTURE_ANGLE;
   // Reject conflicting fields before any resolution or motor traffic.
   if (request.has_joint_model != model || request.has_finger_angles != fingers ||
-      request.has_gesture != (gesture || gestureAngle) || (!batch && request.values_count)) return;
+      request.has_gesture != (gesture || gestureAngle) ||
+      (!batch && !currentLimits && request.values_count)) return;
   if (model) {
     if (!request.has_joint_model || request.has_value || request.motor_ids_count != 1) return;
   } else if (batch || currentLimits) {
@@ -133,7 +134,7 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
   }
   bool ok = false;
   switch (request.command) {
-#if EXO_USB_PROTOBUF_V2
+#if EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V2
     case exo_usb_Command_SET_CURRENT_LIMITS:
       ok = exo.setCurrentLimits(ids, request.values, request.values_count);
       response.has_batch = true;
@@ -231,10 +232,10 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
       FastTelemetryRecord records[18];
       uint8_t method = 0;
       uint8_t count = exo.getFastTelemetryRecords(ids, request.motor_ids_count, records, method, 10);
-      // NX v2 header (13 bytes); records already have the packed wire layout.
+      // NX v3 header (13 bytes); records already have the packed wire layout.
       uint8_t* out = response.nx_frame.bytes;
       const uint16_t length = count * sizeof(FastTelemetryRecord);
-      out[0] = 'N'; out[1] = 'X'; out[2] = 2; out[3] = method; out[4] = count;
+      out[0] = 'N'; out[1] = 'X'; out[2] = 3; out[3] = method; out[4] = count;
       out[5] = length; out[6] = length >> 8;
       uint32_t now = millis();
       for (uint8_t i = 0; i < 4; ++i) out[7+i] = now >> (8*i);
@@ -295,7 +296,7 @@ void pollProtobufUsb(NMLHandExo& exo, GestureController& gc) {
   }
 }
 
-#if EXO_USB_PROTOBUF_V2
+#if EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V2
 static void sendProtobufV2Response(const exo_usb_Response& response) {
   uint8_t output[exo_pb::MAX_RESPONSE + 7];
   pb_ostream_t stream = pb_ostream_from_buffer(output + 7, sizeof(output) - 7);

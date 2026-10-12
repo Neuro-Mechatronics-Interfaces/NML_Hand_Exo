@@ -47,25 +47,36 @@ To add a build flag without editing `config.h` (e.g. force single CDC), use `com
 arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DSINGLE_CDC" src/cpp/nml_hand_exo
 ```
 
-For example to compile and upload the optional `Protobuf` build (requires nanopb):
+The default OpenRB build is the current Protobuf-v2 transport with NX-v3
+telemetry (requires the checked-in nanopb runtime):
 
 Current firmware reports **0.9.1**, with measured 30-ms shaped pulse-response calibration. See [the v0.9.1 defaults and diagnostics](../../../docs/v0.9.1_pulse_calibration.md).
 
 ```bash
-arduino-cli compile --upload -p %COM% --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF_V2=1 -I{build.source.path}" src/cpp/nml_hand_exo
+arduino-cli compile --upload -p %COM% --fqbn OpenRB-150:samd:OpenRB-150 src/cpp/nml_hand_exo
 ```
-on Mac: ```bash
-arduino-cli compile --upload -p $COM --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF=1 -I{build.source.path}" src/cpp/nml_hand_exo
+On Mac, use the same command with `$COM` in place of `%COM%`.
+
+`EXO_USB_PROTOCOL` is the single build selector:
+
+| Value | Transport |
+|---|---|
+| `2` (default on OpenRB dual CDC) | Current Protobuf-v2 / NX-v3 |
+| `1` | Legacy Protobuf-v1 / NX-v3 |
+| `0` | Legacy ASCII / NX-v3 |
+
+For an explicit selection, add `--build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOCOL=2"`:
+```bash
+arduino-cli compile --upload -p %COM% --fqbn OpenRB-150:samd:OpenRB-150 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOCOL=2" src/cpp/nml_hand_exo
 ```
 
-Use `-DEXO_USB_PROTOBUF_V2=1` for the fully framed split-CDC variant. Its
-command CDC carries Requests and its response CDC carries Responses; legacy
-maintenance commands are wrapped by `TEXT_COMMAND` and motion/current-limit
+The v2 command CDC carries Requests and its response CDC carries Responses;
+legacy maintenance commands are wrapped by `TEXT_COMMAND` and motion/current-limit
 operations use typed opcodes.
 
 The protobuf-v1 primary CDC retains `info`/`help`; the second carries typed
 Protobuf telemetry and direct motion/model-update requests. The v2 variant
-instead frames both CDCs and wraps maintenance commands in `TEXT_COMMAND`.
+frames both CDCs and wraps maintenance commands in `TEXT_COMMAND`.
 `info` advertises the selected protocol so the SDK/GUI discovers the layout
 automatically. See [USB diagnostics and protocol](../../../docs/usb_protocol_and_io_diagnostics.md)
 for compile-only commands, the Python extra, schema regeneration, and telemetry
@@ -73,7 +84,7 @@ plus fixed-rate model-write benchmarks. `USB Features: joint_model_write`
 identifies builds supporting typed `set_joint_model` requests. The additional
 `batch_motion` feature enables ID-keyed angle/current batches, finger angles, and
 named gestures through Protobuf. Update both firmware and Python for this
-feature. The default ASCII/NX build is unchanged unless a protobuf flag is enabled.
+feature. Use `EXO_USB_PROTOCOL=0` only when a legacy ASCII build is required.
 
 Every text parser route remains reachable in a Protobuf build: 18 commands have
 typed RPC handlers and the other maintenance/calibration routes remain on the
@@ -201,7 +212,7 @@ The Python package under [`src/nml_hand_exo`](../../nml_hand_exo) drives this fi
 The Assist GUI uses `assist-v3` one-click Enable: grouped selected-ID mode/hold
 setup, automatic initial baseline and activation. Current caps share the existing
 combined budget; the GUI displays effective caps. No separate joint-bias menu is needed.
-With `EXO_USB_PROTOBUF=1`, enable, assist configuration, observer configuration, calibration,
+With a Protobuf transport, enable, assist configuration, observer configuration, calibration,
 start, heartbeat, stop and status use typed binary messages on the secondary CDC.
 `USB Features: assist_binary assist_enable` identifies numeric status and one-click enable support. Each assist reply
 includes the shared controller's snapshot; heartbeat needs no ASCII status query.

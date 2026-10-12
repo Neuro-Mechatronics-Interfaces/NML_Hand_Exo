@@ -220,7 +220,7 @@ void loop() {
   // replies so a continuous stream of requests cannot starve its deadlines.
   String input;
 
- #if !EXO_USB_PROTOBUF_V2
+ #if EXO_USB_PROTOCOL != EXO_USB_PROTOCOL_PROTOBUF_V2
   if (gCmdLines.poll(CMD_SERIAL, input)) {
     debugPrint("Received: " + input);
     parseMessage(exo, gc, bno055, input);
@@ -232,9 +232,9 @@ void loop() {
   // Also accept commands on the telemetry CDC. This keeps a LEGACY single-port
   // host working no matter which of the two COM ports it opened: either CDC
   // accepts commands, and replies mirror back per the default BOTH route.
-#if EXO_USB_PROTOBUF_V2
+#if EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V2
   pollProtobufUsbV2(exo, gc, bno055);
-#elif EXO_USB_PROTOBUF
+#elif EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V1
   pollProtobufUsb(exo, gc);
   exo.serviceRomCalibration();
 #else

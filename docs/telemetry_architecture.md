@@ -23,8 +23,9 @@ HandExoGUI (QWidget)
               │           │     ├── QPushButton "Refresh"     → _poll_telemetry()
               │           │     ├── QCheckBox "Auto-refresh"  → _on_telem_autorefresh()
               │           │     └── QLabel (status)
-              │           └── QTableWidget  N rows × 4 cols
-              │                 Motor | Position (°) | Torque | Current (mA)
+              │           └── QTableWidget  N rows × 8 cols
+              │                 Motor | Position | Goal | Error | Control state |
+              │                 Secondary goal | Torque | Current
               └── Log section  (below tabs)
 ```
 
@@ -95,15 +96,10 @@ The polling loop uses `_motor_dxl_id` directly — no `.index()` calls in the ho
 
 ```
 _telem_timer.timeout → _poll_telemetry()
-  try: positions = exo.get_absolute_motor_angle('all')  → {0: float, ...}
-  try: torques   = exo.get_motor_torque('all')          → {0: float, ...}
-  try: currents  = exo.get_motor_current('all')         → {0: float, ...}
+  try: fast = exo.get_fast_telemetry('all')              → per-ID measurements + control state
 
-  Each call is in an independent try/except.
-  One failure does not block the other two.
-
-  All three None  → status label: red "Read failed HH:MM:SS", return early
-  Any success     → iterate _motor_row, update cells, status: green "Last update OK HH:MM:SS"
+  Fast telemetry → iterate _motor_row, update measurement, goal/error, and state cells;
+                   state tooltip includes reference, applied goal current, effort, and dwell timers
 ```
 
 ---

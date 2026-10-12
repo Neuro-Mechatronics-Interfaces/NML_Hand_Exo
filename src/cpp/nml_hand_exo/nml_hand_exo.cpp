@@ -279,6 +279,81 @@ bool NMLHandExo::getFastTelemetryRecord(uint8_t id, FastTelemetryRecord& record)
   return record.error == 0;
 }
 
+void NMLHandExo::fillControlTelemetry(int index, FastTelemetryRecord& r) {
+  if (index < 0 || index >= numMotors_) return;
+  r.goal_cdeg = FAST_TELEM_UNAVAILABLE_CDEG;
+  r.secondary_goal_cdeg = FAST_TELEM_UNAVAILABLE_CDEG;
+  r.reference_cdeg = FAST_TELEM_UNAVAILABLE_CDEG;
+  r.position_error_cdeg = FAST_TELEM_UNAVAILABLE_CDEG;
+  r.goal_current_mA = (int16_t)min((uint16_t)INT16_MAX, appliedCurrents_[index]);
+  r.effort_mA = 0;
+  r.intent_ms = r.release_ms = r.stall_ms = 0;
+  r.control_state = FAST_CONTROL_UNAVAILABLE;
+  r.control_flags = 0;
+
+  const bool assist = isAssistBusy() && assistJoints_[index].selected;
+  const auto& j = assistJoints_[index];
+  bool goalValid = goalAngleValid_[index];
+  float goal = goalAngle_[index];
+  float secondary = goal;
+  float reference = goal;
+  float actual = NAN;
+
+  auto timerMs = [](float seconds) -> uint16_t {
+    if (!isfinite(seconds) || seconds <= 0.0f) return 0;
+    const float ms = seconds * 1000.0f;
+    return (uint16_t)(ms >= 65535.0f ? 65535.0f : ms);
+  };
+
+  if (!r.error) actual = r.absolute_cdeg / 100.0f;
+  if (assist) {
+    // The controller owns these targets even when the last measurement is
+    // temporarily stale. Keep them observable; mark only measured position
+    // unavailable until a fresh cached sample is available.
+    goal = j.goal;
+    secondary = j.secondaryGoal;
+    reference = j.reference();
+    goalValid = true;
+    const float effort = j.effort < -32768.0f ? -32768.0f
+                       : j.effort > 32767.0f ? 32767.0f : j.effort;
+    r.effort_mA = (int16_t)roundf(effort);
+    r.intent_ms = timerMs(j.intentTimer);
+    r.release_ms = timerMs(j.releaseTimer);
+    r.stall_ms = timerMs(j.stallTimer);
+    if (j.measuredValid && millis() - j.lastSample <= 500) {
+      actual = j.angle;
+    }
+  }
+  if (goalValid && isfinite(goal)) {
+    r.goal_cdeg = (int32_t)roundf(goal * 100.0f);
+    r.secondary_goal_cdeg = (int32_t)roundf(secondary * 100.0f);
+    r.reference_cdeg = (int32_t)roundf(reference * 100.0f);
+    r.control_flags |= FAST_CONTROL_GOAL_VALID;
+  }
+  if (isfinite(actual)) r.control_flags |= FAST_CONTROL_MEASUREMENT_VALID;
+  if (motorMoving_[index]) r.control_flags |= FAST_CONTROL_MOTOR_MOVING;
+  if (assist) {
+    r.control_flags |= FAST_CONTROL_ASSIST_SELECTED;
+    if (j.calibrated) r.control_flags |= FAST_CONTROL_ASSIST_CALIBRATED;
+    if (j.rearmBlocked) r.control_flags |= FAST_CONTROL_REARM_BLOCKED;
+  }
+  if (goalValid && isfinite(actual) && isfinite(goal)) {
+    r.position_error_cdeg = (int32_t)roundf((goal - actual) * 100.0f);
+  }
+
+  if (assist) {
+    if (assistState_ == 1) r.control_state = FAST_CONTROL_ASSIST_CALIBRATING;
+    else if (assistState_ == 2) r.control_state = FAST_CONTROL_ASSIST_READY;
+    else if (j.rearmBlocked) r.control_state = FAST_CONTROL_ASSIST_REARM;
+    else if (j.stallTimer > 0.0f) r.control_state = FAST_CONTROL_ASSIST_STALLED;
+    else if (j.moving) r.control_state = FAST_CONTROL_ASSIST_MOVING;
+    else if (j.intentTimer > 0.0f) r.control_state = FAST_CONTROL_ASSIST_WAITING;
+    else r.control_state = FAST_CONTROL_ASSIST_READY;
+  } else if (goalValid) {
+    r.control_state = motorMoving_[index] ? FAST_CONTROL_MOVING : FAST_CONTROL_IDLE;
+  }
+}
+
 uint8_t NMLHandExo::getFastTelemetryRecords(
     const uint8_t* ids, uint8_t count, FastTelemetryRecord* records,
     uint8_t& methodOut, uint32_t timeoutMs) {
@@ -293,6 +368,7 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
     records[i].error = 1;
     records[i].sample_ms = millis();
     records[i].utc_ms = utcClock_.now(records[i].sample_ms);
+    fillControlTelemetry(getIndexById(ids[i]), records[i]);
   }
   if (isAssistBusy()) {
     // Reuse control measurements without competing for the Dynamixel bus or
@@ -311,6 +387,7 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
       r.velocity_raw = (int32_t)roundf(j.measuredVelocity/(.229f*6));
       r.sources = 0x15; r.error = 0;
       r.sample_ms = j.lastSample; r.utc_ms = j.measuredUtc;
+      fillControlTelemetry(i, r);
     }
     return count;
   }
@@ -319,6 +396,7 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
     for (uint8_t i = 0; i < count; ++i) {
       const int index = getIndexById(ids[i]);
       if (index >= 0 && motorReachable_[index]) fillModelRecord(index, records[i]);
+      if (index >= 0) fillControlTelemetry(index, records[i]);
     }
     return count; // No telemetry register reads, including idle-side requests.
   }
@@ -370,6 +448,7 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
     r.sources = 0x15; // position/current/velocity measured
     jointModels_[index].correct(angle, r.velocity_raw * 0.229f * 6.0f,
                                 r.current_mA, true, now);
+    fillControlTelemetry(index, r);
   }
   return count;
 }
@@ -504,10 +583,10 @@ String NMLHandExo::getDeviceInfo(bool includeLiveTelemetry) {
     // Need to return a single string with all the information
     String info = "Name: NMLHandExo\n";
     info += "Version: " + String(VERSION) + "\n";
-#if EXO_USB_PROTOBUF_V2
+#if EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V2
     info += "USB Protocol: protobuf-v2\nUSB CDC Count: 2\nUSB Text Port: primary\nUSB Binary Port: secondary\n";
     info += "USB Features: joint_model_write batch_motion current_limit_batch assist_v2 assist_binary assist_enable\n";
-#elif EXO_USB_PROTOBUF
+#elif EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V1
     info += "USB Protocol: protobuf-v1\nUSB CDC Count: 2\nUSB Text Port: primary\nUSB Binary Port: secondary\n";
     info += "USB Features: joint_model_write batch_motion assist_v2 assist_binary assist_enable\n";
 #elif EXO_AXON_USB

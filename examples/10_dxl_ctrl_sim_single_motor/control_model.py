@@ -105,7 +105,7 @@ class SimulationConfig:
     # Raw Dynamixel-style control-table gains.
     # The secondary-goal default is deliberately compliant: low P, no I, and
     # moderate D damping.  Other objectives can still tune these registers.
-    position_p_raw: int = 350
+    position_p_raw: int = 300
     position_i_raw: int = 0
     position_d_raw: int = 160
     velocity_p_raw: int = 40

@@ -1794,6 +1794,19 @@ class SerialWorker(QThread):
                     )
                     for mid, data in fast.items()
                 }
+                motor_control = {
+                    mid: {
+                        key: data.get(key)
+                        for key in (
+                            "goal_angle", "secondary_goal_angle", "reference_angle",
+                            "position_error", "goal_current", "assist_effort",
+                            "intent_ms", "release_ms", "stall_ms", "control_state",
+                            "control_flags",
+                        )
+                        if key in data
+                    }
+                    for mid, data in fast.items()
+                }
                 timestamp_by_id = {
                     mid: data.get("timestamp_ms") for mid, data in fast.items()
                 }
@@ -1815,6 +1828,7 @@ class SerialWorker(QThread):
                     "motor_sources": {mid: data.get("sources", 0) for mid, data in fast.items()},
                     "motor_utc_timestamp_ms": {mid: data.get("utc_timestamp_ms") for mid, data in fast.items()},
                     "motor_sample_timestamp_ms": {mid: data.get("sample_timestamp_ms") for mid, data in fast.items()},
+                    "motor_control": motor_control,
                     "utc_synchronized": bool(fast) and all(data.get("utc_synchronized", False) for data in fast.values()),
                     "host_poll_completed_wall_s": time.time(),
                     "host_poll_completed_monotonic_s": time.monotonic(),
@@ -2444,13 +2458,16 @@ class HandExoGUI(QWidget):
         # and shows discovered endstops right next to the live torque plot below.
         layout.addWidget(self._build_rom_cal_controls())
 
-        self._telem_table = QTableWidget(0, 4)
+        self._telem_table = QTableWidget(0, 8)
         self._telem_table.setHorizontalHeaderLabels(
-            ["Motor", "Position (°)", "Torque", "Current (mA)"]
+            [
+                "Motor", "Position (°)", "Goal (°)", "Error (°)",
+                "Control state", "Secondary goal (°)", "Torque", "Current (mA)",
+            ]
         )
         hdr = self._telem_table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        for col in (1, 2, 3):
+        for col in range(1, 8):
             hdr.setSectionResizeMode(col, QHeaderView.Stretch)
         self._telem_table.verticalHeader().setVisible(False)
         self._telem_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -5222,7 +5239,7 @@ class HandExoGUI(QWidget):
         """Populate telemetry table rows from self.motor_names after connect."""
         self._telem_table.setRowCount(len(self.motor_names))
         for row, name in enumerate(self.motor_names):
-            for col in range(4):
+            for col in range(8):
                 text = name if col == 0 else "—"
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignCenter)
@@ -5814,6 +5831,17 @@ class HandExoGUI(QWidget):
         torque_by_name = {}
         current_by_name = {}
         torque_sources_by_name = {}
+        control_states = {
+            0: "unavailable",
+            1: "idle",
+            2: "moving",
+            3: "assist calibrating",
+            4: "assist ready",
+            5: "assist waiting",
+            6: "assist moving",
+            7: "assist stalled",
+            8: "assist re-arm",
+        }
         for name, row in self._motor_row.items():
             i      = self._motor_idx[name]
             dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
@@ -5821,22 +5849,48 @@ class HandExoGUI(QWidget):
             torq = torques.get(dxl_id)   if (torques   is not None and dxl_id is not None) else None
             curr = currents.get(dxl_id)  if (currents  is not None and dxl_id is not None) else None
             velocity = velocities.get(dxl_id) if (velocities is not None and dxl_id is not None) else None
+            control = (telemetry_meta or {}).get("motor_control", {}).get(dxl_id, {})
+            goal = control.get("goal_angle")
+            position_error = control.get("position_error")
+            secondary_goal = control.get("secondary_goal_angle")
+            state_code = control.get("control_state")
+            state = control_states.get(state_code, "unknown")
             positions_by_name[name] = pos
             torque_by_name[name] = torq
             current_by_name[name] = curr
             sources = (telemetry_meta or {}).get("motor_field_sources", {}).get(dxl_id, {})
             torque_sources_by_name[name] = sources.get("torque", "measured")
-            for col, field in ((1, "position"), (2, "torque"), (3, "current")):
+            for col, field in ((1, "position"), (7, "current"), (6, "torque")):
                 self._telem_table.item(row, col).setToolTip(sources.get(field, "source unknown"))
             self._telem_table.item(row, 1).setText(
                 f"{pos:.2f}"  if pos  is not None else "—"
             )
             self._telem_table.item(row, 2).setText(
-                f"{torq:.4f}" if torq is not None else "—"
+                f"{goal:.2f}" if goal is not None else "—"
             )
             self._telem_table.item(row, 3).setText(
+                f"{position_error:+.2f}" if position_error is not None else "—"
+            )
+            self._telem_table.item(row, 4).setText(state)
+            self._telem_table.item(row, 5).setText(
+                f"{secondary_goal:.2f}" if secondary_goal is not None else "—"
+            )
+            self._telem_table.item(row, 6).setText(
+                f"{torq:.4f}" if torq is not None else "—"
+            )
+            self._telem_table.item(row, 7).setText(
                 f"{curr:.1f}" if curr is not None else "—"
             )
+            if control:
+                dwell = (
+                    f"intent {control.get('intent_ms', 0)} ms; "
+                    f"release {control.get('release_ms', 0)} ms; "
+                    f"stall {control.get('stall_ms', 0)} ms; "
+                    f"reference {control.get('reference_angle', '—')}°; "
+                    f"goal current {control.get('goal_current', '—')} mA; "
+                    f"effort {control.get('assist_effort', '—')} mA"
+                )
+                self._telem_table.item(row, 4).setToolTip(dwell)
             if dxl_id == self._selected_emg_motor_id() and hasattr(self, "_emg_feedback_lbl"):
                 measured = []
                 if velocity is not None:
@@ -7335,7 +7389,7 @@ class HandExoGUI(QWidget):
         self._udp_hand_vis.update_motor_states({}, connected=False)
         # Reset telemetry value cells; leave motor-name column intact
         for row in range(self._telem_table.rowCount()):
-            for col in (1, 2, 3):
+            for col in range(1, 8):
                 item = self._telem_table.item(row, col)
                 if item:
                     item.setText("—")

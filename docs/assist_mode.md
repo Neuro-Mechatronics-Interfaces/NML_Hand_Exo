@@ -47,7 +47,7 @@ ceiling. The former half-degree step/settle controller is replaced.
 | Lead | Grow toward 8 degrees at 24 deg/s while active; decay on release |
 | Intent gate | 500 ms above threshold; no former 0.15-degree deflection/settling gate |
 | Progress gate | Signed measured speed below 1 deg/s for 500 ms releases assistance |
-| Position controller | Explicit raw P=350, I=0, D=160; feedforward gains zero |
+| Position controller | Explicit raw P=300, I=0, D=160; feedforward gains zero; reduced P keeps assist compliant |
 | Current ceiling | Requested default 300 mA; shared-budget/motor-limit bounded installed cap stays fixed throughout the session |
 | Physical/environmental endstop | Supplied by the mechanism/environment; no firmware soft endstop |
 | Hard ROM | Both integrated goal and emitted reference stay inside calibrated limits plus 2-degree margin; no angle wrapping |
@@ -278,12 +278,13 @@ copy and report duplicate symbols. On this workspace the Protobuf build uses:
 
 ```powershell
 arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 `
-  --build-property 'compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF=1 -IC:/MyRepos/Python/NML_Hand_Exo/src/cpp/nml_hand_exo' `
+  --build-property 'compiler.cpp.extra_flags=-DEXO_USB_PROTOCOL=2 -IC:/MyRepos/Python/NML_Hand_Exo/src/cpp/nml_hand_exo' `
   --build-path build/assist-v3-protobuf src/cpp/nml_hand_exo
 ```
 
 Adjust the include path for other checkouts; it selects the repository's runtime
-without changing the installed libraries.
+without changing the installed libraries. This explicit `2` is optional on the
+default OpenRB build.
 
 Native tests execute actual firmware calibration, ownership, bus writes, lease,
 stop/retry and limit handling. An 18-motor fake bus exposes only Sync Read/Write

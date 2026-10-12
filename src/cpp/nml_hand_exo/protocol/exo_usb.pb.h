@@ -3,7 +3,7 @@
 
 #ifndef PB_EXO_USB_EXO_USB_PB_H_INCLUDED
 #define PB_EXO_USB_EXO_USB_PB_H_INCLUDED
-#include <pb.h>
+#include "../pb.h"
 
 #if PB_PROTO_HEADER_VERSION != 40
 #error Regenerate this file with the current version of nanopb generator.
@@ -199,7 +199,7 @@ typedef struct _exo_usb_AssistStatus {
     uint32_t total_current_budget_mA;
 } exo_usb_AssistStatus;
 
-typedef PB_BYTES_ARRAY_T(607) exo_usb_Response_nx_frame_t;
+typedef PB_BYTES_ARRAY_T(1200) exo_usb_Response_nx_frame_t;
 typedef struct _exo_usb_Response {
     uint32_t sequence;
     exo_usb_Status status;

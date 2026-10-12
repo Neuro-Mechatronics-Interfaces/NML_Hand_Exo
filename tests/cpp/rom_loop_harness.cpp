@@ -4,6 +4,10 @@
 using String = std::string;
 #define DUAL_CDC 1
 #define EXO_AXON_USB 0
+#define EXO_USB_PROTOCOL_ASCII 0
+#define EXO_USB_PROTOCOL_PROTOBUF_V1 1
+#define EXO_USB_PROTOCOL_PROTOBUF_V2 2
+#define EXO_USB_PROTOCOL EXO_USB_PROTOCOL_ASCII
 uint32_t nowMs = 0;
 int commandStream, telemetryStream, bluetoothStream;
 #define CMD_SERIAL commandStream

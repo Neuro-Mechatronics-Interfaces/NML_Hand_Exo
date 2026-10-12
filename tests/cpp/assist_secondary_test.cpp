@@ -25,6 +25,8 @@ int main(int argc, char**) {
   auto j = joint();
   assert(fabsf(j.threshold*AssistJoint::kTorqueConstant-.08f) < 1e-6f);
   assert(j.currentCap == 300);
+  assert(j.positionP == AssistJoint::kAssistPositionP && j.positionP == 300);
+  assert(j.positionI == 0 && j.positionD == AssistJoint::kAssistPositionD);
   j.effort = .2f/AssistJoint::kTorqueConstant;
   for (int k = 0; k < 20; ++k) j.updateIntent(100, 5, .02f);
   assert(!j.moving && j.secondaryGoal == 100);

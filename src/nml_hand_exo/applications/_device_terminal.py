@@ -102,11 +102,15 @@ class _TerminalOutput(QPlainTextEdit):
 class DeviceTerminal(QDialog):
     command_requested = pyqtSignal(str)
     MAX_LINES = 10000
+    ACTIVE_OPACITY = 1.0
+    INACTIVE_OPACITY = 0.28
 
     def __init__(self, parent=None):
         super().__init__(parent, Qt.Window)
+        self.setModal(True)
         self.setWindowTitle("Device Terminal — NML EXO")
         self.setWindowIcon(terminal_icon("terminal"))
+        self.setWindowOpacity(self.ACTIVE_OPACITY)
         self.resize(780, 460)
         self._lines = deque(maxlen=self.MAX_LINES)
         self._history = []
@@ -207,7 +211,15 @@ class DeviceTerminal(QDialog):
         self._lines.clear()
         self.output.clear()
 
+    def changeEvent(self, event):
+        if event.type() == QEvent.ActivationChange:
+            self.setWindowOpacity(
+                self.ACTIVE_OPACITY if self.isActiveWindow() else self.INACTIVE_OPACITY
+            )
+        super().changeEvent(event)
+
     def open_terminal(self):
+        self.setWindowOpacity(self.ACTIVE_OPACITY)
         self.show()
         self.raise_()
         self.activateWindow()

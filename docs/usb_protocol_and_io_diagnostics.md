@@ -86,7 +86,7 @@ relative to the oldest pending deadline. The firmware profile covers both loads.
 
 `HandExo.set_joint_model()` sends typed Protobuf fields when connected to a
 Protobuf build advertising `USB Features: joint_model_write`; the default build
-uses its existing ASCII command. Older Protobuf firmware requires a reflash for
+uses the typed Protobuf command. Older Protobuf firmware requires a reflash for
 this feature: the SDK reports the missing capability instead of silently using
 ASCII. Keep Python bindings and firmware updated together. `get_joint_model`,
 initial discovery, and I/O-profile snapshots remain low-rate text operations.
@@ -152,20 +152,27 @@ host delays are part of the new window. Instrumentation itself adds small clock
 and counter overhead. `loop_stats` provides aggregate loop mean/max, not a stage
 breakdown. Older firmware without counters can still run the host benchmark.
 
-## Optional Protobuf build
+## Protobuf transport selection
 
-The default remains ASCII commands plus packed NX telemetry. Enable the binary
-RPC interface explicitly for **all C++ translation units**:
-
-```powershell
-arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 --build-path build/firmware-protobuf --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF=1" src/cpp/nml_hand_exo
-```
-
-For the fully framed split-CDC transport, compile the v2 route instead:
+The default OpenRB dual-CDC build is Protobuf-v2 with NX-v3 telemetry. The
+single selector is `EXO_USB_PROTOCOL`: `2` is the current Protobuf-v2 transport,
+`1` is legacy Protobuf-v1, and `0` is legacy ASCII. The current default can be
+compiled without a protocol flag:
 
 ```powershell
-arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 --build-path build/firmware-protobuf-v2 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOBUF_V2=1" src/cpp/nml_hand_exo
+arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 --build-path build/firmware-default src/cpp/nml_hand_exo
 ```
+
+Explicitly selecting the current transport is equivalent:
+
+```powershell
+arduino-cli compile --fqbn OpenRB-150:samd:OpenRB-150 --build-path build/firmware-protobuf-v2 --build-property "compiler.cpp.extra_flags=-DEXO_USB_PROTOCOL=2" src/cpp/nml_hand_exo
+```
+
+Use `-DEXO_USB_PROTOCOL=1` only for a legacy Protobuf-v1 image or
+`-DEXO_USB_PROTOCOL=0` for a legacy ASCII image. The old
+`EXO_USB_PROTOBUF` and `EXO_USB_PROTOBUF_V2` flags remain accepted as
+compatibility aliases but should not be used for new builds.
 
 Protobuf-v2 uses version-2 `PB` envelopes on both CDCs: the command CDC accepts
 Requests and the response CDC emits Responses. Discovery sends a side-effect-free
@@ -177,30 +184,30 @@ Use `compiler.cpp.extra_flags`, not `build.extra_flags`: the latter replaces
 OpenRB's MCU and USB definitions and causes missing `Sercom`/`TCC_INST_NUM` errors.
 
 This uses the installed Arduino `nanopb` library (generated code uses nanopb
-0.4.9.1, descriptor format 40). The default build does not require it. Axon and
-`SINGLE_CDC` builds are incompatible with this option and fail at compile time.
+0.4.9.1, descriptor format 40). Axon and `SINGLE_CDC` builds default to ASCII;
+they cannot select a Protobuf transport and fail if explicitly forced to one.
 Compilation alone does not flash the board.
 
-Install the Python runtime for this optional firmware:
+Install the Python runtime used by the default Protobuf firmware:
 
 ```powershell
 .venv/Scripts/python -m pip install -e ".[protobuf]"
 ```
 
-`info` retains `Version: 0.9.0` and adds:
+The current default OpenRB image reports:
 
 ```
-USB Protocol: protobuf-v1
+USB Protocol: protobuf-v2
 USB CDC Count: 2
 USB Text Port: primary
 USB Binary Port: secondary
-USB Features: joint_model_write batch_motion
+USB Features: joint_model_write batch_motion current_limit_batch assist_v2 assist_binary assist_enable
 Model Step Ms: 1
 I/O Profile: 1
 ```
 
-The v2 image reports `USB Protocol: protobuf-v2` and adds the
-`current_limit_batch` feature. The GUI's 300 mA bulk action sends one explicit
+An explicitly selected v1 image reports `USB Protocol: protobuf-v1` and omits
+`current_limit_batch`. The GUI's 300 mA bulk action sends one explicit
 ID/value pair per active motor; it does not send `set_total_current_lim`.
 
 The GUI replaces the Dual USB CDC checkbox with automatic discovery. Old builds
@@ -241,8 +248,8 @@ distinguishes this additive opcode from earlier `protobuf-v1` firmware.
 
 Current builds advertise `USB Features: joint_model_write batch_motion`.
 `batch_motion` gates opcodes 8--13; older Protobuf builds raise a missing-feature
-error without sending an ASCII fallback. Reflash with the same
-`-DEXO_USB_PROTOBUF=1` flag and update the Python SDK together.
+error without sending an ASCII fallback. Reflash with the current default
+transport (or `-DEXO_USB_PROTOCOL=2`) and update the Python SDK together.
 
 | SDK method | Protobuf command | Meaning |
 |---|---|---|
@@ -326,11 +333,12 @@ errors distinguish no reply, a partial seven-byte header and a partial payload,
 and identify the command and binary CDC port. This recovery does not replay
 the timed-out operation or add retries to a telemetry poll.
 
-Telemetry responses carry the existing NX v2 packed frame in a Protobuf `bytes`
-field. That preserves its compact fixed-size records, units, provenance and
-timestamps, reusing the SDK checksum and record validation. Protobuf overhead
-does not make this already-binary payload smaller; the gain is removing text
-request parsing/formatting and keeping binary traffic off the text reader.
+Telemetry responses carry the NX v3 packed frame in a Protobuf `bytes` field.
+That preserves its compact fixed-size records, units, provenance, timestamps,
+and control-loop observability, reusing the SDK checksum and record validation.
+The Protobuf bytes bound is 1200 bytes for the 18-motor frame. Protobuf
+overhead does not make this already-binary payload smaller; the gain is removing
+text request parsing/formatting and keeping binary traffic off the text reader.
 
 <!-- GraphViz diagram published below by graphviz_sync. -->
 
@@ -355,4 +363,5 @@ firmware and SDK together. Discovery and unrelated maintenance remain text.
 
 Fast telemetry method 5 identifies cached assist-control measurements. Per-field
 source flags remain measured; per-sample timestamps retain acquisition time,
-independent of request time. This adds no fields to NX v2 or the Protobuf envelope.
+independent of request time. The v3 control fields are part of the opaque NX
+payload, so the Protobuf envelope itself remains unchanged.

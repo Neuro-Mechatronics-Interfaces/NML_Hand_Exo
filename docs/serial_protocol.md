@@ -2,7 +2,8 @@
 
 Optional SciFi builds use `EXO_AXON_USB=1`: Axon interface 0 plus one CDC at
 1/2, with the same ASCII protocol. See [Axon USB](axon_usb.md). The dual-CDC
-descriptions below apply to the default build without that flag.
+descriptions below apply to the default OpenRB Protobuf-v2 build; Axon remains
+ASCII-only.
 
 > `[VERIFIED]` = confirmed from source. `[INFERRED]` = reasonable but unverified.
 
@@ -25,7 +26,8 @@ Arduino OpenRB-150
    → Serial1 (DXL_SERIAL, 1000000 baud) — Dynamixel bus
 ```
 
-Both command inputs are active. On OpenRB-150, the default build exposes two
+Both command inputs are active. On OpenRB-150, the default build uses the
+current Protobuf-v2 transport and exposes two
 USB CDC interfaces on the same cable: commands use the primary CDC while
 replies and telemetry use the second. `set_reply_route:telem` fully decouples
 them; `set_reply_route:both` retains single-port compatibility. Bluetooth
@@ -94,7 +96,7 @@ lines so a request burst cannot starve the pulse deadline.
 
 ### Fast telemetry binary frame
 
-**Firmware 0.9.0:** `NX` header version 2 adds field provenance and per-record UTC/uptime timestamps. Motion-time telemetry uses the internal joint model; idle telemetry uses one Sync Read. Update the Python SDK alongside the firmware. See the [complete v0.9.0 wire contract](v0.9.0_implementation.md), including `set_joint_model`, `get_joint_model`, `set_estimate_holdoff`, `set_joint_trigger`, `clear_joint_trigger`, `set_utc_time`, and `get_utc_time`.
+**Firmware 0.9.0:** `NX` header version 2 adds field provenance and per-record UTC/uptime timestamps. The current firmware's `NX` header version 3 additionally exports read-only control-loop observability for every requested motor: the actual goal, secondary goal, reference, position error, applied Goal Current, assist effort, intent/release/stall dwell timers, and controller state/flags. Motion-time telemetry uses the internal joint model; idle telemetry uses one Sync Read. Update the Python SDK alongside the firmware. See the [complete v0.9.0 wire contract](v0.9.0_implementation.md), including `set_joint_model`, `get_joint_model`, `set_estimate_holdoff`, `set_joint_trigger`, `clear_joint_trigger`, `set_utc_time`, and `get_utc_time`.
 
 The following describes the legacy version-1 frame, still supported by the SDK:
 
@@ -106,6 +108,15 @@ absolute angle in centidegrees, and relative angle in centidegrees. Header
 `flags` reports the firmware read method: `2` = fastSyncRead, `3` = syncRead,
 `1` = short-timeout fallback individual reads, `0` = failed. This command is
 intended for GUI polling because it avoids multiple text round trips per motor.
+
+NX v3 records retain the v2 prefix and append the little-endian fields
+`goal_cdeg`, `secondary_goal_cdeg`, `reference_cdeg`, `position_error_cdeg`,
+`goal_current_mA`, `effort_mA`, `intent_ms`, `release_ms`, `stall_ms`,
+`control_state`, and `control_flags` (61 bytes per record). `INT32_MIN` means
+an angle is unavailable. The state distinguishes ordinary `idle`/`moving`
+operation from assist calibration, sustained-intent waiting, assist motion,
+sustained stall, and re-arm holdoff. This snapshot is copied from controller
+memory and adds no Dynamixel transaction.
 
 `telemetry_diag:<id>:<id>...` returns a text diagnostic using the same firmware
 read path, including method, elapsed microseconds, and per-motor raw values.
@@ -641,13 +652,13 @@ Open `src/cpp/nml_hand_exo/nml_hand_exo.ino` in the Arduino IDE.
 Upload → board flashes LED 4× and prints `"Exo device ready to receive commands"`.
 
 
-### Optional Protobuf USB and I/O profiling
+### Protobuf USB and I/O profiling
 
 Firmware v0.9.1 adds adaptive 40-ms shaped Auto-ROM pulses and asynchronous
 `ROM_CAL_PULSE` observations. `get_joint_model` also reports per-direction pulse
 response statistics; see [the v0.9.1 procedure](v0.9.1_pulse_calibration.md).
 
-`EXO_USB_PROTOBUF=1` reserves the second CDC for bounded nanopb request/reply
+The Protobuf transport reserves the second CDC for bounded nanopb request/reply
 frames. Primary USB retains ASCII maintenance commands, `info`, `help` and ROM
 events. `info` advertises the protocol, CDC count/roles, model integration step,
 and I/O profile version. The SDK/GUI discovers this automatically; legacy NX
@@ -672,7 +683,7 @@ for ASCII commands, Protobuf opcodes 14–21, states and heartbeat requirements.
 
 ### Binary assist status (Protobuf builds)
 
-With `EXO_USB_PROTOBUF=1`, the secondary CDC accepts `ASSIST_STATUS` (19,
+With a Protobuf transport, the secondary CDC accepts `ASSIST_STATUS` (19,
 no arguments) and `ASSIST_OBSERVER` (20, one explicit motor ID and three
 `values`: inertia, viscous friction, Coulomb friction, in the same units as
 `assist_observer`). Commands 14–20 return a typed `Response.assist` snapshot

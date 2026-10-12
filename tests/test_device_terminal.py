@@ -46,11 +46,18 @@ def test_timestamps_toggle_all_lines_and_copy_clear_preserve_clock_state(termina
     assert terminal.output.toPlainText() == ""
 
 
-def test_hover_tools_and_nonmodal_reopen_preserve_session(terminal, qapp):
+def test_modal_terminal_fades_when_inactive_and_preserves_session(terminal, qapp, monkeypatch):
     terminal.append_message("before opening")
     terminal.open_terminal()
     qapp.processEvents()
-    assert not terminal.isModal()
+    assert terminal.isModal()
+    assert terminal.windowOpacity() == terminal.ACTIVE_OPACITY
+    monkeypatch.setattr(terminal, "isActiveWindow", lambda: False)
+    QApplication.sendEvent(terminal, QEvent(QEvent.ActivationChange))
+    assert terminal.windowOpacity() == pytest.approx(terminal.INACTIVE_OPACITY, abs=0.01)
+    monkeypatch.setattr(terminal, "isActiveWindow", lambda: True)
+    QApplication.sendEvent(terminal, QEvent(QEvent.ActivationChange))
+    assert terminal.windowOpacity() == terminal.ACTIVE_OPACITY
     QApplication.sendEvent(terminal.output, QEvent(QEvent.Enter))
     assert terminal.output.tools.isVisible()
     QApplication.sendEvent(terminal.output, QEvent(QEvent.Leave))

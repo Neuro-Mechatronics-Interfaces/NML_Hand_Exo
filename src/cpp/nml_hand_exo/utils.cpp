@@ -72,10 +72,10 @@ uint32_t loopStatsMeanUs() {
 void telemetryPrintln(const String& msg) {
   EXO_PROFILE(USB_TX);
   // The Protobuf build reserves the second CDC exclusively for binary data.
-#if EXO_USB_PROTOBUF_V2
+#if EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V2
   if (!protobufReplyCaptureActive()) protobufV2EmitEvent(msg);
   return;
-#elif EXO_USB_PROTOBUF
+#elif EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V1
   CMD_SERIAL.println(msg);
 #elif defined(DUAL_CDC) && DUAL_CDC
   // Legacy-safe: default route BOTH mirrors to the command CDC so a single-port
@@ -104,7 +104,7 @@ void commandPrint(const String& msg) {
     cmdMsg += cmdDelimiter;
   }
 
-#if EXO_USB_PROTOBUF_V2
+#if EXO_USB_PROTOCOL == EXO_USB_PROTOCOL_PROTOBUF_V2
   if (gProtobufReplyCapture) {
     *gProtobufReplyCapture += cmdMsg;
     return;
@@ -319,7 +319,7 @@ void writeFastTelemetryFrame(Stream& stream, FastTelemetryRecord* records, uint8
   FastTelemetryHeader header;
   header.magic[0] = 'N';
   header.magic[1] = 'X';
-  header.version = 2;
+  header.version = 3;
   header.flags = flags;
   header.count = count;
   header.payload_len = count * sizeof(FastTelemetryRecord);
@@ -380,7 +380,7 @@ const char* fastTelemetryMethodName(uint8_t method) {
 
 void sendFastTelemetry(NMLHandExo& exo, const String& token, bool fromBluetooth) {
   EXO_PROFILE(NX_PACK);
-#if EXO_USB_PROTOBUF
+#if EXO_USB_PROTOCOL != EXO_USB_PROTOCOL_ASCII
   if (!fromBluetooth) {
     commandPrint(F("ERROR: use Protobuf GET_TELEMETRY_FAST on the binary CDC"));
     return;
@@ -403,7 +403,7 @@ void sendFastTelemetry(NMLHandExo& exo, const String& token, bool fromBluetooth)
   // reply_route controls text only (the other CDC has a text reader).
   if (!fromBluetooth) EXO_PROFILE_CALL(USB_TX, writeFastTelemetryFrame(DEBUG_SERIAL, records, recordCount, method));
 #if defined(COMMAND_SERIAL)
-  // A 310-byte nine-motor frame takes ~27 ms at 115200 baud. Mirroring every
+  // A 562-byte nine-motor frame takes ~49 ms at 115200 baud. Mirroring every
   // USB poll here blocked the control loop even with no Bluetooth client.
   if (fromBluetooth) EXO_PROFILE_CALL(BT_TX, writeFastTelemetryFrame(COMMAND_SERIAL, records, recordCount, method));
 #endif
@@ -436,6 +436,17 @@ void sendFastTelemetryDiag(NMLHandExo& exo, const String& token) {
             ", position_ticks: " + String(records[i].position_ticks) +
             ", absolute_angle: " + String(records[i].absolute_cdeg / 100.0f, 2) +
             ", angle: " + String(records[i].relative_cdeg / 100.0f, 2) +
+            ", goal_angle: " + String(records[i].goal_cdeg == FAST_TELEM_UNAVAILABLE_CDEG ? NAN : records[i].goal_cdeg / 100.0f, 2) +
+            ", secondary_goal_angle: " + String(records[i].secondary_goal_cdeg == FAST_TELEM_UNAVAILABLE_CDEG ? NAN : records[i].secondary_goal_cdeg / 100.0f, 2) +
+            ", reference_angle: " + String(records[i].reference_cdeg == FAST_TELEM_UNAVAILABLE_CDEG ? NAN : records[i].reference_cdeg / 100.0f, 2) +
+            ", position_error: " + String(records[i].position_error_cdeg == FAST_TELEM_UNAVAILABLE_CDEG ? NAN : records[i].position_error_cdeg / 100.0f, 2) +
+            ", goal_current_mA: " + String(records[i].goal_current_mA) +
+            ", assist_effort_mA: " + String(records[i].effort_mA) +
+            ", intent_ms: " + String(records[i].intent_ms) +
+            ", release_ms: " + String(records[i].release_ms) +
+            ", stall_ms: " + String(records[i].stall_ms) +
+            ", control_state: " + String(records[i].control_state) +
+            ", control_flags: " + String(records[i].control_flags) +
             "}\n";
   }
   commandPrint(info);

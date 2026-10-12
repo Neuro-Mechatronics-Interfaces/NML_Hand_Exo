@@ -50,6 +50,26 @@ def make_frame():
     return header + record
 
 
+def make_control_frame():
+    record_fmt = "<BBhiiiiBQIiiiihhHHHBB"
+    record = struct.pack(
+        record_fmt,
+        11, 0, 123, -4, 2048, 18025, -975,
+        0x15, 0, 4568,
+        18250, 18100, 18250, 225,
+        300, 42, 500, 0, 125, 6, 0x1F,
+    )
+    header_fmt = "<2sBBBHIH"
+    header_without_checksum = struct.pack(
+        header_fmt, b"NX", 3, 2, 1, len(record), 4567, 0
+    )
+    checksum = (sum(header_without_checksum[:-2]) + sum(record)) & 0xFFFF
+    header = struct.pack(
+        header_fmt, b"NX", 3, 2, 1, len(record), 4567, checksum
+    )
+    return header + record
+
+
 class FastTelemetryTests(unittest.TestCase):
     def test_reads_frame_through_transport_raw_stream(self):
         comm = FakeFastTelemetryComm(make_frame())
@@ -62,6 +82,24 @@ class FastTelemetryTests(unittest.TestCase):
         self.assertEqual(result[11]["absolute_angle"], 180.25)
         self.assertEqual(result[11]["angle"], -9.75)
         self.assertEqual(result[11]["flags"], 2)
+
+    def test_reads_v3_control_loop_observability(self):
+        comm = FakeFastTelemetryComm(make_control_frame())
+        exo = HandExo(comm, command_delimiter="\r\n", send_delay=0)
+
+        result = exo.get_fast_telemetry(timeout=0.1, motor_ids=[11])
+
+        self.assertEqual(result[11]["frame_version"], 3)
+        self.assertEqual(result[11]["goal_angle"], 182.5)
+        self.assertEqual(result[11]["secondary_goal_angle"], 181.0)
+        self.assertEqual(result[11]["reference_angle"], 182.5)
+        self.assertEqual(result[11]["position_error"], 2.25)
+        self.assertEqual(result[11]["goal_current"], 300)
+        self.assertEqual(result[11]["assist_effort"], 42)
+        self.assertEqual(result[11]["intent_ms"], 500)
+        self.assertEqual(result[11]["stall_ms"], 125)
+        self.assertEqual(result[11]["control_state"], 6)
+        self.assertEqual(result[11]["control_flags"], 0x1F)
 
 
 if __name__ == "__main__":

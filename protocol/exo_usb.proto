@@ -148,7 +148,7 @@ message AssistStatus {
 message Response {
   required uint32 sequence = 1;
   required Status status = 2;
-  // NX v2 header + packed records, identical units, provenance and timestamps.
+  // NX v3 header + packed records, including control-loop observability.
   // Avoid varint expansion and preserve the existing SDK's validated decoder.
   optional bytes nx_frame = 3;
   optional BatchResult batch = 4;

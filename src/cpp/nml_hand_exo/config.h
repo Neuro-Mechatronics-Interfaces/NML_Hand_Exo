@@ -81,8 +81,8 @@
   #define DUAL_CDC 1
 #endif
 
-#if EXO_USB_PROTOBUF && (!defined(ARDUINO_OpenRB) || !defined(DUAL_CDC) || EXO_AXON_USB)
-#error "EXO_USB_PROTOBUF requires OpenRB dual CDC and is incompatible with Axon/SINGLE_CDC"
+#if EXO_USB_PROTOCOL != EXO_USB_PROTOCOL_ASCII && (!defined(ARDUINO_OpenRB) || !defined(DUAL_CDC) || EXO_AXON_USB)
+#error "The selected Protobuf USB protocol requires OpenRB dual CDC and is incompatible with Axon/SINGLE_CDC"
 #endif
 
 #if EXO_AXON_USB && defined(DUAL_CDC) && DUAL_CDC

@@ -239,7 +239,7 @@ int main() {
     assert(e.calibrateAssist(id, 1));
     assert(e.dxl_.enabled[0] && !e.dxl_.enabled[1]);
     assert(e.dxl_.caps[0] == 40 && e.dxl_.goals == 1);
-    assert(e.dxl_.pGain == 350 && e.dxl_.iGain == 0 && e.dxl_.dGain == 160);
+    assert(e.dxl_.pGain == 300 && e.dxl_.iGain == 0 && e.dxl_.dGain == 160);
     assert(e.dxl_.velocityProfile == 0 && e.dxl_.accelerationProfile == 0);
     assert(fabsf(e.dxl_.goalTicks[0]*360.0f/4096 - 100) < .05f);
   }

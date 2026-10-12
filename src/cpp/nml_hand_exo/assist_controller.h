@@ -131,13 +131,21 @@ struct AssistFeedback { float angle = 0, velocity = 0, current = 0; };
 struct AssistJoint {
   static constexpr float kTorqueConstant = .00115f;
   static constexpr unsigned kSamples = 50;
+  // Assist uses a deliberately compliant position loop.  Keep this lower
+  // than the normal position-control tuning so the moving secondary goal
+  // does not feel unnecessarily stiff.
+  static constexpr uint16_t kAssistPositionP = 300;
+  static constexpr uint16_t kAssistPositionI = 0;
+  static constexpr uint16_t kAssistPositionD = 160;
   float threshold = .08f/kTorqueConstant, gain = 80*kTorqueConstant, currentCap = 300;
   float observerTau = .20f, inertia = 0, viscous = 0, coulomb = 0;
   float intentCap = .25f/kTorqueConstant;
   float leadMax = 8, leadRate = 24, detectDelay = .50f;
   float stallVelocity = 1, stallDelay = .50f;
   float speedLimit = 60, trackingLimit = 32;
-  uint16_t positionP = 350, positionI = 0, positionD = 160;
+  uint16_t positionP = kAssistPositionP;
+  uint16_t positionI = kAssistPositionI;
+  uint16_t positionD = kAssistPositionD;
   float hardMin = 0, hardMax = 0;
   bool configured = false, selected = false, calibrated = false, moving = false;
   bool rearmBlocked = false;

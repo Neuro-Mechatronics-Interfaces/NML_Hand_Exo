@@ -470,7 +470,10 @@ class HandExo(object):
         The firmware emits an ``NX`` frame with one fixed-size record per motor.
         Records are keyed by Dynamixel ID and include relative/absolute angles,
         current, raw velocity, and raw position ticks. NX v2 also supplies
-        per-field sources and per-sample UTC/uptime; unavailable values are None.
+        per-field sources and per-sample UTC/uptime. NX v3 adds the firmware's
+        read-only control-loop target, position error, applied goal current,
+        assist state, effort, and sustained-detector timers. Unavailable values
+        are None.
         """
         binary_reader = getattr(self.device, "get_fast_frame", None)
         if self._is_protobuf_transport() and callable(binary_reader):
@@ -517,10 +520,13 @@ class HandExo(object):
         magic, version, flags, count, payload_len, timestamp_ms, checksum = struct.unpack(
             header_fmt, header
         )
-        if magic != b"NX" or version not in (1, 2):
+        if magic != b"NX" or version not in (1, 2, 3):
             raise ValueError("Unsupported fast telemetry frame")
 
-        record_fmt = "<BBhiiiiBQI" if version == 2 else "<BBhiiii"
+        record_fmt = (
+            "<BBhiiiiBQIiiiihhHHHBB" if version == 3 else
+            ("<BBhiiiiBQI" if version == 2 else "<BBhiiii")
+        )
         record_len = struct.calcsize(record_fmt)
         if count > 32 or payload_len != count * record_len:
             raise ValueError("Invalid fast telemetry payload length")
@@ -538,13 +544,13 @@ class HandExo(object):
                 break
             fields = struct.unpack_from(record_fmt, payload, offset)
             mid, error, current_mA, velocity_raw, position_ticks, absolute_cdeg, relative_cdeg = fields[:7]
-            sources = fields[7] if version == 2 else (0 if error else 0x15)
+            sources = fields[7] if version >= 2 else (0 if error else 0x15)
             source_names = ("unavailable", "measured", "estimated", "unavailable")
             position_source, current_source, velocity_source = (
                 source_names[(sources >> shift) & 3] if not error else "unavailable"
                 for shift in (0, 2, 4)
             )
-            records[mid] = {
+            record = {
                 "id": mid,
                 "error": bool(error),
                 "current": current_mA if current_source != "unavailable" else None,
@@ -559,12 +565,35 @@ class HandExo(object):
                 "velocity_source": velocity_source,
                 "estimated": "estimated" in (position_source, current_source, velocity_source),
                 "frame_version": version,
-                "utc_timestamp_ms": (fields[8] or None) if version == 2 else None,
-                "utc_synchronized": bool(fields[8]) if version == 2 else False,
-                "sample_timestamp_ms": fields[9] if version == 2 else timestamp_ms,
+                "utc_timestamp_ms": (fields[8] or None) if version >= 2 else None,
+                "utc_synchronized": bool(fields[8]) if version >= 2 else False,
+                "sample_timestamp_ms": fields[9] if version >= 2 else timestamp_ms,
                 "timestamp_ms": timestamp_ms,
                 "flags": flags,
             }
+            if version == 3:
+                unavailable = -2147483648
+                goal_cdeg, secondary_cdeg, reference_cdeg, error_cdeg = fields[10:14]
+                record.update({
+                    "goal_angle": None if goal_cdeg == unavailable else goal_cdeg / 100.0,
+                    "secondary_goal_angle": (
+                        None if secondary_cdeg == unavailable else secondary_cdeg / 100.0
+                    ),
+                    "reference_angle": (
+                        None if reference_cdeg == unavailable else reference_cdeg / 100.0
+                    ),
+                    "position_error": (
+                        None if error_cdeg == unavailable else error_cdeg / 100.0
+                    ),
+                    "goal_current": fields[14],
+                    "assist_effort": fields[15],
+                    "intent_ms": fields[16],
+                    "release_ms": fields[17],
+                    "stall_ms": fields[18],
+                    "control_state": fields[19],
+                    "control_flags": fields[20],
+                })
+            records[mid] = record
             offset += record_len
         return records
 

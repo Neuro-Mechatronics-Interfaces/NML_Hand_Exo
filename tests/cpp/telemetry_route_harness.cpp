@@ -4,6 +4,10 @@
 #include <vector>
 using String = std::string;
 #define DUAL_CDC 1
+#define EXO_USB_PROTOCOL_ASCII 0
+#define EXO_USB_PROTOCOL_PROTOBUF_V1 1
+#define EXO_USB_PROTOCOL_PROTOBUF_V2 2
+#define EXO_USB_PROTOCOL EXO_USB_PROTOCOL_ASCII
 #define REPLY_ROUTE_BOTH 0
 #define REPLY_ROUTE_TELEM 1
 #define REPLY_ROUTE_CMD 2
@@ -23,7 +27,7 @@ struct Stream {
 #define CMD_SERIAL commandPort
 #define TELEM_SERIAL telemetryPort
 #define COMMAND_SERIAL bluetoothPort
-struct FastTelemetryRecord { uint8_t data[33] = {}; };
+struct FastTelemetryRecord { uint8_t data[61] = {}; };
 enum { FAST_TELEM_METHOD_FAILED };
 struct NMLHandExo {
   uint8_t getFastTelemetryRecords(const uint8_t*, uint8_t count, FastTelemetryRecord*,
@@ -39,11 +43,11 @@ int main() {
     gReplyRoute = route;
     commandPort.clear(); telemetryPort.clear(); bluetoothPort.clear();
     sendFastTelemetry(exo, "get_telemetry_fast", false);
-    assert(commandPort.bytes.size() == 310);
+    assert(commandPort.bytes.size() == 562);
     assert(telemetryPort.bytes.size() == 0);
     assert(bluetoothPort.bytes.empty() && bluetoothPort.flushes == 0);
   }
   sendFastTelemetry(exo, "get_telemetry_fast", true);
-  assert(bluetoothPort.bytes.size() == 310 && bluetoothPort.flushes == 1);
+  assert(bluetoothPort.bytes.size() == 562 && bluetoothPort.flushes == 1);
   assert(bluetoothPort.bytes[0] == 'N' && bluetoothPort.bytes[1] == 'X');
 }

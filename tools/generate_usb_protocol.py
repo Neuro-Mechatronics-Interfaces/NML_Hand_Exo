@@ -24,4 +24,10 @@ with tempfile.TemporaryDirectory() as tmp:
 
 # nanopb emits surplus empty lines at EOF; keep checked-in output whitespace-clean.
 for generated in (ROOT / 'src/cpp/nml_hand_exo/protocol').glob('exo_usb.pb.*'):
-    generated.write_text(generated.read_text(encoding='utf-8').rstrip() + '\n', encoding='utf-8')
+    contents = generated.read_text(encoding='utf-8')
+    if generated.name == 'exo_usb.pb.h':
+        # The firmware vendors nanopb beside the generated protocol directory.
+        # Use a relative include so Arduino CLI does not require a machine-wide
+        # nanopb library (which would duplicate the checked-in runtime).
+        contents = contents.replace('#include <pb.h>', '#include "../pb.h"')
+    generated.write_text(contents.rstrip() + '\n', encoding='utf-8')

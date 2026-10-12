@@ -50,6 +50,7 @@ struct Bus {
 struct NMLHandExo {
   Bus dxl_;
   bool assistBusy = false;
+  uint8_t assistState_ = 3;
   AssistJoint assistJoints_[3];
   bool isAssistBusy() const { return assistBusy; }
   const int numMotors_ = N_MOTORS;
@@ -75,6 +76,7 @@ struct NMLHandExo {
   bool telemetryEstimated();
   void serviceJointModels();
   void fillModelRecord(int, FastTelemetryRecord&);
+  void fillControlTelemetry(int, FastTelemetryRecord&);
 };
 // FIRMWARE_IMPLEMENTATION
 int main() {

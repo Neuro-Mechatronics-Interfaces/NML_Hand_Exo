@@ -59,10 +59,46 @@ struct __attribute__((packed)) FastTelemetryRecord {
   uint8_t sources; // two bits each: position, current, velocity; 0/1/2 = unavailable/measured/estimated
   uint64_t utc_ms; // Unix UTC milliseconds; zero until synchronized
   uint32_t sample_ms; // sample uptime (millis), independent of UTC adjustments
+  // v3 control-loop observability. Angles are absolute motor coordinates in
+  // centidegrees; unavailable angles use INT32_MIN. Timers are milliseconds.
+  int32_t goal_cdeg;
+  int32_t secondary_goal_cdeg;
+  int32_t reference_cdeg;
+  int32_t position_error_cdeg; // goal - measured position
+  int16_t goal_current_mA;     // GOAL_CURRENT actually applied by the governor
+  int16_t effort_mA;           // assist observer effort; zero outside assist
+  uint16_t intent_ms;
+  uint16_t release_ms;
+  uint16_t stall_ms;
+  uint8_t control_state;
+  uint8_t control_flags;
 };
 
 static constexpr uint8_t TELEM_SOURCE_ESTIMATED = 0x80;
-static_assert(sizeof(FastTelemetryRecord) == 33, "NX v2 wire record size");
+static constexpr int32_t FAST_TELEM_UNAVAILABLE_CDEG = INT32_MIN;
+
+enum FastTelemetryControlState : uint8_t {
+  FAST_CONTROL_UNAVAILABLE = 0,
+  FAST_CONTROL_IDLE = 1,
+  FAST_CONTROL_MOVING = 2,
+  FAST_CONTROL_ASSIST_CALIBRATING = 3,
+  FAST_CONTROL_ASSIST_READY = 4,
+  FAST_CONTROL_ASSIST_WAITING = 5,
+  FAST_CONTROL_ASSIST_MOVING = 6,
+  FAST_CONTROL_ASSIST_STALLED = 7,
+  FAST_CONTROL_ASSIST_REARM = 8,
+};
+
+enum FastTelemetryControlFlags : uint8_t {
+  FAST_CONTROL_GOAL_VALID = 1 << 0,
+  FAST_CONTROL_MEASUREMENT_VALID = 1 << 1,
+  FAST_CONTROL_MOTOR_MOVING = 1 << 2,
+  FAST_CONTROL_ASSIST_SELECTED = 1 << 3,
+  FAST_CONTROL_ASSIST_CALIBRATED = 1 << 4,
+  FAST_CONTROL_REARM_BLOCKED = 1 << 5,
+};
+
+static_assert(sizeof(FastTelemetryRecord) == 61, "NX v3 wire record size");
 
 /// @brief One absolute motor target for a multi-motor Sync Write.
 struct MotorAngleTarget {
@@ -267,6 +303,10 @@ class NMLHandExo {
       uint8_t& methodOut,
       uint32_t timeoutMs = 10
     );
+
+    /// @brief Append existing control-loop targets and state to one record.
+    /// This is read-only and performs no Dynamixel I/O.
+    void fillControlTelemetry(int index, FastTelemetryRecord& record);
 
     /// @brief Configure explicit IDs for read-only shadow instrumentation.
     bool configureShadowTelemetry(
@@ -891,8 +931,10 @@ class NMLHandExo {
     ///
     /// 0.9.1 -- implements the EXO_USB_PROTOBUF_V1
     ///
-    /// 0.9.3 -- implements the EXO_USB_PROTOBUF_V2
-    static constexpr const char* VERSION = "0.9.3";
+    /// 0.9.3 -- implements the Protobuf-v2 USB transport
+    ///
+    /// 0.9.4 -- updates the FastTelemetryRecord size to 61 bytes for NX v3 wire format.
+    static constexpr const char* VERSION = "0.9.4";
 
   private:
     ExoUtcClock utcClock_;
