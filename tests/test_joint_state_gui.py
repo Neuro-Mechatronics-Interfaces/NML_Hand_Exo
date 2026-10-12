@@ -4,7 +4,24 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from nml_hand_exo.applications.hand_exo_gui import HandExoGUI
+from nml_hand_exo.applications.hand_exo_gui import (
+    FAST_CONTROL_ASSIST_SELECTED,
+    FAST_CONTROL_TORQUE_DETRENDED_VALID,
+    HandExoGUI,
+    _assist_effort_nm,
+)
+
+
+def test_monitor_uses_detrended_effort_only_when_firmware_marks_it_valid():
+    assert _assist_effort_nm({
+        "assist_effort": -21,
+        "control_flags": FAST_CONTROL_TORQUE_DETRENDED_VALID,
+    }) == pytest.approx(-.02415)
+    assert _assist_effort_nm({
+        "assist_effort": -21,
+        "control_flags": FAST_CONTROL_ASSIST_SELECTED,
+    }) is None
+    assert _assist_effort_nm({"assist_effort": 47, "control_flags": 0}) is None
 
 
 @pytest.mark.parametrize("version,expected", [("0.8.0", 0), ("unknown", 0),

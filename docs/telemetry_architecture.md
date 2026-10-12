@@ -23,9 +23,9 @@ HandExoGUI (QWidget)
               │           │     ├── QPushButton "Refresh"     → _poll_telemetry()
               │           │     ├── QCheckBox "Auto-refresh"  → _on_telem_autorefresh()
               │           │     └── QLabel (status)
-              │           └── QTableWidget  N rows × 8 cols
+              │           └── QTableWidget  N rows × 9 cols
               │                 Motor | Position | Goal | Error | Control state |
-              │                 Secondary goal | Torque | Current
+              │                 Secondary goal | Assist effort | Measured torque | Current
               └── Log section  (below tabs)
 ```
 
@@ -99,7 +99,9 @@ _telem_timer.timeout → _poll_telemetry()
   try: fast = exo.get_fast_telemetry('all')              → per-ID measurements + control state
 
   Fast telemetry → iterate _motor_row, update measurement, goal/error, and state cells;
-                   state tooltip includes reference, applied goal current, effort, and dwell timers
+                   Assist effort is the default torque display/plot; measured torque remains
+                   available beside it; state tooltip includes reference, applied goal current,
+                   effort, and dwell timers
 ```
 
 ---
@@ -141,13 +143,23 @@ Python parser handles lowercase `torque` with `float(val)` — no Python change 
 
 ---
 
+## Torque display selection
+
+The Monitor has a checked-by-default `Prefer detrended Assist effort` toggle.
+The firmware observer runs during every fast-telemetry sample, regardless of
+control mode. When the new NX validity flag is present, the plot uses its
+bias-corrected, low-pass filtered `effort_mA`; older firmware or an unavailable
+sample falls back to raw measured torque so the plot remains populated. Clearing
+the toggle always selects raw measured torque. The table keeps both signals visible.
+
 ## Current column status
 
 | Column | Status | Notes |
 |--------|--------|-------|
 | Position (°) | Working | |
 | Current (mA) | Working | Python parser fix applied |
-| Torque | Shows `—` | Source patched; device not yet reflashed |
+| Assist effort | Default Monitor signal when NX detrended-valid bit is present | Continuous firmware bias-corrected/filtered `effort_mA` |
+| Measured torque | Working | Raw `PRESENT_CURRENT × 0.00115 N·m/mA`; retains DC holding bias |
 
 ---
 
@@ -203,7 +215,7 @@ See [model and ROM timing settings](v0.9.0_implementation.md#model-speed-versus-
 
 ### Plot recovery after missing data
 
-The Monitor table and torque plot share a horizontal splitter (table left,
+The Monitor table and Assist-effort plot share a horizontal splitter (table left,
 plot right). Drag its divider to resize them; neither pane collapses. Without
 pyqtgraph the table uses the available area. Tab height hints follow the selected
 page, so larger hidden Setup/Integrations pages do not stretch Monitor beyond the

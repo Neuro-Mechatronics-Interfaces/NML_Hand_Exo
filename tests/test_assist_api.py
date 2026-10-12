@@ -104,6 +104,25 @@ def test_protobuf_assist_commands_use_binary_opcodes():
     device._rpc.assert_called_once_with(device.pb.ASSIST_CONFIG, [16], values=[10, .01, 40], timeout=1.)
 
 
+@pytest.mark.parametrize("protocol", ["ascii-nx", "protobuf-v1"])
+def test_startup_settling_configuration_is_separate_from_deadzone(protocol):
+    exo = api(protocol)
+    exo.configure_assist_settling(velocity_limit_deg_s=2.5, pose_drift_deg=.8)
+    if protocol == "protobuf-v1":
+        exo.device.assist_command.assert_called_once_with(
+            "assist_settle_config", (), (2.5, .8), timeout=1.)
+    else:
+        exo._command_transaction.assert_called_once_with(
+            "assist_settle_config:2.5:0.8", expected="OK: assist_settle_config", timeout=1.)
+
+
+def test_invalid_startup_settling_never_reaches_transport():
+    exo = api("protobuf-v1")
+    with pytest.raises(ValueError):
+        exo.configure_assist_settling(velocity_limit_deg_s=20)
+    exo.device.assist_command.assert_not_called()
+
+
 def test_worker_stop_cancels_unsent_assist_start():
     from nml_hand_exo.applications.hand_exo_gui import SerialWorker
     worker = SerialWorker()
@@ -251,6 +270,7 @@ def test_assist_panel_requires_v3_and_uses_simulator_defaults(qapp):
     assert not panel.toggle.isEnabled()
     panel.set_connection(True, [(16, "index")], {"assist_protocol": "assist-v3"})
     assert panel.threshold.value() == .08
+    assert "deadzone" in panel.threshold.toolTip().lower()
     assert panel.gain.value() == 80
     assert panel.cap.value() == 300
     panel.toggle.click()

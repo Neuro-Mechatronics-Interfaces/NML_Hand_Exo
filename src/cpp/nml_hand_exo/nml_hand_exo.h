@@ -66,7 +66,7 @@ struct __attribute__((packed)) FastTelemetryRecord {
   int32_t reference_cdeg;
   int32_t position_error_cdeg; // goal - measured position
   int16_t goal_current_mA;     // GOAL_CURRENT actually applied by the governor
-  int16_t effort_mA;           // assist observer effort; zero outside assist
+  int16_t effort_mA;           // continuous detrended effort; zero if idle/unavailable
   uint16_t intent_ms;
   uint16_t release_ms;
   uint16_t stall_ms;
@@ -96,6 +96,7 @@ enum FastTelemetryControlFlags : uint8_t {
   FAST_CONTROL_ASSIST_SELECTED = 1 << 3,
   FAST_CONTROL_ASSIST_CALIBRATED = 1 << 4,
   FAST_CONTROL_REARM_BLOCKED = 1 << 5,
+  FAST_CONTROL_TORQUE_DETRENDED_VALID = 1 << 6,
 };
 
 static_assert(sizeof(FastTelemetryRecord) == 61, "NX v3 wire record size");
@@ -405,6 +406,7 @@ class NMLHandExo {
     /// Non-blocking: does at most a bounded amount of Dynamixel I/O per call.
     bool configureAssist(uint8_t id, float thresholdMa, float gainDegSPerMa, float currentCapMa);
     bool configureAssistObserver(uint8_t id, float inertiaNmS2PerDeg, float viscousNmSPerDeg, float coulombNm);
+    bool configureAssistSettling(float velocityLimitDegS, float poseDriftDeg);
     bool calibrateAssist(const uint8_t* ids, uint8_t count);
     bool enableTorqueAssist(const uint8_t* ids, uint8_t count, float thresholdMa,
                            float gainDegSPerMa, float capMa, float inertia,
@@ -934,7 +936,9 @@ class NMLHandExo {
     /// 0.9.3 -- implements the Protobuf-v2 USB transport
     ///
     /// 0.9.4 -- updates the FastTelemetryRecord size to 61 bytes for NX v3 wire format.
-    static constexpr const char* VERSION = "0.9.4";
+    ///
+    /// 0.9.5 -- runs the detrended torque observer continuously for NX telemetry.
+    static constexpr const char* VERSION = "0.9.5";
 
   private:
     ExoUtcClock utcClock_;
@@ -945,6 +949,7 @@ class NMLHandExo {
     bool motionActive() const;
     void servicePositionMonitor();
     void fillModelRecord(int index, FastTelemetryRecord& record);
+    void updateTelemetryObserver(int index, FastTelemetryRecord& record);
     /// @brief Dynamixel2Arduino object for motor communication.
     Dynamixel2Arduino dxl_;              // Handle to Dynamixel object
 
@@ -1166,6 +1171,8 @@ class NMLHandExo {
     bool assistAutoStart_ = false;
     int assistRejectId_ = -1;
     float assistRejectAngle_ = NAN, assistRejectVelocity_ = NAN;
+    float assistSettleVelocityLimitDegS_ = 1.0f;
+    float assistSettlePoseDriftDeg_ = .3f;
     bool readAssistRegisters(const bool* targets, uint16_t address, uint16_t length,
                              AssistRegisterBlock* data);
     bool writeAssistRegisters(const bool* targets, uint16_t address, uint16_t length,

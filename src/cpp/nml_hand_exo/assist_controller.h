@@ -119,6 +119,8 @@ struct AssistStatusSnapshot {
   int reject_id = -1;
   float reject_angle_deg = NAN, reject_velocity_deg_s = NAN;
   uint16_t total_current_budget_mA = 0;
+  float settle_velocity_limit_deg_s = 1.0f;
+  float settle_pose_drift_deg = .3f;
   AssistJointStatus joints[18];
 };
 
@@ -139,6 +141,15 @@ struct AssistJoint {
   static constexpr uint16_t kAssistPositionD = 160;
   float threshold = .08f/kTorqueConstant, gain = 80*kTorqueConstant, currentCap = 300;
   float observerTau = .20f, inertia = 0, viscous = 0, coulomb = 0;
+  // This observer runs for telemetry even when Torque Assist is off.  Its
+  // bias is learned only during quiet, powered operation; disabled motors
+  // ignore the present-current register and contribute motion-inferred torque
+  // only.
+  static constexpr float kTelemetryBiasTau = 5.0f;
+  static constexpr uint32_t kTelemetryFreshMs = 2000;
+  float telemetryBias = 0, telemetryEffort = 0, telemetryPreviousVelocity = 0;
+  bool telemetryValid = false;
+  uint32_t telemetryLastSample = 0;
   float intentCap = .25f/kTorqueConstant;
   float leadMax = 8, leadRate = 24, detectDelay = .50f;
   float stallVelocity = 1, stallDelay = .50f;
@@ -212,6 +223,39 @@ struct AssistJoint {
     if (rearmBlocked) return bound(capture, hardMin, hardMax);
     return bound(secondaryGoal+direction*lead, hardMin, hardMax);
   }
+  void resetTelemetryObserver() {
+    telemetryEffort = telemetryPreviousVelocity = 0;
+    telemetryValid = false; telemetryLastSample = 0;
+  }
+  bool observeTelemetry(float q, float velocity, float current,
+                        bool currentMeasured, bool currentApplied,
+                        bool adaptBias, uint32_t now) {
+    if (!isfinite(q) || !isfinite(velocity) || !isfinite(current)) return false;
+    if (!telemetryValid || now <= telemetryLastSample ||
+        now-telemetryLastSample > kTelemetryFreshMs) {
+      telemetryPreviousVelocity = velocity; telemetryLastSample = now;
+      telemetryEffort = 0; telemetryValid = true;
+      return true;
+    }
+    const float dt = (now-telemetryLastSample)*.001f;
+    const float acceleration = (velocity-telemetryPreviousVelocity)/dt;
+    const float modelMa = (inertia*acceleration + viscous*velocity +
+                           coulomb*sign(velocity))/kTorqueConstant;
+    const float actuatorCurrent = currentApplied && currentMeasured ? current : 0;
+    const float raw = modelMa-actuatorCurrent;
+    // A disabled motor has no commanded electrical torque.  In that case its
+    // measured-current register is not part of the observer; acceleration,
+    // viscous drag, and Coulomb drag can still produce an inferred effort.
+    if (adaptBias && currentApplied && currentMeasured &&
+        fabsf(velocity) <= 2.0f && fabsf(acceleration) <= 20.0f) {
+      const float alpha = dt/(kTelemetryBiasTau+dt);
+      telemetryBias += alpha*(actuatorCurrent-modelMa-telemetryBias);
+    }
+    const float alpha = dt/(fmaxf(0, observerTau)+dt);
+    telemetryEffort += alpha*(raw+telemetryBias-telemetryEffort);
+    telemetryPreviousVelocity = velocity; telemetryLastSample = now;
+    return isfinite(telemetryEffort);
+  }
   AssistReason sample(float q, float velocity, float current, uint32_t now,
                      bool calibrating, bool active, bool& writeGoal) {
     writeGoal = false;
@@ -236,6 +280,11 @@ struct AssistJoint {
       if (samples == kSamples) {
         noise = sqrtf(fmaxf(0, m2/(samples-1)));
         if (fabsf(bias)+deadzone() >= .9f*currentCap) return ASSIST_REASON_INSUFFICIENT_CURRENT_HEADROOM;
+        // Carry the explicit quiet-pose calibration into the continuous
+        // telemetry observer so enabling Assist does not reintroduce the
+        // holding-current bias in the Monitor signal.
+        telemetryBias = bias;
+        telemetryEffort = 0;
         calibrated = true;
       }
       return ASSIST_REASON_NONE;

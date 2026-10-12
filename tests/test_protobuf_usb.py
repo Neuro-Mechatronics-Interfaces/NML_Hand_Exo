@@ -393,6 +393,7 @@ def test_current_batch_stops_after_first_bus_failure(firmware):
     (pb.ASSIST_CALIBRATE, [16, 17], []),
     (pb.ASSIST_START, [], []), (pb.ASSIST_HEARTBEAT, [], []), (pb.ASSIST_STOP, [], []),
     (pb.ASSIST_STATUS, [], []), (pb.ASSIST_OBSERVER, [16], [.035, .018, .025]),
+    (pb.ASSIST_SETTLE_CONFIG, [], [2.5, .8]),
     (pb.ASSIST_ENABLE, list(range(11, 20)), [.08/.00115, 80*.00115, 300, 0, 0, 0]),
 ])
 def test_assist_binary_dispatch(firmware, command, ids, values):
@@ -411,6 +412,8 @@ def test_assist_binary_dispatch(firmware, command, ids, values):
     (pb.ASSIST_STATUS, [16], []), (pb.ASSIST_STATUS, [], [1]),
     (pb.ASSIST_OBSERVER, [], [0, 0, 0]), (pb.ASSIST_OBSERVER, [16, 17], [0, 0, 0]),
     (pb.ASSIST_OBSERVER, [16], [0, 0]),
+    (pb.ASSIST_SETTLE_CONFIG, [16], [1, .3]),
+    (pb.ASSIST_SETTLE_CONFIG, [], [1]),
     (pb.ASSIST_ENABLE, [], [10, .01, 300, 0, 0, 0]),
     (pb.ASSIST_ENABLE, [16], [10, .01, 300]),
     (pb.ASSIST_ENABLE, [16, 16], [10, .01, 300, 0, 0, 0]),

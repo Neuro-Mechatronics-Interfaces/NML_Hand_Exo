@@ -783,10 +783,34 @@ class HandExo(object):
             raise RuntimeError("Assist observer configuration requires assist-v2 firmware")
         return self._assist_command("assist_observer", [mid], tuple(float(v) for v in values))
 
+    def configure_assist_settling(self, *, velocity_limit_deg_s=1.0,
+                                  pose_drift_deg=.3):
+        """Set stationary-start velocity and pose-drift tolerances while off.
+
+        These are separate from the activation deadzone: they qualify the
+        initial measured startup state. Firmware bounds them to 0.1..10 deg/s
+        and 0.01..5 deg, and the settings are volatile.
+        """
+        values = (velocity_limit_deg_s, pose_drift_deg)
+        if any(isinstance(v, bool) or not math.isfinite(float(v)) for v in values):
+            raise ValueError("Assist settling limits must be finite numbers")
+        velocity_limit_deg_s, pose_drift_deg = (float(v) for v in values)
+        if not .1 <= velocity_limit_deg_s <= 10 or not .01 <= pose_drift_deg <= 5:
+            raise ValueError("Assist settling limits must be velocity [0.1, 10] deg/s and drift [0.01, 5] deg")
+        if self.info().get("assist_protocol") not in ("assist-v2", "assist-v3"):
+            raise RuntimeError("Assist settling configuration requires assist-v2 firmware")
+        return self._assist_command("assist_settle_config", values=values)
+
     def enable_torque_assist(self, motor_ids, *, threshold_Nm=.08,
                             velocity_gain_deg_s_per_Nm=80., current_cap_mA=300.,
                             inertia_Nm_s2_per_deg=0., viscous_Nm_s_per_deg=0., coulomb_Nm=0.):
         """Enable selected joints, automatically collect bias, then assist.
+
+        ``threshold_Nm`` is the configurable floor of the activation deadzone.
+        Firmware uses the larger of this floor, 0.00575 N m (5 mA), and three
+        times the measured resting-current noise. It does not control the
+        startup settling check, which independently uses the configured startup
+        velocity and pose-drift tolerances.
 
         Keep relaxed and stationary during the initial one-second baseline.
         Firmware groups mode/hold setup and respects the existing combined
@@ -824,7 +848,7 @@ class HandExo(object):
             hints = {
                 "insufficient_current_headroom": "Lower the effort threshold/current demand, or review the combined current budget in Setup.",
                 "unselected_motor_enabled": "Disable motors outside the active GUI side before enabling assist.",
-                "not_settled": "Keep the joints relaxed and stationary during startup.",
+                "not_settled": "Startup settling uses measured velocity/angle, not current deadzone; keep the reported joint relaxed and stationary.",
                 "stored_limit": "Move inside the stored joint limits before enabling assist.",
                 "start_pose_changed": "The pose or encoder epoch changed during mode setup; check calibration and try again while stationary.",
                 "feedback_or_torque_read": "Check that every requested motor is connected.",
@@ -916,6 +940,9 @@ class HandExo(object):
         if "reject_id" in details:
             result["reject_id"] = int(details["reject_id"])
         for key in ("reject_angle_deg", "reject_velocity_deg_s"):
+            if key in details:
+                result[key] = float(details[key])
+        for key in ("settle_velocity_limit_deg_s", "settle_pose_drift_deg"):
             if key in details:
                 result[key] = float(details[key])
         for line in reply.splitlines():

@@ -59,6 +59,42 @@ The approximate motor torque constant is a conversion convention, not an
 anatomical joint-torque calibration. Controller tuning defaults reside in
 [`assist_controller.h`](../src/cpp/nml_hand_exo/assist_controller.h).
 
+### Tuning the activation deadzone
+
+The Assist tab's **Activation deadzone floor (N m)** field, exposed in the SDK
+as `enable_torque_assist(..., threshold_Nm=...)`, is the software control for
+the effort deadzone. The firmware computes the effective per-joint deadzone as
+
+```
+max(configured threshold, 0.00575 N m, 3 * measured resting-current noise)
+```
+
+Raise the floor to suppress small effort fluctuations; the live effective value
+is shown in each joint's table tooltip. The threshold is checked against the
+installed current cap, so raising it can instead cause an
+`insufficient_current_headroom` rejection. The startup `not_settled` decision
+is separate: it uses velocity and position span, so changing this deadzone
+does not make a moving or velocity-quantized joint acceptable. The rejection
+diagnostic reports the measured angle and velocity to distinguish the cases.
+
+### Tuning startup settling separately
+
+The two fields immediately below the deadzone field in the Assist tab are the
+startup qualification controls:
+
+- **Startup settle velocity limit (deg/s)** — maximum absolute measured
+  velocity accepted before and during Assist setup. Default: `1.0 deg/s`.
+- **Startup pose drift tolerance (deg)** — maximum measured angle span allowed
+  while the host waits and while firmware verifies the setup pose. Default:
+  `0.30 deg`.
+
+These values are not the activation deadzone, goal-velocity gain, or Assist
+motion speed limit. They are volatile, require Assist to be OFF, and are
+bounded to `0.1..10 deg/s` and `0.01..5 deg`. The SDK exposes them as
+`configure_assist_settling(velocity_limit_deg_s=..., pose_drift_deg=...)`.
+The GUI sends them automatically from those two labeled fields before
+`Enable Torque-Assist`.
+
 The GUI displays each effective installed cap. With requested cap $C$, motor
 limit $L_i$ and combined budget $B$, firmware first forms `c_i=min(C,L_i)`, then
 installs `floor(c_i * min(1, B/sum(c)))`. Thus an 800 mA budget with nine identical
@@ -110,6 +146,14 @@ Nm*s?/degree, Nm*s/degree and Nm, respectively. The simulator's nominal
 `inertia_kg_m2` value multiplies acceleration expressed in deg/s? without a radian
 conversion; do not copy it as a measured SI inertia. Convert physical kg*m? to
 Nm*s?/degree with a factor pi/180 when working in motor encoder degrees.
+
+The same observer now runs for every NX fast-telemetry sample, including normal
+position control and disabled motors. Outside Assist, a quiet powered joint
+slowly updates a separate five-second current-bias estimate; while Assist owns
+the joint that estimate is frozen. A disabled motor contributes zero electrical
+current to the observer, but configured inertial/viscous/Coulomb terms can still
+produce motion-inferred effort. NX v3 reports this continuous result through
+`effort_mA` with `FAST_CONTROL_TORQUE_DETRENDED_VALID` in `control_flags` bit 6.
 
 The simulator subtracts its separately known environmental endstop torque. The
 hardware has no independent measurement of that torque; environmental resistance
@@ -190,8 +234,10 @@ firmware rejection retains its measured angle, velocity and status through the
 SDK and worker. On XC330, one velocity-register count is 0.229 rpm, or 1.374 deg/s:
 the firmware's 1 deg/s settling check therefore requires a zero register value.
 Visibly stationary joints can still fail on small motion or velocity quantization.
-The host wait avoids immediate rejection on a transient reading; it does not
-weaken firmware preflight or baseline checks. Persistent failure needs examination
+The default firmware limit is 1 deg/s; the Assist tab's **Startup settle velocity
+limit (deg/s)** can widen it within the documented range. The host wait uses the
+same selected value and does not weaken firmware preflight or baseline checks.
+Persistent failure needs examination
 of the reported measurements and the mechanism, rather than automatic retries.
 
 Setup's combined-budget setter currently clamps below `N_MOTORS * hold_current`.
@@ -224,6 +270,7 @@ This snippet describes the sequence; it is not a complete heartbeat loop.
 | Enable | `assist_enable:<threshold_mA>:<gain_deg_s_per_mA>:<cap_mA>:<J>:<B>:<C>:<id>[:<id>...]` | Opcode 21, explicit IDs and six shared floats |
 | Configure | `assist_config:<id>:<threshold_mA>:<velocity_gain_deg_s_per_mA>:<cap_mA>` | Opcode 14, one ID and three floats |
 | Observer | `assist_observer:<id>:<J>:<B>:<C>` | Opcode 20, one ID and three floats |
+| Startup settling | `assist_settle_config:<velocity_limit_deg_s>:<pose_drift_deg>` | Opcode 25, two shared floats and no IDs |
 | Calibrate | `assist_calibrate:<id>[:<id>...]` | Opcode 15, explicit unique IDs |
 | Start | `assist_start` | Opcode 16 |
 | Heartbeat | `assist_heartbeat` | Opcode 17 |
@@ -239,6 +286,10 @@ explicit Enable operation configures mode 5 in EEPROM only where needed.
 The legacy configure/calibrate/Start SDK sequence remains available for callers
 requiring a manual READY phase (500 ms settling plus 50 baseline samples).
 
+`ASSIST_STATUS` includes the currently applied startup settling values as
+`settle_velocity_limit_deg_s` and `settle_pose_drift_deg`, so a host can verify
+which limits firmware is using.
+
 ASCII setters return `OK: <command>` or `ERROR: rejected <command>`.
 Configuration leaves torque unchanged; calibration installs the capped hold and
 enables the selected motors. V2 changes opcode 14's gain meaning to deg/s/mA.
@@ -248,7 +299,8 @@ READY, ACTIVE, STOP_UNCONFIRMED. `ASSIST_JOINT` reports samples, bias, noise,
 deadzone, effort, diagnostic deflection, measured angle, reference `goal`,
 `secondary_goal`, `intent_deg_s`, `lead_deg`, `rearm_blocked`, `moving`, `steps`
 and sample age, plus `current_cap_mA`. The header includes
-`total_current_budget_mA`. `steps` counts activation episodes, not discrete steps.
+`total_current_budget_mA`, `settle_velocity_limit_deg_s`, and
+`settle_pose_drift_deg`. `steps` counts activation episodes, not discrete steps.
 
 The Protobuf build uses the same controller and grouped bus transactions.
 Opcodes 14–21 return `Response.assist` on success or controller rejection, with

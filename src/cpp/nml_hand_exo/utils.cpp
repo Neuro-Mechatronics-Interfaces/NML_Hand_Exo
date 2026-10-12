@@ -522,6 +522,10 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
       if (number(getArg(token, 1), mid) && mid >= 1 && mid <= 253 && mid == floorf(mid) &&
           number(getArg(token, 2), inertia) && number(getArg(token, 3), viscous) && number(getArg(token, 4), coulomb))
         ok = exo.configureAssistObserver((uint8_t)mid, inertia, viscous, coulomb);
+    } else if (cmd == "assist_settle_config" && fields == 2) {
+      float velocityLimit, poseDrift;
+      if (number(getArg(token, 1), velocityLimit) && number(getArg(token, 2), poseDrift))
+        ok = exo.configureAssistSettling(velocityLimit, poseDrift);
     } else if (cmd == "assist_enable" && fields >= 7 && fields <= N_MOTORS+6) {
       // Shared parameters precede explicit IDs on the text transport.
       float values[6]; uint8_t ids[N_MOTORS]; bool valid = true;
@@ -1890,6 +1894,7 @@ void parseMessage(NMLHandExo& exo, GestureController& gc, Adafruit_BNO055& imu, 
     commandPrint(F(" get_utc_time          |         | // UTC ms, synchronization flag and uptime"));
     commandPrint(F(" assist_enable         | THRESHOLD_MA:GAIN:CAP_MA:INERTIA:VISCOUS:COULOMB:ID[:ID...] | // Grouped startup, automatic bias and activation"));
     commandPrint(F(" assist_config         | ID:THRESHOLD_MA:VELOCITY_GAIN_DEG_S_PER_MA:CAP_MA | // Configure secondary-goal assist while off"));
+    commandPrint(F(" assist_settle_config  | VELOCITY_LIMIT_DEG_S:POSE_DRIFT_DEG | // Configure startup settling qualification while off"));
     commandPrint(F(" assist_observer       | ID:INERTIA:VISCOUS:COULOMB | // Nm-based observer model terms; all zero = current residual"));
     commandPrint(F(" assist_calibrate      | ID[:ID...]           | // Relaxed bias capture; selected motors enabled in CURRENT_POSITION"));
     commandPrint(F(" assist_start / assist_stop / assist_heartbeat / assist_status | // Explicit assist, 1-second lease, measured status"));

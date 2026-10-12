@@ -116,7 +116,20 @@ NX v3 records retain the v2 prefix and append the little-endian fields
 an angle is unavailable. The state distinguishes ordinary `idle`/`moving`
 operation from assist calibration, sustained-intent waiting, assist motion,
 sustained stall, and re-arm holdoff. This snapshot is copied from controller
-memory and adds no Dynamixel transaction.
+memory and adds no Dynamixel transaction. `effort_mA` is now the continuous
+firmware detrended effort observer, not an Assist-only field. `control_flags`
+bit 6 (`FAST_CONTROL_TORQUE_DETRENDED_VALID`) marks it valid; when a motor is
+disabled and stationary, the valid value is zero, while motion can contribute
+an inferred dynamic effort. This reuses the existing 61-byte record and does
+not change the Protobuf envelope.
+
+Assist startup qualification is configured independently from the effort
+deadzone. Protobuf command `ASSIST_SETTLE_CONFIG` (25) carries
+`values=[max_velocity_deg_s, max_pose_drift_deg]` with no motor IDs; the ASCII
+equivalent is `assist_settle_config:<velocity_limit_deg_s>:<pose_drift_deg>`.
+Defaults are `1.0 deg/s` and `0.30 deg`, with bounded volatile ranges of
+`0.1..10 deg/s` and `0.01..5 deg`. The Assist status response reports the
+applied values.
 
 `telemetry_diag:<id>:<id>...` returns a text diagnostic using the same firmware
 read path, including method, elapsed microseconds, and per-motor raw values.

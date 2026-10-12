@@ -156,6 +156,7 @@ class ProtobufSerialComm(DualSerialComm):
         names = {"assist_config": self.pb.ASSIST_CONFIG,
                  "assist_enable": self.pb.ASSIST_ENABLE,
                  "assist_observer": self.pb.ASSIST_OBSERVER,
+                 "assist_settle_config": self.pb.ASSIST_SETTLE_CONFIG,
                  "assist_calibrate": self.pb.ASSIST_CALIBRATE,
                  "assist_start": self.pb.ASSIST_START,
                  "assist_heartbeat": self.pb.ASSIST_HEARTBEAT,
@@ -177,7 +178,9 @@ class ProtobufSerialComm(DualSerialComm):
             raise ValueError('Invalid binary assist state or reason')
         result = dict(state=status.state, reason=self._assist_reasons[status.reason],
                       reason_code=status.reason, joints={})
-        for key in ('reject_id', 'reject_angle_deg', 'reject_velocity_deg_s', 'total_current_budget_mA'):
+        for key in ('reject_id', 'reject_angle_deg', 'reject_velocity_deg_s',
+                    'total_current_budget_mA', 'settle_velocity_limit_deg_s',
+                    'settle_pose_drift_deg'):
             if status.HasField(key):
                 result[key] = getattr(status, key)
         for joint in status.joints:

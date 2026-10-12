@@ -102,8 +102,11 @@ except ImportError:
 # pyqtgraph is optional; the Telemetry tab's live torque plot degrades to the
 # numeric table alone if it is missing.
 try:
-    import pyqtgraph as _pg
     import numpy as _np
+except ImportError:
+    _np = None                      # type: ignore[assignment]
+try:
+    import pyqtgraph as _pg
     _PYQTGRAPH_AVAILABLE = True
 except ImportError:
     _pg = None                      # type: ignore[assignment]
@@ -119,6 +122,10 @@ EMG_FINGER_MOTOR_NAMES = frozenset(
     {"thumbadd", "thumbrot", "thumbflex", "index", "middle", "ring", "pinky"}
 )
 XC330_T288_TORQUE_CONSTANT = 0.00115
+# NX v3 control_flags bits identify Assist ownership and continuous detrended
+# effort validity. The effort field is bias-corrected/filtered; current remains raw.
+FAST_CONTROL_ASSIST_SELECTED = 1 << 3
+FAST_CONTROL_TORQUE_DETRENDED_VALID = 1 << 6
 UDP_HEARTBEAT_INTERVAL_MS = 15000
 UDP_HEARTBEAT_RESPONSE_TIMEOUT_MS = 500
 UDP_HEARTBEAT_RECHECK_MS = 50
@@ -136,6 +143,24 @@ POSITION_HOLD_CAPTURE_MAX_AGE_S = 1.0
 WINDOW_ICON_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "favicon-32x32.svg"
 )
+
+
+def _assist_effort_nm(record: dict) -> float | None:
+    """Return firmware's detrended Assist effort in N·m when selected.
+
+    NX records carry the same field in every control mode. The firmware's
+    valid flag distinguishes a continuously running detrended observer from
+    the legacy zero placeholder used by older builds.
+    """
+    try:
+        flags = int(record.get("control_flags", 0) or 0)
+        effort_mA = record.get("assist_effort")
+        effort_mA = float(effort_mA)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not flags & FAST_CONTROL_TORQUE_DETRENDED_VALID or not math.isfinite(effort_mA):
+        return None
+    return effort_mA * XC330_T288_TORQUE_CONSTANT
 
 
 # ==========================================================================
@@ -1376,9 +1401,18 @@ class SerialWorker(QThread):
                 if generation != self._assist_generation:
                     return None
                 if operation == "enable":
-                    if not self._wait_for_assist_stationary(exo, generation, payload["ids"]):
+                    parameters = dict(payload["parameters"])
+                    velocity_limit = parameters.pop("startup_velocity_limit_deg_s", 1.0)
+                    pose_drift = parameters.pop("startup_pose_drift_deg", .3)
+                    if ("startup_velocity_limit_deg_s" in payload["parameters"] or
+                            "startup_pose_drift_deg" in payload["parameters"]):
+                        exo.configure_assist_settling(
+                            velocity_limit_deg_s=velocity_limit,
+                            pose_drift_deg=pose_drift)
+                    if not self._wait_for_assist_stationary(
+                            exo, generation, payload["ids"], velocity_limit, pose_drift):
                         return None
-                    result = exo.enable_torque_assist(payload["ids"], **payload["parameters"])
+                    result = exo.enable_torque_assist(payload["ids"], **parameters)
                 elif operation == "calibrate":
                     for mid, config in payload.items():
                         if generation != self._assist_generation:
@@ -1416,7 +1450,8 @@ class SerialWorker(QThread):
             if generation == self._assist_generation:
                 self.assist_completed.emit(operation, getattr(exc, "assist_status", {}), str(exc))
 
-    def _wait_for_assist_stationary(self, exo, generation, motor_ids):
+    def _wait_for_assist_stationary(self, exo, generation, motor_ids,
+                                    velocity_limit_deg_s=1.0, pose_drift_deg=.3):
         """Require fresh measured feedback to be quiet before one Assist enable.
 
         This only reads feedback. Firmware still verifies pose, speed, limits
@@ -1458,7 +1493,7 @@ class SerialWorker(QThread):
                 bounds[mid] = (min(lo, q), max(hi, q))
                 span = bounds[mid][1]-bounds[mid][0]
                 velocity = raw * .229 * 6
-                if abs(velocity) > 1 or span > .3:
+                if abs(velocity) > velocity_limit_deg_s or span > pose_drift_deg:
                     quiet = False
                     detail = f"ID {mid}: velocity={velocity:.3f} deg/s, angle span={span:.3f} deg"
             now = time.monotonic()
@@ -1688,6 +1723,7 @@ class SerialWorker(QThread):
             "relative": None,
             "positions": None,
             "torques": None,
+            "assist_efforts": None,
             "currents": None,
             "velocities": None,
             "telemetry_meta": None,
@@ -1793,6 +1829,12 @@ class SerialWorker(QThread):
                         else None
                     )
                     for mid, data in fast.items()
+                }
+                result["assist_efforts"] = {
+                    mid: effort
+                    for mid, data in fast.items()
+                    for effort in (_assist_effort_nm(data),)
+                    if effort is not None
                 }
                 motor_control = {
                     mid: {
@@ -2122,7 +2164,10 @@ class HandExoGUI(QWidget):
         self._telemetry_rate_ema: float | None = None
         self._telemetry_buffers: dict[str, dict[int, deque]] = {
             field: {}
-            for field in ("relative", "positions", "torques", "currents", "velocities")
+            for field in (
+                "relative", "positions", "torques", "assist_efforts",
+                "currents", "velocities",
+            )
         }
         self._telemetry_buffer_dirty = False
         self._buffered_telemetry_meta: dict | None = None
@@ -2447,9 +2492,22 @@ class HandExoGUI(QWidget):
         ctrl_row = QHBoxLayout()
         self._telem_refresh_btn = QPushButton("Refresh")
         self._telem_refresh_btn.clicked.connect(self._poll_telemetry)
+        self._telem_detrended_check = QCheckBox(
+            "Show detrended effort"
+        )
+        self._telem_detrended_check.setChecked(True)
+        self._telem_detrended_check.setToolTip(
+            "Checked: plot firmware's continuously running bias-corrected, "
+            "low-pass filtered torque effort; unavailable samples fall back to "
+            "raw measured torque. Unchecked: always plot raw measured torque."
+        )
+        self._telem_detrended_check.toggled.connect(
+            self._on_torque_display_toggled
+        )
         self._telem_status_lbl = QLabel("Not connected")
         self._telem_status_lbl.setStyleSheet("color: #888888;")
         ctrl_row.addWidget(self._telem_refresh_btn)
+        ctrl_row.addWidget(self._telem_detrended_check)
         ctrl_row.addStretch()
         ctrl_row.addWidget(self._telem_status_lbl)
         layout.addLayout(ctrl_row)
@@ -2458,16 +2516,17 @@ class HandExoGUI(QWidget):
         # and shows discovered endstops right next to the live torque plot below.
         layout.addWidget(self._build_rom_cal_controls())
 
-        self._telem_table = QTableWidget(0, 8)
+        self._telem_table = QTableWidget(0, 9)
         self._telem_table.setHorizontalHeaderLabels(
             [
                 "Motor", "Position (°)", "Goal (°)", "Error (°)",
-                "Control state", "Secondary goal (°)", "Torque", "Current (mA)",
+                "Control state", "Secondary goal (°)", "Assist effort (N·m)",
+                "Measured torque (N·m)", "Current (mA)",
             ]
         )
         hdr = self._telem_table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        for col in range(1, 8):
+        for col in range(1, 9):
             hdr.setSectionResizeMode(col, QHeaderView.Stretch)
         self._telem_table.verticalHeader().setVisible(False)
         self._telem_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -2480,8 +2539,8 @@ class HandExoGUI(QWidget):
         self._telem_splitter.addWidget(self._telem_table)
         layout.addWidget(self._telem_splitter, stretch=1)
 
-        # Live scrolling torque plot. One curve per motor, torque (N*m) vs the
-        # last TORQUE_PLOT_WINDOW_S seconds. Fed from the same poll/render path
+        # Live scrolling Assist-effort plot. One curve per motor, detrended
+        # effort (N*m) over the last TORQUE_PLOT_WINDOW_S seconds. Fed from the same poll/render path
         # as the table (see _apply_telemetry_result), so it costs no extra
         # serial traffic or timers. Degrades to the table alone without pyqtgraph.
         self._torque_plot = None
@@ -2492,7 +2551,7 @@ class HandExoGUI(QWidget):
             _pg.setConfigOptions(antialias=True)
             plot = _pg.PlotWidget()
             plot.setBackground(None)      # inherit the dark theme
-            plot.setLabel("left", "Torque", units="N·m")
+            plot.setLabel("left", "Assist effort / measured fallback", units="N·m")
             plot.setLabel("bottom", "Time", units="s")
             plot.showGrid(x=True, y=True, alpha=0.2)
             plot.addLegend(offset=(-10, 10))
@@ -5239,7 +5298,7 @@ class HandExoGUI(QWidget):
         """Populate telemetry table rows from self.motor_names after connect."""
         self._telem_table.setRowCount(len(self.motor_names))
         for row, name in enumerate(self.motor_names):
-            for col in range(8):
+            for col in range(9):
                 text = name if col == 0 else "—"
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignCenter)
@@ -5533,8 +5592,33 @@ class HandExoGUI(QWidget):
             )
             self._torque_history[name] = (deque(), deque(), deque())
 
+    def _on_torque_display_toggled(self, _checked: bool):
+        """Switch the Monitor plot between Assist effort and raw torque.
+
+        The table intentionally keeps both values visible.  Re-render the
+        latest buffered sample immediately so this control does not wait for
+        another serial poll.
+        """
+        self._telemetry_buffer_dirty = True
+        self._render_buffered_telemetry()
+
+    def _update_torque_plot_label(self, *, used_raw_fallback: bool = False):
+        if self._torque_plot is None:
+            return
+        prefer_detrended = (
+            getattr(self, "_telem_detrended_check", None) is not None
+            and self._telem_detrended_check.isChecked()
+        )
+        if not prefer_detrended:
+            label = "Measured torque (raw)"
+        elif used_raw_fallback:
+            label = "Assist effort / measured fallback"
+        else:
+            label = "Assist effort (detrended)"
+        self._torque_plot.setLabel("left", label, units="N·m")
+
     def _push_torque_plot(self, torque_by_name: dict, sources_by_name=None):
-        """Append one torque sample per motor and redraw the scrolling window.
+        """Append one selected torque sample per motor and redraw the window.
 
         Called from _apply_telemetry_result on the existing render cadence, so
         it adds no serial traffic. torque_by_name maps motor name -> N·m (or
@@ -5565,7 +5649,8 @@ class HandExoGUI(QWidget):
                 estimates.popleft()
             for item, samples in ((curve, values), (self._torque_estimated_curves[name], estimates)):
                 x, y, connections = finite_curve_data(times, samples)
-                item.setData(x, y, connect=_np.asarray(connections, dtype=bool))
+                connect = _np.asarray(connections, dtype=bool) if _np is not None else connections
+                item.setData(x, y, connect=connect)
         # Keep the live time window advancing even when every curve is empty.
         # Old ROM markers must not pin the view to a completed sweep's time.
         self._torque_plot.setXRange(max(0.0, cutoff), max(0.1, t), padding=0)
@@ -5706,6 +5791,12 @@ class HandExoGUI(QWidget):
         self._buffer_telemetry_field("relative", relative)
         self._buffer_telemetry_field("positions", positions)
         self._buffer_telemetry_field("torques", torques)
+        effort_buffers = self._telemetry_buffers["assist_efforts"]
+        current_effort_ids = set((result.get("assist_efforts") or {}).keys())
+        for motor_id in list(effort_buffers):
+            if motor_id not in current_effort_ids:
+                effort_buffers.pop(motor_id, None)
+        self._buffer_telemetry_field("assist_efforts", result.get("assist_efforts"))
         self._buffer_telemetry_field("currents", currents)
         self._buffer_telemetry_field("velocities", velocities)
         self._buffered_telemetry_meta = telemetry_meta
@@ -5806,6 +5897,7 @@ class HandExoGUI(QWidget):
         self._telemetry_buffer_dirty = False
         positions = self._averaged_telemetry_field("positions")
         torques = self._averaged_telemetry_field("torques")
+        assist_efforts = self._averaged_telemetry_field("assist_efforts")
         currents = self._averaged_telemetry_field("currents")
         velocities = self._averaged_telemetry_field("velocities")
         self._apply_motor_angles(self._latest_hand_angles, self._latest_hand_meta)
@@ -5816,6 +5908,7 @@ class HandExoGUI(QWidget):
             velocities,
             self._buffered_telemetry_meta,
             publish=False,
+            assist_efforts=assist_efforts,
         )
 
     def _apply_telemetry_result(
@@ -5826,11 +5919,18 @@ class HandExoGUI(QWidget):
         velocities,
         telemetry_meta=None,
         publish: bool = True,
+        assist_efforts=None,
     ):
         positions_by_name = {}
-        torque_by_name = {}
+        measured_torque_by_name = {}
         current_by_name = {}
-        torque_sources_by_name = {}
+        display_torque_by_name = {}
+        display_sources_by_name = {}
+        prefer_detrended = (
+            getattr(self, "_telem_detrended_check", None) is not None
+            and self._telem_detrended_check.isChecked()
+        )
+        used_raw_fallback = False
         control_states = {
             0: "unavailable",
             1: "idle",
@@ -5847,6 +5947,7 @@ class HandExoGUI(QWidget):
             dxl_id = self._motor_dxl_id[i] if i < len(self._motor_dxl_id) else None
             pos  = positions.get(dxl_id) if (positions is not None and dxl_id is not None) else None
             torq = torques.get(dxl_id)   if (torques   is not None and dxl_id is not None) else None
+            effort = assist_efforts.get(dxl_id) if (assist_efforts is not None and dxl_id is not None) else None
             curr = currents.get(dxl_id)  if (currents  is not None and dxl_id is not None) else None
             velocity = velocities.get(dxl_id) if (velocities is not None and dxl_id is not None) else None
             control = (telemetry_meta or {}).get("motor_control", {}).get(dxl_id, {})
@@ -5856,12 +5957,27 @@ class HandExoGUI(QWidget):
             state_code = control.get("control_state")
             state = control_states.get(state_code, "unknown")
             positions_by_name[name] = pos
-            torque_by_name[name] = torq
+            measured_torque_by_name[name] = torq
             current_by_name[name] = curr
             sources = (telemetry_meta or {}).get("motor_field_sources", {}).get(dxl_id, {})
-            torque_sources_by_name[name] = sources.get("torque", "measured")
-            for col, field in ((1, "position"), (7, "current"), (6, "torque")):
+            if prefer_detrended and effort is not None:
+                display_torque_by_name[name] = effort
+                display_sources_by_name[name] = "measured"
+            else:
+                display_torque_by_name[name] = torq
+                display_sources_by_name[name] = (
+                    sources.get("torque", "measured")
+                    if torq is not None else "unavailable"
+                )
+                if prefer_detrended and torq is not None and effort is None:
+                    used_raw_fallback = True
+            for col, field in ((1, "position"), (7, "torque"), (8, "current")):
                 self._telem_table.item(row, col).setToolTip(sources.get(field, "source unknown"))
+            self._telem_table.item(row, 6).setToolTip(
+                "Firmware continuous observer effort: bias-corrected and low-pass filtered"
+                if effort is not None else
+                "Unavailable from this firmware/sample; raw torque remains available"
+            )
             self._telem_table.item(row, 1).setText(
                 f"{pos:.2f}"  if pos  is not None else "—"
             )
@@ -5876,9 +5992,12 @@ class HandExoGUI(QWidget):
                 f"{secondary_goal:.2f}" if secondary_goal is not None else "—"
             )
             self._telem_table.item(row, 6).setText(
-                f"{torq:.4f}" if torq is not None else "—"
+                f"{effort:.4f}" if effort is not None else "—"
             )
             self._telem_table.item(row, 7).setText(
+                f"{torq:.4f}" if torq is not None else "—"
+            )
+            self._telem_table.item(row, 8).setText(
                 f"{curr:.1f}" if curr is not None else "—"
             )
             if control:
@@ -5917,14 +6036,23 @@ class HandExoGUI(QWidget):
             )
         if (telemetry_meta or {}).get("fast_telemetry_flags", 0) and int(telemetry_meta["fast_telemetry_flags"]) & 0x80:
             status += " - estimated (dashed torque)"
+        if prefer_detrended:
+            status += (
+                " - display: detrended effort"
+                + (" with raw fallback" if used_raw_fallback else "")
+            )
+        else:
+            status += " - display: measured torque"
         failed = (telemetry_meta or {}).get("read_failed", False)
         self._telem_status_lbl.setText(f"Read failed {ts}" if failed else status)
         self._telem_status_lbl.setStyleSheet("color: #c0392b;" if failed else "color: #27ae60;")
-        # Feed the live scrolling torque plot from the same values as the table.
-        self._push_torque_plot(torque_by_name, torque_sources_by_name)
+        self._update_torque_plot_label(used_raw_fallback=used_raw_fallback)
+        # Feed the live plot from the selected display values.  Both raw and
+        # detrended values remain available in the table and telemetry sinks.
+        self._push_torque_plot(display_torque_by_name, display_sources_by_name)
         if publish:
             self._publish_telemetry(
-                positions_by_name, torque_by_name, current_by_name, telemetry_meta
+                positions_by_name, measured_torque_by_name, current_by_name, telemetry_meta
             )
 
     def _publish_telemetry(
@@ -7389,7 +7517,7 @@ class HandExoGUI(QWidget):
         self._udp_hand_vis.update_motor_states({}, connected=False)
         # Reset telemetry value cells; leave motor-name column intact
         for row in range(self._telem_table.rowCount()):
-            for col in range(1, 8):
+            for col in range(1, 9):
                 item = self._telem_table.item(row, col)
                 if item:
                     item.setText("—")

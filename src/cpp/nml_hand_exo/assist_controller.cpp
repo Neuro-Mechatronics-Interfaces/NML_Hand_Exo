@@ -22,7 +22,20 @@ bool NMLHandExo::configureAssistObserver(uint8_t id, float inertia, float viscou
       !isfinite(coulomb) || coulomb < 0 || coulomb > 1) return false;
   auto& j = assistJoints_[i];
   j.inertia = inertia; j.viscous = viscous; j.coulomb = coulomb;
+  j.resetTelemetryObserver();
   j.calibrated = false;
+  return true;
+}
+
+bool NMLHandExo::configureAssistSettling(float velocityLimitDegS, float poseDriftDeg) {
+  // These limits are startup qualification tolerances, not motion or current
+  // safety limits. Keep a bounded range so a UI/API mistake cannot disable the
+  // stationary-start gate altogether.
+  if (isAssistBusy() || !isfinite(velocityLimitDegS) || velocityLimitDegS < .1f ||
+      velocityLimitDegS > 10.0f || !isfinite(poseDriftDeg) || poseDriftDeg < .01f ||
+      poseDriftDeg > 5.0f) return false;
+  assistSettleVelocityLimitDegS_ = velocityLimitDegS;
+  assistSettlePoseDriftDeg_ = poseDriftDeg;
   return true;
 }
 
@@ -193,7 +206,8 @@ bool NMLHandExo::calibrateAssist(const uint8_t* ids, uint8_t count) {
   for (int i = 0; i < numMotors_; ++i) if (chosen[i]) {
     const float q = feedback[i].angle, v = feedback[i].velocity;
     assistRejectAngle_ = q; assistRejectVelocity_ = v;
-    if (fabsf(v) > 1) return reject(ASSIST_REASON_NOT_SETTLED, motorIds_[i]);
+    if (fabsf(v) > assistSettleVelocityLimitDegS_)
+      return reject(ASSIST_REASON_NOT_SETTLED, motorIds_[i]);
     if (!isfinite(jointLimits_[i][0]) || !isfinite(jointLimits_[i][1]) ||
         jointLimits_[i][1]-jointLimits_[i][0] <= 2*DIRECT_LIMIT_MARGIN_DEG ||
         q < jointLimits_[i][0]+DIRECT_LIMIT_MARGIN_DEG ||
@@ -236,7 +250,8 @@ bool NMLHandExo::calibrateAssist(const uint8_t* ids, uint8_t count) {
   for (int i = 0; i < numMotors_; ++i) if (chosen[i]) {
     auto& j = assistJoints_[i];
     const float q = captured[i].angle;
-    if (fabsf(captured[i].velocity) > 1 || fabsf(q-feedback[i].angle) > .3f) {
+    if (fabsf(captured[i].velocity) > assistSettleVelocityLimitDegS_ ||
+        fabsf(q-feedback[i].angle) > assistSettlePoseDriftDeg_) {
       stopAssist(ASSIST_REASON_START_POSE_CHANGED); return false;
     }
     j.hardMin = ceilf((jointLimits_[i][0]+DIRECT_LIMIT_MARGIN_DEG)*PULSE_RESOLUTION/360.0f)*360.0f/PULSE_RESOLUTION;
@@ -373,6 +388,10 @@ void NMLHandExo::serviceAssist() {
       assistRejectId_ = motorIds_[i]; assistRejectAngle_ = f.angle; assistRejectVelocity_ = f.velocity;
       stopAssist(failure); return;
     }
+    // Keep the read-only telemetry observer current on the same feedback
+    // sample used by Assist. It deliberately does not adapt its bias while
+    // Assist owns the joint.
+    j.observeTelemetry(f.angle, f.velocity, f.current, true, true, false, sampleMs);
   }
   if (millis()-assistHeartbeatMs_ > 1000) { stopAssist(ASSIST_REASON_HEARTBEAT_TIMEOUT); return; }
   if (!writeAssistGoals(changed)) { stopAssist(ASSIST_REASON_GOAL_WRITE_OR_LIMIT); return; }
@@ -397,6 +416,8 @@ void NMLHandExo::getAssistSnapshot(AssistStatusSnapshot& out) const {
   out.total_current_budget_mA = totalCurrentBudgetMa_;
   out.reject_id = assistRejectId_;
   out.reject_angle_deg = assistRejectAngle_; out.reject_velocity_deg_s = assistRejectVelocity_;
+  out.settle_velocity_limit_deg_s = assistSettleVelocityLimitDegS_;
+  out.settle_pose_drift_deg = assistSettlePoseDriftDeg_;
   const uint32_t now = millis();
   for (int i = 0; i < numMotors_ && out.count < 18; ++i) if (assistJoints_[i].selected) {
     const auto& j = assistJoints_[i];
@@ -415,6 +436,8 @@ void NMLHandExo::getAssistSnapshot(AssistStatusSnapshot& out) const {
 String NMLHandExo::assistStatus() const {
   String out = "ASSIST: state=" + String(assistState_) + " reason=" + String(assistReasonName(assistReason_));
   out += " total_current_budget_mA=" + String(totalCurrentBudgetMa_);
+  out += " settle_velocity_limit_deg_s=" + String(assistSettleVelocityLimitDegS_, 3) +
+      " settle_pose_drift_deg=" + String(assistSettlePoseDriftDeg_, 3);
   if (assistRejectId_ >= 0) out += " reject_id=" + String(assistRejectId_) +
       " reject_angle_deg=" + String(assistRejectAngle_, 3) +
       " reject_velocity_deg_s=" + String(assistRejectVelocity_, 3);

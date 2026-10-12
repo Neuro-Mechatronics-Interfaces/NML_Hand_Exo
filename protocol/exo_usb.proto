@@ -28,6 +28,7 @@ enum Command {
   TEXT_COMMAND = 22;    // protobuf-v2 maintenance command; text_command contains the ASCII payload
   SET_CURRENT_LIMITS = 23; // explicit IDs + per-motor nominal current limits in values[]
   HELLO = 24;            // side-effect-free transport discovery
+  ASSIST_SETTLE_CONFIG = 25; // no IDs; values=[max_velocity_deg_s, max_pose_drift_deg]
 }
 message FingerAngles {
   // Missing fields hold that joint; signed integers are rest-relative -100..100.
@@ -144,6 +145,8 @@ message AssistStatus {
   optional float reject_velocity_deg_s = 5;
   repeated AssistJointStatus joints = 6;
   optional uint32 total_current_budget_mA = 7;
+  optional float settle_velocity_limit_deg_s = 8;
+  optional float settle_pose_drift_deg = 9;
 }
 message Response {
   required uint32 sequence = 1;

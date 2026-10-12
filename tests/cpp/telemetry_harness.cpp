@@ -77,6 +77,7 @@ struct NMLHandExo {
   void serviceJointModels();
   void fillModelRecord(int, FastTelemetryRecord&);
   void fillControlTelemetry(int, FastTelemetryRecord&);
+  void updateTelemetryObserver(int, FastTelemetryRecord&);
 };
 // FIRMWARE_IMPLEMENTATION
 int main() {

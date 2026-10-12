@@ -293,6 +293,13 @@ void NMLHandExo::fillControlTelemetry(int index, FastTelemetryRecord& r) {
 
   const bool assist = isAssistBusy() && assistJoints_[index].selected;
   const auto& j = assistJoints_[index];
+  const bool telemetryFresh = !r.error && j.telemetryValid &&
+                              millis()-j.telemetryLastSample <= AssistJoint::kTelemetryFreshMs;
+  if (telemetryFresh || !torqueEnabled_[index]) {
+    const float effort = telemetryFresh ? j.telemetryEffort : 0;
+    r.effort_mA = (int16_t)roundf(fminf(32767.0f, fmaxf(-32768.0f, effort)));
+    r.control_flags |= FAST_CONTROL_TORQUE_DETRENDED_VALID;
+  }
   bool goalValid = goalAngleValid_[index];
   float goal = goalAngle_[index];
   float secondary = goal;
@@ -314,9 +321,6 @@ void NMLHandExo::fillControlTelemetry(int index, FastTelemetryRecord& r) {
     secondary = j.secondaryGoal;
     reference = j.reference();
     goalValid = true;
-    const float effort = j.effort < -32768.0f ? -32768.0f
-                       : j.effort > 32767.0f ? 32767.0f : j.effort;
-    r.effort_mA = (int16_t)roundf(effort);
     r.intent_ms = timerMs(j.intentTimer);
     r.release_ms = timerMs(j.releaseTimer);
     r.stall_ms = timerMs(j.stallTimer);
@@ -395,7 +399,10 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
     methodOut = FAST_TELEM_METHOD_MODEL | TELEM_SOURCE_ESTIMATED;
     for (uint8_t i = 0; i < count; ++i) {
       const int index = getIndexById(ids[i]);
-      if (index >= 0 && motorReachable_[index]) fillModelRecord(index, records[i]);
+      if (index >= 0 && motorReachable_[index]) {
+        fillModelRecord(index, records[i]);
+        updateTelemetryObserver(index, records[i]);
+      }
       if (index >= 0) fillControlTelemetry(index, records[i]);
     }
     return count; // No telemetry register reads, including idle-side requests.
@@ -448,6 +455,7 @@ uint8_t NMLHandExo::getFastTelemetryRecords(
     r.sources = 0x15; // position/current/velocity measured
     jointModels_[index].correct(angle, r.velocity_raw * 0.229f * 6.0f,
                                 r.current_mA, true, now);
+    updateTelemetryObserver(index, r);
     fillControlTelemetry(index, r);
   }
   return count;
@@ -499,6 +507,16 @@ void NMLHandExo::fillModelRecord(int index, FastTelemetryRecord& r) {
   r.absolute_cdeg = (int32_t)roundf(m.angle * 100.0f);
   r.relative_cdeg = (int32_t)roundf((m.angle - zeroOffsets_[index]) *
                                  (flipMotor_[index] ? -100.0f : 100.0f));
+}
+
+void NMLHandExo::updateTelemetryObserver(int index, FastTelemetryRecord& r) {
+  if (index < 0 || index >= numMotors_ || r.error) return;
+  const float angle = r.absolute_cdeg/100.0f;
+  const float velocity = r.velocity_raw*.229f*6.0f;
+  const bool currentMeasured = ((r.sources >> 2) & 0x03) == 1;
+  assistJoints_[index].observeTelemetry(
+      angle, velocity, r.current_mA, currentMeasured, torqueEnabled_[index],
+      !isAssistBusy(), r.sample_ms);
 }
 
 bool NMLHandExo::setJointModel(uint8_t id, const JointModelParams& params) {

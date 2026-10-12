@@ -23,7 +23,8 @@ class AssistPanel(QWidget):
             "while startup waits for stationary readings (up to five seconds) and collects the "
             "initial baseline (about one second), then apply effort to move. "
             "Assistance advances a persistent position goal with bounded lead. If movement stalls, "
-            "it releases; relax before trying again. Stored joint limits remain in force."
+            "it releases; relax before trying again. Stored joint limits remain in force. "
+            "Startup settling is based on measured velocity and angle, not resting current."
         )
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
@@ -38,10 +39,30 @@ class AssistPanel(QWidget):
             widget.setValue(default)
             return widget
 
+        # ``threshold`` is retained as the public widget attribute for callers
+        # and tests. It is the configurable floor of the firmware's effective
+        # current deadzone, not the startup motion-settling tolerance.
         self.threshold = spin(.00575, .230, .08, 5, .005)
+        self.threshold.setToolTip(
+            "Minimum effort required before assistance activates. The effective "
+            "deadzone is max(this value, 0.00575 N m, 3 × measured resting-current noise). "
+            "This does not relax the startup velocity/angle settling check."
+        )
+        self.settle_velocity = spin(.1, 10, 1.0, 2, .1)
+        self.settle_velocity.setToolTip(
+            "Startup qualification only: measured velocity must stay within this limit. "
+            "This is not the activation deadzone or the Assist motion speed limit."
+        )
+        self.settle_drift = spin(.01, 5, .30, 2, .01)
+        self.settle_drift.setToolTip(
+            "Startup qualification only: observed pose span must stay within this tolerance. "
+            "This is not the activation deadzone."
+        )
         self.gain = spin(1, 434, 80, 2, 5)
         self.cap = spin(10, 910, 300, 0, 10)
-        form.addRow("Effort threshold (N m)", self.threshold)
+        form.addRow("Activation deadzone floor (N m)", self.threshold)
+        form.addRow("Startup settle velocity limit (deg/s)", self.settle_velocity)
+        form.addRow("Startup pose drift tolerance (deg)", self.settle_drift)
         form.addRow("Goal velocity gain (deg/s per N m)", self.gain)
         form.addRow("Maximum current per joint (mA)", self.cap)
         self.model = QCheckBox("Use identified hardware dynamics (optional)")
@@ -151,6 +172,8 @@ class AssistPanel(QWidget):
             current_cap_mA=self.cap.value(), inertia_Nm_s2_per_deg=self.inertia.value() if dynamics else 0.,
             viscous_Nm_s_per_deg=self.viscous.value() if dynamics else 0.,
             coulomb_Nm=self.coulomb.value() if dynamics else 0.,
+            startup_velocity_limit_deg_s=self.settle_velocity.value(),
+            startup_pose_drift_deg=self.settle_drift.value(),
         )))
 
     def _heartbeat(self):

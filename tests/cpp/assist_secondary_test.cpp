@@ -58,6 +58,18 @@ int main(int argc, char**) {
   for (int k = 0; k < 26; ++k) j.updateIntent(180, 0, .02f);
   assert(!j.moving && j.reference() == 180); // achieved-pose release
 
+  // The telemetry observer remains usable outside Assist.  A disabled motor
+  // ignores its residual current at rest, while motion can still contribute
+  // model-inferred effort.
+  j = joint();
+  assert(j.observeTelemetry(100, 0, 50, true, false, false, 0));
+  assert(j.observeTelemetry(100, 0, 50, true, false, false, 20));
+  assert(fabsf(j.telemetryEffort) < .001f);
+  j = joint(); j.inertia = .035f;
+  assert(j.observeTelemetry(100, 0, 0, true, false, false, 0));
+  assert(j.observeTelemetry(100, 10, 0, false, false, false, 20));
+  assert(j.telemetryEffort > 1.0f);
+
   j = joint(); j.hardMin = 99; j.hardMax = 3000;
   j.direction = 1; j.lead = 8; j.releaseAt(99);
   assert(j.reference() == 99); // capture cancels lead near a hard boundary too

@@ -112,6 +112,7 @@ struct NMLHandExo {
   bool assistAutoStart_ = false;
   int assistRejectId_ = -1;
   float assistRejectAngle_ = NAN, assistRejectVelocity_ = NAN;
+  float assistSettleVelocityLimitDegS_ = 1.0f, assistSettlePoseDriftDeg_ = .3f;
   const uint8_t motorIds_[N_MOTORS] = {1,2,3,4,5,6,7,8,9,11,12,13,14,15,16,17,18,19};
   int numMotors_ = N_MOTORS;
   bool rom = false, otherCalibration = false;
@@ -143,6 +144,7 @@ struct NMLHandExo {
   bool isExoCalibrating() const { return otherCalibration; }
   bool configureAssist(uint8_t, float, float, float);
   bool configureAssistObserver(uint8_t, float, float, float);
+  bool configureAssistSettling(float, float);
   bool calibrateAssist(const uint8_t*, uint8_t);
   bool enableTorqueAssist(const uint8_t*, uint8_t, float, float, float, float, float, float);
   bool startAssist(); bool heartbeatAssist();
@@ -283,6 +285,20 @@ int main() {
     assert(!e.calibrateAssist(id, 1));
     assert(std::string(assistReasonName(e.assistReason_)) == "stored_limit");
     assert(e.dxl_.writes == 0);
+  }
+  {
+    // Startup qualification tolerances are configurable independently of the
+    // effort deadzone and are reported through the status snapshot.
+    NMLHandExo e; const uint8_t id[] = {1};
+    assert(!e.configureAssistSettling(.09f, .3f));
+    assert(!e.configureAssistSettling(1, 5.01f));
+    assert(e.configureAssistSettling(5, .8f));
+    e.dxl_.velocity[0] = 4.122f;
+    assert(e.configureAssist(1, 10, .01f, 40));
+    assert(e.calibrateAssist(id, 1));
+    AssistStatusSnapshot snapshot; e.getAssistSnapshot(snapshot);
+    assert(fabsf(snapshot.settle_velocity_limit_deg_s-5) < .001f);
+    assert(fabsf(snapshot.settle_pose_drift_deg-.8f) < .001f);
   }
   {
     NMLHandExo e; e.ready(); assert(e.dxl_.goals == 1);

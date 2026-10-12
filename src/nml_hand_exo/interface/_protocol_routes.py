@@ -18,6 +18,7 @@ PROTOBUF_RPC_COMMANDS = frozenset(
         "assist_enable",
         "assist_heartbeat",
         "assist_observer",
+        "assist_settle_config",
         "assist_start",
         "assist_status",
         "assist_stop",

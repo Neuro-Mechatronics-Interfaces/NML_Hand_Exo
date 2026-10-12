@@ -32,6 +32,7 @@ struct NMLHandExo {
   bool isAssistBusy() const { return assistBusy; }
   bool configureAssist(uint8_t, float t, float g, float cap) { value = cap; return accept && isfinite(t) && isfinite(g) && isfinite(cap); }
   bool configureAssistObserver(uint8_t, float j, float b, float c) { value = c; return accept && isfinite(j) && isfinite(b) && isfinite(c); }
+  bool configureAssistSettling(float velocity, float drift) { value = drift; return accept && isfinite(velocity) && isfinite(drift); }
   bool calibrateAssist(const uint8_t*, uint8_t) { ++writes; return accept; }
   bool enableTorqueAssist(const uint8_t*, uint8_t, float t, float g, float cap, float j, float b, float c) {
     ++writes; value = cap;

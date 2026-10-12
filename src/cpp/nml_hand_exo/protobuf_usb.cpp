@@ -32,6 +32,10 @@ static void packAssistStatus(NMLHandExo& exo, exo_usb_Response& response) {
   status.joints_count = snapshot.count;
   status.has_total_current_budget_mA = true;
   status.total_current_budget_mA = snapshot.total_current_budget_mA;
+  status.has_settle_velocity_limit_deg_s = true;
+  status.settle_velocity_limit_deg_s = snapshot.settle_velocity_limit_deg_s;
+  status.has_settle_pose_drift_deg = true;
+  status.settle_pose_drift_deg = snapshot.settle_pose_drift_deg;
   for (uint8_t i = 0; i < snapshot.count; ++i) {
     const auto& source = snapshot.joints[i]; auto& target = status.joints[i];
     target.id = source.id;
@@ -64,7 +68,16 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
                            exo_usb_Response& response) {
   response.sequence = request.sequence;
   response.status = exo_usb_Status_INVALID_REQUEST;
-  const bool assist = request.command >= exo_usb_Command_ASSIST_CONFIG && request.command <= exo_usb_Command_ASSIST_ENABLE;
+  const bool assist =
+      request.command == exo_usb_Command_ASSIST_CONFIG ||
+      request.command == exo_usb_Command_ASSIST_CALIBRATE ||
+      request.command == exo_usb_Command_ASSIST_START ||
+      request.command == exo_usb_Command_ASSIST_HEARTBEAT ||
+      request.command == exo_usb_Command_ASSIST_STOP ||
+      request.command == exo_usb_Command_ASSIST_STATUS ||
+      request.command == exo_usb_Command_ASSIST_OBSERVER ||
+      request.command == exo_usb_Command_ASSIST_ENABLE ||
+      request.command == exo_usb_Command_ASSIST_SETTLE_CONFIG;
   if (assist) {
     if (request.has_value || request.has_joint_model || request.has_finger_angles || request.has_gesture) return;
     for (uint8_t k = 0; k < request.motor_ids_count; ++k) {
@@ -72,7 +85,10 @@ static void executeRequest(NMLHandExo& exo, GestureController& gc, const exo_usb
       for (uint8_t j = 0; j < k; ++j) if (request.motor_ids[k] == request.motor_ids[j]) return;
     }
     bool ok = false;
-    if (request.command == exo_usb_Command_ASSIST_CONFIG || request.command == exo_usb_Command_ASSIST_OBSERVER) {
+    if (request.command == exo_usb_Command_ASSIST_SETTLE_CONFIG) {
+      if (request.motor_ids_count || request.values_count != 2) return;
+      ok = exo.configureAssistSettling(request.values[0], request.values[1]);
+    } else if (request.command == exo_usb_Command_ASSIST_CONFIG || request.command == exo_usb_Command_ASSIST_OBSERVER) {
       if (request.motor_ids_count != 1 || request.values_count != 3) return;
       ok = request.command == exo_usb_Command_ASSIST_CONFIG
           ? exo.configureAssist(request.motor_ids[0], request.values[0], request.values[1], request.values[2])
